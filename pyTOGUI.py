@@ -3,7 +3,7 @@ from stl import mesh  # Install using `pip install numpy-stl`
 import vtk  # Install using `pip install vtk`
 from collections import defaultdict
 from queue import Queue
-
+from tkinter import filedialog
 
 class STLGeom:
     TOL = 1e-9  # Tolerance for normalization
@@ -250,13 +250,20 @@ class STLGeom:
 
 # Example usage
 if __name__ == "__main__":
-    file_path = r".\ThreeHoleBracket.STL"
-    stl_geom = STLGeom(file_path)
+    stl_file = filedialog.askopenfilename(
+        title="Select STL file",
+        filetypes=[("STL files", "*.stl *.STL")]
+    )
+    if not stl_file:
+        print("No file selected")
+        exit()
+    
+    stl_geom = STLGeom(stl_file)
 
     # Pre-highlight triangles using recursive logic
     seed_triangle = 0
     cutoff_angle = 3  # Degrees
-    stl_geom.highlight_triangles_recursive(seed_triangle, depth=3, cutoff_angle_degrees=cutoff_angle)
+    stl_geom.highlight_triangles_recursive(seed_triangle, depth=5, cutoff_angle_degrees=cutoff_angle)
 
     # Visualize the STL with enhanced interaction
     stl_geom.visualize_with_vtk()
