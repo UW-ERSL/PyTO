@@ -17,7 +17,7 @@ class Voxelizer:
         if stl_file_path:
             self.create_from_stl(stl_file_path, nVoxels)
 
-    def getVoxelDimension(self, nVoxelsDesired=10**5, max_aspect_ratio=1.2):
+    def getVoxelDimensionOld(self, nVoxelsDesired=10**5, max_aspect_ratio=1.2):
         # Get bounds and dimensions
         bounds = self.stlMesh.bounds
         print("STL Bounds: ", bounds)
@@ -57,18 +57,58 @@ class Voxelizer:
             h_size[0] = h_size[2] * eta[0]
             h_size[1] = h_size[2] * eta[1]
 
+        vox_nels = [0, 0, 0]
+        vox_nels[0] = max(round(Lx/h_size[0]), 2)
+        vox_nels[1] = max(round(Ly/h_size[1]), 2)
+        vox_nels[2] = max(round(Lz/h_size[2]), 2)
+        print(vox_nels)
+        print( h_size)
+        h_size[0] = Lx/vox_nels[0]
+        h_size[1] = Ly/vox_nels[1]
+        h_size[2] = Lz/vox_nels[2]
+        print( h_size)
+
         return h_size[0], h_size[1], h_size[2]
     
+    def getVoxelDimension(self, nVoxelsDesired=10**5, max_aspect_ratio=1.2):
+        # Get bounds and dimensions
+        bounds = self.stlMesh.bounds
+        print("STL Bounds: ", bounds)
+        Lx = bounds[1] - bounds[0]
+        Ly = bounds[3] - bounds[2]
+        Lz = bounds[5] - bounds[4]
+        volume = self.stlMesh.volume
+        alpha = (nVoxelsDesired/(Lx*Ly*Lz))**(1/3)
+        vox_nels = [0, 0, 0]
+        vox_nels[0] = max(round(alpha*Lx), 2)
+        vox_nels[1] = max(round(alpha*Ly), 2)
+        vox_nels[2] = max(round(alpha*Lz), 2)
+        print(vox_nels)
+        h_size = [0, 0, 0]
+        h_size[0] = Lx/vox_nels[0]
+        h_size[1] = Ly/vox_nels[1]
+        h_size[2] = Lz/vox_nels[2]
+        print( h_size)
 
+        return h_size[0], h_size[1], h_size[2]
+    
     def create_from_stl(self, stl_file, nVoxelsDesired=10**5):
+
         self.stlMesh = pv.read(stl_file)
-        voxelDimensions = self.getVoxelDimension(nVoxelsDesired)
-      
         # Get the volume of the mesh
         volume = self.stlMesh.volume
-        # Define a uniform voxel grid
-        
-        self.voxels = pv.voxelize(self.stlMesh, density=voxelDimensions,check_surface=False)
+        voxelDimensions = self.getVoxelDimension(nVoxelsDesired)
+      
+        # Voxels near the boundary are being removed. So scale the mesh slightly
+        scale = 1.001
+        # Scale the mesh by 10% about its center
+        center = np.array(self.stlMesh.center)
+        self.stlMesh.points = (self.stlMesh.points - center) * scale + center
+        self.voxels = pv.voxelize(self.stlMesh, density=voxelDimensions, check_surface=False)
+
+        # Scale back to original size
+        center = np.array(self.stlMesh.center)
+        self.stlMesh.points = (self.stlMesh.points - center) / scale + center
 
         #extract the data
         self.nVoxels = self.voxels.n_cells
@@ -84,6 +124,8 @@ class Voxelizer:
         self.percentVolErr = (volume - self.totalVoxelVolume)/volume*100
 
         print("***********Voxel grid created***********")
+        print("stl volume: ", volume)
+        print("vox volume: ", self.totalVoxelVolume )
         print(f"#Voxels: {self.nVoxels}")
         print(f"#Points: {self.nPoints}")
         print(f"VolErr: {self.percentVolErr:.2f}%")
@@ -105,7 +147,8 @@ class Voxelizer:
             raise ValueError("No voxel grid data available")
         p = pv.Plotter()
         # Plot inside elements only
-        p.add_mesh(self.voxels, opacity=0.8, show_edges=True)
+        p.add_mesh(self.stlMesh, color= 'grey',opacity=0.4, show_edges=True)
+        p.add_mesh(self.voxels, color= 'green', opacity=0.9, show_edges=True)
         p.show()
 
     def findVoxelsNearTriangle(self, triangle_id, distance):
@@ -149,7 +192,7 @@ if __name__ == "__main__":
         exit()
 
     vox = Voxelizer()
-    vox.create_from_stl(stl_file, nVoxelsDesired=50000)
+    vox.create_from_stl(stl_file, nVoxelsDesired=1000)
     # Visualize the voxel grid
     vox.plot()
    
