@@ -10,6 +10,7 @@ import pyvista as pv # pip install pyvista
 from PIL import Image
 import os
 from tkinter import filedialog
+import time
 
 class Voxelizer:
     def __init__(self, stl_file_path=None, nVoxels=10**5):
@@ -20,7 +21,6 @@ class Voxelizer:
     def getVoxelDimensionOld(self, nVoxelsDesired=10**5, max_aspect_ratio=1.2):
         # Get bounds and dimensions
         bounds = self.stlMesh.bounds
-        print("STL Bounds: ", bounds)
         Lx = bounds[1] - bounds[0]
         Ly = bounds[3] - bounds[2]
         Lz = bounds[5] - bounds[4]
@@ -73,7 +73,6 @@ class Voxelizer:
     def getVoxelDimension(self, nVoxelsDesired=10**5, max_aspect_ratio=1.2):
         # Get bounds and dimensions
         bounds = self.stlMesh.bounds
-        print("STL Bounds: ", bounds)
         Lx = bounds[1] - bounds[0]
         Ly = bounds[3] - bounds[2]
         Lz = bounds[5] - bounds[4]
@@ -83,17 +82,16 @@ class Voxelizer:
         vox_nels[0] = max(round(alpha*Lx), 2)
         vox_nels[1] = max(round(alpha*Ly), 2)
         vox_nels[2] = max(round(alpha*Lz), 2)
-        print(vox_nels)
         h_size = [0, 0, 0]
         h_size[0] = Lx/vox_nels[0]
         h_size[1] = Ly/vox_nels[1]
         h_size[2] = Lz/vox_nels[2]
-        print( h_size)
 
         return h_size[0], h_size[1], h_size[2]
     
     def create_from_stl(self, stl_file, nVoxelsDesired=10**5):
 
+        
         self.stlMesh = pv.read(stl_file)
         # Get the volume of the mesh
         volume = self.stlMesh.volume
@@ -104,7 +102,10 @@ class Voxelizer:
         # Scale the mesh by 10% about its center
         center = np.array(self.stlMesh.center)
         self.stlMesh.points = (self.stlMesh.points - center) * scale + center
+        self._execution_time = None  # Initialize execution time variable
+        start_time = time.time()
         self.voxels = pv.voxelize(self.stlMesh, density=voxelDimensions, check_surface=False)
+        self._execution_time = time.time() - start_time
 
         # Scale back to original size
         center = np.array(self.stlMesh.center)
@@ -130,7 +131,7 @@ class Voxelizer:
         print(f"#Points: {self.nPoints}")
         print(f"VolErr: {self.percentVolErr:.2f}%")
         print(f"(dx,dy,dz): {voxelDimensions[0]:.2e}, {voxelDimensions[1]:.2e}, {voxelDimensions[2]:.2e}")
-
+        print(f"Time to voxelize: {self._execution_time:0.3f} s")
        
     def getVoxelPoint(self, i):
         if self.voxels is None:
@@ -151,36 +152,51 @@ class Voxelizer:
         p.add_mesh(self.voxels, color= 'green', opacity=0.9, show_edges=True)
         p.show()
 
-    def findVoxelsNearTriangle(self, triangle_id, distance):
-        """
-        Find all voxel points within a specified distance from a triangle in the STL mesh.
+    def get_boundary_points(self):
+        """Returns indices of points on the boundary of the voxel mesh"""
+        if self.voxels is None:
+            raise ValueError("No voxel grid data available")
             
-        Args:
-            triangle_id: Index of the triangle in the STL mesh
-            distance: Maximum distance to search for voxel points
+
+        # Get all faces of the voxel mesh
+        faces = self.voxels.extract_surface()
+        # Get the unique points that make up these faces
+        boundary_points = np.unique(faces.points, axis=0)
+        
+        # Find the indices of these points in the original mesh
+        all_points = self.voxels.points
+        boundary_indices = []
+
+        for point in boundary_points:
+            matches = np.where((all_points == point).all(axis=1))[0]
+            if len(matches) > 0:
+                boundary_indices.append(matches[0])
                 
-        Returns:
-            numpy array of point indices that are within the specified distance
-        """
-        if self.voxels is None or self.stlMesh is None:
-            raise ValueError("No voxel grid or STL mesh data available")
-            
-        # Get the triangle from the mesh
-        triangle = self.stlMesh.extract_cells(triangle_id)
-            
-        # Create selection based on distance
-        # Create a surface from the triangle and compute distances
-        surface = triangle.extract_surface()
-        
-        # Compute distances and threshold
-        distances = self.voxels.compute_implicit_distance(surface)
-        surface_with_thickness = self.voxels.threshold([-distance, distance], scalars=distances)
-        
-        selection = self.voxels.select_enclosed_points(surface_with_thickness, check_surface=False)
-            
-        # Get indices of points within distance
-        return np.where(selection)[0]
+        print("Number of boundary points: ", len(boundary_indices))
+        return np.array(boundary_indices)
     
+    def find_points_near_surface(self, distance_threshold):
+        """
+        Find all points in the voxel mesh that are within a specified distance from a triangle.
+        
+        Args:
+            triangle_points: numpy array of shape (3,3) containing triangle vertices
+            distance_threshold: maximum distance to consider a point near the triangle
+        
+        Returns:
+            List of point indices that are within the threshold distance
+        """
+        if self.voxels is None:
+            raise ValueError("No voxel grid data available")
+            
+        # Convert voxel points to numpy array
+        points = np.array(self.voxels.points)
+        
+        # Calculate distances from all points to triangle
+        distances = self.stlMesh.compute_implicit_distance(points, inplace=True)
+        
+        # Return indices of points within threshold
+        return np.where(distances <= distance_threshold)[0]
 if __name__ == "__main__":
     # Open file dialog to select STL file
     stl_file = filedialog.askopenfilename(
@@ -192,7 +208,9 @@ if __name__ == "__main__":
         exit()
 
     vox = Voxelizer()
-    vox.create_from_stl(stl_file, nVoxelsDesired=1000)
+    vox.create_from_stl(stl_file, nVoxelsDesired=5*10**4)
+
+    vox.get_boundary_points()
     # Visualize the voxel grid
     vox.plot()
    
