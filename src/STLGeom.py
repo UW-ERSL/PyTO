@@ -1,6 +1,6 @@
 import math
-from stl import mesh  # Install using `pip install numpy-stl`
-import vtk  # Install using `pip install vtk`
+from stl import mesh  # pip install numpy-stl
+import vtk  # pip install vtk
 from collections import defaultdict
 from queue import Queue
 from tkinter import filedialog

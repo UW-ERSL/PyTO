@@ -208,9 +208,8 @@ if __name__ == "__main__":
         exit()
 
     vox = Voxelizer()
-    vox.create_from_stl(stl_file, nVoxelsDesired=5*10**4)
+    vox.create_from_stl(stl_file, nVoxelsDesired=10**6)
 
-    vox.get_boundary_points()
     # Visualize the voxel grid
     vox.plot()
    
