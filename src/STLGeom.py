@@ -262,7 +262,7 @@ if __name__ == "__main__":
 
     # Pre-highlight triangles using recursive logic
     seed_triangle = 0
-    cutoff_angle = 3  # Degrees
+    cutoff_angle = 90  # Degrees
     stl_geom.highlight_triangles_recursive(seed_triangle, depth=5, cutoff_angle_degrees=cutoff_angle)
 
     # Visualize the STL with enhanced interaction

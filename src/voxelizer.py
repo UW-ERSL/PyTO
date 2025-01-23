@@ -4,162 +4,140 @@ Created on Mon Jan 20 06:51:26 2025
 
 @author: ksure
 """
-import numpy as np
-import pyvista as pv
-import stltovoxel # pip install stl-to-voxel (requires C++ compiler)
+import numpy as np # pip install numpy
+import pyvista as pv # pip install pyvista
+# stl-to-voxel  requires C++ compiler. For Windows, Visual Studio 2022 Community works
 from PIL import Image
 import os
 from tkinter import filedialog
 
 class Voxelizer:
-    def __init__(self, stl_file_path=None, resolution=100):
-        self.voxel_grid = None
-        self.grid_coords = None
+    def __init__(self, stl_file_path=None, nVoxels=10**5):
+        self.voxels = None
         if stl_file_path:
-            self.create_from_stl(stl_file_path, resolution)
+            self.create_from_stl(stl_file_path, nVoxels)
 
-    def create_from_stl(self, stl_file_path, resolution=100):
-        png_dir = "."
-        stltovoxel.convert_file(stl_file_path, 'output.png', resolution=resolution)
-        
-        png_files = sorted([f for f in os.listdir(png_dir) if f.endswith('.png')])
-        slices = []
-        for file in png_files:
-            img = Image.open(os.path.join(png_dir, file)).convert("L")
-            slices.append(np.array(img))
-        
-        self.voxel_grid = np.stack(slices, axis=0)
-        
-        for file in png_files:
-            os.remove(os.path.join(png_dir, file))
-            
-        x = np.arange(self.voxel_grid.shape[2])
-        y = np.arange(self.voxel_grid.shape[1])
-        z = np.arange(self.voxel_grid.shape[0])
-        self.grid_coords = (x, y, z)
+    def getVoxelDimension(self, nVoxelsDesired=10**5, max_aspect_ratio=1.2):
+        # Get bounds and dimensions
+        bounds = self.stlMesh.bounds
+        print("STL Bounds: ", bounds)
+        Lx = bounds[1] - bounds[0]
+        Ly = bounds[3] - bounds[2]
+        Lz = bounds[5] - bounds[4]
+        volume = self.stlMesh.volume
 
-    def dump(self, filename="voxel_grid.bin"):
-        if self.voxel_grid is None:
-            raise ValueError("No voxel grid data available")
+        # Calculate grid sizes
+        h_size = [0, 0, 0]
+        eta = [0, 0, 0]
         
-        def _create_node_coords(self, n_nodes, shape):
-            i_vals = np.arange(shape[2] + 1)
-            j_vals = np.arange(shape[1] + 1)
-            k_vals = np.arange(shape[0] + 1)
-            I, J, K = np.meshgrid(i_vals, j_vals, k_vals, indexing='ij')
-            node_coords = np.zeros((n_nodes, 4), dtype=np.int32)
-            node_coords[:, 0] = I.flatten()
-            node_coords[:, 1] = J.flatten()
-            node_coords[:, 2] = K.flatten()
-            return node_coords
-
-        def _calculate_node_indices(self, i, j, k, nelx, nely):
-            n1 = i + j*(nelx+1) + k*(nelx+1)*(nely+1)
-            n2 = (i+1) + j*(nelx+1) + k*(nelx+1)*(nely+1)
-            n3 = (i+1) + (j+1)*(nelx+1) + k*(nelx+1)*(nely+1)
-            n4 = i + (j+1)*(nelx+1) + k*(nelx+1)*(nely+1)
-            n5 = n1 + (nelx+1)*(nely+1)
-            n6 = n2 + (nelx+1)*(nely+1)
-            n7 = n3 + (nelx+1)*(nely+1)
-            n8 = n4 + (nelx+1)*(nely+1)
-            return np.column_stack([n1,n2,n3,n4,n5,n6,n7,n8]).astype(np.int32)
-
+        if Lx >= Ly and Lx >= Lz:
+            eta[0] = 1.0
+            eta[1] = max(Ly/Lx, 1/max_aspect_ratio)
+            eta[2] = max(Lz/Lx, 1/max_aspect_ratio)
+            
+            h_size[0] = (volume/nVoxelsDesired/(eta[0]*eta[1]*eta[2]))**(1/3)
+            h_size[1] = h_size[0] * eta[1]
+            h_size[2] = h_size[0] * eta[2]
         
-        # Create binary output file
-        with open(filename, 'wb') as f:
-            # 1. Write dimensions
-            np.array([self.voxel_grid.shape[2], self.voxel_grid.shape[1], self.voxel_grid.shape[0]], dtype=np.int32).tofile(f)
+        elif Ly >= Lx and Ly >= Lz:
+            eta[1] = 1.0
+            eta[0] = max(Lx/Ly, 1/max_aspect_ratio)
+            eta[2] = max(Lz/Ly, 1/max_aspect_ratio)
             
-                # Create coordinate grids for visualization
-            x = np.arange(self.voxel_grid.shape[2])
-            y = np.arange(self.voxel_grid.shape[1])
-            z = np.arange(self.voxel_grid.shape[0])
-            grid_coords = (x, y, z)
-            # 2. Write origin coordinates
-            np.array([x[0], y[0], z[0]], dtype=np.float32).tofile(f)
+            h_size[1] = (volume/nVoxelsDesired/(eta[0]*eta[1]*eta[2]))**(1/3)
+            h_size[0] = h_size[1] * eta[0]
+            h_size[2] = h_size[1] * eta[2]
+        
+        else:
+            eta[2] = 1.0
+            eta[0] = max(Lx/Lz, 1/max_aspect_ratio)
+            eta[1] = max(Ly/Lz, 1/max_aspect_ratio)
             
-            # 3. Write spacing
-            dx = x[1] - x[0] if len(x) > 1 else 1
-            dy = y[1] - y[0] if len(y) > 1 else 1
-            dz = z[1] - z[0] if len(z) > 1 else 1
-            np.array([dx, dy, dz], dtype=np.float32).tofile(f)
-            
-            # 4-5. Write nodes (0 facegroup for all nodes)
-            n_nodes = (self.voxel_grid.shape[2]+1) * (self.voxel_grid.shape[1]+1) * (self.voxel_grid.shape[0]+1)
-            np.array([n_nodes], dtype=np.int32).tofile(f)
-            # Convert the nested loops to a parallel operation using numpy
-            node_coords = np.zeros((n_nodes, 4), dtype=np.int32)
-            i_vals = np.arange(self.voxel_grid.shape[2] + 1)
-            j_vals = np.arange(self.voxel_grid.shape[1] + 1)
-            k_vals = np.arange(self.voxel_grid.shape[0] + 1)
-            I, J, K = np.meshgrid(i_vals, j_vals, k_vals, indexing='ij')
-            node_coords[:, 0] = I.flatten()
-            node_coords[:, 1] = J.flatten()
-            node_coords[:, 2] = K.flatten()
-            node_coords.tofile(f)
+            h_size[2] = (volume/nVoxelsDesired/(eta[0]*eta[1]*eta[2]))**(1/3)
+            h_size[0] = h_size[2] * eta[0]
+            h_size[1] = h_size[2] * eta[1]
 
-            
-            # 6-7. Write elements
-            n_elems = np.sum(self.voxel_grid > 0)
-            np.array([n_elems], dtype=np.int32).tofile(f)
-            nelx, nely, nelz = self.voxel_grid.shape[2], self.voxel_grid.shape[1], self.voxel_grid.shape[0]
-            # Create indices for all possible elements
-            i, j, k = np.where(self.voxel_grid > 0)
-            # Calculate node indices in parallel
-            n1 = i + j*(nelx+1) + k*(nelx+1)*(nely+1)
-            n2 = (i+1) + j*(nelx+1) + k*(nelx+1)*(nely+1)
-            n3 = (i+1) + (j+1)*(nelx+1) + k*(nelx+1)*(nely+1)
-            n4 = i + (j+1)*(nelx+1) + k*(nelx+1)*(nely+1)
-            n5 = n1 + (nelx+1)*(nely+1)
-            n6 = n2 + (nelx+1)*(nely+1)
-            n7 = n3 + (nelx+1)*(nely+1)
-            n8 = n4 + (nelx+1)*(nely+1)
-            # Stack all nodes and write at once
-            nodes = np.column_stack([n1,n2,n3,n4,n5,n6,n7,n8]).astype(np.int32)
-            nodes.tofile(f)
+        return h_size[0], h_size[1], h_size[2]
     
-            # 8. Write material IDs (all 0)
-            np.zeros(n_elems, dtype=np.int32).tofile(f)
-            
-            # 9. Write densities (all 1.0)
-            np.ones(n_elems, dtype=np.float32).tofile(f)
+
+    def create_from_stl(self, stl_file, nVoxelsDesired=10**5):
+        self.stlMesh = pv.read(stl_file)
+        voxelDimensions = self.getVoxelDimension(nVoxelsDesired)
+      
+        # Get the volume of the mesh
+        volume = self.stlMesh.volume
+        # Define a uniform voxel grid
+        
+        self.voxels = pv.voxelize(self.stlMesh, density=voxelDimensions,check_surface=False)
+
+        #extract the data
+        self.nVoxels = self.voxels.n_cells
+        self.nPoints = self.voxels.n_points
+        
+        self.dx = voxelDimensions[0] 
+        self.dy = voxelDimensions[1]
+        self.dz = voxelDimensions[2]
+        # Calculate the size of the voxel      
+     
+        self.origin = self.voxels.bounds[0], self.voxels.bounds[2], self.voxels.bounds[4]
+        self.totalVoxelVolume = self.dx*self.dy*self.dz*self.nVoxels
+        self.percentVolErr = (volume - self.totalVoxelVolume)/volume*100
+
+        print("***********Voxel grid created***********")
+        print(f"#Voxels: {self.nVoxels}")
+        print(f"#Points: {self.nPoints}")
+        print(f"VolErr: {self.percentVolErr:.2f}%")
+        print(f"(dx,dy,dz): {voxelDimensions[0]:.2e}, {voxelDimensions[1]:.2e}, {voxelDimensions[2]:.2e}")
+
+       
+    def getVoxelPoint(self, i):
+        if self.voxels is None:
+            raise ValueError("No voxel grid data available")    
+        return self.voxels.points[i]
+    
+    def getVoxelElement(self, i):
+        if self.voxels is None:
+            raise ValueError("No voxel grid data available")
+        return self.voxels.get_cell(i).point_ids
 
     def plot(self):
-        if self.voxel_grid is None:
+        if self.voxels is None:
             raise ValueError("No voxel grid data available")
-        x, y, z = self.grid_coords
+        p = pv.Plotter()
+        # Plot inside elements only
+        p.add_mesh(self.voxels, opacity=0.8, show_edges=True)
+        p.show()
+
+    def findVoxelsNearTriangle(self, triangle_id, distance):
+        """
+        Find all voxel points within a specified distance from a triangle in the STL mesh.
+            
+        Args:
+            triangle_id: Index of the triangle in the STL mesh
+            distance: Maximum distance to search for voxel points
+                
+        Returns:
+            numpy array of point indices that are within the specified distance
+        """
+        if self.voxels is None or self.stlMesh is None:
+            raise ValueError("No voxel grid or STL mesh data available")
+            
+        # Get the triangle from the mesh
+        triangle = self.stlMesh.extract_cells(triangle_id)
+            
+        # Create selection based on distance
+        # Create a surface from the triangle and compute distances
+        surface = triangle.extract_surface()
+        
+        # Compute distances and threshold
+        distances = self.voxels.compute_implicit_distance(surface)
+        surface_with_thickness = self.voxels.threshold([-distance, distance], scalars=distances)
+        
+        selection = self.voxels.select_enclosed_points(surface_with_thickness, check_surface=False)
+            
+        # Get indices of points within distance
+        return np.where(selection)[0]
     
-        # Create a PyVista grid for visualization
-        grid = pv.ImageData()
-        
-        # Set grid dimensions
-        grid.dimensions = np.array(self.voxel_grid.shape) + 1
-        
-        # Set grid spacing (assumes uniform spacing)
-        spacing = (
-            (x[-1] - x[0]) / (len(x) - 1),
-            (y[-1] - y[0]) / (len(y) - 1),
-            (z[-1] - z[0]) / (len(z) - 1),
-        )
-        grid.spacing = spacing
-        
-        # Set grid origin
-        grid.origin = (x[0], y[0], z[0])
-        # Convert boolean array to float for better visualization
-        voxel_data = self.voxel_grid.astype(float)
-
-        # Add the voxel data to the grid
-        grid.cell_data["voxel"] = voxel_data.ravel(order="F")
-        
-        # Threshold the grid to only show filled voxels
-        threshed = grid.threshold(value=0.5)  # Only show voxels that are "inside" (value = 1)
-        
-        # Visualize using PyVista
-        plotter = pv.Plotter()
-        plotter.add_mesh(threshed, opacity=0.3, color='blue')  # Changed to add_mesh for thresholded data
-        plotter.add_axes()  # Add axes for better orientation
-        plotter.show()
-
 if __name__ == "__main__":
     # Open file dialog to select STL file
     stl_file = filedialog.askopenfilename(
@@ -171,10 +149,9 @@ if __name__ == "__main__":
         exit()
 
     vox = Voxelizer()
-    vox.create_from_stl(stl_file, resolution=50)
+    vox.create_from_stl(stl_file, nVoxelsDesired=50000)
     # Visualize the voxel grid
     vox.plot()
-    # Dump the voxel grid to a binary file
-    #vox.dump("voxel_grid.msh")
+   
     
     
