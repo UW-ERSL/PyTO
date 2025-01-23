@@ -9,7 +9,7 @@ import jax.numpy as jnp
 import scipy.sparse as spy_sprs
 import scipy.sparse.linalg as spy_linalg
 
-import pyamg
+import pyamg # pip install pyamg
 # import pypardiso
 
 import bound_cond
