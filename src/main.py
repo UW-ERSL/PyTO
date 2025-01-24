@@ -12,16 +12,15 @@ import deflation
 import linear_solvers as lin_solv
 import topopt as topopt
 import os
-import mesher
+
 import bound_cond
 import plots
+import examples_structural as examplesStructural
 
 jax.config.update("jax_enable_x64", True)
 
 # %%
 # Load settings from YAML file
-
-
 script_dir = os.path.dirname(os.path.abspath(__file__))
 settings_path = os.path.join(script_dir, 'settings.yaml')
 with open(settings_path, 'r') as file:
@@ -32,96 +31,7 @@ cfg_opt = settings['OPTIMIZATION']
 cfg_defl = settings['DEFLATION']
 
 # %%
-cfg_plot = settings['PLOT']
-plt.rcParams.update(cfg_plot)
-
-# %%
-def createCantileverProblem(nelz: int = 10):
-	mesh = mesher.Mesher()
-	mesh.grid_mesh(num_elems = (2*nelz, nelz, nelz),
-								 elem_size = (1.0/nelz, 1.0/nelz, 1.0/nelz))
-
-	node_array = mesh.node_array
-
-	fixed_nodes = np.where(node_array[:, 0] == 0)[0] # x = 0 plane
-	fixed_dofs = np.array([3 * fixed_nodes,
-											   3 * fixed_nodes + 1,
-											   3 * fixed_nodes + 2]).flatten().astype(int)
-	dirichlet_values = 0*np.ones_like(fixed_dofs, dtype = float)
-	dirichlet_values[0:3] = 0
-
-	mesh.node_array[fixed_nodes, 3] = 1
-
-	# line defined by x = xMax, and z = 0
-	load_nodes = np.where((node_array[:, 0] == mesh.grid[0]) & 
-												(node_array[:, 2] == 0) )[0]	 
-	load_dofs = 3 * load_nodes + 2  # z direction
-
-	mesh.node_array[load_nodes, 3] = 2
-	load_per_dof = -1.e5/(nelz+1)
-
-	force = np.zeros(3*mesh.num_nodes)
-	force[load_dofs] = load_per_dof
-
-	bc = bound_cond.BC(force = force,
-										fixed_dofs = fixed_dofs,
-										dirichlet_values = dirichlet_values) 
-
-	mat_prop = mat_lib.StructuralMaterial(youngs_modulus=cfg_mat['youngs_modulus'],
-																				poissons_ratio=cfg_mat['poissons_ratio'])
-	return mesh, mat_prop, bc
-
-# %%
-def createLBracketProblem():
-	mesh = mesher.Mesher()
-	mesh.read_pareto_mesh("../meshFiles/LBracket.msh")
-	node_array = mesh.node_array
-	fixed_nodes = np.where(node_array[:, 3] == 1)[0]	 # use node label 1
-	fixed_dofs = np.array([3 * fixed_nodes,
-															 3 * fixed_nodes + 1,
-															 3 * fixed_nodes + 2]).flatten().astype(int)
-	dirichlet_values = np.zeros_like(fixed_dofs, dtype = float)
-
-	load_nodes = np.where(node_array[:, 3] == 2)[0]
-	load_dofs = 3 * load_nodes + 1  # y direction
-
-	force = np.zeros(3*mesh.num_nodes)
-	force[load_dofs] = -10.
-
-	bc = bound_cond.BC(force = force,
-										fixed_dofs = fixed_dofs,
-										dirichlet_values = dirichlet_values)
-
-	mat_prop = mat_lib.StructuralMaterial(youngs_modulus=cfg_mat['youngs_modulus'],
-																				poissons_ratio=cfg_mat['poissons_ratio'])
-	return mesh, mat_prop, bc
-
-# %%
-def createAlcoaProblem():
-	mesh = mesher.Mesher()
-	mesh.read_pareto_mesh("../meshFiles/AlcoaGrabCAD.msh")
-	node_array = mesh.node_array
-
-	fixed_nodes = np.where(node_array[:, 3] == 1)[0]
-	fixed_dofs = np.array([3 * fixed_nodes,
-															 3 * fixed_nodes + 1,
-															 3 * fixed_nodes + 2]).flatten().astype(int)
-	dirichlet_values = np.zeros_like(fixed_dofs, dtype = float)
-
-	load_nodes = np.where(node_array[:, 3] == 2)[0]
-	load_dofs = 3 * load_nodes + 1  # y direction
-	force = np.zeros(3*mesh.num_nodes)
-	force[load_dofs] = -1000.
-
-	bc = bound_cond.BC(force = force,
-										fixed_dofs = fixed_dofs,
-										dirichlet_values = dirichlet_values)
-
-	mat_prop = mat_lib.StructuralMaterial(youngs_modulus=cfg_mat['youngs_modulus'],
-																				poissons_ratio=cfg_mat['poissons_ratio'])
-	return mesh, mat_prop, bc
-
-# %%
+# Load fea and topopt routines
 def run_fea(fe_solver: fea.StructFEA,
 						plot: bool = True,
 						verbose: bool = True):
@@ -146,7 +56,6 @@ def run_fea(fe_solver: fea.StructFEA,
 		plots.plotMesh(fe_solver.mesh, fe_solver.bc, u,
 									title=f'Max deformation: {deltaMax:.3e}')
 
-# %%
 def run_topopt(fe_solver: fea.StructFEA,
 							volfrac: float,
 							optimizationMethod = topopt.Optimizers):
@@ -189,8 +98,8 @@ def run_topopt(fe_solver: fea.StructFEA,
 		plt.show()
 
 # %%
-nelz = 15
-mesh, mat_prop, bc = createCantileverProblem(nelz)
+mesh, mat_prop, bc = examplesStructural.createFilletedBeamProblem( nElemsDesired= 70000)
+#mesh, mat_prop, bc = examplesStructural.createCantileverProblem(nelz=30)
 
 # %%
 num_deflation_groups =  cfg_defl['num_groups']
@@ -199,11 +108,10 @@ dsolver.create_deflation_groups(mesh, cfg_defl['num_groups'])
 dsolver.create_delfation_matrix(mesh)
 dsolver.W = dsolver.W[bc.free_dofs, :]
 
-# %%
 fe_solver = fea.StructFEA(mesh = mesh,
                           mat_prop = mat_prop,
                           bc = bc,
-                          solver = lin_solv.Solvers.DPCG,
+                          solver = lin_solv.Solvers.CG,
                           dsolver = dsolver,
                           rtol = 1e-6,
                           verbose = False)
@@ -212,5 +120,5 @@ fe_solver = fea.StructFEA(mesh = mesh,
 run_fea(fe_solver = fe_solver, plot = True)
 
 # %%
-#run_topopt(fe_solver, volfrac=0.5, optimizationMethod = topopt.Optimizers.PARETO)
+# run_topopt(fe_solver, volfrac=0.5, optimizationMethod = topopt.Optimizers.PARETO)
 

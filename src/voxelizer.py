@@ -48,16 +48,12 @@ class Voxelizer:
       
         # Voxels near the boundary are being removed. So scale the mesh slightly
         scale = 1.001
-        # Scale the mesh by 10% about its center
         center = np.array(self.stlMesh.center)
         self.stlMesh.points = (self.stlMesh.points - center) * scale + center
         self._execution_time = None  # Initialize execution time variable
         start_time = time.time()
         self.voxels = pv.voxelize(self.stlMesh, density=voxelDimensions, check_surface=False)
         self._execution_time = time.time() - start_time
-
-        # Scale back to original size
-        center = np.array(self.stlMesh.center)
         self.stlMesh.points = (self.stlMesh.points - center) / scale + center
 
         #extract the data
@@ -135,7 +131,7 @@ if __name__ == "__main__":
         exit()
 
     vox = Voxelizer()
-    vox.create_from_stl(stl_file, nVoxelsDesired=10)
+    vox.create_from_stl(stl_file, nVoxelsDesired=500000)
 
     # Visualize the voxel grid
     vox.plot()

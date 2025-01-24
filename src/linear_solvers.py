@@ -10,7 +10,7 @@ import scipy.sparse as spy_sprs
 import scipy.sparse.linalg as spy_linalg
 
 import pyamg # pip install pyamg
-# import pypardiso
+import pypardiso
 
 import bound_cond
 
@@ -114,9 +114,13 @@ def solve(A: spy_sprs.coo_matrix,
 
     elif solver == Solvers.CG:
       M = _jacobi_preconditioner(A)
+      #M = _ilu_preconditioner(A)
       x, _ = spy_linalg.cg(A, b, M = M, rtol = kwargs['rtol'])
 
     elif solver == Solvers.PYAMG:
+      # Smoothed Aggregation solver gives the wrong result
+      #ml = pyamg.smoothed_aggregation_solver(A, B=b, smooth='energy')
+      #x = ml.solve(b, tol=kwargs['rtol'])
       x = pyamg.solve(A, b,tol= kwargs['rtol'], verb = kwargs['verbose'])
 
     elif solver == Solvers.DPCG:
@@ -130,7 +134,7 @@ def solve(A: spy_sprs.coo_matrix,
                               rtol = kwargs['rtol'])
 
     elif solver == Solvers.PARDISO:
-      x = pypardiso.spsolve(A, b)
+      x = pypardiso.spsolve(A, np.array(b))
 
     else:
       raise ValueError('Unknown solver type')

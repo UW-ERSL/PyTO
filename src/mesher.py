@@ -3,7 +3,7 @@
 import dataclasses
 from typing import Optional
 import numpy as np
-
+import pyvista as pv # pip install pyvista
 
 @dataclasses.dataclass
 class Extent:
@@ -52,6 +52,7 @@ class Mesher:
 	def __init__(self):	
 		self.num_nodes = 0
 		self.num_elems = 0
+		self.minVoxelsPerAxis = 2
 
 
 	@property
@@ -86,6 +87,7 @@ class Mesher:
 		# the elemNeighborsArray is needed for creating the filter
 		self.elemNeighborsArray = np.zeros((self.num_elems, 27), dtype = np.int32)
 
+		
 		node = 0
 		for iz in range(nelz+1):
 			for iy in range(nely+1):
@@ -132,7 +134,7 @@ class Mesher:
 					neighbors [neighbors > nelx*nely*nelz-1] = nelx*nely*nelz-1
 					self.elemNeighborsArray[elem] = neighbors		
 					elem = elem+1
-	
+
 		self.elem_centers = np.zeros((self.num_elems, 3))
 		node_array = self.node_array[:, :3]
 		for elem in range(self.num_elems):
@@ -190,6 +192,58 @@ class Mesher:
 
 			self.createEdofMat()
 
+	def createMeshFromSTLFile(self, stlFileName: str,nElemsDesired: int):
+		self.stlMesh = pv.read(stlFileName)
+
+		bounds = self.stlMesh.bounds
+		Lx = bounds[1] - bounds[0]
+		Ly = bounds[3] - bounds[2]
+		Lz = bounds[5] - bounds[4]
+		volume = self.stlMesh.volume
+		alpha = (nElemsDesired/(Lx*Ly*Lz))**(1/3)
+		
+		nx = max(round(alpha*Lx), self.minVoxelsPerAxis)
+		ny = max(round(alpha*Ly), self.minVoxelsPerAxis)
+		nz = max(round(alpha*Lz), self.minVoxelsPerAxis)
+		self.grid = [nx, ny, nz]
+		self.elem_size= [Lx/nx, Ly/ny, Lz/nz]
+		
+		# Voxels near the boundary are being removed. So scale the mesh slightly
+		scale = 1.001
+		# Scale the mesh  about its center
+		center = np.array(self.stlMesh.center)
+		self.stlMesh.points = (self.stlMesh.points - center) * scale + center
+		self.voxels = pv.voxelize(self.stlMesh, density=self.elem_size, check_surface=False)
+		self.stlMesh.points = (self.stlMesh.points - center) / scale + center
+		#extract the data
+		self.num_elems = self.voxels.n_cells
+		self.num_nodes = self.voxels.n_points 
+		self.origin = [self.voxels.bounds[0], self.voxels.bounds[2], self.voxels.bounds[4]]
+
+		self.node_array = np.zeros((self.num_nodes, 4), dtype = np.int32)
+
+		# Node array is the index of the node, and the label of the node
+		# Convert voxel points to integer indices by dividing by elem_size and rounding
+		self.node_array[:, :3] = np.round((self.voxels.points - np.array(self.origin)) / np.array(self.elem_size))
+		self.node_array[:, 3] = 0
+		self.elemArray = self.voxels.cell_connectivity
+		self.elemArray = self.elemArray.reshape((self.num_elems, 8))
+		
+		self.elemPartIndex = np.zeros(self.num_elems)
+		self.elem_centers = np.zeros((self.num_elems, 3))
+		node_array = self.node_array[:, :3]
+		for elem in range(self.num_elems):
+			self.elem_centers[elem, :] = np.array(np.sum(node_array[self.elemArray[elem]],
+																						axis = 0)/8)
+				
+		self.elemPseudoDensity = np.ones(self.num_elems)
+		# the elemNeighborsArray is needed for creating the filter
+		self.elemNeighborsArray = np.zeros((self.num_elems, 27), dtype = np.int32)
+		self.createEdofMat()
+		self.bbox = BoundingBox(
+						x=Extent(np.min(self.node_array[:,0]), np.max(self.node_array[:,0])),
+						y=Extent(np.min(self.node_array[:,1]), np.max(self.node_array[:,1])),
+						z=Extent(np.min(self.node_array[:,2]), np.max(self.node_array[:,2])))
 
 	def createEdofMat(self):
 		self.edofMat = np.zeros((self.num_elems, 24), dtype = int)
