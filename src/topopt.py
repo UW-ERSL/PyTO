@@ -125,8 +125,7 @@ def topopt_mma(fe_solver: sfea.StructFEA,
 	while not mma_state.is_converged:
 		x = mma_state.x.reshape(-1)
 		
-		(obj, u), grad_obj = jax.value_and_grad(_compliance_objective, has_aux= True)(
-																													x, fe_solver, penal)
+		(obj, u), grad_obj = jax.value_and_grad(_compliance_objective, has_aux= True)(x, fe_solver, penal)
 		cons, grad_cons = jax.value_and_grad(_volume_constraint)(x, volfrac)
 
 		obj = np.array([obj])

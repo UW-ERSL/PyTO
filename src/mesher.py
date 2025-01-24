@@ -103,9 +103,9 @@ class Mesher:
 				for ix in range(nelx):
 					n0 = iz*sx*sy + iy*sx + ix # corner node number
 					self.elemArray[elem]  = [n0, n0+1,
-																	n0+1+sx, n0+sx,
-																	n0+sx*sy, n0+1+sx*sy,
-																	n0+1+sx+sx*sy ,n0+sx+sx*sy]
+											n0+1+sx, n0+sx,
+											n0+sx*sy, n0+1+sx*sy,
+											n0+1+sx+sx*sy ,n0+sx+sx*sy]
 					
 					# Calculate neighbors
 					neighbors = []
@@ -239,6 +239,28 @@ class Mesher:
 		self.elemPseudoDensity = np.ones(self.num_elems)
 		# the elemNeighborsArray is needed for creating the filter
 		self.elemNeighborsArray = np.zeros((self.num_elems, 27), dtype = np.int32)
+		# Build a dictionary mapping each node to its associated elements
+		node_to_elems = {}
+		for elem_idx in range(self.num_elems):
+			for node_idx in self.elemArray[elem_idx]:
+				if node_idx not in node_to_elems:
+					node_to_elems[node_idx] = []
+				node_to_elems[node_idx].append(elem_idx)
+
+		# For each element, find all neighboring elements by looking at shared nodes
+		for elem in range(self.num_elems):
+			neighbors = set()
+			# Get all nodes of this element
+			for node in self.elemArray[elem]:
+				# Add all elements connected to this node
+				neighbors.update(node_to_elems[node])
+			# Convert to list and sort by distance from center
+			neighbor_list = list(neighbors)
+			neighbor_list.sort(key=lambda x: np.linalg.norm(
+				self.elem_centers[x] - self.elem_centers[elem]))
+			# Take first 27 neighbors (or pad with -1 if fewer exist)
+			self.elemNeighborsArray[elem] = (neighbor_list[:27] + [-1] * 27)[:27]
+
 		self.createEdofMat()
 		self.bbox = BoundingBox(
 						x=Extent(bounds[0], bounds[1]),	

@@ -28,7 +28,6 @@ def createCantileverProblem(nDOFDesired: int = 10000, L: float = [1.0, 1.0, 1.0]
 	nelx = round(alpha*L[0])
 	nely = round(alpha*L[1])
 	nelz = round(alpha*L[2])
-	print(f'nelx: {nelx}, nely: {nely}, nelz: {nelz}')
 	mesh = mesher.Mesher()
 	mesh.grid_mesh(num_elems = (nelx, nely, nelz),
 								 elem_size = (L[0]/nelx, L[1]/nely, L[2]/nelz))
@@ -66,6 +65,26 @@ def createCantileverProblem(nDOFDesired: int = 10000, L: float = [1.0, 1.0, 1.0]
 
 # %%
 def createLBracketProblem(nDOFDesired: int = 10000):
+	"""Creates a structural problem setup for an L-bracket topology optimization.
+	This function sets up a finite element mesh and boundary conditions for an L-bracket
+	structural problem from an STL file. The mesh is created with approximately the desired
+	number of degrees of freedom. The problem includes fixed boundary conditions on the top
+	surface and a distributed load on a portion of the right surface.
+	Args:
+		nDOFDesired (int, optional): Desired number of degrees of freedom for the mesh. 
+									Defaults to 10000.
+	Returns:
+		tuple: A tuple containing:
+			- mesh (Mesher): Mesh object with the L-bracket discretization
+			- mat_prop (StructuralMaterial): Material properties object with structural parameters
+			- bc (BC): Boundary conditions object with forces and constraints
+	Notes:
+		- The mesh is created from an STL file located at '../TOExamples/LBracket/LBracket.STL'
+		- Fixed boundary conditions are applied at y = yMax
+		- Load is applied in the -y direction on nodes where y > 0.039 and x > 0.09
+		- Total applied load is 1000 units distributed equally among loaded nodes
+		- Material properties are set to E = 2.1e5 and ν = 0.3
+	"""
 	# Read the STL model, create a mesh of desired size, and a structural problem is posed on it.
 	stl_file = os.path.join(script_dir, '../TOExamples/LBracket/LBracket.STL')
 	nElemsDesired = nDOFDesired/3	# estimate
@@ -125,10 +144,11 @@ def createAlcoaProblem():
 	return mesh, mat_prop, bc
 
 # %%
-def createFilletedBeamProblem(nElemsDesired=50000):
+def createFilletedBeamProblem(nDOFDesired=50000):
 	stl_file = os.path.join(script_dir, '../TOExamples/FilletedBeam/FilletedBeam.STL')
 
 	mesh = mesher.Mesher()
+	nElemsDesired = round(nDOFDesired/3)	# estimate
 	mesh.createMeshFromSTLFile(stl_file, nElemsDesired=nElemsDesired)
 	node_array = mesh.node_array
 	fixed_nodes = np.where(node_array[:, 0] == 0)[0] # x = 0 plane

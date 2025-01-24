@@ -98,6 +98,7 @@ def run_topopt(fe_solver: fea.StructFEA,
 # %%
 #mesh, mat_prop, bc = examplesStructural.createCantileverProblem(nDOFDesired=20000,L=[2, 1, 1])	
 mesh, mat_prop, bc = examplesStructural.createLBracketProblem(nDOFDesired=20000)	
+#mesh, mat_prop, bc = examplesStructural.createFilletedBeamProblem(nDOFDesired=20000)
 
 # %%
 num_deflation_groups =  cfg_defl['num_groups']
