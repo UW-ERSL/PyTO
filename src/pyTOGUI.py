@@ -231,6 +231,16 @@ class MainWindow(QtWidgets.QMainWindow):
         sidebar_layout.addStretch()
 
     def setup_message_frame(self):
+        """
+        Sets up a message frame in the GUI.
+        This method creates and configures a QFrame to display messages with the following components:
+        - A QFrame with a box style border
+        - A QTextEdit widget with fixed height of 80 pixels
+        - Custom styling including gray background, Segoe UI font at 10pt
+        - Read-only text display initialized with "Welcome to Pareto!"
+        The message frame provides feedback and status updates to the user.
+        """
+
         self.message_frame = QtWidgets.QFrame()
         self.message_frame.setFrameStyle(QtWidgets.QFrame.Box | QtWidgets.QFrame.Plain)
         message_layout = QtWidgets.QVBoxLayout(self.message_frame)
@@ -347,7 +357,8 @@ class MainWindow(QtWidgets.QMainWindow):
         render_window.SetAlphaBitPlanes(1)
         render_window.SetMultiSamples(0)
         self.renderer.UseDepthPeelingOn()
-        self.renderer.SetMaximumNumberOfPeels(100)      
+        self.renderer.SetMaximumNumberOfPeels(100) 
+     
 
         # Setup interactions
         self.interactor.AddObserver("LeftButtonPressEvent", self.on_left_button_press)
