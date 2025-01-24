@@ -241,9 +241,9 @@ class Mesher:
 		self.elemNeighborsArray = np.zeros((self.num_elems, 27), dtype = np.int32)
 		self.createEdofMat()
 		self.bbox = BoundingBox(
-						x=Extent(np.min(self.node_array[:,0]), np.max(self.node_array[:,0])),
-						y=Extent(np.min(self.node_array[:,1]), np.max(self.node_array[:,1])),
-						z=Extent(np.min(self.node_array[:,2]), np.max(self.node_array[:,2])))
+						x=Extent(bounds[0], bounds[1]),	
+						y=Extent(bounds[2], bounds[3]),	
+						z=Extent(bounds[4], bounds[5]))
 
 	def createEdofMat(self):
 		self.edofMat = np.zeros((self.num_elems, 24), dtype = int)

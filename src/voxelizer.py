@@ -25,7 +25,6 @@ class Voxelizer:
         Lx = bounds[1] - bounds[0]
         Ly = bounds[3] - bounds[2]
         Lz = bounds[5] - bounds[4]
-        volume = self.stlMesh.volume
         alpha = (nVoxelsDesired/(Lx*Ly*Lz))**(1/3)
         vox_nels = [0, 0, 0]
         vox_nels[0] = max(round(alpha*Lx), self.minVoxelsPerAxis)
@@ -131,7 +130,7 @@ if __name__ == "__main__":
         exit()
 
     vox = Voxelizer()
-    vox.create_from_stl(stl_file, nVoxelsDesired=500000)
+    vox.create_from_stl(stl_file, nVoxelsDesired=10000)
 
     # Visualize the voxel grid
     vox.plot()

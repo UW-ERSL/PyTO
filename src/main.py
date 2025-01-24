@@ -66,18 +66,17 @@ def run_topopt(fe_solver: fea.StructFEA,
 
 	if optimizationMethod == topopt.Optimizers.MMA:
 		u, history = topopt.topopt_mma(fe_solver = fe_solver,
-																	maxMMAIterations = cfg_opt['num_iter'],
-																	volfrac = volfrac
-																	)
+										maxMMAIterations = cfg_opt['num_iter'],
+										volfrac = volfrac
+										)
 		J = fe_solver.bc.force.T @ u
 		title = f'MMA: vol: {volfrac}, J: {J:.2e}'
 
 	elif optimizationMethod == topopt.Optimizers.OC:
-		u, history = topopt.topopt_optimality_criteria(
-																					fe_solver = fe_solver,
-																					maxIterations= cfg_opt['num_iter'],
-																					volfrac = volfrac
-																					)
+		u, history = topopt.topopt_optimality_criteria(fe_solver = fe_solver,
+														maxIterations= cfg_opt['num_iter'],
+														volfrac = volfrac
+														)
 		J = fe_solver.bc.force.T @ u
 		title = f'OC: vol: {volfrac}, J: {J:.2e}'
 
@@ -97,7 +96,8 @@ def run_topopt(fe_solver: fea.StructFEA,
 		plt.show()
 
 # %%
-mesh, mat_prop, bc = examplesStructural.createCantileverProblem(nDOFDesired=20000,L=[2, 1, 1])	
+#mesh, mat_prop, bc = examplesStructural.createCantileverProblem(nDOFDesired=20000,L=[2, 1, 1])	
+mesh, mat_prop, bc = examplesStructural.createLBracketProblem(nDOFDesired=20000)	
 
 # %%
 num_deflation_groups =  cfg_defl['num_groups']
@@ -109,7 +109,7 @@ dsolver.W = dsolver.W[bc.free_dofs, :]
 fe_solver = fea.StructFEA(mesh = mesh,
                           mat_prop = mat_prop,
                           bc = bc,
-                          solver = lin_solv.Solvers.CG,
+                          solver = lin_solv.Solvers.DPCG,
                           dsolver = dsolver,
                           rtol = 1e-6,
                           verbose = False)

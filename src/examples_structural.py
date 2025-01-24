@@ -57,66 +57,46 @@ def createCantileverProblem(nDOFDesired: int = 10000, L: float = [1.0, 1.0, 1.0]
 	force[load_dofs] = load_per_dof
 
 	bc = bound_cond.BC(force = force,
-										fixed_dofs = fixed_dofs,
-										dirichlet_values = dirichlet_values) 
+						fixed_dofs = fixed_dofs,
+						dirichlet_values = dirichlet_values) 
 
 	mat_prop = mat_lib.StructuralMaterial(youngs_modulus=cfg_mat['youngs_modulus'],
-																				poissons_ratio=cfg_mat['poissons_ratio'])
+											poissons_ratio=cfg_mat['poissons_ratio'])
 	return mesh, mat_prop, bc
 
 # %%
-# %%
-def createLBracketProblem():
+def createLBracketProblem(nDOFDesired: int = 10000):
 	# Read the STL model, create a mesh of desired size, and a structural problem is posed on it.
-	stl_file = os.path.join(script_dir, '../TOExamples/FilletedBeam/FilletedBeam.STL')
+	stl_file = os.path.join(script_dir, '../TOExamples/LBracket/LBracket.STL')
+	nElemsDesired = nDOFDesired/3	# estimate
 	mesh = mesher.Mesher()
-	mesh.read_pareto_mesh("../meshFiles/LBracket.msh")
+	
+	mesh.createMeshFromSTLFile(stl_file, nElemsDesired=nElemsDesired)
 	node_array = mesh.node_array
-	fixed_nodes = np.where(node_array[:, 3] == 1)[0]	 # use node label 1
+	node_pts = node_array[:, :3]*mesh.elem_size +mesh.origin
+	
+	fixed_nodes = np.where(node_pts[:, 1] == np.max(node_pts[:, 1]) )[0] # y = yMax plane
 	fixed_dofs = np.array([3 * fixed_nodes,
-															 3 * fixed_nodes + 1,
-															 3 * fixed_nodes + 2]).flatten().astype(int)
-	dirichlet_values = np.zeros_like(fixed_dofs, dtype = float)
+							3 * fixed_nodes + 1,
+							3 * fixed_nodes + 2]).flatten().astype(int)
+	dirichlet_values = 0*np.ones_like(fixed_dofs, dtype = float)
+	dirichlet_values[0:3] = 0
+	mesh.node_array[fixed_nodes, 3] = 1 # for plotting
 
-	load_nodes = np.where(node_array[:, 3] == 2)[0]
-	load_dofs = 3 * load_nodes + 1  # y direction
+	load_nodes = np.where((node_pts[:, 1] > 0.039) & (node_pts[:, 0] > 0.09))[0] # hard coded	
+	load_dofs = 3 * load_nodes + 1  # z direction
+	mesh.node_array[load_nodes, 3] = 2 # for plotting
+	totalLoad = 1000
 
 	force = np.zeros(3*mesh.num_nodes)
-	force[load_dofs] = -10.
+	force[load_dofs] = -totalLoad/len(load_nodes)
 
-	bc = bound_cond.BC(force = force,
-										fixed_dofs = fixed_dofs,
-										dirichlet_values = dirichlet_values)
+	bc = bound_cond.BC(force = force,fixed_dofs = fixed_dofs,dirichlet_values = dirichlet_values) 
 
-	mat_prop = mat_lib.StructuralMaterial(youngs_modulus=cfg_mat['youngs_modulus'],
-																				poissons_ratio=cfg_mat['poissons_ratio'])
+	mat_prop = mat_lib.StructuralMaterial(youngs_modulus=2.1e5,
+										poissons_ratio=0.3)
 	return mesh, mat_prop, bc
-
-
-# def createLBracketProblem():
-# 	# This is an example where an existing mesh is read, and a structural problem is posed on it.
-# 	mesh = mesher.Mesher()
-# 	mesh.read_pareto_mesh("../meshFiles/LBracket.msh")
-# 	node_array = mesh.node_array
-# 	fixed_nodes = np.where(node_array[:, 3] == 1)[0]	 # use node label 1
-# 	fixed_dofs = np.array([3 * fixed_nodes,
-# 															 3 * fixed_nodes + 1,
-# 															 3 * fixed_nodes + 2]).flatten().astype(int)
-# 	dirichlet_values = np.zeros_like(fixed_dofs, dtype = float)
-
-# 	load_nodes = np.where(node_array[:, 3] == 2)[0]
-# 	load_dofs = 3 * load_nodes + 1  # y direction
-
-# 	force = np.zeros(3*mesh.num_nodes)
-# 	force[load_dofs] = -10.
-
-# 	bc = bound_cond.BC(force = force,
-# 										fixed_dofs = fixed_dofs,
-# 										dirichlet_values = dirichlet_values)
-
-# 	mat_prop = mat_lib.StructuralMaterial(youngs_modulus=cfg_mat['youngs_modulus'],
-# 																				poissons_ratio=cfg_mat['poissons_ratio'])
-# 	return mesh, mat_prop, bc
+        
 
 # %%
 def createAlcoaProblem():
@@ -127,8 +107,8 @@ def createAlcoaProblem():
 
 	fixed_nodes = np.where(node_array[:, 3] == 1)[0]
 	fixed_dofs = np.array([3 * fixed_nodes,
-															 3 * fixed_nodes + 1,
-															 3 * fixed_nodes + 2]).flatten().astype(int)
+							3 * fixed_nodes + 1,
+							 3 * fixed_nodes + 2]).flatten().astype(int)
 	dirichlet_values = np.zeros_like(fixed_dofs, dtype = float)
 
 	load_nodes = np.where(node_array[:, 3] == 2)[0]
@@ -137,11 +117,11 @@ def createAlcoaProblem():
 	force[load_dofs] = -1000.
 
 	bc = bound_cond.BC(force = force,
-										fixed_dofs = fixed_dofs,
-										dirichlet_values = dirichlet_values)
+						fixed_dofs = fixed_dofs,
+						dirichlet_values = dirichlet_values)
 
 	mat_prop = mat_lib.StructuralMaterial(youngs_modulus=cfg_mat['youngs_modulus'],
-																				poissons_ratio=cfg_mat['poissons_ratio'])
+										poissons_ratio=cfg_mat['poissons_ratio'])
 	return mesh, mat_prop, bc
 
 # %%
@@ -153,8 +133,8 @@ def createFilletedBeamProblem(nElemsDesired=50000):
 	node_array = mesh.node_array
 	fixed_nodes = np.where(node_array[:, 0] == 0)[0] # x = 0 plane
 	fixed_dofs = np.array([3 * fixed_nodes,
-											   3 * fixed_nodes + 1,
-											   3 * fixed_nodes + 2]).flatten().astype(int)
+							3 * fixed_nodes + 1,
+							3 * fixed_nodes + 2]).flatten().astype(int)
 	dirichlet_values = 0*np.ones_like(fixed_dofs, dtype = float)
 	dirichlet_values[0:3] = 0
 
