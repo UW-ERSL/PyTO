@@ -52,7 +52,7 @@ def run_fea(fe_solver: fea.StructFEA,
 		print('Max displacement: ', deltaMax)
 		print('-----------------------------')
 	if plot:
-		plots.plotMesh(fe_solver.mesh, title=f'Cantilever; dof = {nDOF}')
+		plots.plotMesh(fe_solver.mesh, fe_solver.bc, title=f'Cantilever; dof = {nDOF}')
 		plots.plotMesh(fe_solver.mesh, fe_solver.bc, u,
 									title=f'Max deformation: {deltaMax:.3e}')
 
@@ -83,8 +83,7 @@ def run_topopt(fe_solver: fea.StructFEA,
 
 	elif optimizationMethod == topopt.Optimizers.PARETO:
 		u, history = topopt.topopt_pareto(fe_solver = fe_solver,
-												 							desiredVolFrac =  volfrac
-												 							)
+										desiredVolFrac =  volfrac)
 		J = fe_solver.bc.force.T @ u
 		title = f'Pareto: vol: {volfrac}, J: {J:.3e}'
 
@@ -98,8 +97,7 @@ def run_topopt(fe_solver: fea.StructFEA,
 		plt.show()
 
 # %%
-mesh, mat_prop, bc = examplesStructural.createFilletedBeamProblem( nElemsDesired= 70000)
-#mesh, mat_prop, bc = examplesStructural.createCantileverProblem(nelz=30)
+mesh, mat_prop, bc = examplesStructural.createCantileverProblem(nDOFDesired=20000,L=[2, 1, 1])	
 
 # %%
 num_deflation_groups =  cfg_defl['num_groups']
@@ -120,5 +118,4 @@ fe_solver = fea.StructFEA(mesh = mesh,
 run_fea(fe_solver = fe_solver, plot = True)
 
 # %%
-# run_topopt(fe_solver, volfrac=0.5, optimizationMethod = topopt.Optimizers.PARETO)
-
+run_topopt(fe_solver, volfrac=0.5, optimizationMethod = topopt.Optimizers.PARETO)
