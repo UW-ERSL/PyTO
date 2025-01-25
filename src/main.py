@@ -1,4 +1,5 @@
 # %%
+import itertools
 import yaml # pip install pyyaml
 import time
 
@@ -18,7 +19,7 @@ import plots
 import examples_structural as examplesStructural
 
 jax.config.update("jax_enable_x64", True)
-
+dsolver = deflation.DeflationSolver()
 # %%
 # Load settings from YAML file
 script_dir = os.path.dirname(os.path.abspath(__file__))
@@ -95,11 +96,78 @@ def run_topopt(fe_solver: fea.StructFEA,
 		plt.ylabel(key)
 		plt.show()
 
-# %%
-#mesh, mat_prop, bc = examplesStructural.createCantileverProblem(nDOFDesired=20000,L=[2, 1, 1])	
-mesh, mat_prop, bc = examplesStructural.createLBracketProblem(nDOFDesired=20000)	
-#mesh, mat_prop, bc = examplesStructural.createFilletedBeamProblem(nDOFDesired=20000)
+def compareSolvers(linearSolvers = ['spsolve','pyamg','pardiso','dpcg'],
+								dofs = [1000,5000,10000,50000,100000,250000,500000,10**6]):
+	dofList = []
+	solverTime = dict(zip(linearSolvers, [None]*len(linearSolvers)))
+	for linearSolver in linearSolvers:
+		solverTime[linearSolver] = []
 
+	for dofDesired in dofs:
+		mesh, mat_prop, bc = examplesStructural.createCantileverProblem(nDOFDesired=dofDesired,L=[2, 1, 1])
+		title = 'Cantilever: Time for single FEA'
+		#mesh, mat_prop, bc = examplesStructural.createFilletedBeamProblem(nDOFDesired=dofDesired)
+		print('-----------------------------')
+		print("nDof: ",dofDesired)
+		dofList.append(dofDesired)
+		for linearSolver in linearSolvers:
+			if len(solverTime[linearSolver]) > 0 and solverTime[linearSolver][-1] > 100: # skip if expected time is too long
+				continue
+			
+			startTime = time.time()
+			if (linearSolver == 'spsolve'):
+				solver = lin_solv.Solvers.SPSOLVE
+			elif (linearSolver == 'pyamg'):
+				solver = lin_solv.Solvers.PYAMG
+			elif (linearSolver == 'pardiso'):
+				solver = lin_solv.Solvers.PARDISO
+			elif (linearSolver == 'dpcg'):
+				solver = lin_solv.Solvers.DPCG
+				nGroups =  min(1000,max(10,round(3*mesh.num_nodes/1000)));
+				dsolver.create_deflation_groups(mesh, nGroups)
+				dsolver.create_delfation_matrix(mesh)
+				dsolver.W = dsolver.W[bc.free_dofs, :]
+
+			fe_solver = fea.StructFEA(mesh = mesh,
+									mat_prop = mat_prop,
+									bc = bc,
+									solver = solver,
+									dsolver = dsolver,
+									rtol = 1e-8,
+									verbose = False)
+			run_fea(fe_solver = fe_solver, plot = False, verbose = False)
+			totalTime = time.time() - startTime
+			print('Solver: ', linearSolver, ' time: ', totalTime)
+			solverTime[linearSolver].append(totalTime)
+	
+	
+	marker = itertools.cycle(('dk', '+b', 'og', '*r','xm')) 
+	colors = itertools.cycle(('k', 'b', 'g', 'r','m')) 
+	for linearSolver in linearSolvers:
+		timing = solverTime[linearSolver]
+		plt.loglog(dofList[0:len(timing)],timing,next(marker))
+	plt.legend(linearSolvers,loc = 'upper left')
+	
+	for linearSolver in linearSolvers:
+		timing = solverTime[linearSolver]
+		plt.loglog(dofList[0:len(timing)],timing,next(colors))
+
+	plt.title(title)
+	plt.xlabel('DOF')
+	plt.ylabel('Time (secs)')
+	plt.grid(True)
+	plt.show()
+
+compareSolvers()
+
+
+
+exit()
+
+# %%
+mesh, mat_prop, bc = examplesStructural.createCantileverProblem(nDOFDesired=20000,L=[2, 1, 1])	
+#mesh, mat_prop, bc = examplesStructural.createLBracketProblem(nDOFDesired=20000)	
+#mesh, mat_prop, bc = examplesStructural.createFilletedBeamProblem(nDOFDesired=20000)
 # %%
 num_deflation_groups =  cfg_defl['num_groups']
 dsolver = deflation.DeflationSolver()
@@ -119,4 +187,5 @@ fe_solver = fea.StructFEA(mesh = mesh,
 run_fea(fe_solver = fe_solver, plot = True)
 
 # %%
-run_topopt(fe_solver, volfrac=0.5, optimizationMethod = topopt.Optimizers.PARETO)
+#run_topopt(fe_solver, volfrac=0.5, optimizationMethod = topopt.Optimizers.MMA)
+

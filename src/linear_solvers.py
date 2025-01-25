@@ -114,7 +114,7 @@ def solve(A: spy_sprs.coo_matrix,
 
     elif solver == Solvers.CG:
       M = _jacobi_preconditioner(A)
-      #M = _ilu_preconditioner(A)
+      #M = _ilu_preconditioner(A) # ILU preconditioner takes too long
       x, _ = spy_linalg.cg(A, b, M = M, rtol = kwargs['rtol'])
 
     elif solver == Solvers.PYAMG:
@@ -126,7 +126,6 @@ def solve(A: spy_sprs.coo_matrix,
     elif solver == Solvers.DPCG:
       dsolver = kwargs['dsolver']
       M = _jacobi_preconditioner(A)
-      # M = _ilu_preconditioner(A)
       x = dsolver.deflatedPCG(A,
                               b,
                               W = dsolver.W,
