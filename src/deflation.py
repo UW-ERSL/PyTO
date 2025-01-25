@@ -13,8 +13,9 @@ import numpy as np
 import matplotlib.pyplot as plt
 import scipy.sparse as spy_sprs
 import scipy.linalg as spy_linalg
-
-
+import pypardiso
+from scipy.sparse import csr_matrix
+from scipy.sparse.linalg import factorized
 _Array: TypeAlias = Union[spy_sprs.coo_matrix,
 													spy_sprs.csr_matrix,
 													spy_sprs.csc_matrix,
@@ -286,8 +287,10 @@ class DeflationSolver:
 		# Pre-compute matrices
 		KW = K @ W
 		WKW = (WT @ KW).toarray()
-		WKW = (WKW + WKW.T) / 2
-		L = spy_linalg.cho_factor(WKW, lower=True)
+		WKW = csr_matrix((WKW + WKW.T) / 2)
+		#WKWFactorized = pypardiso.factorized(WKW)
+		
+		#L = spy_linalg.cho_factor(WKW, lower=True)
 
 		# Pre-allocate vectors
 		x = np.zeros(n)
@@ -297,7 +300,8 @@ class DeflationSolver:
 		Kp = np.zeros(n)
 
 		# Initial solution
-		mu = spy_linalg.cho_solve(L, WT @ f)
+		#mu = spy_linalg.cho_solve(L, WT @ f)
+		mu = pypardiso.spsolve(WKW,WT @ f)
 		x = W @ mu
 
 		# Initial residual
@@ -306,7 +310,8 @@ class DeflationSolver:
 
 		# Initial search direction
 		Kz = K @ z
-		mu = spy_linalg.cho_solve(L, WT @ Kz)
+		#mu = spy_linalg.cho_solve(L, WT @ Kz)
+		mu = pypardiso.spsolve(WKW,WT @ Kz)
 		p = z - W @ mu
 
 		# Initial residual norm
@@ -331,7 +336,8 @@ class DeflationSolver:
 				
 			beta = rz_new / rz
 			Kz = K @ z
-			mu = spy_linalg.cho_solve(L, WT @ Kz)
+			#mu = spy_linalg.cho_solve(L, WT @ Kz)
+			mu = pypardiso.spsolve(WKW,WT @ Kz)
 			p = z + beta * p - W @ mu
 			
 			rz = rz_new

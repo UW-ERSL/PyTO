@@ -97,23 +97,41 @@ def run_topopt(fe_solver: fea.StructFEA,
 		plt.show()
 
 def compareSolvers(linearSolvers = ['spsolve','pyamg','pardiso','dpcg'],
-								dofs = [1000,5000,10000,50000,100000,250000,500000,10**6]):
+								dofs = [1000,5000,10000,50000,100000,250000,500000,10**6,2*10**6]):
+	
 	dofList = []
 	solverTime = dict(zip(linearSolvers, [None]*len(linearSolvers)))
 	for linearSolver in linearSolvers:
 		solverTime[linearSolver] = []
 
+	timeLimit = 60 # seconds	
+	example = 1
 	for dofDesired in dofs:
-		mesh, mat_prop, bc = examplesStructural.createCantileverProblem(nDOFDesired=dofDesired,L=[2, 1, 1])
-		title = 'Cantilever: Time for single FEA'
-		#mesh, mat_prop, bc = examplesStructural.createFilletedBeamProblem(nDOFDesired=dofDesired)
 		print('-----------------------------')
-		print("nDof: ",dofDesired)
-		dofList.append(dofDesired)
+		print("dofDesired: ",dofDesired)
+		if (example == 1):
+			mesh, mat_prop, bc = examplesStructural.createCantileverProblem(nDOFDesired=dofDesired,L=[2, 1, 1])
+			title = 'Cantilever: Time for single FEA'
+		elif (example == 2):	
+			mesh, mat_prop, bc = examplesStructural.createLBracketProblem(nDOFDesired=dofDesired)
+			title = 'LBracket: Time for single FEA'
+		else:
+			mesh, mat_prop, bc = examplesStructural.createFilletedBeamProblem(nDOFDesired=dofDesired)
+			title = 'FilletedBeam: Time for single FEA'	
+		
+		
+		dofActual = 3*mesh.num_nodes
+		print("dofActual: ",dofActual)
+		dofList.append(dofActual)
+		
 		for linearSolver in linearSolvers:
-			if len(solverTime[linearSolver]) > 0 and solverTime[linearSolver][-1] > 100: # skip if expected time is too long
+			# assuming increasing time with increasing DOF, skip if previous time was too long
+			if len(solverTime[linearSolver]) > 0 and solverTime[linearSolver][-1] > timeLimit: 
+				print('Solver: ', linearSolver, ' -')
 				continue
-			
+			if (linearSolver == 'pardiso')  and (dofActual > 500000): # skip Pardiso for large problems, eats up memory, stalls computer
+				print('Solver: ', linearSolver, ' -')
+				continue
 			startTime = time.time()
 			if (linearSolver == 'spsolve'):
 				solver = lin_solv.Solvers.SPSOLVE
@@ -123,7 +141,7 @@ def compareSolvers(linearSolvers = ['spsolve','pyamg','pardiso','dpcg'],
 				solver = lin_solv.Solvers.PARDISO
 			elif (linearSolver == 'dpcg'):
 				solver = lin_solv.Solvers.DPCG
-				nGroups =  min(1000,max(10,round(3*mesh.num_nodes/1000)));
+				nGroups =  min(2000,max(5,round(3*mesh.num_nodes/500)));
 				dsolver.create_deflation_groups(mesh, nGroups)
 				dsolver.create_delfation_matrix(mesh)
 				dsolver.W = dsolver.W[bc.free_dofs, :]
@@ -137,9 +155,10 @@ def compareSolvers(linearSolvers = ['spsolve','pyamg','pardiso','dpcg'],
 									verbose = False)
 			run_fea(fe_solver = fe_solver, plot = False, verbose = False)
 			totalTime = time.time() - startTime
-			print('Solver: ', linearSolver, ' time: ', totalTime)
+			print('Solver: ', linearSolver, ' time: {:.2f}'.format(totalTime))
 			solverTime[linearSolver].append(totalTime)
-	
+		
+		
 	
 	marker = itertools.cycle(('dk', '+b', 'og', '*r','xm')) 
 	colors = itertools.cycle(('k', 'b', 'g', 'r','m')) 
@@ -158,7 +177,8 @@ def compareSolvers(linearSolvers = ['spsolve','pyamg','pardiso','dpcg'],
 	plt.grid(True)
 	plt.show()
 
-compareSolvers()
+compareSolvers(linearSolvers = ['dpcg'],
+								dofs = [1000,5000,10000,50000,100000,250000,500000,10**6,2*10**6,3*10**6,5*10**6])
 
 
 

@@ -190,8 +190,7 @@ def topopt_optimality_criteria(
 
 	for iter in range(maxIterations):
 		penal_dens = xPhys ** penal
-		(obj, u), grad_obj = jax.value_and_grad(_compliance_objective, has_aux= True)(
-																													xPhys, fe_solver, penal)
+		(obj, u), grad_obj = jax.value_and_grad(_compliance_objective, has_aux= True)(xPhys, fe_solver, penal)
 		u = fe_solver.solve(penal_dens)		
 		grad_obj = (H * grad_obj) / Hs
 
@@ -207,15 +206,7 @@ def topopt_optimality_criteria(
 			lmid = 0.5 * (l2 + l1)
 			b = -grad_obj / lmid	
 			# OC update with damping and bounds
-			xnew = jnp.maximum(xmin,
-										 		jnp.maximum(x - move,
-																	jnp.minimum(xmax, 
-							  														jnp.minimum(x + move,
-																 										 	 x * np.sqrt(b)
-																											)
-																						)
-																	)
-												)
+			xnew = jnp.maximum(xmin,jnp.maximum(x - move,jnp.minimum(xmax, jnp.minimum(x + move, x * np.sqrt(b)))))
 
 			if jnp.sum(xnew) - volfrac * num_elems > 0:
 				l1 = lmid

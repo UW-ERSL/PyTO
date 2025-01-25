@@ -134,7 +134,7 @@ def solve(A: spy_sprs.coo_matrix,
 
     elif solver == Solvers.PARDISO:
       x = pypardiso.spsolve(A, np.array(b))
-
+    
     else:
       raise ValueError('Unknown solver type')
 
