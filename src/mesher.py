@@ -199,15 +199,19 @@ class Mesher:
 		Lx = bounds[1] - bounds[0]
 		Ly = bounds[3] - bounds[2]
 		Lz = bounds[5] - bounds[4]
-		volume = self.stlMesh.volume
-		alpha = (nElemsDesired/(Lx*Ly*Lz))**(1/3)
-		
+		stlVolume = self.stlMesh.volume
+		bBoxVolume = Lx*Ly*Lz
+		# More voxels are needed inside the bounding box than the desired number of elements
+		# Factor of 0.9 is arbitrary
+		nElemsDesiredInsideBox = 0.9*nElemsDesired*(bBoxVolume/stlVolume)
+		# assume nx = alpha*Lx, ny = alpha*Ly, nz = alpha*Lz
+		alpha = (nElemsDesiredInsideBox/(Lx*Ly*Lz))**(1/3)
 		nx = max(round(alpha*Lx), self.minVoxelsPerAxis)
 		ny = max(round(alpha*Ly), self.minVoxelsPerAxis)
 		nz = max(round(alpha*Lz), self.minVoxelsPerAxis)
 		self.grid = [nx, ny, nz]
 		self.elem_size= [Lx/nx, Ly/ny, Lz/nz]
-		
+		print(f"Mesher: Grid size: {nx} x {ny} x {nz}")
 		# Voxels near the boundary are being removed. So scale the mesh slightly
 		scale = 1.001
 		# Scale the mesh  about its center
@@ -232,10 +236,11 @@ class Mesher:
 		self.elemPartIndex = np.zeros(self.num_elems)
 		self.elem_centers = np.zeros((self.num_elems, 3))
 		node_array = self.node_array[:, :3]
+
 		for elem in range(self.num_elems):
 			self.elem_centers[elem, :] = np.array(np.sum(node_array[self.elemArray[elem]],
 																						axis = 0)/8)
-				
+
 		self.elemPseudoDensity = np.ones(self.num_elems)
 		# the elemNeighborsArray is needed for creating the filter
 		self.elemNeighborsArray = np.zeros((self.num_elems, 27), dtype = np.int32)
@@ -248,20 +253,19 @@ class Mesher:
 				node_to_elems[node_idx].append(elem_idx)
 
 		# For each element, find all neighboring elements by looking at shared nodes
+
 		for elem in range(self.num_elems):
 			neighbors = set()
 			# Get all nodes of this element
 			for node in self.elemArray[elem]:
 				# Add all elements connected to this node
 				neighbors.update(node_to_elems[node])
-			# Convert to list and sort by distance from center
+			# Convert to list 
 			neighbor_list = list(neighbors)
-			neighbor_list.sort(key=lambda x: np.linalg.norm(
-				self.elem_centers[x] - self.elem_centers[elem]))
 			# Take first 27 neighbors (or pad with -1 if fewer exist)
 			self.elemNeighborsArray[elem] = (neighbor_list[:27] + [-1] * 27)[:27]
-
 		self.createEdofMat()
+
 		self.bbox = BoundingBox(
 						x=Extent(bounds[0], bounds[1]),	
 						y=Extent(bounds[2], bounds[3]),	
@@ -302,3 +306,16 @@ class Mesher:
 
 	def setPseudoDensity(self, rho):
 		self.elemPseudoDensity = rho.copy()
+
+if __name__ == "__main__":
+    import os
+    import plots
+    import time
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    stlFileName = os.path.join(script_dir, '../TOExamples/Knuckle/Knuckle.STL')
+    mesh = Mesher()
+    startTime = time.time()
+    mesh.createMeshFromSTLFile(stlFileName,nElemsDesired=100000)
+    endTime = time.time()
+    plots.plotMesh(mesh,  title=f'Knuckle; nElems = {mesh.num_nodes} in {endTime-startTime:.2f} s')
+  
