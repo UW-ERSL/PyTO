@@ -97,16 +97,19 @@ def run_topopt(fe_solver: fea.StructFEA,
 		plt.show()
 
 def compareSolvers(linearSolvers = ['spsolve','pyamg','pardiso','dpcg'],
-								dofs = [1000,5000,10000,50000,100000,250000,500000,10**6,2*10**6,3*10**6,5*10**6]):
-	
+								dofs = [1000,5000,10000,50000,100000,250000,500000,600000,750000,10**6,1.5*10**6,2*10**6,3*10**6,5*10**6]):#
+	#dofs = [1000,5000,10000,50000,100000,250000,500000,600000,750000,10**6,1.5*10**6,2*10**6,3*10**6,5*10**6]
 	dofList = []
 	solverTime = dict(zip(linearSolvers, [None]*len(linearSolvers)))
 	for linearSolver in linearSolvers:
 		solverTime[linearSolver] = []
 
 	timeLimit = 60 # seconds	
-	example = 1
+	example = 2
+	continueMeshing = True
 	for dofDesired in dofs:
+		if (not continueMeshing):
+			break
 		print('-----------------------------')
 		print("dofDesired: ",dofDesired)
 		if (example == 1):
@@ -115,23 +118,26 @@ def compareSolvers(linearSolvers = ['spsolve','pyamg','pardiso','dpcg'],
 		elif (example == 2):	
 			mesh, mat_prop, bc = examplesStructural.createLBracketProblem(nDOFDesired=dofDesired)
 			title = 'LBracket: Time for single FEA'
+		elif (example == 3):	
+			mesh, mat_prop, bc = examplesStructural.createCompliantMechanismProblem(nDOFDesired=dofDesired)
+			title = 'Compliant Mechanism: Time for single FEA'
 		else:
 			mesh, mat_prop, bc = examplesStructural.createFilletedBeamProblem(nDOFDesired=dofDesired)
 			title = 'FilletedBeam: Time for single FEA'	
-		
-		
+	
 		dofActual = 3*mesh.num_nodes
 		print("dofActual: ",dofActual)
 		dofList.append(dofActual)
-		
+		continueMeshing = False
 		for linearSolver in linearSolvers:
 			# assuming increasing time with increasing DOF, skip if previous time was too long
 			if len(solverTime[linearSolver]) > 0 and solverTime[linearSolver][-1] > timeLimit: 
 				print('Solver: ', linearSolver, ' -')
 				continue
-			if (linearSolver == 'pardiso')  and (dofActual > 500000): # skip Pardiso for large problems, eats up memory, stalls computer
-				print('Solver: ', linearSolver, ' -')
-				continue
+			# if (linearSolver == 'pardiso')  and (dofActual > 3*10**6): # skip Pardiso for large problems, eats up memory, stalls computer
+			# 	print('Solver: ', linearSolver, ' -')
+			# 	continue
+			continueMeshing = True
 			startTime = time.time()
 			if (linearSolver == 'spsolve'):
 				solver = lin_solv.Solvers.SPSOLVE
@@ -157,10 +163,9 @@ def compareSolvers(linearSolvers = ['spsolve','pyamg','pardiso','dpcg'],
 			totalTime = time.time() - startTime
 			print('Solver: ', linearSolver, ' time: {:.2f}'.format(totalTime))
 			solverTime[linearSolver].append(totalTime)
-		
-		
+
 	
-	marker = itertools.cycle(('dk', '+b', 'og', '*r','xm')) 
+	marker = itertools.cycle(('dk', '+b', '*g', 'or','xm')) 
 	colors = itertools.cycle(('k', 'b', 'g', 'r','m')) 
 	for linearSolver in linearSolvers:
 		timing = solverTime[linearSolver]
@@ -177,11 +182,12 @@ def compareSolvers(linearSolvers = ['spsolve','pyamg','pardiso','dpcg'],
 	plt.grid(True)
 	plt.show()
 
-#compareSolvers(); exit()
+compareSolvers(); exit()
 
 # %%
 #mesh, mat_prop, bc = examplesStructural.createCantileverProblem(nDOFDesired=20000,L=[2, 1, 1])	
-mesh, mat_prop, bc = examplesStructural.createLBracketProblem(nDOFDesired=20000)	
+#mesh, mat_prop, bc = examplesStructural.createLBracketProblem(nDOFDesired=20000)	
+mesh, mat_prop, bc = examplesStructural.createCompliantMechanismProblem(nDOFDesired=20000)	
 #mesh, mat_prop, bc = examplesStructural.createFilletedBeamProblem(nDOFDesired=20000)
 # %%
 num_deflation_groups =  cfg_defl['num_groups']

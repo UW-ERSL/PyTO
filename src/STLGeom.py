@@ -3,7 +3,7 @@ from stl import mesh
 from collections import defaultdict
 from queue import Queue
 import numpy as np
-import os
+import pyvista as pv
 
 class STLGeom:
     TOL = 1e-9
@@ -100,6 +100,34 @@ class STLGeom:
 
         return cumulative_area
     
+    def plotGeometry(self, show_edges=False, show_axes=True, show_bounding_box=True):
+         # Create a PyVista mesh from the STL data
+        vertices = stl_geom.mesh.vectors.reshape(-1, 3)
+        faces = np.arange(len(vertices)).reshape(-1, 3)
+        faces = np.column_stack((np.full(len(faces), 3), faces))
+        mesh = pv.PolyData(vertices, faces)
+        plotter = pv.Plotter()
+        plotter.add_mesh(mesh, show_edges=show_edges)
+        if show_axes:
+            plotter.add_axes()
+        if show_bounding_box:
+            plotter.add_bounding_box()
+            # Get bounding box
+            bounds = mesh.bounds
+            lengths = [bounds[1]-bounds[0], bounds[3]-bounds[2], bounds[5]-bounds[4]]
+
+            # Add text labels for dimensions
+            plotter.add_point_labels([[bounds[1], bounds[2], bounds[4]], 
+                                    [bounds[0], bounds[3], bounds[4]], 
+                                    [bounds[0], bounds[2], bounds[5]]], 
+                                    [f'X: {lengths[0]:.2f}', 
+                                    f'Y: {lengths[1]:.2f}', 
+                                    f'Z: {lengths[2]:.2f}'])
+            # Add text label for lowest left corner coordinates
+            plotter.add_point_labels([[bounds[0], bounds[2], bounds[4]]],
+                                    [f'({bounds[0]:.2f}, {bounds[2]:.2f}, {bounds[4]:.2f})'])
+        plotter.show()
+
     def find_points_single_triangle_distances(self, points, triangle_id):
         """
         Vectorized calculation of minimum distances between multiple points and a single triangle.
@@ -203,9 +231,16 @@ class STLGeom:
         return min(edge_distances)
 
 if __name__ == "__main__":
+    import os
+    import plots
+    import pyvista as pv
     script_dir = os.path.dirname(os.path.abspath(__file__))
     file_path = os.path.join(script_dir, '../TOExamples/AlcoaGrabCAD/AlcoaGrabCAD.STL')
+    file_path =  os.path.join(script_dir, '../TOExamples/CompliantMechanism/CompliantMechanism.STL')
     stl_geom = STLGeom(file_path)
+    stl_geom.plotGeometry()
+    # Create a plotter and add the mesh
+    
     # Generate random 3D points
     random_points = np.random.uniform(-1, 1, size=(10, 3))
     triangle_id = 13    

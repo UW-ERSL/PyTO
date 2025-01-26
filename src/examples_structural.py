@@ -5,8 +5,6 @@ import bound_cond
 import mat_lib
 import os
 import yaml 
-import voxelizer as vx
-from tkinter import filedialog
 
 # Load settings from YAML file
 script_dir = os.path.dirname(os.path.abspath(__file__))
@@ -116,7 +114,57 @@ def createLBracketProblem(nDOFDesired: int = 10000):
 										poissons_ratio=0.3)
 	return mesh, mat_prop, bc
         
+def createCompliantMechanismProblem(nDOFDesired: int = 10000):
+	"""Creates a structural problem setup for an Compliant Mechanism 
+	This function sets up a finite element mesh and boundary conditions for an Compliant Mechanism
+	structural problem from an STL file. The mesh is created with approximately the desired
+	number of degrees of freedom. 
+	Args:
+		nDOFDesired (int, optional): Desired number of degrees of freedom for the mesh. 
+									Defaults to 10000.
+	Returns:
+		tuple: A tuple containing:
+			- mesh (Mesher): Mesh object with the L-bracket discretization
+			- mat_prop (StructuralMaterial): Material properties object with structural parameters
+			- bc (BC): Boundary conditions object with forces and constraints
+	Notes:
+		- The mesh is created from an STL file located at '../TOExamples/LBracket/LBracket.STL'
+		- Fixed boundary conditions are applied at y = yMax
+		- Load is applied in the -y direction on nodes where y > 0.039 and x > 0.09
+		- Total applied load is 1000 units distributed equally among loaded nodes
+		- Material properties are set to E = 2.1e5 and ν = 0.3
+	"""
+	# Read the STL model, create a mesh of desired size, and a structural problem is posed on it.
+	stl_file = os.path.join(script_dir, '../TOExamples/CompliantMechanism/CompliantMechanism.STL')
+	nElemsDesired = nDOFDesired/3	# estimate
+	mesh = mesher.Mesher()
+	
+	mesh.createMeshFromSTLFile(stl_file, nElemsDesired=nElemsDesired)
+	node_array = mesh.node_array
+	node_pts = node_array[:, :3]*mesh.elem_size + mesh.origin
+	
+	fixed_nodes = np.where((node_pts[:, 0] == np.min(node_pts[:, 0])) & (abs(node_pts[:, 1] - 55) > 20))[0] # the two end faces of the mechanism
+	fixed_dofs = np.array([3 * fixed_nodes,
+							3 * fixed_nodes + 1,
+							3 * fixed_nodes + 2]).flatten().astype(int)
+	dirichlet_values = 0*np.ones_like(fixed_dofs, dtype = float)
+	dirichlet_values[0:3] = 0
+	mesh.node_array[fixed_nodes, 3] = 1 # for plotting
 
+	load_nodes = np.where((node_pts[:, 0] == np.min(node_pts[:, 0])) & (abs(node_pts[:, 1] - 55) < 20))[0] # the middle face of the mechanism	
+	load_dofs = 3 * load_nodes  
+	mesh.node_array[load_nodes, 3] = 2 # for plotting
+	totalLoad = -1e6
+
+	force = np.zeros(3*mesh.num_nodes)
+	force[load_dofs] = -totalLoad/len(load_nodes)
+
+	bc = bound_cond.BC(force = force,fixed_dofs = fixed_dofs,dirichlet_values = dirichlet_values) 
+
+	mat_prop = mat_lib.StructuralMaterial(youngs_modulus=2.1e5,
+										poissons_ratio=0.3)
+	return mesh, mat_prop, bc
+        
 # %%
 def createAlcoaProblem():
 	# This is an example where an existing mesh is read, and a structural problem is posed on it.
@@ -177,4 +225,8 @@ def createFilletedBeamProblem(nDOFDesired=50000):
 										poissons_ratio=0.3)
 	return mesh, mat_prop, bc
         
-	
+if __name__ == "__main__":
+    import plots
+    mesh, mat_prop, bc = createCompliantMechanismProblem(nDOFDesired=10000)
+    plots.plotMesh(mesh, bc, title='Compliant Mechanism')
+   
