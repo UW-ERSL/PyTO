@@ -154,7 +154,7 @@ def createCompliantMechanismProblem(nDOFDesired: int = 10000):
 	load_nodes = np.where((node_pts[:, 0] == np.min(node_pts[:, 0])) & (abs(node_pts[:, 1] - 55) < 20))[0] # the middle face of the mechanism	
 	load_dofs = 3 * load_nodes  
 	mesh.node_array[load_nodes, 3] = 2 # for plotting
-	totalLoad = -1e6
+	totalLoad = 1e6
 
 	force = np.zeros(3*mesh.num_nodes)
 	force[load_dofs] = -totalLoad/len(load_nodes)

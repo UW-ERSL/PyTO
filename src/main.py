@@ -96,16 +96,16 @@ def run_topopt(fe_solver: fea.StructFEA,
 		plt.ylabel(key)
 		plt.show()
 
-def compareSolvers(linearSolvers = ['spsolve','pyamg','pardiso','dpcg'],
-								dofs = [1000,5000,10000,50000,100000,250000,500000,600000,750000,10**6,1.5*10**6,2*10**6,3*10**6,5*10**6]):#
-	#dofs = [1000,5000,10000,50000,100000,250000,500000,600000,750000,10**6,1.5*10**6,2*10**6,3*10**6,5*10**6]
+def compareSolvers(linearSolvers = ['spsolve','pyamg','pypardiso','pydpcg'],
+								dofs = [1000,5000,10000,25000,50000,100000,250000,500000,600000,750000,10**6,1.5*10**6,2*10**6,3*10**6,5*10**6]):#
+	
 	dofList = []
 	solverTime = dict(zip(linearSolvers, [None]*len(linearSolvers)))
 	for linearSolver in linearSolvers:
 		solverTime[linearSolver] = []
 
 	timeLimit = 60 # seconds	
-	example = 2
+	example = 4
 	continueMeshing = True
 	for dofDesired in dofs:
 		if (not continueMeshing):
@@ -115,10 +115,13 @@ def compareSolvers(linearSolvers = ['spsolve','pyamg','pardiso','dpcg'],
 		if (example == 1):
 			mesh, mat_prop, bc = examplesStructural.createCantileverProblem(nDOFDesired=dofDesired,L=[2, 1, 1])
 			title = 'Cantilever: Time for single FEA'
-		elif (example == 2):	
+		elif (example == 2):
+			mesh, mat_prop, bc = examplesStructural.createCantileverProblem(nDOFDesired=dofDesired,L=[20, 20, 1])
+			title = 'Plate: Time for single FEA'
+		elif (example == 3):	
 			mesh, mat_prop, bc = examplesStructural.createLBracketProblem(nDOFDesired=dofDesired)
 			title = 'LBracket: Time for single FEA'
-		elif (example == 3):	
+		elif (example == 4):	
 			mesh, mat_prop, bc = examplesStructural.createCompliantMechanismProblem(nDOFDesired=dofDesired)
 			title = 'Compliant Mechanism: Time for single FEA'
 		else:
@@ -134,18 +137,15 @@ def compareSolvers(linearSolvers = ['spsolve','pyamg','pardiso','dpcg'],
 			if len(solverTime[linearSolver]) > 0 and solverTime[linearSolver][-1] > timeLimit: 
 				print('Solver: ', linearSolver, ' -')
 				continue
-			# if (linearSolver == 'pardiso')  and (dofActual > 3*10**6): # skip Pardiso for large problems, eats up memory, stalls computer
-			# 	print('Solver: ', linearSolver, ' -')
-			# 	continue
 			continueMeshing = True
 			startTime = time.time()
 			if (linearSolver == 'spsolve'):
 				solver = lin_solv.Solvers.SPSOLVE
 			elif (linearSolver == 'pyamg'):
 				solver = lin_solv.Solvers.PYAMG
-			elif (linearSolver == 'pardiso'):
+			elif (linearSolver == 'pypardiso'):
 				solver = lin_solv.Solvers.PARDISO
-			elif (linearSolver == 'dpcg'):
+			elif (linearSolver == 'pydpcg'):
 				solver = lin_solv.Solvers.DPCG
 				nGroups =  min(2000,max(5,round(3*mesh.num_nodes/500)));
 				dsolver.create_deflation_groups(mesh, nGroups)
@@ -185,9 +185,9 @@ def compareSolvers(linearSolvers = ['spsolve','pyamg','pardiso','dpcg'],
 compareSolvers(); exit()
 
 # %%
-#mesh, mat_prop, bc = examplesStructural.createCantileverProblem(nDOFDesired=20000,L=[2, 1, 1])	
+mesh, mat_prop, bc = examplesStructural.createCantileverProblem(nDOFDesired=20000,L=[2, 1, 1])	
 #mesh, mat_prop, bc = examplesStructural.createLBracketProblem(nDOFDesired=20000)	
-mesh, mat_prop, bc = examplesStructural.createCompliantMechanismProblem(nDOFDesired=20000)	
+#mesh, mat_prop, bc = examplesStructural.createCompliantMechanismProblem(nDOFDesired=20000)	
 #mesh, mat_prop, bc = examplesStructural.createFilletedBeamProblem(nDOFDesired=20000)
 # %%
 num_deflation_groups =  cfg_defl['num_groups']
