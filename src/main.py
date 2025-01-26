@@ -97,7 +97,7 @@ def run_topopt(fe_solver: fea.StructFEA,
 		plt.show()
 
 def compareSolvers(linearSolvers = ['spsolve','pyamg','pardiso','dpcg'],
-								dofs = [1000,5000,10000,50000,100000,250000,500000,10**6,2*10**6]):
+								dofs = [1000,5000,10000,50000,100000,250000,500000,10**6,2*10**6,3*10**6,5*10**6]):
 	
 	dofList = []
 	solverTime = dict(zip(linearSolvers, [None]*len(linearSolvers)))
@@ -177,8 +177,7 @@ def compareSolvers(linearSolvers = ['spsolve','pyamg','pardiso','dpcg'],
 	plt.grid(True)
 	plt.show()
 
-compareSolvers(linearSolvers = ['dpcg'],
-								dofs = [1000,5000,10000,50000,100000,250000,500000,10**6,2*10**6,3*10**6,5*10**6])
+compareSolvers()
 
 
 

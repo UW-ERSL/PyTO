@@ -267,6 +267,23 @@ class Mesher:
 						y=Extent(bounds[2], bounds[3]),	
 						z=Extent(bounds[4], bounds[5]))
 
+	def get_boundary_nodes(self) -> np.ndarray:
+		"""Find nodes that lie on the boundary of the mesh.
+		
+		Returns:
+			np.ndarray: Array of node indices that are on the boundary
+		"""
+		# For each node, count how many elements it belongs to
+		node_elem_count = np.zeros(self.num_nodes, dtype=int)
+		for elem in self.elemArray:
+			np.add.at(node_elem_count, elem, 1)
+		
+		# In a fully interior hex mesh, each node should belong to 8 elements
+		# (except at corners, edges, and faces where it will be less)
+		boundary_nodes = np.where(node_elem_count < 8)[0]
+		
+		return boundary_nodes
+	
 	def createEdofMat(self):
 		self.edofMat = np.zeros((self.num_elems, 24), dtype = int)
 		elemArray= self.elemArray

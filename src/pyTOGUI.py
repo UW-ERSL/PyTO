@@ -2,106 +2,7 @@ import sys
 from PyQt5 import QtWidgets #pip install PyQt5
 from vtkmodules.qt.QVTKRenderWindowInteractor import QVTKRenderWindowInteractor
 import vtk
-import math
-from stl import mesh
-from collections import defaultdict
-from queue import Queue
-import numpy as np
-
-class STLGeom:
-    TOL = 1e-9
-
-    def __init__(self, file_path):
-        self.mesh = mesh.Mesh.from_file(file_path)
-        self.stl_n_triangles = len(self.mesh.vectors)
-        self.tri_normals = [self.compute_normal(vertices) for vertices in self.mesh.vectors]
-        self.tri_areas = [self.get_area_of_triangle(i) for i in range(self.stl_n_triangles)]
-        self.tri_neighbors = self.compute_neighbors()
-        self.tri_highlight = [False] * self.stl_n_triangles
-        self.selected_triangles = set()
-        self.file_path = file_path
-
-    def compute_normal(self, vertices):
-        v1 = [vertices[1][i] - vertices[0][i] for i in range(3)]
-        v2 = [vertices[2][i] - vertices[0][i] for i in range(3)]
-        normal = [
-            v1[1] * v2[2] - v2[1] * v1[2],
-            -(v1[0] * v2[2] - v2[0] * v1[2]),
-            v1[0] * v2[1] - v2[0] * v1[1],
-        ]
-        norm = math.sqrt(sum(n ** 2 for n in normal)) or self.TOL
-        return [n / norm for n in normal]
-    
-    def compute_neighbors(self):
-        edge_map = defaultdict(list)  # Map of edges to triangle indices
-        neighbors = [[] for _ in range(self.stl_n_triangles)]
-
-        for i, vertices in enumerate(self.mesh.vectors):
-            edges = [
-                tuple(sorted((tuple(vertices[0]), tuple(vertices[1])))),
-                tuple(sorted((tuple(vertices[1]), tuple(vertices[2])))),
-                tuple(sorted((tuple(vertices[2]), tuple(vertices[0])))),
-            ]
-
-            for edge in edges:
-                edge_map[edge].append(i)
-
-        for edge, tri_list in edge_map.items():
-            for t1 in tri_list:
-                for t2 in tri_list:
-                    if t1 != t2 and t2 not in neighbors[t1]:
-                        neighbors[t1].append(t2)
-
-        return neighbors
-
-    def get_area_of_triangle(self, triangle_index):
-        vertices = self.mesh.vectors[triangle_index]
-        x, y, z = vertices[:, 0], vertices[:, 1], vertices[:, 2]
-        return self.compute_area_of_triangle(x, y, z)
-
-    def compute_area_of_triangle(self, x, y, z):
-        v1 = [x[1] - x[0], y[1] - y[0], z[1] - z[0]]
-        v2 = [x[2] - x[0], y[2] - y[0], z[2] - z[0]]
-
-        cross_product = [
-            v1[1] * v2[2] - v2[1] * v1[2],
-            -(v1[0] * v2[2] - v2[0] * v1[2]),
-            v1[0] * v2[1] - v2[0] * v1[1],
-        ]
-        cross_product_norm = math.sqrt(sum(c ** 2 for c in cross_product))
-        return 0.5 * cross_product_norm
-    
-    def highlight_triangles_recursive(self, seed_triangle, depth, cutoff_angle_degrees):
-        """
-        Toggle highlight state for triangles recursively based on the angle between normals.
-        If the seed triangle is highlighted, recursively deselect; otherwise, highlight.
-        """
-        cumulative_area = 0
-
-        cos_theta = math.cos(math.radians(cutoff_angle_degrees))
-        # Determine the target state (toggle behavior)
-        target_state = not self.tri_highlight[seed_triangle]
-
-        # Initialize queue
-        q = Queue()
-        q.put((seed_triangle, depth))
-        self.tri_highlight[seed_triangle] = target_state 
-        n1 = self.tri_normals[seed_triangle]
-
-        while not q.empty():
-            current_tri, current_depth = q.get()
-            if current_depth == 0:
-                continue
-
-            cumulative_area += self.get_area_of_triangle(current_tri)
-            n1 = self.tri_normals[current_tri]
-            for neighbor_tri in self.tri_neighbors[current_tri]:
-                n2 = self.tri_normals[neighbor_tri] 
-                if self.tri_highlight[neighbor_tri] != target_state and np.dot(n1, n2) > cos_theta:
-                    self.tri_highlight[neighbor_tri] = target_state
-                    q.put((neighbor_tri, current_depth - 1))
-
-        return cumulative_area
+import STLGeom
 
 class Settings:
     def __init__(self):
@@ -308,7 +209,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.interactor.Initialize()
 
     def load_stl_file(self, file_path):
-        self.stl_geom = STLGeom(file_path)
+        self.stl_geom = STLGeom.STLGeom(file_path)
         
         # Create vtkPolyData
         points = vtk.vtkPoints()
