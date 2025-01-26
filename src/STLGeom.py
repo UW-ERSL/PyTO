@@ -1,9 +1,9 @@
-from PyQt5 import QtWidgets #pip install PyQt5
 import math
 from stl import mesh
 from collections import defaultdict
 from queue import Queue
 import numpy as np
+import os
 
 class STLGeom:
     TOL = 1e-9
@@ -100,53 +100,53 @@ class STLGeom:
 
         return cumulative_area
     
-    def find_points_triangles_distances(self, points, triangle_ids):
+    def find_points_single_triangle_distances(self, points, triangle_id):
         """
-        Vectorized calculation of minimum distances between multiple points and triangles.
+        Vectorized calculation of minimum distances between multiple points and a single triangle.
         Args:
             points: numpy array of shape (n, 3) containing points [x, y, z]
-            triangle_ids: array of triangle indices in the mesh
+            triangle_id: index of the triangle in the mesh
         Returns:
-            distances: array of minimum distances between points and their corresponding triangles
+            distances: array of minimum distances between points and the triangle
         """
         points = np.asarray(points)
-        vertices = self.mesh.vectors[triangle_ids]
-        normals = np.array([self.tri_normals[i] for i in triangle_ids])
+        vertices = self.mesh.vectors[triangle_id]
+        normal = np.array(self.tri_normals[triangle_id])
         
-        # Project points onto triangle planes
-        a = vertices[:, 0]
-        point_to_plane = np.einsum('ij,ij->i', points - a, normals)
-        projected_points = points - (point_to_plane[:, np.newaxis] * normals)
+        # Project points onto triangle plane
+        point_to_plane = np.dot(points - vertices[0], normal)
+        projected_points = points - point_to_plane[:, np.newaxis] * normal
         
         # Compute barycentric coordinates
-        v0 = vertices[:, 1] - vertices[:, 0]
-        v1 = vertices[:, 2] - vertices[:, 0]
-        v2 = projected_points - vertices[:, 0]
+        v0 = vertices[1] - vertices[0]
+        v1 = vertices[2] - vertices[0]
+        v2 = projected_points - vertices[0]
         
-        d00 = np.einsum('ij,ij->i', v0, v0)
-        d01 = np.einsum('ij,ij->i', v0, v1)
-        d11 = np.einsum('ij,ij->i', v1, v1)
-        d20 = np.einsum('ij,ij->i', v2, v0)
-        d21 = np.einsum('ij,ij->i', v2, v1)
+        d00 = np.dot(v0, v0)
+        d01 = np.dot(v0, v1)
+        d11 = np.dot(v1, v1)
+        d20 = np.dot(v2, v0)
+        d21 = np.dot(v2, v1)
         
         denom = d00 * d11 - d01 * d01
         v = (d11 * d20 - d01 * d21) / denom
         w = (d00 * d21 - d01 * d20) / denom
         u = 1.0 - v - w
         
-        # Check if points project inside triangles
+        # Check if points project inside triangle
         inside_triangle = (u >= 0) & (v >= 0) & (w >= 0) & (np.abs(u + v + w - 1.0) < self.TOL)
         
         # Calculate distances to edges where needed
         distances = np.where(inside_triangle,
                             np.linalg.norm(points - projected_points, axis=1),
                             np.minimum.reduce([
-                                np.linalg.norm(np.cross(vertices[:, 1] - vertices[:, 0], points - vertices[:, 0]), axis=1) / np.linalg.norm(vertices[:, 1] - vertices[:, 0], axis=1),
-                                np.linalg.norm(np.cross(vertices[:, 2] - vertices[:, 1], points - vertices[:, 1]), axis=1) / np.linalg.norm(vertices[:, 2] - vertices[:, 1], axis=1),
-                                np.linalg.norm(np.cross(vertices[:, 0] - vertices[:, 2], points - vertices[:, 2]), axis=1) / np.linalg.norm(vertices[:, 0] - vertices[:, 2], axis=1)
+                                np.linalg.norm(np.cross(vertices[1] - vertices[0], points - vertices[0]), axis=1) / np.linalg.norm(vertices[1] - vertices[0]),
+                                np.linalg.norm(np.cross(vertices[2] - vertices[1], points - vertices[1]), axis=1) / np.linalg.norm(vertices[2] - vertices[1]),
+                                np.linalg.norm(np.cross(vertices[0] - vertices[2], points - vertices[2]), axis=1) / np.linalg.norm(vertices[0] - vertices[2])
                             ]))
         
         return distances
+   
     
     
     def find_point_triangle_distance(self, point, triangle_id):
@@ -201,3 +201,12 @@ class STLGeom:
         ]
         
         return min(edge_distances)
+
+if __name__ == "__main__":
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    file_path = os.path.join(script_dir, '../TOExamples/AlcoaGrabCAD/AlcoaGrabCAD.STL')
+    stl_geom = STLGeom(file_path)
+    # Generate random 3D points
+    random_points = np.random.uniform(-1, 1, size=(10, 3))
+    triangle_id = 13    
+    print(stl_geom.find_points_single_triangle_distances(random_points, triangle_id))
