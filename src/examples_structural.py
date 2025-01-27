@@ -17,7 +17,7 @@ cfg_opt = settings['OPTIMIZATION']
 cfg_defl = settings['DEFLATION']
 
 
-def createCantileverProblem(nDOFDesired: int = 10000, L: float = [1.0, 1.0, 1.0]):
+def createCantileverProblem(nDOFDesired: int = 10000, L: float = [0.1, 0.1, 0.1]):
 	# This is an example where a grid mesh is created, and a structural problem is posed on it.
 	# For a perfect cube, an estimate of the number of elements is made, and a grid mesh is created.
 	nVoxelsDesired = nDOFDesired/3	
@@ -48,7 +48,7 @@ def createCantileverProblem(nDOFDesired: int = 10000, L: float = [1.0, 1.0, 1.0]
 	load_dofs = 3 * load_nodes + 2  # z direction
 
 	mesh.node_array[load_nodes, 3] = 2
-	load_per_dof = -1.e5/(nelz+1)
+	load_per_dof = -10000/len(load_nodes)
 
 	force = np.zeros(3*mesh.num_nodes)
 	force[load_dofs] = load_per_dof
@@ -110,7 +110,7 @@ def createLBracketProblem(nDOFDesired: int = 10000):
 
 	bc = bound_cond.BC(force = force,fixed_dofs = fixed_dofs,dirichlet_values = dirichlet_values) 
 
-	mat_prop = mat_lib.StructuralMaterial(youngs_modulus=2.1e5,
+	mat_prop = mat_lib.StructuralMaterial(youngs_modulus=2.1e11,
 										poissons_ratio=0.3)
 	return mesh, mat_prop, bc
         

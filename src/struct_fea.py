@@ -42,13 +42,16 @@ class StructFEA:
 
     Returns: Array of (num_dofs,) of the solution to the finite element problem.
     """
+
     elem_stiff_mtrx = jnp.einsum('ij, e -> eij',
                                  self.elem_stiff,
 									               elem_youngs_modulus).flatten(order = 'C')
 
     stiff_mtrx = jax_sprs.BCOO((elem_stiff_mtrx, self.node_idx),
                                 shape=(self.bc.num_dofs, self.bc.num_dofs))
+    
 
+    
     u =  lin_sol.solve(stiff_mtrx,
                       self.bc.force,
                       self.solver,

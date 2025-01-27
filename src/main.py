@@ -97,15 +97,16 @@ def run_topopt(fe_solver: fea.StructFEA,
 		plt.show()
 
 def compareSolvers(linearSolvers = ['spsolve','pyamg','pypardiso','pydpcg'],
-								dofs = [1000,5000,10000,25000,50000,100000,250000,500000,600000,750000,10**6,1.5*10**6,2*10**6,3*10**6,5*10**6]):#
+								dofs = [1000,5000,10000,25000,50000,100000,250000,500000,600000,750000,10**6,1.5*10**6,2*10**6,3*10**6,5*10**6],
+								timeLimit = 60):#
 	
 	dofList = []
 	solverTime = dict(zip(linearSolvers, [None]*len(linearSolvers)))
 	for linearSolver in linearSolvers:
 		solverTime[linearSolver] = []
 
-	timeLimit = 60 # seconds	
-	example = 4
+	timeLimit = timeLimit # seconds	
+	example = 1
 	continueMeshing = True
 	for dofDesired in dofs:
 		if (not continueMeshing):
@@ -113,7 +114,7 @@ def compareSolvers(linearSolvers = ['spsolve','pyamg','pypardiso','pydpcg'],
 		print('-----------------------------')
 		print("dofDesired: ",dofDesired)
 		if (example == 1):
-			mesh, mat_prop, bc = examplesStructural.createCantileverProblem(nDOFDesired=dofDesired,L=[2, 1, 1])
+			mesh, mat_prop, bc = examplesStructural.createCantileverProblem(nDOFDesired=dofDesired,L=[0.2, 0.1, 0.11])
 			title = 'Cantilever: Time for single FEA'
 		elif (example == 2):
 			mesh, mat_prop, bc = examplesStructural.createCantileverProblem(nDOFDesired=dofDesired,L=[20, 20, 1])
@@ -182,11 +183,12 @@ def compareSolvers(linearSolvers = ['spsolve','pyamg','pypardiso','pydpcg'],
 	plt.grid(True)
 	plt.show()
 
-compareSolvers(); exit()
+#compareSolvers(linearSolvers = ['pydpcg'],dofs = [1000,5000,10000,25000,50000,100000,250000,500000,600000,750000,10**6,1.5*10**6,2*10**6,3*10**6,5*10**6,7.5*10**6,10*10**6,20*10**6,30*10**6],timeLimit=600)
+#exit()
 
 # %%
-mesh, mat_prop, bc = examplesStructural.createCantileverProblem(nDOFDesired=20000,L=[2, 1, 1])	
-#mesh, mat_prop, bc = examplesStructural.createLBracketProblem(nDOFDesired=20000)	
+#mesh, mat_prop, bc = examplesStructural.createCantileverProblem(nDOFDesired=20000,L=[0.02,0.01,0.01])	
+mesh, mat_prop, bc = examplesStructural.createLBracketProblem(nDOFDesired=10000)	
 #mesh, mat_prop, bc = examplesStructural.createCompliantMechanismProblem(nDOFDesired=20000)	
 #mesh, mat_prop, bc = examplesStructural.createFilletedBeamProblem(nDOFDesired=20000)
 # %%
@@ -199,7 +201,7 @@ dsolver.W = dsolver.W[bc.free_dofs, :]
 fe_solver = fea.StructFEA(mesh = mesh,
                           mat_prop = mat_prop,
                           bc = bc,
-                          solver = lin_solv.Solvers.DPCG,
+                          solver = lin_solv.Solvers.PARDISO,
                           dsolver = dsolver,
                           rtol = 1e-6,
                           verbose = False)

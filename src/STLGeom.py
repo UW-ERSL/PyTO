@@ -120,9 +120,9 @@ class STLGeom:
             plotter.add_point_labels([[bounds[1], bounds[2], bounds[4]], 
                                     [bounds[0], bounds[3], bounds[4]], 
                                     [bounds[0], bounds[2], bounds[5]]], 
-                                    [f'X: {lengths[0]:.2f}', 
-                                    f'Y: {lengths[1]:.2f}', 
-                                    f'Z: {lengths[2]:.2f}'])
+                                    [f'X: {lengths[0]:.3f}', 
+                                    f'Y: {lengths[1]:.3f}', 
+                                    f'Z: {lengths[2]:.3f}'])
             # Add text label for lowest left corner coordinates
             plotter.add_point_labels([[bounds[0], bounds[2], bounds[4]]],
                                     [f'({bounds[0]:.2f}, {bounds[2]:.2f}, {bounds[4]:.2f})'])
@@ -232,12 +232,12 @@ class STLGeom:
 
 if __name__ == "__main__":
     import os
-    import plots
     import pyvista as pv
     script_dir = os.path.dirname(os.path.abspath(__file__))
-    file_path = os.path.join(script_dir, '../TOExamples/AlcoaGrabCAD/AlcoaGrabCAD.STL')
-    file_path =  os.path.join(script_dir, '../TOExamples/CompliantMechanism/CompliantMechanism.STL')
-    stl_geom = STLGeom(file_path)
+    stl_file = os.path.join(script_dir, '../TOExamples/AlcoaGrabCAD/AlcoaGrabCAD.STL')
+    stl_file =  os.path.join(script_dir, '../TOExamples/CompliantMechanism/CompliantMechanism.STL')
+    stl_file = os.path.join(script_dir, '../TOExamples/LBracket/LBracket.STL')
+    stl_geom = STLGeom(stl_file)
     stl_geom.plotGeometry()
     # Create a plotter and add the mesh
     
