@@ -81,7 +81,10 @@ class DeflationSolver:
 						   int(meshData.num_nodes/(1 + self.minNodesPerGroup)))
 		
 		# Extract node coordinates and find domain bounds
-		xyz = meshData.node_array[:, 0:3]
+		xyz = np.zeros((meshData.num_nodes, 3))
+		for i in range(3):
+			xyz[:,i] = meshData.origin[i] + meshData.elem_size[i]*meshData.node_indices[:,i]
+
 		xMin = np.min(xyz[:,0])
 		yMin = np.min(xyz[:,1])
 		zMin = np.min(xyz[:,2])		
@@ -213,20 +216,16 @@ class DeflationSolver:
 		# Apply spectral clustering
 		n_clusters = min(nGroupsDesired, int(meshData.num_nodes/(1 + self.minNodesPerGroup)))
 		# Alternate clustering using KMeans
-		# clustering = KMeans(
-		# 	n_clusters=n_clusters, 
-		# 	random_state=42
-		# ).fit(meshData.node_array[:, 0:3])
 
 		clustering = KMeans(
 			n_clusters=n_clusters, 
 			random_state=42
-		).fit(meshData.node_array[:, 0:3])
+		).fit(meshData.node_indices[:, 0:3])
 		# clustering = SpectralClustering(
 		# 	n_clusters=n_clusters,
 		# 	affinity='precomputed',
 		# 	random_state=0
-		# ).fit(meshData.node_array[:, 0:3])
+		# ).fit(meshData.node_indices[:, 0:3])
 		
 		# Assign nodes to groups
 		self.ws_nodeGroupNumber = clustering.labels_
@@ -234,7 +233,10 @@ class DeflationSolver:
 		self.ws_groupCount = np.bincount(self.ws_nodeGroupNumber)
 		
 		# Calculate group centers
-		xyz = meshData.node_array[:, 0:3]
+		xyz = np.zeros((meshData.num_nodes, 3))
+		for i in range(3):
+			xyz[:,i] = meshData.origin[i] + meshData.elem_size[i]*meshData.node_indices[:,i]
+
 		self.ws_groupCenter = np.zeros((self.ws_nGroups, 3))
 		for i in range(3):
 			np.add.at(self.ws_groupCenter[:, i], self.ws_nodeGroupNumber, xyz[:, i])
@@ -254,9 +256,11 @@ class DeflationSolver:
 		sW = np.empty(total_entries, dtype=np.float64)
 		
 		# Get node coordinates and group centers as arrays
-		xyz = meshData.node_array[:, 0:3]
-		group_centers = self.ws_groupCenter[self.ws_nodeGroupNumber]
+		xyz = np.zeros((meshData.num_nodes, 3))
+		for i in range(3):
+			xyz[:,i] = meshData.origin[i] + meshData.elem_size[i]*meshData.node_indices[:,i]
 		
+		group_centers = self.ws_groupCenter[self.ws_nodeGroupNumber]
 		# Calculate relative positions
 		rel_pos = xyz - group_centers
 		

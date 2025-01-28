@@ -22,7 +22,7 @@ def plotMesh(mesh: mesher.Mesher,
   # Create vertices array
   vertices = np.zeros((mesh.num_nodes,3))
   for i in range(3):
-    vertices[:,i] = mesh.origin[i] + mesh.elem_size[i]*mesh.node_array[:,i]
+    vertices[:,i] = mesh.origin[i] + mesh.elem_size[i]*mesh.node_indices[:,i]
   
   # Handle deformation if provided
   if (u is not None) and (np.max(np.abs(u))> 0):
@@ -119,7 +119,7 @@ def plotMesh(mesh: mesher.Mesher,
   point_size = 10  # Size of dots in pixels
 
   # Add black dots for label 1 (fixed nodes)
-  label1_nodes = np.where(mesh.node_array[:, 3] == 1)[0]
+  label1_nodes = np.where(mesh.node_indices[:, 3] == 1)[0]
   if len(label1_nodes) > 0:
     points1 = vertices[label1_nodes]
     dots1 = pv.PolyData(points1)
@@ -129,7 +129,7 @@ def plotMesh(mesh: mesher.Mesher,
                        render_points_as_spheres=True)
 
   # Add force arrows for label 2 (without red dots)
-  label2_nodes = np.where(mesh.node_array[:, 3] == 2)[0]
+  label2_nodes = np.where(mesh.node_indices[:, 3] == 2)[0]
   if len(label2_nodes) > 0 and bc is not None:
     # Add force arrows
     arrow_scale = 0.2 * mesh.bbox.diag_length
@@ -347,7 +347,7 @@ def plot_deflation_groups(deflation: deflation.DeflationSolver,
                           mesh: mesher.Mesher):
   # Create vertices array
   vertices = np.zeros((mesh.num_nodes,3))
-  vertices = mesh.origin + mesh.elem_size * mesh.node_array[:,:3]
+  vertices = mesh.origin + mesh.elem_size * mesh.node_indices[:,:3]
 
   # Create PyVista point cloud
   points = pv.PolyData(vertices)

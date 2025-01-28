@@ -70,6 +70,7 @@ class Mesher:
 			elem_size: Tuple of floats of the size of each element in each direction
 				(dx, dy, dz).
 		"""
+		print(f"Mesher: Grid size: {num_elems[0]} x {num_elems[1]} x {num_elems[2]}")
 		nelx, nely, nelz = num_elems
 		self.bbox = BoundingBox(x=Extent(0.0, nelx*elem_size[0]),
 														y=Extent(0.0, nely*elem_size[1]),
@@ -80,7 +81,7 @@ class Mesher:
 		self.grid = [nelx, nely, nelz]
 		self.origin = [0,0,0]
 		self.elem_size = elem_size
-		self.node_array = np.zeros((self.num_nodes, 4), dtype = np.int32)
+		self.node_indices = np.zeros((self.num_nodes, 4), dtype = np.int32)
 		self.elemArray = np.zeros((self.num_elems, 8), dtype = np.int32)
 		self.elemPseudoDensity = np.ones(self.num_elems)
 
@@ -92,7 +93,7 @@ class Mesher:
 		for iz in range(nelz+1):
 			for iy in range(nely+1):
 				for ix in range(nelx+1):
-					self.node_array[node]  = [ix, iy, iz, 0]
+					self.node_indices[node]  = [ix, iy, iz, 0]
 					node = node+1
 
 		elem = 0
@@ -136,9 +137,9 @@ class Mesher:
 					elem = elem+1
 
 		self.elem_centers = np.zeros((self.num_elems, 3))
-		node_array = self.node_array[:, :3]
+		node_indices= self.node_indices[:, :3]
 		for elem in range(self.num_elems):
-			self.elem_centers[elem, :] = np.array(np.sum(node_array[self.elemArray[elem]], 
+			self.elem_centers[elem, :] = np.array(np.sum(node_indices[self.elemArray[elem]], 
 																							axis = 0)/8.)
 
 		self.createEdofMat()
@@ -165,7 +166,7 @@ class Mesher:
 			self.elem_size = np.fromfile(file, dtype=np.double, count = 3)
 
 			self.num_nodes = np.fromfile(file, dtype=np.uint32, count = 1)[0]
-			self.node_array = np.fromfile(file, dtype=np.uint32,
+			self.node_indices = np.fromfile(file, dtype=np.uint32,
 													count = 4*self.num_nodes).reshape((self.num_nodes,4))
 			self.num_elems = np.fromfile(file, dtype=np.uint32, count = 1)[0]
 
@@ -180,15 +181,15 @@ class Mesher:
 			print("#Nodes = ", self.num_nodes, "\n#Elems = ", self.num_elems)
 			file.close()
 			self.elem_centers = np.zeros((self.num_elems, 3))
-			node_array = self.node_array[:, :3]
+			node_indices = self.node_indices[:, :3]
 			for elem in range(self.num_elems):
-				self.elem_centers[elem, :] = np.array(np.sum(node_array[self.elemArray[elem]],
+				self.elem_centers[elem, :] = np.array(np.sum(node_indices[self.elemArray[elem]],
 																						axis = 0)/8)
 
 			self.bbox = BoundingBox(
-						x=Extent(np.min(self.node_array[:,0]), np.max(self.node_array[:,0])),
-						y=Extent(np.min(self.node_array[:,1]), np.max(self.node_array[:,1])),
-						z=Extent(np.min(self.node_array[:,2]), np.max(self.node_array[:,2])))
+						x=Extent(np.min(self.node_indices[:,0]), np.max(self.node_indices[:,0])),
+						y=Extent(np.min(self.node_indices[:,1]), np.max(self.node_indices[:,1])),
+						z=Extent(np.min(self.node_indices[:,2]), np.max(self.node_indices[:,2])))
 
 			self.createEdofMat()
 
@@ -224,21 +225,21 @@ class Mesher:
 		self.num_nodes = self.voxels.n_points 
 		self.origin = [self.voxels.bounds[0], self.voxels.bounds[2], self.voxels.bounds[4]]
 
-		self.node_array = np.zeros((self.num_nodes, 4), dtype = np.int32)
+		self.node_indices = np.zeros((self.num_nodes, 4), dtype = np.int32)
 
 		# Node array is the index of the node, and the label of the node
 		# Convert voxel points to integer indices by dividing by elem_size and rounding
-		self.node_array[:, :3] = np.round((self.voxels.points - np.array(self.origin)) / np.array(self.elem_size))
-		self.node_array[:, 3] = 0
+		self.node_indices[:, :3] = np.round((self.voxels.points - np.array(self.origin)) / np.array(self.elem_size))
+		self.node_indices[:, 3] = 0
 		self.elemArray = self.voxels.cell_connectivity
 		self.elemArray = self.elemArray.reshape((self.num_elems, 8))
 		
 		self.elemPartIndex = np.zeros(self.num_elems)
 		self.elem_centers = np.zeros((self.num_elems, 3))
-		node_array = self.node_array[:, :3]
+		node_indices = self.node_indices[:, :3]
 
 		for elem in range(self.num_elems):
-			self.elem_centers[elem, :] = np.array(np.sum(node_array[self.elemArray[elem]],
+			self.elem_centers[elem, :] = np.array(np.sum(node_indices[self.elemArray[elem]],
 																						axis = 0)/8)
 
 		self.elemPseudoDensity = np.ones(self.num_elems)

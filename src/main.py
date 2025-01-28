@@ -106,7 +106,7 @@ def compareSolvers(linearSolvers = ['spsolve','pyamg','pycg','pypardiso','pydpcg
 		solverTime[linearSolver] = []
 
 	timeLimit = timeLimit # seconds	
-	example = 3
+	example = 2
 	continueMeshing = True
 	for dofDesired in dofs:
 		if (not continueMeshing):
