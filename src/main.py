@@ -96,9 +96,9 @@ def run_topopt(fe_solver: fea.StructFEA,
 		plt.ylabel(key)
 		plt.show()
 
-def compareSolvers(linearSolvers = ['spsolve','pyamg','pypardiso','pydpcg'],
+def compareSolvers(linearSolvers = ['spsolve','pyamg','pycg','pypardiso','pydpcg'],
 								dofs = [1000,5000,10000,25000,50000,100000,250000,500000,600000,750000,10**6,1.5*10**6,2*10**6,3*10**6,5*10**6],
-								timeLimit = 60):#
+								timeLimit = 30):#
 	
 	dofList = []
 	solverTime = dict(zip(linearSolvers, [None]*len(linearSolvers)))
@@ -106,7 +106,7 @@ def compareSolvers(linearSolvers = ['spsolve','pyamg','pypardiso','pydpcg'],
 		solverTime[linearSolver] = []
 
 	timeLimit = timeLimit # seconds	
-	example = 1
+	example = 3
 	continueMeshing = True
 	for dofDesired in dofs:
 		if (not continueMeshing):
@@ -148,10 +148,12 @@ def compareSolvers(linearSolvers = ['spsolve','pyamg','pypardiso','pydpcg'],
 				solver = lin_solv.Solvers.PARDISO
 			elif (linearSolver == 'pydpcg'):
 				solver = lin_solv.Solvers.DPCG
-				nGroups =  min(2000,max(5,round(3*mesh.num_nodes/500)));
+				nGroups =  min(2000,max(10,round(3*mesh.num_nodes/500)))
 				dsolver.create_deflation_groups(mesh, nGroups)
 				dsolver.create_delfation_matrix(mesh)
 				dsolver.W = dsolver.W[bc.free_dofs, :]
+			elif (linearSolver == 'pycg'):
+				solver = lin_solv.Solvers.CG
 
 			fe_solver = fea.StructFEA(mesh = mesh,
 									mat_prop = mat_prop,
@@ -166,8 +168,8 @@ def compareSolvers(linearSolvers = ['spsolve','pyamg','pypardiso','pydpcg'],
 			solverTime[linearSolver].append(totalTime)
 
 	
-	marker = itertools.cycle(('dk', '+b', '*g', 'or','xm')) 
-	colors = itertools.cycle(('k', 'b', 'g', 'r','m')) 
+	marker = itertools.cycle(('dk', '+b','xm', '*g', 'or')) 
+	colors = itertools.cycle(('k', 'b','m', 'g', 'r')) 
 	for linearSolver in linearSolvers:
 		timing = solverTime[linearSolver]
 		plt.loglog(dofList[0:len(timing)],timing,next(marker))
@@ -177,38 +179,41 @@ def compareSolvers(linearSolvers = ['spsolve','pyamg','pypardiso','pydpcg'],
 		timing = solverTime[linearSolver]
 		plt.loglog(dofList[0:len(timing)],timing,next(colors))
 
+	plt.axhline(y=timeLimit, color='black', linestyle=':', label='Time limit')
 	plt.title(title)
 	plt.xlabel('DOF')
 	plt.ylabel('Time (secs)')
 	plt.grid(True)
 	plt.show()
 
-#compareSolvers(linearSolvers = ['pydpcg'],dofs = [1000,5000,10000,25000,50000,100000,250000,500000,600000,750000,10**6,1.5*10**6,2*10**6,3*10**6,5*10**6,7.5*10**6,10*10**6,20*10**6,30*10**6],timeLimit=600)
-#exit()
+compareSolvers(); exit()
 
 # %%
 #mesh, mat_prop, bc = examplesStructural.createCantileverProblem(nDOFDesired=20000,L=[0.02,0.01,0.01])	
 mesh, mat_prop, bc = examplesStructural.createLBracketProblem(nDOFDesired=10000)	
 #mesh, mat_prop, bc = examplesStructural.createCompliantMechanismProblem(nDOFDesired=20000)	
+
 #mesh, mat_prop, bc = examplesStructural.createFilletedBeamProblem(nDOFDesired=20000)
 # %%
 num_deflation_groups =  cfg_defl['num_groups']
-dsolver = deflation.DeflationSolver()
-dsolver.create_deflation_groups(mesh, cfg_defl['num_groups'])
+
+timeStart = time.time()
+dsolver.create_deflation_groups(mesh,nGroupsDesired=200)
 dsolver.create_delfation_matrix(mesh)
 dsolver.W = dsolver.W[bc.free_dofs, :]
+print('Deflation matrix time: ', time.time() - timeStart)
 
 fe_solver = fea.StructFEA(mesh = mesh,
                           mat_prop = mat_prop,
                           bc = bc,
-                          solver = lin_solv.Solvers.PARDISO,
+                          solver = lin_solv.Solvers.DPCG,
                           dsolver = dsolver,
-                          rtol = 1e-6,
+                          rtol = 1e-8,
                           verbose = False)
 
 # %%
 run_fea(fe_solver = fe_solver, plot = True)
-
+plots.plot_deflation_groups( dsolver,mesh)
 # %%
 #run_topopt(fe_solver, volfrac=0.5, optimizationMethod = topopt.Optimizers.MMA)
 

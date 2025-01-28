@@ -345,20 +345,32 @@ def plotIsocontour(mesh: mesher.Mesher,
 
 def plot_deflation_groups(deflation: deflation.DeflationSolver,
                           mesh: mesher.Mesher):
+  # Create vertices array
+  vertices = np.zeros((mesh.num_nodes,3))
+  vertices = mesh.origin + mesh.elem_size * mesh.node_array[:,:3]
 
-  xyz = mesh.node_array[:, 0:3]
+  # Create PyVista point cloud
+  points = pv.PolyData(vertices)
 
-  fig = plt.figure()
-  ax = fig.add_subplot(projection='3d')
-  ax.scatter(xyz[:,0],xyz[:,1],xyz[:,2],c = deflation.ws_nodeGroupNumber)
-  ax.set_xlabel('X')
-  ax.set_ylabel('Y')
-  ax.set_zlabel('Z')
+  # Add group numbers as scalar data
+  points.point_data['groups'] = deflation.ws_nodeGroupNumber
 
-  LScale = np.max([np.max(xyz[:, 0]), np.max(xyz[:, 1]), np.max(xyz[:, 2])])
-  ax.set_xlim(np.min(xyz[:, 0]), LScale)
-  ax.set_ylim(np.min(xyz[:, 1]), LScale)
-  ax.set_zlim(np.min(xyz[:, 2]), LScale)
+  # Create plotter
+  plotter = pv.Plotter()
+  plotter.set_background('white')
+
+  # Add points with group coloring
+  plotter.add_mesh(points, scalars='groups', 
+                  point_size=7,
+                  render_points_as_spheres=True,
+                  cmap='rainbow')
+
+  # Add axes
+  plotter.add_axes()
+
+  # Set camera for isometric view
+  plotter.view_isometric()
+  plotter.show()
 
 
 def plotGroupCenter(deflation: deflation.DeflationSolver):
