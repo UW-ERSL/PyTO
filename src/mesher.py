@@ -82,6 +82,7 @@ class Mesher:
 		self.origin = [0,0,0]
 		self.elem_size = elem_size
 		self.node_indices = np.zeros((self.num_nodes, 4), dtype = np.int32)
+
 		self.elemArray = np.zeros((self.num_elems, 8), dtype = np.int32)
 		self.elemPseudoDensity = np.ones(self.num_elems)
 
@@ -96,6 +97,9 @@ class Mesher:
 					self.node_indices[node]  = [ix, iy, iz, 0]
 					node = node+1
 
+		self.node_xyz = np.zeros((self.num_nodes, 3))
+		for i in range(3):
+			self.node_xyz[:,i] = self.origin[i] + self.elem_size[i]*self.node_indices[:,i]
 		elem = 0
 		sx = nelx+1
 		sy = nely+1
@@ -168,6 +172,9 @@ class Mesher:
 			self.num_nodes = np.fromfile(file, dtype=np.uint32, count = 1)[0]
 			self.node_indices = np.fromfile(file, dtype=np.uint32,
 													count = 4*self.num_nodes).reshape((self.num_nodes,4))
+			self.node_xyz = np.zeros((self.num_nodes, 3))
+			for i in range(3):
+				self.node_xyz[:,i] = self.origin[i] + self.elem_size[i]*self.node_indices[:,i]
 			self.num_elems = np.fromfile(file, dtype=np.uint32, count = 1)[0]
 
 			self.elemArray = np.fromfile(file, dtype=np.uint32,
@@ -231,6 +238,9 @@ class Mesher:
 		# Convert voxel points to integer indices by dividing by elem_size and rounding
 		self.node_indices[:, :3] = np.round((self.voxels.points - np.array(self.origin)) / np.array(self.elem_size))
 		self.node_indices[:, 3] = 0
+		self.node_xyz = np.zeros((self.num_nodes, 3))
+		for i in range(3):
+			self.node_xyz[:,i] = self.origin[i] + self.elem_size[i]*self.node_indices[:,i]
 		self.elemArray = self.voxels.cell_connectivity
 		self.elemArray = self.elemArray.reshape((self.num_elems, 8))
 		

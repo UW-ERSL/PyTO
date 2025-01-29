@@ -80,10 +80,8 @@ class DeflationSolver:
 		nGroupsDesired = min(nGroupsDesired, 
 						   int(meshData.num_nodes/(1 + self.minNodesPerGroup)))
 		
-		# Extract node coordinates and find domain bounds
-		xyz = np.zeros((meshData.num_nodes, 3))
-		for i in range(3):
-			xyz[:,i] = meshData.origin[i] + meshData.elem_size[i]*meshData.node_indices[:,i]
+		
+		xyz = meshData.node_xyz
 
 		xMin = np.min(xyz[:,0])
 		yMin = np.min(xyz[:,1])
@@ -256,9 +254,7 @@ class DeflationSolver:
 		sW = np.empty(total_entries, dtype=np.float64)
 		
 		# Get node coordinates and group centers as arrays
-		xyz = np.zeros((meshData.num_nodes, 3))
-		for i in range(3):
-			xyz[:,i] = meshData.origin[i] + meshData.elem_size[i]*meshData.node_indices[:,i]
+		xyz = meshData.node_xyz
 		
 		group_centers = self.ws_groupCenter[self.ws_nodeGroupNumber]
 		# Calculate relative positions

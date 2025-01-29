@@ -20,9 +20,7 @@ def plotMesh(mesh: mesher.Mesher,
              save_path=None,
              fontsize=10):
   # Create vertices array
-  vertices = np.zeros((mesh.num_nodes,3))
-  for i in range(3):
-    vertices[:,i] = mesh.origin[i] + mesh.elem_size[i]*mesh.node_indices[:,i]
+  vertices = mesh.node_xyz
   
   # Handle deformation if provided
   if (u is not None) and (np.max(np.abs(u))> 0):
@@ -216,9 +214,7 @@ def plotIsocontour(mesh: mesher.Mesher,
     fontsize (int): Font size for title
   """
   # Create vertices array
-  vertices = np.zeros((mesh.num_nodes, 3))
-  for i in range(3):
-    vertices[:,i] = mesh.origin[i] + mesh.elem_size[i]*mesh.node_array[:,i]
+  vertices = mesh.node_xyz
   
   # Handle deformation if provided
   if (u is not None) and (np.max(np.abs(u)) > 0):

@@ -10,7 +10,7 @@ import scipy.sparse as spy_sprs
 import scipy.sparse.linalg as spy_linalg
 
 import pyamg # pip install pyamg
-import pypardiso
+import pypardiso # pip install pypardiso
 
 import bound_cond
 
