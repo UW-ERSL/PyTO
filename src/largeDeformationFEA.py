@@ -50,7 +50,7 @@ class largeDeformationFEA:
                 err = np.linalg.norm(self.delta_sol)/np.linalg.norm(self.sol)
                 
                 if verbose:
-                    print(f'{iter}\t {err:E}\t {np.linalg.norm(b)/n_coord/self.num_nodes:E}')
+                    print(f'{iter}\t {err:E}\t {np.linalg.norm(b)/3/self.num_nodes:E}')
         
         success = True if err < tol else False
         self.deformation = np.sqrt(self.u**2 + self.v**2 + self.w**2)
@@ -109,9 +109,9 @@ class largeDeformationFEA:
             ndarray: Jacobian matrix
         """
         nodes = self.mesh.elemArray[elem]
-        position_nodes = self.mesh.p[:3, nodes]
+        position_nodes = self.mesh.node_xyz[nodes,:]
         _, grad_N = self.shape_function(xi)
-        return grad_N @ position_nodes.T
+        return grad_N @ position_nodes
 
     def assemble_k(self):
         """
@@ -133,7 +133,6 @@ class largeDeformationFEA:
         # Initialize quadrature points and weights
         nQuadPts1D = 2
         self.xi, self.wt = self.gauss_quad_3d(nQuadPts1D)
-        
         # Precompute shape functions at quadrature points
         n_cell = []
         grad_n_cell = []
@@ -141,7 +140,6 @@ class largeDeformationFEA:
             N, grad_N = self.shape_function(self.xi[:,i])
             n_cell.append(N)
             grad_n_cell.append(grad_N)
-        
         self.n = n_cell
         self.grad_n = grad_n_cell
         
@@ -149,7 +147,8 @@ class largeDeformationFEA:
         for elem in range(n_elements):
             nodes = self.mesh.elemArray[elem]
             k_elem, f_elem = self.compute_element_stiffness_finite_strain_spatial_conf(elem)
-            
+          
+          
             dof = np.array([3*nodes-2, 3*nodes-1, 3*nodes]).flatten()
             dof = dof.reshape(1, self.dof_per_elem)
             
@@ -184,14 +183,15 @@ class largeDeformationFEA:
         num_gq = len(wt_gq)
         
         nodes = self.nodes_per_element
-        elem_nodes = self.mesh.elemArray[:,elem]
+        elem_nodes = self.mesh.elemArray[elem,:]
         sol = np.vstack((self.sol[3*elem_nodes-2], self.sol[3*elem_nodes-1], self.sol[3*elem_nodes]))
 
         for g in range(num_gq):
             grad_n_all = grad_n_cell[g]
             j_total = self.jacobian(elem, xi_gq[:,g])
+            
             grad_ndx = np.linalg.solve(j_total, grad_n_all)
-            F = np.eye(3) + sol.T @ grad_ndx.T
+            F = np.eye(3) + sol @ (grad_ndx.T)
             b = F @ F.T  # Left green deformation tensor
             F_inv = np.linalg.inv(F)
             
@@ -202,14 +202,13 @@ class largeDeformationFEA:
 
             J_F = np.linalg.det(F)
             stress = self.kirchhoff_stress( b, J_F)
-            C = self.compute_elasticity_tensor_generalized_neo_hookean(b, J_F)
+            C = self.compute_elasticity_tensor_generalized_neo_hookean(b, J_F)   
             dJ = abs(np.linalg.det(j_total))
-
             if J_F < 0:
                 print('Determinant of F negative')
                 break
 
-            for A in range(nodes):
+            for A in range(nodes):  
                 for i in range(3):
                     for B in range(nodes):
                         for k in range(3):
@@ -221,8 +220,9 @@ class largeDeformationFEA:
                     for J in range(3):
                         f_elem[3*A + i] += wt_gq[g]*dJ*stress[i,J]*grad_ndxs[J,A]
 
-            k_elem = k_material + k_geometric
-            return k_elem, f_elem
+          
+        k_elem = k_material + k_geometric
+        return k_elem, f_elem
     
     def compute_strain_energy(self):
         """
@@ -240,7 +240,7 @@ class largeDeformationFEA:
         """
         # Get 1D Gauss points and weights
         x, w = self.lgwt(num_gq, -1, 1)
-        
+        x = -x # to make it consistent with MATLAB
         # Initialize arrays
         n_total = num_gq * num_gq * num_gq
         xi_gq = np.zeros((3, n_total))
@@ -251,9 +251,9 @@ class largeDeformationFEA:
         for i in range(num_gq):
             for j in range(num_gq):
                 for k in range(num_gq):
-                    xi_gq[0,idx] = x[i]
+                    xi_gq[2,idx] = x[i]
                     xi_gq[1,idx] = x[j] 
-                    xi_gq[2,idx] = x[k]
+                    xi_gq[0,idx] = x[k]
                     wt_gq[idx] = w[i] * w[j] * w[k]
                     idx += 1
                     
@@ -339,34 +339,14 @@ class largeDeformationFEA:
         Returns:
             tuple: (x,w) nodes and weights
         """
-        N = N-1
-        N1 = N+1
-        N2 = N+2
+        nodes, weights = np.polynomial.legendre.leggauss(N)
         
-        xu = np.linspace(-1, 1, N1)
-        y = np.cos((2*np.arange(N+1)+1)*np.pi/(2*N+2)) + (0.27/N1)*np.sin(np.pi*xu*N/N2)
-        
-        L = np.zeros((N1,N2))
-        Lp = np.zeros((N1,N2))
-        
-        y0 = 2
-        while np.max(np.abs(y-y0)) > np.finfo(float).eps:
-            L[:,0] = 1
-            Lp[:,0] = 0
-            L[:,1] = y
-            Lp[:,1] = 1
-            for k in range(2,N1):
-                L[:,k+1] = ((2*k-1)*y*L[:,k]-(k-1)*L[:,k-1])/k
-                
-            Lp = (N2)*(L[:,N1-1]-y*L[:,N2-1])/(1-y**2)
-            
-            y0 = y
-            y = y0-L[:,N2-1]/Lp
-            
-        x = (a*(1-y)+b*(1+y))/2
-        w = (b-a)/((1-y**2)*Lp**2)*(N2/N1)**2
-        
+        # Scale nodes and weights from [-1, 1] to [a, b]
+        x = 0.5 * (b - a) * nodes + 0.5 * (b + a)
+        w = 0.5 * (b - a) * weights
+    
         return x, w
+        
     
 if __name__ == "__main__":
     import examples_structural as examplesStructural
@@ -375,7 +355,7 @@ if __name__ == "__main__":
     
     mesh, mat_prop, bc = examplesStructural.createBeamSurfaceLoadProblem(nDOFDesired=3000)	
     
-    #plots.plotMesh(mesh, bc, title = 'Large Deformation Beam')
+    plots.plotMesh(mesh, bc, title = 'Large Deformation Beam')
     # Create test instance
     ldFEA = largeDeformationFEA(mesh, mat_prop, bc)
     ldFEA.solve_nonlinear_fem(verbose = True)

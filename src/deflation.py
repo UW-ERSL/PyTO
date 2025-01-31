@@ -14,6 +14,7 @@ import matplotlib.pyplot as plt
 import scipy.sparse as spy_sprs
 import scipy.linalg as spy_linalg
 import pypardiso
+import scipy
 from scipy.sparse import csr_matrix
 from scipy.sparse.linalg import factorized
 
@@ -322,11 +323,10 @@ class DeflationSolver:
 									M: _Array,
 									rtol=1e-8,
 									maxIters=500,
-									verbose=False):
+									verbose=True):
 		"""Deflated Preconditioned Conjugate Gradient."""
 
 		n = f.shape[0]
-
 		WT = W.transpose(copy=True)
 		
 		# Pre-compute matrices
@@ -361,8 +361,9 @@ class DeflationSolver:
 
 		# Initial residual norm
 		rz = r.dot(z)
-		target_norm_sq = (rtol * np.sqrt(rz)) ** 2
-
+		rz0 = rz
+		
+		
 		for iter_num in range(maxIters):
 			Kp = K @ p
 			pKp = p.dot(Kp)
@@ -373,8 +374,7 @@ class DeflationSolver:
 			
 			z = M @ r
 			rz_new = r.dot(z)
-			
-			if rz_new <= target_norm_sq:
+			if np.sqrt(rz_new/rz0) <= rtol:
 				if verbose:
 					print(f"Converged in {iter_num + 1} iterations")
 				break

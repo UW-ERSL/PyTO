@@ -186,11 +186,11 @@ def compareSolvers(linearSolvers = ['spsolve','pyamg','pycg','pypardiso','pydpcg
 	plt.grid(True)
 	plt.show()
 
-compareSolvers(); exit()
+#compareSolvers(); exit()
 
 # %%
 #mesh, mat_prop, bc = examplesStructural.createCantileverProblem(nDOFDesired=20000,L=[0.02,0.01,0.01])	
-mesh, mat_prop, bc = examplesStructural.createLBracketProblem(nDOFDesired=10000)	
+mesh, mat_prop, bc = examplesStructural.createLBracketProblem(nDOFDesired=200000)	
 #mesh, mat_prop, bc = examplesStructural.createCompliantMechanismProblem(nDOFDesired=20000)	
 
 #mesh, mat_prop, bc = examplesStructural.createFilletedBeamProblem(nDOFDesired=20000)
@@ -198,7 +198,7 @@ mesh, mat_prop, bc = examplesStructural.createLBracketProblem(nDOFDesired=10000)
 num_deflation_groups =  cfg_defl['num_groups']
 
 timeStart = time.time()
-dsolver.create_deflation_groups(mesh,nGroupsDesired=200)
+dsolver.create_deflation_groups(mesh,nGroupsDesired=num_deflation_groups)
 dsolver.create_delfation_matrix(mesh)
 dsolver.W = dsolver.W[bc.free_dofs, :]
 print('Deflation matrix time: ', time.time() - timeStart)
@@ -209,11 +209,11 @@ fe_solver = fea.StructFEA(mesh = mesh,
                           solver = lin_solv.Solvers.DPCG,
                           dsolver = dsolver,
                           rtol = 1e-8,
-                          verbose = False)
+                          verbose = False,plot = False)
 
 # %%
-run_fea(fe_solver = fe_solver, plot = True)
-plots.plot_deflation_groups( dsolver,mesh)
+run_fea(fe_solver = fe_solver, plot = False, verbose = True)
+#plots.plot_deflation_groups( dsolver,mesh)
 # %%
 #run_topopt(fe_solver, volfrac=0.5, optimizationMethod = topopt.Optimizers.MMA)
 
