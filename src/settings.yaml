@@ -1,7 +1,11 @@
 MATERIAL:
   youngs_modulus: 2.0e+11
   poissons_ratio: 0.28
-
+  conductivity: 50.0
+  density: 7700.0
+  specific_heat: 460.0
+  alpha: 1.3e-5
+  
 OPTIMIZATION:
   num_iter: 10
   lr: 5.e-2

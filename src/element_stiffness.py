@@ -199,7 +199,7 @@ _isotropic_constitutive_matrix = lambda e, nu: (
                                   )
 
 
-def hex8_stiffness_matrix(
+def hex8_stiffness_matrix_structural(
               mat_prop: mat_lib.StructuralMaterial,
               elem_size: tuple[float, float, float],
               gauss_order: int = 6,
@@ -257,3 +257,70 @@ def hex8_stiffness_matrix(
 
     ke += b.T @ c @ b * np.linalg.det(jac) *gauss_wts[ctr]
   return ke
+
+def hex8_stiffness_matrix_thermal(
+              mat_prop: mat_lib.ThermalMaterial,
+              elem_size: tuple[float, float, float],
+              gauss_order: int = 6,
+            ) -> np.ndarray:
+  """Computes the element stiffness matrix of a hexahedral element in 3D.
+    The stiffness matrix for linear thermal is derived as:
+
+                K = sum_gauss(B'D B |J| w )
+      Where,
+
+          B is the strain displacement matrix.
+          D is the constitutive matrix.
+          J is the Jacobian.
+          w is the gauss weight.
+  Args:
+    mat_prop: The thermal material properties of the element.
+    elem_size: The size of the element in x, y, z directions.
+    gauss_order: The Gauss integration order.
+
+  Returns: The element stiffness matrix of size (8, 8)
+  """
+  dx, dy, dz = elem_size
+  nodes = np.array([[0, dx, dx, 0, 0, dx, dx, 0],
+                    [0, 0, dy, dy, 0, 0, dy, dy],
+                    [0, 0, 0, 0, dz, dz, dz, dz]]).T
+
+  K = mat_prop.thermal_conductivity
+  # Initialize the element stiffness matrix.
+  ke = np.zeros((8, 8))
+
+  elem = Hex8Element()
+  gauss_pts, gauss_wts = get_gauss_integ_points_weights(gauss_order,
+														                            elem.dimension)
+
+  jacobians, _ = elem.compute_jacobian_and_determinant(gauss_pts, nodes)
+  dN_dxyz = elem.get_gradient_shape_function_physical(gauss_pts, nodes)
+
+  for ctr in range(gauss_wts.shape[0]):
+    jac = jacobians[ctr, :, :]
+    dn_dx, dn_dy, dn_dz = dN_dxyz[ctr, :, 0], dN_dxyz[ctr, :, 1], dN_dxyz[ctr, :, 2]
+    # Compute the strain-displacement matrix.
+    b = np.zeros((3, 8))
+    for l in range(8):
+      b[0, l] = dn_dx[l]
+      b[1, l] = dn_dy[l] 
+      b[2, l] = dn_dz[l]
+   
+    ke += K * b.T  @ b * np.linalg.det(jac) *gauss_wts[ctr]
+  return ke
+
+if __name__ == "__main__":
+  # Define the material properties
+  mat_prop = mat_lib.StructuralMaterial(youngs_modulus=1e6,
+                                        poissons_ratio=0.3)
+  elem_size = (1, 1, 1)
+  ke = hex8_stiffness_matrix_structural(mat_prop, elem_size)
+  print(ke)
+  print(ke.shape)
+
+  # Test thermal stiffness matrix
+  thermal_mat_prop = mat_lib.ThermalMaterial(thermal_conductivity=1.0)
+  ke_thermal = hex8_stiffness_matrix_thermal(thermal_mat_prop, elem_size)
+  print("\nThermal stiffness matrix:")
+  print(ke_thermal)
+  print(ke_thermal.shape)

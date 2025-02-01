@@ -16,3 +16,14 @@ class StructuralMaterial:
   youngs_modulus: Optional[float] = None
   poissons_ratio: Optional[float] = None
   mass_density: Optional[float] = None
+
+@dataclasses.dataclass
+class ThermalMaterial:
+  """Linear structural material constants.
+
+  Attributes:
+    thermal_conductivity: The thermal conductivity of the material [W/mK].
+    specific_heat: The specific heat of the material [J/kgK].
+  """
+  thermal_conductivity: Optional[float] = None
+  specific_heat: Optional[float] = None

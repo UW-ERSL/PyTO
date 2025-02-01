@@ -363,7 +363,6 @@ class DeflationSolver:
 		rz = r.dot(z)
 		rz0 = rz
 		
-		
 		for iter_num in range(maxIters):
 			Kp = K @ p
 			pKp = p.dot(Kp)

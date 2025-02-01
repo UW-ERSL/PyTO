@@ -25,7 +25,7 @@ class StructFEA:
     self.mesh, self.mat_prop, self.bc = mesh, mat_prop, bc
     self.solver, self.kwargs = solver, kwargs
     self.elem_stiff = jnp.asarray(
-                    elem_stiff.hex8_stiffness_matrix(mat_prop, mesh.elem_size))
+                    elem_stiff.hex8_stiffness_matrix_structural(mat_prop, mesh.elem_size))
 
     self.node_idx = jnp.stack((
                       np.kron(self.mesh.edofMat, np.ones((24, 1))).flatten(),
