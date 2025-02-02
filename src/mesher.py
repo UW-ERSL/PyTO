@@ -55,11 +55,6 @@ class Mesher:
 		self.minVoxelsPerAxis = 2
 
 
-	@property
-	def dofs_per_node(self)->int:
-		return 3
-
-
 	def grid_mesh(self,
 									 num_elems: tuple[int, int, int],
 									 elem_size: tuple[float, float, float],):
@@ -146,8 +141,6 @@ class Mesher:
 			self.elem_centers[elem, :] = np.array(np.sum(node_indices[self.elemArray[elem]], 
 																							axis = 0)/8.)
 
-		self.createEdofMat()
-
 
 	def read_pareto_mesh(self, fileName: str):
 		"""Read a Pareto mesh from a binary file.
@@ -198,7 +191,6 @@ class Mesher:
 						y=Extent(np.min(self.node_indices[:,1]), np.max(self.node_indices[:,1])),
 						z=Extent(np.min(self.node_indices[:,2]), np.max(self.node_indices[:,2])))
 
-			self.createEdofMat()
 
 	def createMeshFromSTLFile(self, stlFileName: str,nElemsDesired: int):
 		self.stlMesh = pv.read(stlFileName)
@@ -275,7 +267,6 @@ class Mesher:
 			neighbor_list = list(neighbors)
 			# Take first 27 neighbors (or pad with -1 if fewer exist)
 			self.elemNeighborsArray[elem] = (neighbor_list[:27] + [-1] * 27)[:27]
-		self.createEdofMat()
 
 		self.bbox = BoundingBox(
 						x=Extent(bounds[0], bounds[1]),	
@@ -298,21 +289,6 @@ class Mesher:
 		boundary_nodes = np.where(node_elem_count < 8)[0]
 		
 		return boundary_nodes
-	
-	def createEdofMat(self):
-		self.edofMat = np.zeros((self.num_elems, 24), dtype = int)
-		elemArray= self.elemArray
-		for el in range(self.num_elems):
-			self.edofMat[el, :] = np.array([
-				3*elemArray[el][0], 3*elemArray[el][0]+1, 3*elemArray[el][0]+2,
-				3*elemArray[el][1], 3*elemArray[el][1]+1, 3*elemArray[el][1]+2,
-				3*elemArray[el][2], 3*elemArray[el][2]+1, 3*elemArray[el][2]+2,
-				3*elemArray[el][3], 3*elemArray[el][3]+1, 3*elemArray[el][3]+2,
-				3*elemArray[el][4], 3*elemArray[el][4]+1, 3*elemArray[el][4]+2,
-				3*elemArray[el][5], 3*elemArray[el][5]+1, 3*elemArray[el][5]+2,
-				3*elemArray[el][6], 3*elemArray[el][6]+1, 3*elemArray[el][6]+2,
-				3*elemArray[el][7], 3*elemArray[el][7]+1, 3*elemArray[el][7]+2]
-			)
 
 
 	def setPseudoDensity(self, rho):

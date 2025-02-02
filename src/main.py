@@ -44,6 +44,7 @@ def run_fea(fe_solver: fea.StructFEA,
 	u = np.asarray(fe_solver.solve(elem_youngs_modulus= youngs_modulus))
 	delta = np.sqrt(u[0::3]**2 +  u[1::3]**2 +  u[2::3]**2)
 	deltaMax = np.max(delta)
+	nDOF = 3*fe_solver.mesh.num_nodes
 
 	if verbose:
 		print("nDof: ", nDOF)
@@ -212,8 +213,8 @@ fe_solver = fea.StructFEA(mesh = mesh,
                           verbose = False,plot = False)
 
 # %%
-#run_fea(fe_solver = fe_solver, plot = True, verbose = True)
+run_fea(fe_solver = fe_solver, plot = True, verbose = True)
 #plots.plot_deflation_groups( dsolver,mesh)
 # %%
-run_topopt(fe_solver, volfrac=0.5, optimizationMethod = topopt.Optimizers.MMA)
+#run_topopt(fe_solver, volfrac=0.5, optimizationMethod = topopt.Optimizers.MMA)
 

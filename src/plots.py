@@ -23,13 +23,15 @@ def plotMesh(mesh: mesher.Mesher,
   vertices = mesh.node_xyz
   
   # Handle deformation if provided
-  if (u is not None) and (np.max(np.abs(u))> 0):
+  if (u is not None) and mesh.dofs_per_node == 3 and (np.max(np.abs(u))> 0):  # structural
     delta = np.sqrt(u[0::3]**2 + u[1::3]**2 + u[2::3]**2)
     deltaMax = np.max(delta)
     scale = 0.1*mesh.bbox.diag_length/deltaMax
     uVertex = u.reshape(vertices.shape)
     vertices = vertices + scale*uVertex
     values = delta
+  elif (u is not None) and mesh.dofs_per_node == 1 and (np.max(np.abs(u))> 0):  # thermal
+    values = u
   else:
     values = None
 
@@ -128,7 +130,7 @@ def plotMesh(mesh: mesher.Mesher,
 
   # Add force arrows for label 2 (without red dots)
   label2_nodes = np.where(mesh.node_indices[:, 3] == 2)[0]
-  if len(label2_nodes) > 0 and bc is not None:
+  if len(label2_nodes) > 0 and mesh.dofs_per_node == 3 and bc is not None: #structural
     # Add force arrows
     arrow_scale = 0.2 * mesh.bbox.diag_length
     for node in label2_nodes:
@@ -151,7 +153,20 @@ def plotMesh(mesh: mesher.Mesher,
                          direction = force_vec,
                          scale = arrow_scale)
         plotter.add_mesh(arrow, color='red')
+  if len(label2_nodes) > 0 and mesh.dofs_per_node == 1 and bc is not None: #thermal
+    # Add force arrows
+    
+    for node in label2_nodes:
+      # Get force components for this node
+      q = bc.force[node]
 
+      # Only add arrow if flux is non-zero
+      if np.abs(q) > 0:
+        point = vertices[node]
+        plotter.add_points(point,
+                       color='red',
+                       point_size=point_size,
+                       render_points_as_spheres=True)
   # Add title
   if title:
     plotter.add_title(title, font_size=fontsize)

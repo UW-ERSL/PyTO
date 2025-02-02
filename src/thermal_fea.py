@@ -33,19 +33,19 @@ class ThermalFEA:
                       ).T.astype(int)
 
 
-  def solve(self, elem_youngs_modulus: jnp.ndarray) -> jnp.ndarray:
+  def solve(self, elem_conductivity: jnp.ndarray) -> jnp.ndarray:
     """Solve the thermal finite element problem.
 
     Args:
-      elem_youngs_modulus: Array of (num_elems,) of the young's modulus of each
+      elem_conductivity: Array of (num_elems,) of the young's modulus of each
         element.
 
     Returns: Array of (num_dofs,) of the solution to the finite element problem.
     """
-
+ 
     elem_stiff_mtrx = jnp.einsum('ij, e -> eij',
                                  self.elem_stiff,
-									               elem_youngs_modulus).flatten(order = 'C')
+									               elem_conductivity).flatten(order = 'C')
 
     stiff_mtrx = jax_sprs.BCOO((elem_stiff_mtrx, self.node_idx),
                                 shape=(self.bc.num_dofs, self.bc.num_dofs))

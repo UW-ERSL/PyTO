@@ -16,6 +16,21 @@ cfg_mat = settings['MATERIAL']
 cfg_opt = settings['OPTIMIZATION']
 cfg_defl = settings['DEFLATION']
 
+def createEdofMatStructural(mesh):
+	edofMat = np.zeros((mesh.num_elems, 24), dtype = int)
+	elemArray= mesh.elemArray
+	for el in range(mesh.num_elems):
+		edofMat[el, :] = np.array([
+			3*elemArray[el][0], 3*elemArray[el][0]+1, 3*elemArray[el][0]+2,
+			3*elemArray[el][1], 3*elemArray[el][1]+1, 3*elemArray[el][1]+2,
+			3*elemArray[el][2], 3*elemArray[el][2]+1, 3*elemArray[el][2]+2,
+			3*elemArray[el][3], 3*elemArray[el][3]+1, 3*elemArray[el][3]+2,
+			3*elemArray[el][4], 3*elemArray[el][4]+1, 3*elemArray[el][4]+2,
+			3*elemArray[el][5], 3*elemArray[el][5]+1, 3*elemArray[el][5]+2,
+			3*elemArray[el][6], 3*elemArray[el][6]+1, 3*elemArray[el][6]+2,
+			3*elemArray[el][7], 3*elemArray[el][7]+1, 3*elemArray[el][7]+2]
+		)
+	return edofMat
 
 def createCantileverProblem(nDOFDesired: int = 10000, L: float = [0.1, 0.1, 0.1]):
 	# This is an example where a grid mesh is created, and a structural problem is posed on it.
@@ -29,7 +44,8 @@ def createCantileverProblem(nDOFDesired: int = 10000, L: float = [0.1, 0.1, 0.1]
 	mesh = mesher.Mesher()
 	mesh.grid_mesh(num_elems = (nelx, nely, nelz),
 								 elem_size = (L[0]/nelx, L[1]/nely, L[2]/nelz))
-
+	mesh.dofs_per_node = 3 # structural
+	mesh.edofMat = createEdofMatStructural(mesh)
 
 	node_indices = mesh.node_indices
 
@@ -38,7 +54,6 @@ def createCantileverProblem(nDOFDesired: int = 10000, L: float = [0.1, 0.1, 0.1]
 							3 * fixed_nodes + 1,
 							3 * fixed_nodes + 2]).flatten().astype(int)
 	dirichlet_values = 0*np.ones_like(fixed_dofs, dtype = float)
-	dirichlet_values[0:3] = 0
 
 	mesh.node_indices[fixed_nodes, 3] = 1
 
@@ -89,6 +104,8 @@ def createLBracketProblem(nDOFDesired: int = 10000):
 	mesh = mesher.Mesher()
 	
 	mesh.createMeshFromSTLFile(stl_file, nElemsDesired=nElemsDesired)
+	mesh.dofs_per_node = 3 # structural
+	mesh.edofMat = createEdofMatStructural(mesh)
 
 	node_pts = mesh.node_indices[:, :3]*mesh.elem_size +mesh.origin
 	
@@ -97,7 +114,7 @@ def createLBracketProblem(nDOFDesired: int = 10000):
 							3 * fixed_nodes + 1,
 							3 * fixed_nodes + 2]).flatten().astype(int)
 	dirichlet_values = 0*np.ones_like(fixed_dofs, dtype = float)
-	dirichlet_values[0:3] = 0
+
 	mesh.node_indices[fixed_nodes, 3] = 1 # for plotting
 
 	load_nodes = np.where((node_pts[:, 1] > 0.039) & (node_pts[:, 0] > 0.09))[0] # hard coded	
@@ -140,6 +157,8 @@ def createCompliantMechanismProblem(nDOFDesired: int = 10000):
 	mesh = mesher.Mesher()
 	
 	mesh.createMeshFromSTLFile(stl_file, nElemsDesired=nElemsDesired)
+	mesh.dofs_per_node = 3 # structural
+	mesh.edofMat = createEdofMatStructural(mesh)
 
 	node_pts =mesh.node_indices[:, :3]*mesh.elem_size + mesh.origin
 	
@@ -148,7 +167,7 @@ def createCompliantMechanismProblem(nDOFDesired: int = 10000):
 							3 * fixed_nodes + 1,
 							3 * fixed_nodes + 2]).flatten().astype(int)
 	dirichlet_values = 0*np.ones_like(fixed_dofs, dtype = float)
-	dirichlet_values[0:3] = 0
+
 	mesh.node_indices[fixed_nodes, 3] = 1 # for plotting
 
 	load_nodes = np.where((node_pts[:, 0] == np.min(node_pts[:, 0])) & (abs(node_pts[:, 1] - 55) < 20))[0] # the middle face of the mechanism	
@@ -170,6 +189,8 @@ def createAlcoaProblem():
 	# This is an example where an existing mesh is read, and a structural problem is posed on it.
 	mesh = mesher.Mesher()
 	mesh.read_pareto_mesh("../meshFiles/AlcoaGrabCAD.msh")
+	mesh.dofs_per_node = 3 # structural
+	mesh.edofMat = createEdofMatStructural(mesh)
 	node_indices = mesh.node_indices
 
 	fixed_nodes = np.where(node_indices[:, 3] == 1)[0]
@@ -204,8 +225,9 @@ def createBeamSurfaceLoadProblem(nDOFDesired: int = 20000, L: float = [0.1, 0.01
 	mesh = mesher.Mesher()
 	mesh.grid_mesh(num_elems = (nelx, nely, nelz),
 								 elem_size = (L[0]/nelx, L[1]/nely, L[2]/nelz))
-
-
+	mesh.dofs_per_node = 3 # structural
+	mesh.edofMat = createEdofMatStructural(mesh)
+	
 	node_indices = mesh.node_indices
 
 	fixed_nodes = np.where(node_indices[:, 0] == 0)[0] # x = 0 plane
@@ -213,7 +235,6 @@ def createBeamSurfaceLoadProblem(nDOFDesired: int = 20000, L: float = [0.1, 0.01
 							3 * fixed_nodes + 1,
 							3 * fixed_nodes + 2]).flatten().astype(int)
 	dirichlet_values = 0*np.ones_like(fixed_dofs, dtype = float)
-	dirichlet_values[0:3] = 0
 
 	mesh.node_indices[fixed_nodes, 3] = 1 # this is for plotting
 
@@ -242,13 +263,16 @@ def createFilletedBeamProblem(nDOFDesired=50000):
 	mesh = mesher.Mesher()
 	nElemsDesired = round(nDOFDesired/3)	# estimate
 	mesh.createMeshFromSTLFile(stl_file, nElemsDesired=nElemsDesired)
+	mesh.dofs_per_node = 3 # structural
+	mesh.edofMat = createEdofMatStructural(mesh)
+
 	node_indices = mesh.node_indices
 	fixed_nodes = np.where(node_indices[:, 0] == 0)[0] # x = 0 plane
 	fixed_dofs = np.array([3 * fixed_nodes,
 							3 * fixed_nodes + 1,
 							3 * fixed_nodes + 2]).flatten().astype(int)
 	dirichlet_values = 0*np.ones_like(fixed_dofs, dtype = float)
-	dirichlet_values[0:3] = 0
+
 
 	mesh.node_indices[fixed_nodes, 3] = 1 # for plotting
 
@@ -271,6 +295,31 @@ def createFilletedBeamProblem(nDOFDesired=50000):
         
 if __name__ == "__main__":
     import plots
-    mesh, mat_prop, bc = createCompliantMechanismProblem(nDOFDesired=10000)
-    plots.plotMesh(mesh, bc, title='Compliant Mechanism')
-   
+    import struct_fea as fea
+    import linear_solvers as lin_solv
+    import jax # import jax to enable 64 bit precision
+    import time	
+    jax.config.update("jax_enable_x64", True)
+
+    mesh, mat_prop, bc = createCantileverProblem(nDOFDesired=10000)
+    fe_solver = fea.StructFEA(mesh = mesh,
+                          mat_prop = mat_prop,
+                          bc = bc,
+                          solver = lin_solv.Solvers.PARDISO)
+
+    youngs_modulus = np.ones((fe_solver.mesh.num_elems,)) * fe_solver.mat_prop.youngs_modulus
+    startTime = time.time()
+    u = np.asarray(fe_solver.solve(elem_youngs_modulus= youngs_modulus))
+    delta = np.sqrt(u[0::3]**2 +  u[1::3]**2 +  u[2::3]**2)
+    deltaMax = np.max(delta)
+    nDOF = 3*fe_solver.mesh.num_nodes
+    print("nDof: ", nDOF)
+    print('-----------------------------')
+    print('Solver: ', fe_solver.solver.name)
+    print("FEA time: ", time.time() - startTime)
+    print('Max displacement: ', deltaMax)
+    print('-----------------------------')
+	
+    plots.plotMesh(fe_solver.mesh, fe_solver.bc, title=f'Cantilever; dof = {nDOF}')
+    plots.plotMesh(fe_solver.mesh, fe_solver.bc, u,
+								title=f'Max deformation: {deltaMax:.3e}')
