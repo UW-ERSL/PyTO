@@ -212,8 +212,8 @@ fe_solver = fea.StructFEA(mesh = mesh,
                           verbose = False,plot = False)
 
 # %%
-run_fea(fe_solver = fe_solver, plot = False, verbose = True)
+#run_fea(fe_solver = fe_solver, plot = True, verbose = True)
 #plots.plot_deflation_groups( dsolver,mesh)
 # %%
-#run_topopt(fe_solver, volfrac=0.5, optimizationMethod = topopt.Optimizers.MMA)
+run_topopt(fe_solver, volfrac=0.5, optimizationMethod = topopt.Optimizers.MMA)
 
