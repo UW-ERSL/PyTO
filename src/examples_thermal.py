@@ -4,35 +4,10 @@ import numpy as np
 import bound_cond
 import mat_lib
 import os
-import yaml 
 
-# Load settings from YAML file
 script_dir = os.path.dirname(os.path.abspath(__file__))
-settings_path = os.path.join(script_dir, 'settings.yaml')
-with open(settings_path, 'r') as file:
-  settings = yaml.safe_load(file)
 
-cfg_mat = settings['MATERIAL']
-cfg_opt = settings['OPTIMIZATION']
-cfg_defl = settings['DEFLATION']
-
-def createEdofMatThermal(mesh):
-	edofMat = np.zeros((mesh.num_elems, 8), dtype = int)
-	elemArray= mesh.elemArray
-	for el in range(mesh.num_elems):
-		edofMat[el, :] = np.array([
-			elemArray[el][0], 
-			elemArray[el][1],
-			elemArray[el][2], 
-			elemArray[el][3], 
-			elemArray[el][4],
-			elemArray[el][5],
-			elemArray[el][6],
-			elemArray[el][7]]
-		)
-	return edofMat
-
-def createLBracketThermalProblem(nDOFDesired: int = 10000,thermal_conductivity = 50, heat_load = 1000):
+def createLBracketThermalProblem(nDOFDesired: int = 10000,thermal_conductivity = 45, heat_load = 1000):
     """Creates a thermal problem setup for an L-bracket topology optimization.
     This function sets up a finite element mesh and boundary conditions for an L-bracket
     thermal problem from an STL file. The mesh is created with approximately the desired
@@ -61,8 +36,8 @@ def createLBracketThermalProblem(nDOFDesired: int = 10000,thermal_conductivity =
     mesh = mesher.Mesher()
 	
     mesh.createMeshFromSTLFile(stl_file, nElemsDesired=nElemsDesired)
-    mesh.dofs_per_node = 1
-    mesh.edofMat = createEdofMatThermal(mesh)
+    
+    mesh.createEdofMatThermal()
 
     node_pts = mesh.node_indices[:, :3]*mesh.elem_size +mesh.origin
 	
@@ -94,20 +69,21 @@ if __name__ == "__main__":
 
     jax.config.update("jax_enable_x64", True)
 
-    mesh, mat_prop, bc = createLBracketThermalProblem(nDOFDesired=20000,thermal_conductivity=100, heat_load=10)
+    mesh, mat_prop, bc = createLBracketThermalProblem(nDOFDesired=10000,thermal_conductivity=45, heat_load=10)
     fe_solver = fea.ThermalFEA(mesh = mesh,
                           mat_prop = mat_prop,
                           bc = bc,
                           solver = lin_solv.Solvers.PARDISO)
 
-    thermal_conductivity = np.ones((fe_solver.mesh.num_elems,))
+    thermal_conductivity = np.ones((fe_solver.mesh.num_elems,)) # This is really material scaling for SIMP
     startTime = time.time()
     u = np.asarray(fe_solver.solve(elem_conductivity= thermal_conductivity))
     
     uMax = np.max(np.abs(u))
     nDOF = fe_solver.mesh.num_nodes
-    print("nDof: ", nDOF)
+   
     print('-----------------------------')
+    print("nDof: ", nDOF)
     print('Solver: ', fe_solver.solver.name)
     print("FEA time: ", time.time() - startTime)
     print('Max u: ', uMax)

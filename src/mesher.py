@@ -273,6 +273,70 @@ class Mesher:
 						y=Extent(bounds[2], bounds[3]),	
 						z=Extent(bounds[4], bounds[5]))
 
+	def getNodesOnBoundingBoxPlane(self, axis:int, minLimit:bool):
+		"""Get the nodes on a bounding box plane.
+
+		Args:
+			axis: The axis of the bounding box plane (0 = x, 1 = y, 2 = z).
+			minMax: The min or max of the bounding box plane (True or False).
+
+		Returns:
+			A list of node indices on the bounding box plane.
+		"""
+		if axis == 0:
+			if minLimit:
+				nodes_on_plane = np.where(self.node_indices[:, 0] == 0)[0]
+			else: # max limit
+				nodes_on_plane = np.where(self.node_indices[:, 0] == self.grid[0])[0]
+		elif axis == 1:
+			if minLimit:
+				nodes_on_plane = np.where(self.node_indices[:, 1] == 0)[0]
+			else:
+				nodes_on_plane = np.where(self.node_indices[:, 1] == self.grid[1])[0]
+		elif axis == 2:
+			if minLimit:
+				nodes_on_plane = np.where(self.node_indices[:, 2] == 0)[0]
+			else:
+				nodes_on_plane = np.where(self.node_indices[:, 2] == self.grid[2])[0]
+		else:
+			raise ValueError("Invalid axis. Must be 0, 1, or 2.")
+		
+		return nodes_on_plane
+
+	def createEdofMatStructural(self):
+		self.dofs_per_node = 3 # structural
+		self.edofMat = np.zeros((self.num_elems, 24), dtype = int)
+		elemArray= self.elemArray
+		for el in range(self.num_elems):
+			self.edofMat[el, :] = np.array([
+				3*elemArray[el][0], 3*elemArray[el][0]+1, 3*elemArray[el][0]+2,
+				3*elemArray[el][1], 3*elemArray[el][1]+1, 3*elemArray[el][1]+2,
+				3*elemArray[el][2], 3*elemArray[el][2]+1, 3*elemArray[el][2]+2,
+				3*elemArray[el][3], 3*elemArray[el][3]+1, 3*elemArray[el][3]+2,
+				3*elemArray[el][4], 3*elemArray[el][4]+1, 3*elemArray[el][4]+2,
+				3*elemArray[el][5], 3*elemArray[el][5]+1, 3*elemArray[el][5]+2,
+				3*elemArray[el][6], 3*elemArray[el][6]+1, 3*elemArray[el][6]+2,
+				3*elemArray[el][7], 3*elemArray[el][7]+1, 3*elemArray[el][7]+2]
+			)
+		return
+	
+	def createEdofMatThermal(self):
+		self.dofs_per_node = 1
+		self.edofMat = np.zeros((self.num_elems, 8), dtype = int)
+		elemArray= self.elemArray
+		for el in range(self.num_elems):
+			self.edofMat[el, :] = np.array([
+				elemArray[el][0], 
+				elemArray[el][1],
+				elemArray[el][2], 
+				elemArray[el][3], 
+				elemArray[el][4],
+				elemArray[el][5],
+				elemArray[el][6],
+				elemArray[el][7]]
+			)
+		return 
+	
 	def get_boundary_nodes(self) -> np.ndarray:
 		"""Find nodes that lie on the boundary of the mesh.
 		
@@ -289,8 +353,7 @@ class Mesher:
 		boundary_nodes = np.where(node_elem_count < 8)[0]
 		
 		return boundary_nodes
-
-
+	
 	def setPseudoDensity(self, rho):
 		self.elemPseudoDensity = rho.copy()
 
