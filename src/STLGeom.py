@@ -102,7 +102,7 @@ class STLGeom:
     
     def plotGeometry(self, show_edges=False, show_axes=True, show_bounding_box=True):
          # Create a PyVista mesh from the STL data
-        vertices = stl_geom.mesh.vectors.reshape(-1, 3)
+        vertices = self.mesh.vectors.reshape(-1, 3)
         faces = np.arange(len(vertices)).reshape(-1, 3)
         faces = np.column_stack((np.full(len(faces), 3), faces))
         mesh = pv.PolyData(vertices, faces)
@@ -234,14 +234,8 @@ if __name__ == "__main__":
     import os
     import pyvista as pv
     script_dir = os.path.dirname(os.path.abspath(__file__))
-    #stl_file = os.path.join(script_dir, '../TOExamples/AlcoaGrabCAD/AlcoaGrabCAD.STL')
+    stl_file = os.path.join(script_dir, '../TOExamples/AlcoaGrabCAD/AlcoaGrabCAD.STL')
     #stl_file =  os.path.join(script_dir, '../TOExamples/CompliantMechanism/CompliantMechanism.STL')
-    stl_file = os.path.join(script_dir, '../TOExamples/LBracket/LBracket.STL')
+    #stl_file = os.path.join(script_dir, '../TOExamples/LBracket/LBracket.STL')
     stl_geom = STLGeom(stl_file)
     stl_geom.plotGeometry()
-    # Create a plotter and add the mesh
-    
-    # Generate random 3D points
-    random_points = np.random.uniform(-1, 1, size=(10, 3))
-    triangle_id = 13    
-    print(stl_geom.find_points_single_triangle_distances(random_points, triangle_id))
