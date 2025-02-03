@@ -19,7 +19,7 @@ class StructuralMaterial:
 
 @dataclasses.dataclass
 class ThermalMaterial:
-  """Linear structural material constants.
+  """Linear thermal material constants.
 
   Attributes:
     thermal_conductivity: The thermal conductivity of the material [W/mK].

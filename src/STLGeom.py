@@ -234,8 +234,8 @@ if __name__ == "__main__":
     import os
     import pyvista as pv
     script_dir = os.path.dirname(os.path.abspath(__file__))
-    stl_file = os.path.join(script_dir, '../TOExamples/AlcoaGrabCAD/AlcoaGrabCAD.STL')
-    stl_file =  os.path.join(script_dir, '../TOExamples/CompliantMechanism/CompliantMechanism.STL')
+    #stl_file = os.path.join(script_dir, '../TOExamples/AlcoaGrabCAD/AlcoaGrabCAD.STL')
+    #stl_file =  os.path.join(script_dir, '../TOExamples/CompliantMechanism/CompliantMechanism.STL')
     stl_file = os.path.join(script_dir, '../TOExamples/LBracket/LBracket.STL')
     stl_geom = STLGeom(stl_file)
     stl_geom.plotGeometry()
