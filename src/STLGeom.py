@@ -68,6 +68,126 @@ class STLGeom:
         cross_product_norm = math.sqrt(sum(c ** 2 for c in cross_product))
         return 0.5 * cross_product_norm
     
+    
+    def integrate_polynomial_over_triangle(self, triangle_id, exponents,nGaussPts=1):
+        """
+        Integrate polynomial x^a * y^b * z^c over a triangle using Gaussian quadrature.
+        Args:
+            triangle_id: index of triangle
+            exponents: tuple (a,b,c) for powers of x,y,z
+        Returns:
+            integral value
+        """
+        # Gaussian quadrature points and weights for triangles
+        if nGaussPts == 1:
+            gauss_points = [[0.333333333333333, 0.333333333333333]]
+            gauss_weights = [1.0]
+        elif nGaussPts == 3:
+            gauss_points = [
+            [0.166666666666667, 0.166666666666667],
+            [0.166666666666667, 0.666666666666667],
+            [0.666666666666667, 0.166666666666667]
+            ]
+            gauss_weights = [0.333333333333333, 0.333333333333333, 0.333333333333333]
+        else:
+            raise ValueError(f"Unsupported number of Gauss points: {nGaussPts}")
+
+        vertices = self.mesh.vectors[triangle_id]
+        area = self.tri_areas[triangle_id]
+        
+        result = 0.0
+        # Convert to numpy arrays for vectorized operations
+        gauss_points = np.array(gauss_points)
+        gauss_weights = np.array(gauss_weights)
+        vertices = np.array(vertices)
+
+        # Vectorized mapping of points to triangle
+        mapped_points = vertices[0] + np.outer(gauss_points[:, 0], vertices[1] - vertices[0]) + \
+                   np.outer(gauss_points[:, 1], vertices[2] - vertices[0])
+
+        # Vectorized polynomial evaluation
+        result = np.sum(gauss_weights * 
+                   mapped_points[:, 0]**exponents[0] * 
+                   mapped_points[:, 1]**exponents[1] * 
+                   mapped_points[:, 2]**exponents[2])
+        return result *  area
+    
+
+    def compute_mass_properties(self):
+        """
+        The computation is based on divergence theorem, converting volume integrals to surface integrals:
+        1. Volume is computed by integrating x·n over the surface
+        2. Center of mass uses second order moments (x²·n, y²·n, z²·n) 
+        3. Inertia tensor uses third order moments and cross terms
+        The process:
+        1. Iterates through each triangle in the STL mesh
+        2. For each triangle:
+            - Adds its area contribution
+            - Computes volume contribution using divergence theorem
+            - Computes center of mass contributions using second moments
+            - Computes inertia tensor contributions using third moments and cross terms
+        3. Normalizes center of mass by volume
+        4. Assembles the final inertia tensor
+        Parameters
+        ----------
+        None
+        Returns
+        -------
+        area : float
+             Total surface area of the geometry
+        volume : float
+             Volume of the geometry
+        center_of_mass : numpy.ndarray
+             3D vector containing (x,y,z) coordinates of the center of mass
+        inertia_tensor : numpy.ndarray
+             3x3 matrix representing the inertia tensor about the center of mass
+        Notes
+        -----
+        The computation assumes the STL represents a closed manifold surface.
+        The inertia tensor is computed about the origin of the coordinate system.
+        Integration is performed using Gaussian quadrature with variable number of points.
+        
+        """
+        area = 0.0
+        volume = 0.0
+        center_of_mass = np.zeros(3)
+        inertia_tensor = np.zeros((3, 3))
+        crossTerms = np.zeros((3, 3))
+        for t in range(self.stl_n_triangles):
+            normal = self.tri_normals[t]
+            area += self.tri_areas[t]
+            # Compute volume
+            volume += normal[0]*self.integrate_polynomial_over_triangle(t, (1,0,0),nGaussPts=1)
+
+            # Compute center of mass
+            center_of_mass[0] += 0.5*normal[0]*self.integrate_polynomial_over_triangle(t, (2,0,0),nGaussPts=1)
+            center_of_mass[1] += 0.5*normal[1]*self.integrate_polynomial_over_triangle(t, (0,2,0),nGaussPts=1)
+            center_of_mass[2] += 0.5*normal[2]*self.integrate_polynomial_over_triangle(t, (0,0,2),nGaussPts=1)
+
+            # Integral of x^2, y^2, z^2, x*y, etc. over the triangle
+            crossTerms[0,0] += (1/3.0)*normal[0]*self.integrate_polynomial_over_triangle(t, (3,0,0),nGaussPts=3)
+            crossTerms[1,1] += (1/3.0)*normal[1]*self.integrate_polynomial_over_triangle(t, (0,3,0),nGaussPts=3)
+            crossTerms[2,2] += (1/3.0)*normal[2]*self.integrate_polynomial_over_triangle(t, (0,0,3),nGaussPts=3)
+
+            crossTerms[0,1] += normal[2]*self.integrate_polynomial_over_triangle(t, (1,1,1),nGaussPts=3)
+            crossTerms[0,2] += normal[1]*self.integrate_polynomial_over_triangle(t, (1,1,1),nGaussPts=3)
+            crossTerms[1,2] += normal[0]*self.integrate_polynomial_over_triangle(t, (1,1,1),nGaussPts=3)
+
+        center_of_mass /= volume
+        inertia_tensor[0,0] = crossTerms[1,1] + crossTerms[2,2]
+        inertia_tensor[1,1] = crossTerms[0,0] + crossTerms[2,2]
+        inertia_tensor[2,2] = crossTerms[0,0] + crossTerms[1,1]
+
+
+        inertia_tensor[0,1] = -crossTerms[0,1]
+        inertia_tensor[1,0] = -crossTerms[0,1]
+        inertia_tensor[0,2] = -crossTerms[0,2]
+        inertia_tensor[2,0] = -crossTerms[0,2]
+        inertia_tensor[1,2] = -crossTerms[1,2]
+        inertia_tensor[2,1] = -crossTerms[1,2]
+        
+        return area, volume, center_of_mass, inertia_tensor
+
     def highlight_triangles_recursive(self, seed_triangle, depth, cutoff_angle_degrees):
         """
         Toggle highlight state for triangles recursively based on the angle between normals.
@@ -234,8 +354,20 @@ if __name__ == "__main__":
     import os
     import pyvista as pv
     script_dir = os.path.dirname(os.path.abspath(__file__))
+    
+    
+    
+    stl_file = os.path.join(script_dir, '../TOExamples/CantileverBeam/CantileverBeam.STL')
     stl_file = os.path.join(script_dir, '../TOExamples/AlcoaGrabCAD/AlcoaGrabCAD.STL')
-    #stl_file =  os.path.join(script_dir, '../TOExamples/CompliantMechanism/CompliantMechanism.STL')
-    #stl_file = os.path.join(script_dir, '../TOExamples/LBracket/LBracket.STL')
+    stl_file = os.path.join(script_dir, '../TOExamples/LBracket/LBracket.STL')
+    stl_file =  os.path.join(script_dir, '../TOExamples/CompliantMechanism/CompliantMechanism.STL')
     stl_geom = STLGeom(stl_file)
-    stl_geom.plotGeometry()
+
+    [area, volume, cg, inertia] = stl_geom.compute_mass_properties()
+    print(f"Area: {area}")
+    print(f"Volume: {volume}")
+    print(f"Center of Mass: {cg}")
+    print(f"Inertia: {inertia}")
+
+
+    #stl_geom.plotGeometry()
