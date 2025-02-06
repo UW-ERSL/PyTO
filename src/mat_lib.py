@@ -27,3 +27,4 @@ class ThermalMaterial:
   """
   thermal_conductivity: Optional[float] = None
   specific_heat: Optional[float] = None
+  mass_density: Optional[float] = None

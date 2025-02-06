@@ -141,7 +141,38 @@ class Mesher:
 			self.elem_centers[elem, :] = np.array(np.sum(node_indices[self.elemArray[elem]], 
 																							axis = 0)/8.)
 
-
+	def translate(self, dx: float, dy: float, dz: float):
+		"""Translate mesh by specified amounts.
+		
+		Args:
+			dx: Translation in x direction
+			dy: Translation in y direction 
+			dz: Translation in z direction
+		"""
+		# Update origin
+		self.origin[0] += dx
+		self.origin[1] += dy
+		self.origin[2] += dz
+		
+		# Update node coordinates
+		self.node_xyz[:,0] += dx
+		self.node_xyz[:,1] += dy 
+		self.node_xyz[:,2] += dz
+		
+		# Update element centers
+		self.elem_centers[:,0] += dx
+		self.elem_centers[:,1] += dy
+		self.elem_centers[:,2] += dz
+		
+		# Update bounding box
+		if self.bbox:
+			self.bbox.x.min += dx
+			self.bbox.x.max += dx
+			self.bbox.y.min += dy
+			self.bbox.y.max += dy
+			self.bbox.z.min += dz
+			self.bbox.z.max += dz
+			
 	def read_pareto_mesh(self, fileName: str):
 		"""Read a Pareto mesh from a binary file.
 
@@ -273,6 +304,43 @@ class Mesher:
 						y=Extent(bounds[2], bounds[3]),	
 						z=Extent(bounds[4], bounds[5]))
 
+	def get_nodes_within_radius(self, pt: np.ndarray, r: float) -> np.ndarray:
+		"""Find nodes within a given radius from a point.
+		
+		Args:
+			pt: Array of shape (3,) containing x, y, z coordinates of the point
+			r: Radius within which to find nodes
+			
+		Returns:
+			np.ndarray: Indices of nodes within the given radius
+		"""
+		# Calculate squared distances from the point to all nodes
+		distances_sq = np.sum((self.node_xyz - pt)**2, axis=1)
+		
+		# Find nodes within the radius (compare squared distances to squared radius)
+		nodes_within_radius = np.where(distances_sq <= r**2)[0]
+		
+		return nodes_within_radius
+	
+	def get_nodes_from_locations(self, locations: np.ndarray) -> np.ndarray:
+		"""Find nodes closest to given x,y,z locations.
+		
+		Args:
+			locations: Array of shape (n,3) containing x,y,z coordinates
+			
+		Returns:
+			np.ndarray: Indices of closest nodes to each location
+		"""
+		# Convert locations to array if not already
+		points = np.asarray(locations)
+		
+		# Calculate distances from each point to all nodes
+		distances = np.sqrt(np.sum((self.node_xyz[:,np.newaxis,:] - points)**2, axis=2))
+		
+		# Get index of minimum distance for each point
+		closest_nodes = np.argmin(distances, axis=0)
+		
+		return closest_nodes
 	def getNodesOnBoundingBoxPlane(self, axis:int, minLimit:bool):
 		"""Get the nodes on a bounding box plane.
 

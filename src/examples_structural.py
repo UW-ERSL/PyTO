@@ -4,7 +4,6 @@ import numpy as np
 import bound_cond
 import mat_lib
 import os
-import os
 
 script_dir = os.path.dirname(os.path.abspath(__file__))
 

@@ -309,18 +309,61 @@ def hex8_stiffness_matrix_thermal(
     ke += K * b.T  @ b * np.linalg.det(jac) *gauss_wts[ctr]
   return ke
 
+def hex8_specific_heat_matrix(
+        mat_prop: mat_lib.ThermalMaterial,
+        elem_size: tuple[float, float, float],
+        gauss_order: int = 6,
+      ) -> np.ndarray:
+  """Computes the element specific heat matrix for a hexahedral element in 3D.
+  The specific heat matrix is derived as:
+
+        C = sum_gauss(rho * c * N'N |J| w )
+    Where,
+      rho is the density
+      c is the specific heat capacity
+      N are the shape functions
+      J is the Jacobian
+      w is the gauss weight
+
+  Args:
+  mat_prop: The thermal material properties of the element
+  elem_size: The size of the element in x, y, z directions
+  gauss_order: The Gauss integration order
+
+  Returns: The element specific heat matrix of size (8, 8)
+  """
+  dx, dy, dz = elem_size
+  nodes = np.array([[0, dx, dx, 0, 0, dx, dx, 0],
+          [0, 0, dy, dy, 0, 0, dy, dy],
+          [0, 0, 0, 0, dz, dz, dz, dz]]).T
+
+  # Initialize the element matrix
+  ce = np.zeros((8, 8))
+
+  elem = Hex8Element()
+  gauss_pts, gauss_wts = get_gauss_integ_points_weights(gauss_order, 
+                              elem.dimension)
+
+  jacobians, _ = elem.compute_jacobian_and_determinant(gauss_pts, nodes)
+  N = elem.shape_functions(gauss_pts)
+
+  for ctr in range(gauss_wts.shape[0]):
+    jac = jacobians[ctr, :, :]
+    ce += (mat_prop.mass_density * mat_prop.specific_heat * 
+          N[ctr, :].reshape(-1, 1) @ N[ctr, :].reshape(1, -1) * 
+          np.linalg.det(jac) * gauss_wts[ctr])
+  
+  return ce
+
 if __name__ == "__main__":
   # Define the material properties
   mat_prop = mat_lib.StructuralMaterial(youngs_modulus=1e6,
                                         poissons_ratio=0.3)
   elem_size = (1, 1, 1)
   ke = hex8_stiffness_matrix_structural(mat_prop, elem_size)
-  print(ke)
-  print(ke.shape)
+
 
   # Test thermal stiffness matrix
   thermal_mat_prop = mat_lib.ThermalMaterial(thermal_conductivity=1.0)
   ke_thermal = hex8_stiffness_matrix_thermal(thermal_mat_prop, elem_size)
-  print("\nThermal stiffness matrix:")
-  print(ke_thermal)
-  print(ke_thermal.shape)
+ 

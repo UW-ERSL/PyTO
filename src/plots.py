@@ -120,7 +120,7 @@ def plotMesh(mesh: mesher.Mesher,
 
   # Add black dots for label 1 (fixed nodes)
   label1_nodes = np.where(mesh.node_indices[:, 3] == 1)[0]
-  if len(label1_nodes) > 0:
+  if len(label1_nodes) > 0 and bc is not None:
     points1 = vertices[label1_nodes]
     dots1 = pv.PolyData(points1)
     plotter.add_points(dots1,

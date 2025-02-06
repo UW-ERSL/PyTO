@@ -30,7 +30,12 @@ class BC:
   def free_dofs(self)-> np.ndarray:
     return np.setdiff1d(np.arange(self.num_dofs), self.fixed_dofs)
 
-
+  def set_force(self, force: np.ndarray):
+    """Set the force array.
+    Useful for transient problems.
+    """
+    self.force = force
+    
 def impose_dirichlet_bc(A: spy_sprs.csr_matrix,
                         b: np.ndarray,
                         bc: BC,
