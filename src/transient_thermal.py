@@ -98,8 +98,8 @@ class TransientThermalFEA:
             heatFluxApplied = heat_flux_func(timeIndex, self.deltaTime,self.mesh)
             b = self.C_mtrx  @ self.u[:, timeIndex-1]/self.deltaTime +  heatFluxApplied
             self.u[:, timeIndex] = lin_sol.solve(A, b, self.solver, self.bc) # 
-            uMin = np.min(self.u[:, timeIndex])
-            uMax = np.max(self.u[:, timeIndex])
+            # uMin = np.min(self.u[:, timeIndex])
+            # uMax = np.max(self.u[:, timeIndex])
             #print(f"Max u: {uMax:.3e}, Min u: {uMin:.3e}")
             #plots.plotMesh(self.mesh, None, self.u[:,timeIndex],title=f'Dof = {self.num_dofs}, max u: {uMax:.3e}',show_edges=False,)
         return self.u
@@ -138,8 +138,8 @@ class TransientThermalFEA:
             # Solve
             u[:, i] = lin_sol.solve(A, b, self.solver, self.bc)
             v[:, i] = (1.0/(beta*dt))*(u[:, i] - u[:, i-1]) - (1.0/(2*beta))*v_pred
-            uMin = np.min(u[:, i])
-            uMax = np.max(u[:, i])
+            # uMin = np.min(u[:, i])
+            # uMax = np.max(u[:, i])
             #print(f"Max T: {uMax:.3e}, Min T: {uMin:.3e}")
             #plots.plotMesh(self.mesh, None, u[:,i], title=f' max u: {uMax:.3e}', show_edges=False)
             
@@ -174,6 +174,25 @@ if __name__ == "__main__":
                               solver = lin_solv.Solvers.PARDISO)
     
     elemSize = mesh.elem_size[0]
+
+    
+    
+    def analyticalTemperatureAndGradient(mat_prop,x,y,z,time):
+        # Simple analytical solution to transient heat equation in 3D
+        # Calculate thermal diffusivity from material properties 
+        alpha = mat_prop.thermal_conductivity / (mat_prop.mass_density * mat_prop.specific_heat)
+        k = np.pi  # wave number
+
+        # Temperature field using fundamental solution
+        T = np.exp(-alpha*k**2*time) * np.sin(k*x) * np.sin(k*y) * np.sin(k*z)
+
+        # Temperature gradients
+        dTdx = k * np.exp(-alpha*k**2*time) * np.cos(k*x) * np.sin(k*y) * np.sin(k*z)
+        dTdy = k * np.exp(-alpha*k**2*time) * np.sin(k*x) * np.cos(k*y) * np.sin(k*z)  
+        dTdz = k * np.exp(-alpha*k**2*time) * np.sin(k*x) * np.sin(k*y) * np.cos(k*z)
+
+        return T, np.array([dTdx, dTdy, dTdz])
+    
 
     def transientHeatFluxMoranBenchMark(timeStep,dt,mesh):
         def transientHeatFluxMoranBenchMark(timeStep, dt, mesh):
