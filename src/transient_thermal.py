@@ -177,21 +177,7 @@ if __name__ == "__main__":
 
     
     
-    def analyticalTemperatureAndGradient(mat_prop,x,y,z,time):
-        # Simple analytical solution to transient heat equation in 3D
-        # Calculate thermal diffusivity from material properties 
-        alpha = mat_prop.thermal_conductivity / (mat_prop.mass_density * mat_prop.specific_heat)
-        k = np.pi  # wave number
 
-        # Temperature field using fundamental solution
-        T = np.exp(-alpha*k**2*time) * np.sin(k*x) * np.sin(k*y) * np.sin(k*z)
-
-        # Temperature gradients
-        dTdx = k * np.exp(-alpha*k**2*time) * np.cos(k*x) * np.sin(k*y) * np.sin(k*z)
-        dTdy = k * np.exp(-alpha*k**2*time) * np.sin(k*x) * np.cos(k*y) * np.sin(k*z)  
-        dTdz = k * np.exp(-alpha*k**2*time) * np.sin(k*x) * np.sin(k*y) * np.cos(k*z)
-
-        return T, np.array([dTdx, dTdy, dTdz])
     
 
     def transientHeatFluxMoranBenchMark(timeStep,dt,mesh):

@@ -243,13 +243,17 @@ class Mesher:
 		self.grid = [nx, ny, nz]
 		self.elem_size= [Lx/nx, Ly/ny, Lz/nz]
 		print(f"Mesher: Grid size: {nx} x {ny} x {nz}")
-		# Voxels near the boundary are being removed. So scale the mesh slightly
+		# Voxels near the boundary are being removed. So scale the stl geometry slightly
 		scale = 1.001
-		# Scale the mesh  about its center
+		# Scale the stl  about its center
 		center = np.array(self.stlMesh.center)
 		self.stlMesh.points = (self.stlMesh.points - center) * scale + center
+		# Now voxelize
 		self.voxels = pv.voxelize(self.stlMesh, density=self.elem_size, check_surface=False)
+		# Unscale the stl back to its original size
 		self.stlMesh.points = (self.stlMesh.points - center) / scale + center
+		# Unscale the voxel points back to original size (same scaling as used for STL mesh)
+		self.voxels.points = (self.voxels.points - center) / scale + center
 		#extract the data
 		self.num_elems = self.voxels.n_cells
 		self.num_nodes = self.voxels.n_points 

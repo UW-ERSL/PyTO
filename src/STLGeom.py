@@ -29,6 +29,26 @@ class STLGeom:
         norm = math.sqrt(sum(n ** 2 for n in normal)) or self.TOL
         return [n / norm for n in normal]
     
+    def find_nearest_triangle_normal(self, point):
+        """
+        Find the outward normal of the nearest triangle to a given point.
+        Args:
+            point: numpy array [x, y, z] coordinates
+        Returns:
+            normal: outward normal vector of nearest triangle
+            distance: distance to nearest triangle
+        """
+        point = np.array(point)
+        min_dist = float('inf')
+        min_normal = None
+        
+        for i in range(self.stl_n_triangles):
+            dist = self.find_point_triangle_distance(point, i)
+            if dist < min_dist:
+                min_dist = dist
+                min_normal = self.tri_normals[i]
+        
+        return min_normal, min_dist
     def compute_neighbors(self):
         edge_map = defaultdict(list)  # Map of edges to triangle indices
         neighbors = [[] for _ in range(self.stl_n_triangles)]
