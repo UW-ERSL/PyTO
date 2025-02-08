@@ -80,24 +80,26 @@ def createMoranBenchMark(nDOFDesired: int = 10000,):
 	
 
 	x0_nodes = mesh.getNodesOnBoundingBoxPlane(0,True) # x = 0 plane
-	xmax_nodes = mesh.getNodesOnBoundingBoxPlane(0,True) # x = xMax plane
+	xmax_nodes = mesh.getNodesOnBoundingBoxPlane(0,False) # x = xMax plane
 	y0_nodes = mesh.getNodesOnBoundingBoxPlane(1,True) # y = 0 plane
 	ymax_nodes = mesh.getNodesOnBoundingBoxPlane(1,False) # y = yMax plane 
 	zmax_nodes = mesh.getNodesOnBoundingBoxPlane(2,True) # z = 0 plane
-
-	fixed_nodes = np.union1d(x0_nodes, np.union1d(xmax_nodes, np.union1d(y0_nodes, 
-                            np.union1d(ymax_nodes, zmax_nodes))))
-
+	# apply Dirichelt on xMax nodes
+	fixed_nodes = np.union1d(x0_nodes, np.union1d(xmax_nodes, np.union1d(y0_nodes, np.union1d(ymax_nodes, zmax_nodes))))
+	# don't apply Dirichelt on xMax nodes
+	#fixed_nodes = np.union1d(x0_nodes,  np.union1d(y0_nodes,np.union1d(ymax_nodes, zmax_nodes)))
+	   
 	fixed_dofs = np.array([fixed_nodes]).flatten().astype(int)
 	dirichlet_values = 0*np.ones_like(fixed_dofs, dtype = float)
 	mesh.node_indices[fixed_nodes, 3] = 1
 	# see Fig 2 in Paper for the heat load
-	nSamples = 100
+	
 	xStart = 0.0025
 	xWidth = 0.00238
+	nSamples = 2*int(xWidth/mesh.elem_size[0])
 	x = np.linspace(xStart, xStart + xWidth, nSamples)
 	line_locs = np.column_stack((x, 0.002275*np.ones_like(x), 0.002*np.ones_like(x)))
-	line_nodes = mesh.get_nodes_from_locations(line_locs)
+	line_nodes = np.unique(mesh.get_nodes_from_locations(line_locs))
 	load_dofs = line_nodes   
 	mesh.node_indices[line_nodes, 3] = 2
 	Q = 1 # total heat load

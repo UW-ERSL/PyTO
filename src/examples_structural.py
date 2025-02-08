@@ -177,7 +177,7 @@ def createAlcoaProblem(youngs_modulus = 2.1e11, poissons_ratio = 0.3):
 	return mesh, mat_prop, bc
 
 def createBeamSurfaceLoadProblem(nDOFDesired: int = 20000, L: float = [0.1, 0.01, 0.01],
-								 youngs_modulus = 3e7, poissons_ratio = 0.3,totalLoad = 20):
+								 youngs_modulus = 3e7, poissons_ratio = 0.3,totalLoad = 30000):
 	# This is for large deformation
 	nVoxelsDesired = int(nDOFDesired/5)
 	print(nVoxelsDesired)

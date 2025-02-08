@@ -1,5 +1,12 @@
 import numpy as np
-from scipy.sparse import csr_matrix
+from scipy.sparse import csr_matrix, coo_matrix
+from scipy.sparse.linalg import spsolve, norm
+import pypardiso # pip install pypardiso
+from scipy.special import roots_legendre
+import scipy.io
+import os
+import time
+import numpy as np
 
 class largeDeformationFEA:
     def __init__(self,mesh, mat_prop, bc):
@@ -11,14 +18,22 @@ class largeDeformationFEA:
         nu = self.material_properties.poissons_ratio
         self.bulkModulus =  E/(3*(1-2*nu)) 
         self.shearModulus = E/(2*(1+nu))
+        self.neuman_force = np.zeros((self.mesh.num_nodes * 3, 1))
+        self.nodal_dirichlet = np.zeros((self.mesh.num_nodes * 3, 1))
+        self.F = np.zeros((self.mesh.num_nodes * 3, 1))
 
-    def solve_nonlinear_fem(self,verbose = False, n_steps = 10,max_iter = 30,tol = 1e-9):
+
+
+    def solve_nonlinear_fem(self,verbose = False, n_steps = 5,max_iter = 30,tol = 1e-9):
         """
         Solve nonlinear finite element problem using Newton-Raphson method.
         """
         success = False
-        n_dof = 3*self.mesh.num_nodes
+        n_dof = self.mesh.num_nodes * 3
         self.sol = np.zeros(n_dof)
+        areaof_forceappliedface = self.mesh.bbox.ly*self.mesh.bbox.lz
+        self.neuman_force=self.boundary_conditions.force
+        neuman_force_on_face = self.neuman_force*areaof_forceappliedface
         for step in range(1, n_steps + 1):
             if verbose:
                 print(f'Load Step {step}/{n_steps}')
@@ -27,30 +42,37 @@ class largeDeformationFEA:
             iter = 0
             err = 1
             while (iter < max_iter) and (err > tol):
+                if verbose:
+                    print(f'Load Step {step}/{n_steps} Iteration {iter}')
                 iter += 1
                 self.assemble_k()  # Assembles K, M matrices and F vector
                 all_dof = np.arange(n_dof)
                 self.delta_sol = np.zeros(n_dof)
-                self.free_dof = np.setdiff1d(all_dof, self.fixed_dof)
-                b = self.F - (load_factor * self.neuman_force)
-                # Fix constrained nodes
-                for i in self.fixed_dof:
-                    self.K[i,:] = 0
-                    self.K[i,i] = 1
-                    b[i] = -load_factor * self.nodal_dirichlet[i] + self.sol[i]
+                self.free_dof = np.setdiff1d(all_dof, self.boundary_conditions.fixed_dofs)
+                b = self.F - (load_factor * neuman_force_on_face).flatten()
                 
-                d_sol = -np.linalg.solve(self.K, b)
+                # Fix constrained nodes
+                self.K = self.K.tolil()
+                for i in self.boundary_conditions.fixed_dofs:
+                    self.K[i, :] = 0
+                    self.K[i, i] = 1
+                    b[i] = -load_factor * self.nodal_dirichlet[i].item() + self.sol[i].item()
+
+
+                self.K = self.K.tocsr()
+                d_sol = -spsolve(self.K, b)
+
                 self.delta_sol = d_sol[:n_dof]
                 self.sol += self.delta_sol
-                
+             
                 self.u = self.sol[::3]
                 self.v = self.sol[1::3]
                 self.w = self.sol[2::3]
                 
                 err = np.linalg.norm(self.delta_sol)/np.linalg.norm(self.sol)
-                
-                if verbose:
-                    print(f'{iter}\t {err:E}\t {np.linalg.norm(b)/3/self.num_nodes:E}')
+ 
+                #if verbose:
+                    #print(f'{iter}\t {err:E}\t {np.linalg.norm(b)/n_coord/self.num_nodes:E}')
         
         success = True if err < tol else False
         self.deformation = np.sqrt(self.u**2 + self.v**2 + self.w**2)
@@ -109,7 +131,7 @@ class largeDeformationFEA:
             ndarray: Jacobian matrix
         """
         nodes = self.mesh.elemArray[elem]
-        position_nodes = self.mesh.node_xyz[nodes,:]
+        position_nodes = self.mesh.node_xyz[nodes, :]
         _, grad_N = self.shape_function(xi)
         return grad_N @ position_nodes
 
@@ -118,7 +140,7 @@ class largeDeformationFEA:
         Assemble global stiffness matrix and force vector
         """
         self.dof_per_node = 3
-        n_dof = self.dof_per_node*self.mesh.num_nodes
+        n_dof = self.dof_per_node * self.mesh.num_nodes
         
         self.nodes_per_element = 8
         self.dof_per_elem = self.dof_per_node * self.nodes_per_element
@@ -133,6 +155,7 @@ class largeDeformationFEA:
         # Initialize quadrature points and weights
         nQuadPts1D = 2
         self.xi, self.wt = self.gauss_quad_3d(nQuadPts1D)
+        
         # Precompute shape functions at quadrature points
         n_cell = []
         grad_n_cell = []
@@ -140,21 +163,24 @@ class largeDeformationFEA:
             N, grad_N = self.shape_function(self.xi[:,i])
             n_cell.append(N)
             grad_n_cell.append(grad_N)
+        
         self.n = n_cell
         self.grad_n = grad_n_cell
         
         index = 0
         for elem in range(n_elements):
-            nodes = self.mesh.elemArray[elem]
+            nodes = self.mesh.elemArray[elem]  
             k_elem, f_elem = self.compute_element_stiffness_finite_strain_spatial_conf(elem)
-          
-          
-            dof = np.array([3*nodes-2, 3*nodes-1, 3*nodes]).flatten()
-            dof = dof.reshape(1, self.dof_per_elem)
-            
-            row_index = np.repeat(dof, self.dof_per_elem)
-            col_index = np.tile(dof, self.dof_per_elem)
-            entries = k_elem.flatten()
+
+            dof = np.vstack((3*nodes, 3*nodes + 1, 3*nodes + 2))
+            dof = dof.reshape(-1, order='F')
+
+            # Create temp matrix by replicating dof myDOFPerElem times
+            temp = np.tile(dof, (self.dof_per_elem, 1))
+
+            row_index = temp.reshape(1, self.dof_per_elem**2, order='F').flatten()
+            col_index = temp.T.reshape(1, self.dof_per_elem**2, order='F').flatten()
+            entries   = k_elem.T.reshape(1, self.dof_per_elem**2, order='F').flatten()
             
             row_triplets[index:index+self.dof_per_elem**2] = row_index
             col_triplets[index:index+self.dof_per_elem**2] = col_index
@@ -162,10 +188,12 @@ class largeDeformationFEA:
             
             index += self.dof_per_elem**2
             f[dof] += f_elem
+
             
         self.K = csr_matrix((entry_triplets, (row_triplets, col_triplets)), 
                             shape=(n_dof, n_dof))
         self.F = f
+
     def compute_element_stiffness_finite_strain_spatial_conf(self, elem):
         """
         Computes elemental stiffness matrix and force vector for given element
@@ -184,43 +212,64 @@ class largeDeformationFEA:
         
         nodes = self.nodes_per_element
         elem_nodes = self.mesh.elemArray[elem,:]
-        sol = np.vstack((self.sol[3*elem_nodes-2], self.sol[3*elem_nodes-1], self.sol[3*elem_nodes]))
-
+        sol = np.vstack((self.sol[3*elem_nodes], self.sol[3*elem_nodes+1], self.sol[3*elem_nodes+2]))
         for g in range(num_gq):
             grad_n_all = grad_n_cell[g]
             j_total = self.jacobian(elem, xi_gq[:,g])
-            
+
             grad_ndx = np.linalg.solve(j_total, grad_n_all)
-            F = np.eye(3) + sol @ (grad_ndx.T)
+
+            F = np.eye(3) + sol@ grad_ndx.T
             b = F @ F.T  # Left green deformation tensor
             F_inv = np.linalg.inv(F)
-            
             grad_ndxs = np.zeros_like(grad_ndx)
-            for k in range(nodes):
-                for i in range(3):
-                    grad_ndxs[i,k] = np.sum(grad_ndx[:,k] * F_inv[:,i])
+            grad_ndxs = (F_inv.T @ grad_ndx).reshape(3, nodes, order='F')
 
             J_F = np.linalg.det(F)
             stress = self.kirchhoff_stress( b, J_F)
-            C = self.compute_elasticity_tensor_generalized_neo_hookean(b, J_F)   
+            C = self.compute_elasticity_tensor_generalized_neo_hookean(b, J_F)
             dJ = abs(np.linalg.det(j_total))
+            
             if J_F < 0:
                 print('Determinant of F negative')
                 break
 
-            for A in range(nodes):  
-                for i in range(3):
-                    for B in range(nodes):
-                        for k in range(3):
-                            for j in range(3):
-                                for l in range(3):
-                                    k_material[3*A+i,3*B+k] += wt_gq[g]*dJ*grad_ndxs[j,A]*C[i,j,k,l]*grad_ndxs[l,B]
-                                k_geometric[3*A+i,3*B+k] -= wt_gq[g]*dJ*grad_ndxs[k,A]*grad_ndxs[j,B]*stress[i,j]
+            # Assuming wt_gq[g], dJ, grad_ndxs, C, stress are already defined as numpy arrays
+            # Precompute the constant factor
+            factor = wt_gq[g] * dJ
+            for A in range(nodes):
+                grad_A = grad_ndxs[:, A]
+                for B in range(nodes):
+                    grad_B = grad_ndxs[:, B]
+                    # Compute k_material contribution
+                    k_material_block = np.einsum('i,ijkl,k->jl', grad_A, C, grad_B)
+                    k_material[3*A:3*A+3, 3*B:3*B+3] += factor * k_material_block
 
-                    for J in range(3):
-                        f_elem[3*A + i] += wt_gq[g]*dJ*stress[i,J]*grad_ndxs[J,A]
+                    # Compute k_geometric contribution 
+                    k_geometric_block = np.einsum('k,j,ij->ik', grad_A, grad_B, stress)
+                    k_geometric[3*A:3*A+3, 3*B:3*B+3] -= factor * k_geometric_block
 
-          
+                # Compute f_elem contribution
+                f_elem[3*A:3*A+3] += factor * np.einsum('ij,j->i', stress, grad_A)
+
+            '''
+            # Loop over nodes and vectorize inner operations
+            for A in range(nodes):
+                grad_A = grad_ndxs[:, A]
+                for B in range(nodes):
+                    grad_B = grad_ndxs[:, B]
+                    # Compute k_material contribution
+                    k_material_block = np.einsum('i,ijkl,k->jl', grad_A, C, grad_B)
+                    k_material[3*A:3*A+3, 3*B:3*B+3] += factor * k_material_block
+
+                    # Compute k_geometric contribution 
+                    k_geometric_block = np.einsum('k,j,ij->ik', grad_A, grad_B, stress)
+                    k_geometric[3*A:3*A+3, 3*B:3*B+3] -= factor * k_geometric_block
+
+                # Compute f_elem contribution
+                f_elem[3*A:3*A+3] += factor * np.einsum('ij,j->i', stress, grad_A)
+            '''
+
         k_elem = k_material + k_geometric
         return k_elem, f_elem
     
@@ -228,8 +277,32 @@ class largeDeformationFEA:
         """
         Compute strain energy
         """
-        self.strain_energy = 0.5 * self.sol @ (self.K[:self.num_dof, :self.num_dof] @ self.sol)
+        self.strain_energy = 0.5 * self.sol @ (self.K[:3*self.mesh.num_nodes, :3*self.mesh.num_nodes] @ self.sol)
         return self
+    
+    def gauss_quad_2d_quad(self, num_gq=4):
+        """
+        Gauss quadrature points for 2D quadrilateral elements using tensor product.
+        Args:
+            num_gq (int): Number of quadrature points per direction.
+        Returns:
+            tuple: (xi_GQ, wt_GQ) 2D Parametric coordinates and weights.
+        """
+        N = int(np.sqrt(num_gq))
+        x, w = roots_legendre(N)
+        
+        # Reverse the nodes and weights to get positives first
+        x = x[::-1]
+        w = w[::-1]
+        
+        xi_GQ = np.zeros((2, N * N))
+        xi_GQ[0, :] = np.repeat(x, N)
+        xi_GQ[1, :] = np.tile(x, N)
+        
+        wt_GQ = np.outer(w, w).flatten()
+        
+        return xi_GQ, wt_GQ
+    
     def gauss_quad_3d(self, num_gq=1):
         """
         Gauss quadrature points for 3D elements using tensor product
@@ -240,23 +313,17 @@ class largeDeformationFEA:
         """
         # Get 1D Gauss points and weights
         x, w = self.lgwt(num_gq, -1, 1)
-        x = -x # to make it consistent with MATLAB
-        # Initialize arrays
-        n_total = num_gq * num_gq * num_gq
-        xi_gq = np.zeros((3, n_total))
-        wt_gq = np.zeros(n_total)
-        
-        # Build 3D points using tensor product
-        idx = 0
-        for i in range(num_gq):
-            for j in range(num_gq):
-                for k in range(num_gq):
-                    xi_gq[2,idx] = x[i]
-                    xi_gq[1,idx] = x[j] 
-                    xi_gq[0,idx] = x[k]
-                    wt_gq[idx] = w[i] * w[j] * w[k]
-                    idx += 1
-                    
+        # Reverse the nodes and weights to get positives first
+        x = x[::-1]
+        w = w[::-1]
+        # X, Y, Z are each of shape (N, N, N)
+        X, Y, Z = np.meshgrid(x, x, x, indexing='ij')
+        # Flatten the grids and stack them into a (3, N^3) array.
+        xi_gq = np.vstack((X.flatten(order='F'),
+                    Y.flatten(order='F'),
+                    Z.flatten(order='F')))
+        # Form the 3D quadrature weights as the tensor product of the 1D weights.
+        wt_gq = np.kron(np.kron(w, w), w)
         return xi_gq, wt_gq
 
 
@@ -286,10 +353,7 @@ class largeDeformationFEA:
         Bkk = np.trace(B)
         
         if self.material_model == 'GeneralizedNeoHookean1':
-            for i in range(3):
-                for j in range(3):
-                    stress[i,j] = self.shearModulus * (B[i,j] - Bkk * delta[i,j] / 3.0) / J**(2/3) + self.bulkModulus * J * (J-1) * delta[i,j]
-                    
+            stress = self.shearModulus * (B - Bkk * delta / 3.0) / J**(2/3) + self.bulkModulus * J * (J-1) * delta         
         elif self.material_model == 'GeneralizedNeoHookean2':
             for i in range(3):
                 for j in range(3):
@@ -297,7 +361,7 @@ class largeDeformationFEA:
                     
         return stress
 
-    def compute_elasticity_tensor_generalized_neo_hookean(self, B, J):
+    def compute_elasticity_tensor_generalized_neo_hookean(self, B, Jac):
         """
         3D Elasticity tensor for hyperelastic material modeled by Generalized neohookean model
         """
@@ -307,14 +371,38 @@ class largeDeformationFEA:
         C = np.zeros((3, 3, 3, 3))
         
         if self.material_model == 'GeneralizedNeoHookean1':
+
+            # Reshape delta for broadcasting
+            delta_ik = delta[:, np.newaxis, :, np.newaxis]  # Shape: (3, 1, 3, 1)
+            delta_jk = delta[np.newaxis, :, :, np.newaxis]  # Shape: (1, 3, 3, 1)
+            delta_kl = delta[np.newaxis, np.newaxis, :, :]  # Shape: (1, 1, 3, 3)
+            delta_ij = delta[:, :, np.newaxis, np.newaxis]  # Shape:
+
+            # Expand B for broadcasting
+            B_jl = B[np.newaxis, :, np.newaxis, :]          # Shape: (1, 3, 1, 3)
+            B_il = B[:, np.newaxis, np.newaxis, :]          # Shape: (3, 1, 1, 3)
+            B_ij = B[:, :, np.newaxis, np.newaxis]          # Shape: (3, 3, 1, 1)
+            B_kl = B[np.newaxis, np.newaxis, :, :]          # Shape: (1, 1, 3, 3)
+
+            # Compute the components
+            term1 = self.shearModulus * (delta_ik * B_jl + B_il * delta_jk)
+            term2 = -(2/3) * self.shearModulus * (B_ij * delta_kl + delta_ij * B_kl)
+            term3 = (2/9) * self.shearModulus * Bqq * delta_ij * delta_kl
+            term4 = self.bulkModulus * (2 * Jac - 1) * Jac * delta_ij * delta_kl
+
+            # Final C computation
+            C = (term1 + term2 + term3) / Jac**(2/3) + term4
+
+        elif self.material_model == 'GeneralizedNeoHookean1a':
             for i in range(3):
                 for j in range(3):
                     for k in range(3):
                         for l in range(3):
                             C[i,j,k,l] = self.shearModulus * (delta[i,k] * B[j,l] + B[i,l] * delta[j,k] 
                                             - (2/3) * (B[i,j] * delta[k,l] + delta[i,j] * B[k,l])
-                                            + (2/3) * Bqq * delta[i,j] * delta[k,l] / 3) / J**(2/3) \
-                                        + self.bulkModulus * (2*J - 1) * J * delta[i,j] * delta[k,l]
+                                            + (2/3) * Bqq * delta[i,j] * delta[k,l] / 3) / Jac**(2/3) \
+                                        + self.bulkModulus * (2*Jac - 1) * Jac * delta[i,j] * delta[k,l]
+            
                             
         elif self.material_model == 'GeneralizedNeoHookean2':
             for i in range(3):
@@ -323,8 +411,8 @@ class largeDeformationFEA:
                         for l in range(3):
                             C[i,j,k,l] = self.shearModulus * (delta[i,k] * B[j,l] + B[i,l] * delta[j,k]
                                             - (2/3) * (B[i,j] * delta[k,l] + delta[i,j] * B[k,l])
-                                            + (2/3) * Bqq * delta[i,j] * delta[k,l] / 3) / J**(2/3) \
-                                        + self.bulkModulus * J * J * delta[i,j] * delta[k,l]
+                                            + (2/3) * Bqq * delta[i,j] * delta[k,l] / 3) / Jac**(2/3) \
+                                        + self.bulkModulus * Jac * Jac * delta[i,j] * delta[k,l]
         
         return C
     def lgwt(self,N, a, b):
@@ -339,26 +427,43 @@ class largeDeformationFEA:
         Returns:
             tuple: (x,w) nodes and weights
         """
-        nodes, weights = np.polynomial.legendre.leggauss(N)
-        
-        # Scale nodes and weights from [-1, 1] to [a, b]
-        x = 0.5 * (b - a) * nodes + 0.5 * (b + a)
-        w = 0.5 * (b - a) * weights
-    
+        x, w = roots_legendre(N)
+        x = 0.5 * (b - a) * x + 0.5 * (a + b)
+        w = 0.5 * (b - a) * w
         return x, w
-        
     
+    def print_sparse_matrix(self):
+        """
+        Print the non-zero values of the sparse matrix K in (i, j) value format.
+        """
+        coo = self.K.tocoo()  # Convert to COO format
+        for i, j, v in zip(coo.row, coo.col, coo.data):
+            if v != 0:
+                print(f"({i}, {j}) {v}")
+
+
 if __name__ == "__main__":
     import examples_structural as examplesStructural
     import plots
 
+    #nDOFDesired=42
+    #nDOFDesired=10500
+    nDOFDesired=400
+    mesh, mat_prop, bc = examplesStructural.createBeamSurfaceLoadProblem(nDOFDesired)	
     
-    mesh, mat_prop, bc = examplesStructural.createBeamSurfaceLoadProblem(nDOFDesired=3000)	
-    
-    plots.plotMesh(mesh, bc, title = 'Large Deformation Beam')
+    #plots.plotMesh(mesh, bc, title = 'Large Deformation Beam')
     # Create test instance
     ldFEA = largeDeformationFEA(mesh, mat_prop, bc)
+    
+    start_time = time.time()
     ldFEA.solve_nonlinear_fem(verbose = True)
+    end_time = time.time()
+    
     ldFEA.compute_strain_energy()
     print(f'Strain Energy: {ldFEA.strain_energy}')
-    plots.plotDeformation(mesh, ldFEA, title = 'Large Deformation Beam')
+    
+    # Log the time taken
+    time_taken = end_time - start_time
+    print(f"Time taken for solve_nonlinear_fem: {time_taken} seconds")
+
+    plots.plotMesh(ldFEA.mesh, bc=ldFEA.boundary_conditions, u=ldFEA.sol, title = 'Large Deformation Beam')

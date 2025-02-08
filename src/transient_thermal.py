@@ -163,7 +163,7 @@ if __name__ == "__main__":
     # Simulation parameters
     totalTime = 0.0125   # This is the total time for the simulation
     deltaTime = 48e-6 # This is the time step for the simulation
-    nDOFDesired = 200000 # This is the number of degrees of freedom desired for the FE Mesh
+    nDOFDesired = 30000 # This is the number of degrees of freedom desired for the FE Mesh
     
     nTimeSteps = int(totalTime/deltaTime)+1
     mesh, mat_prop, bc = thermal_fea.createMoranBenchMark(nDOFDesired=nDOFDesired)
