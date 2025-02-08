@@ -1,5 +1,5 @@
 import math
-from stl import mesh
+from stl import mesh #pip install numpy-stl
 from collections import defaultdict
 from queue import Queue
 import numpy as np
