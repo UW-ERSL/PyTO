@@ -7,7 +7,7 @@ import jax
 import jax.numpy as jnp
 from scipy.sparse import coo_matrix
 import matplotlib.pyplot as plt
-
+import element_stiffness as elem_stiff
 import mesher
 import mat_lib
 import struct_fea as sfea
@@ -119,17 +119,18 @@ def topopt_mma(fe_solver: sfea.StructFEA,
 														upper_bound = np.ones((num_elems, 1)),
 														)
 	mma_state = mma.init_mma(volfrac * np.ones((num_elems, 1)), mma_params)
-
-	x_old = np.ones(num_elems, dtype = float)
-
+	KE = elem_stiff.hex8_stiffness_matrix_structural( fe_solver.mat_prop,fe_solver.mesh.elem_size)
+	x_old = volfrac*np.ones(num_elems, dtype = float)
 	while not mma_state.is_converged:
 		x = mma_state.x.reshape(-1)
-		
-		(obj, u), grad_obj = jax.value_and_grad(_compliance_objective, has_aux= True)(x, fe_solver, penal)
-		cons, grad_cons = jax.value_and_grad(_volume_constraint)(x, volfrac)
-
+		obj,u = _compliance_objective(x, fe_solver, penal)
 		obj = np.array([obj])
+		ce = (np.dot(u[fe_solver.mesh.edofMat].reshape(num_elems, 24), KE) * u[fe_solver.mesh.edofMat].reshape(num_elems, 24)).sum(1)
+		grad_obj = (-penal * x ** (penal - 1)) * ce
 		grad_obj = (H * grad_obj)/Hs
+
+		cons = _volume_constraint(x, volfrac)
+		grad_cons = np.ones(num_elems)/volfrac
 
 		mma_state = mma.update_mma(mma_state,
 														   mma_params,
@@ -139,9 +140,8 @@ def topopt_mma(fe_solver: sfea.StructFEA,
 															 grad_cons.reshape((1, num_elems))
 															 )
 
-		change = np.linalg.norm(x - x_old)
+		change = np.max(np.abs(x - x_old))
 		x_old = x
-
 		print(f"it.: {mma_state.epoch}, obj.: {obj[0]:.3f} vc: {cons:.3f}",
 					f"ch: {change:.3f}")
 		history['compliance'].append(obj[0])
@@ -187,12 +187,13 @@ def topopt_optimality_criteria(
 	# OC parameters
 	xmin = 0.001  # Minimum density
 	xmax = 1.0    # Maximum density
-
+	KE = elem_stiff.hex8_stiffness_matrix_structural( fe_solver.mat_prop,fe_solver.mesh.elem_size)
 	for iter in range(maxIterations):
-		penal_dens = xPhys ** penal
-		(obj, u), grad_obj = jax.value_and_grad(_compliance_objective, has_aux= True)(xPhys, fe_solver, penal)
-		u = fe_solver.solve(penal_dens)		
-		grad_obj = (H * grad_obj) / Hs
+		obj,u = _compliance_objective(x, fe_solver, penal)
+		
+		ce = (np.dot(u[fe_solver.mesh.edofMat].reshape(num_elems, 24), KE) * u[fe_solver.mesh.edofMat].reshape(num_elems, 24)).sum(1)
+		grad_obj = (-penal * x ** (penal - 1)) * ce
+		grad_obj = (H * grad_obj)/Hs
 
 		# Optimality criteria update
 		xold = x.copy()
@@ -278,21 +279,22 @@ def topopt_pareto(fe_solver: sfea.StructFEA,
 	# Compute initial topological sensitivity
 	T = computeTopologicalSensitivity(fe_solver.mesh, fe_solver.mat_prop, u, rho)
 	T = (H * T) / Hs
-
+	print(f"v={volfrac:.2f}; J={history['compliance'][-1]:.2e}; #FEA={totalIter:2d}")
+	vol_decr = vol_decr_max
 	while volfrac > desiredVolFrac:
-		print(f"v={volfrac:.2f}; J={history['compliance'][-1]:.2e}; #FEA={totalIter:2d}")
-
 		# Move to next volume fraction
-		volfrac = max(desiredVolFrac, volfrac * (1 - vol_decr_max))
+		volfrac = max(desiredVolFrac, volfrac * (1 - vol_decr))
+
 		localIter = 0
 		success = False
-		JTemp = 0
+		JTemp = history['compliance'][-1]  # Store previous value
 		JPrev = float('inf')  # Initialize JPrev
+		JPrevPrev = float('inf')  # Initialize JPrev
 		while localIter < max_local_iters:
 			if JTemp > 10 * history['compliance'][0]:  # Divergence check
 				break
-
-			if localIter >= min_local_iters and abs(JPrev - JTemp)/JTemp < rel_err:
+			# Check convergence, and break if converged
+			if localIter >= min_local_iters and abs(min(JPrev,JPrevPrev) - JTemp)/JTemp < rel_err:
 				success = True
 				break
 
@@ -300,9 +302,9 @@ def topopt_pareto(fe_solver: sfea.StructFEA,
 			value = np.sort(T.flatten())[int(fe_solver.mesh.num_elems * (1 - volfrac))]
 			rho = np.ones((fe_solver.mesh.num_elems))
 			rho[T < value] = 0.001
-
+			JPrevPrev = JPrev  # Store previous value
 			JPrev = JTemp  # Store previous value
-
+			
 			u = np.asarray(fe_solver.solve(rho))
 			JTemp = float(fe_solver.bc.force.T @ u)
 			
@@ -315,10 +317,12 @@ def topopt_pareto(fe_solver: sfea.StructFEA,
 
 		if not success:
 			break
-			
+		
+		vol_decr = max(0.01,0.95*vol_decr)  # Decrease volume decrease factor
+
 		history['compliance'].append(JTemp)
 		history['volume'].append(volfrac)
-		
+		print(f"v={history['volume'][-1]:.2f}; J={history['compliance'][-1]:.2e}; #FEA={totalIter:2d}")
 		fe_solver.mesh.setPseudoDensity(rho.flatten())
 
 	return u, history
@@ -387,3 +391,64 @@ def computeTopologicalSensitivity(mesh: mesher.Mesher,
 						  (1-3*nu)/(1-nu**2) * np.trace(stress_tensor) * np.trace(strain_tensor))
 
 	return T
+
+if __name__ == "__main__":    
+	from examples_structural import createCantileverProblem, createLBracketProblem
+	import struct_fea as fea
+	import linear_solvers as lin_solv
+	import time
+	import plots	
+	jax.config.update("jax_enable_x64", True)
+
+
+	example = 2
+	nDOFDesired = 10000
+	if example == 1:
+		mesh, mat_prop, bc = createCantileverProblem(nDOFDesired = nDOFDesired)
+	elif example == 2:
+		mesh, mat_prop, bc = createLBracketProblem(nDOFDesired = nDOFDesired)    
+
+	fe_solver = fea.StructFEA(mesh = mesh,
+				mat_prop = mat_prop,
+				bc = bc,
+				solver = lin_solv.Solvers.PARDISO)
+
+	youngs_modulus = np.ones((fe_solver.mesh.num_elems,))
+
+	print('Solver: ', fe_solver.solver.name)
+	print("nDof: ", 3*fe_solver.mesh.num_nodes)
+	
+	
+	volfrac = 0.5
+	num_iter = 100
+
+	optimizationMethod = 1 # 1: MMA, 2: OC, 3: Pareto	
+
+	startTime = time.time()
+	if optimizationMethod == 1:
+		print("optimizationMethod: MMA")
+		u, history = topopt_mma(fe_solver = fe_solver,
+														maxMMAIterations = num_iter,
+														volfrac = volfrac
+														)
+		timeTaken = time.time() - startTime
+
+		title = f'MMA: vol: {history['volume'][-1]:0.2f}, J: {history['compliance'][-1]:.3e}, time: {timeTaken:.2f} s'
+	elif optimizationMethod == 2:
+		print("optimizationMethod: OC")
+		u, history = topopt_optimality_criteria(fe_solver = fe_solver,
+												maxIterations= num_iter,
+												volfrac = volfrac
+												)
+		timeTaken = time.time() - startTime
+		title = f'OC: vol: {history['volume'][-1]:0.2f}, J: {history['compliance'][-1]:.3e}, time: {timeTaken:.2f} s'
+
+	elif optimizationMethod == 3:
+		print("optimizationMethod: Pareto")
+		u, history = topopt_pareto(fe_solver = fe_solver,
+										desiredVolFrac =  volfrac)
+		
+		timeTaken = time.time() - startTime
+		title = f'Pareto: vol: {history['volume'][-1]:0.2f}, J: {history['compliance'][-1]:.3e}, time: {timeTaken:.2f} s'
+
+	plots.plotMesh(fe_solver.mesh, fe_solver.bc, u, title = title)
