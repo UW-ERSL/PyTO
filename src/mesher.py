@@ -323,7 +323,6 @@ class Mesher:
 		
 		# Find nodes within the radius (compare squared distances to squared radius)
 		nodes_within_radius = np.where(distances_sq <= r**2)[0]
-		
 		return nodes_within_radius
 	
 	def get_nodes_from_locations(self, locations: np.ndarray) -> np.ndarray:
@@ -343,7 +342,7 @@ class Mesher:
 		
 		# Get index of minimum distance for each point
 		closest_nodes = np.argmin(distances, axis=0)
-		
+	
 		return closest_nodes
 	def getNodesOnBoundingBoxPlane(self, axis:int, minLimit:bool):
 		"""Get the nodes on a bounding box plane.

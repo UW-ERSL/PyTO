@@ -93,18 +93,17 @@ class TransientThermalFEA:
         K = self.K_mtrx
         C = self.C_mtrx
         A = K + C/dt
-        for timeIndex in range(1, time_steps):
+        for timeIndex in range(time_steps):
             print(f"Time step {timeIndex} / {time_steps-1}")
             heatFluxApplied = heat_flux_func(timeIndex, self.deltaTime,self.mesh)
-            b = self.C_mtrx  @ self.u[:, timeIndex-1]/self.deltaTime +  heatFluxApplied
+            if (timeIndex == 0):
+                b =  heatFluxApplied
+            else:
+                b = self.C_mtrx  @ self.u[:, timeIndex-1]/self.deltaTime +  heatFluxApplied
             self.u[:, timeIndex] = lin_sol.solve(A, b, self.solver, self.bc) # 
-            # uMin = np.min(self.u[:, timeIndex])
-            # uMax = np.max(self.u[:, timeIndex])
-            #print(f"Max u: {uMax:.3e}, Min u: {uMin:.3e}")
-            #plots.plotMesh(self.mesh, None, self.u[:,timeIndex],title=f'Dof = {self.num_dofs}, max u: {uMax:.3e}',show_edges=False,)
         return self.u
 
-    def solve_newmark_generalized(self, time_steps: int, heat_flux_func, beta=0.5, gamma=0.5) -> np.ndarray:
+    def solve_newmark_generalized(self, time_steps: int, heat_flux_func, beta=0.9, gamma=0.25) -> np.ndarray:
         """Solve using Newmark beta method for thermal problems.
         
         Args:
@@ -132,7 +131,7 @@ class TransientThermalFEA:
             v_pred = v[:, i-1] + (1 - gamma)*dt * (K @ u[:, i-1] + C @ v[:, i-1])
 
             # Force term
-            f = heat_flux_func(i, dt,self.mesh.elem_size[0])
+            f = heat_flux_func(i, dt,self.mesh)
             b = f + C @ ((1.0/(beta*dt))*u_pred + (1.0/(2*beta))*v_pred)
             
             # Solve
@@ -175,10 +174,6 @@ if __name__ == "__main__":
     
     elemSize = mesh.elem_size[0]
 
-    
-    
-
-    
 
     def transientHeatFluxMoranBenchMark(timeStep,dt,mesh):
         def transientHeatFluxMoranBenchMark(timeStep, dt, mesh):
