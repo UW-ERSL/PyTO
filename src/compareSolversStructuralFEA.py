@@ -38,17 +38,17 @@ import deflation
 import linear_solvers as lin_solv
 import topopt as topopt
 import os
-from struct_fea import createCantileverProblem, createLBracketProblem, createCompliantMechanismProblem,createFilletedBeamProblem
+from examples_structural import createCantileverProblem, createLBracketProblem, createCompliantMechanismProblem,createFilletedBeamProblem
 jax.config.update("jax_enable_x64", True)
 
 
 # Choose the linear solvers to compare
 linearSolvers = ['spsolve','pyamg','pycg','pypardiso','pydpcg']
 # Set the DOF for the problems to run through
-dofs = [1000,5000,10000,25000,50000,100000,250000,500000]
+dofs = [1000,5000,10000,25000,50000,100000,250000,500000,1e6,1.5e6,2e6,3e6]
 
 # Set the time limit for each solver
-timeLimit = 30 # seconds
+timeLimit = 60 # seconds
 dofList = []
 solverTime = dict(zip(linearSolvers, [None]*len(linearSolvers)))
 for linearSolver in linearSolvers:
@@ -56,7 +56,7 @@ for linearSolver in linearSolvers:
 
 continueMeshing = True # set to false to skip to solving the FEA problems
 dsolver = deflation.DeflationSolver()
-example = 1 # 1 = cantilever, 2 = plate, 3 = L-bracket, 4 = compliant mechanism, 5 = filleted beam
+example = 2 # 1 = cantilever, 2 = plate, 3 = L-bracket, 4 = compliant mechanism, 5 = filleted beam
 for dofDesired in dofs:
 	if (not continueMeshing):
 		break

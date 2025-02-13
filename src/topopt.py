@@ -1,6 +1,5 @@
 """Optimization routines for topology optimization."""
 
-import functools
 import enum
 import numpy as np
 import jax
@@ -12,6 +11,7 @@ import mesher
 import mat_lib
 import struct_fea as sfea
 import mma
+import deflation
 
 
 _LARGE_NUMBER = 1.e9
@@ -22,8 +22,28 @@ class Optimizers(enum.Enum):
 	OC = enum.auto()
 	PARETO = enum.auto()
 
+def find_elements_with_forces(mesh: mesher.Mesher, force) -> np.ndarray:
+	"""Find all elements that have nodes on which force has been applied.
+	
+	Args:
+		mesh: The mesh object.
+		bc: The boundary conditions object.
+	
+	Returns:
+		Array of element indices that have nodes with applied forces.
+	"""
+	force_dofs = np.where(force != 0)[0]
+	forced_nodes = set(force_dofs // 3)  # Convert DOFs to node indices
+	elements_with_forces = []
 
-def createFilter(mesh: mesher.Mesher):
+	for elem in range(mesh.num_elems):
+		nodes = mesh.elemArray[elem]
+		if any(node in forced_nodes for node in nodes):
+			elements_with_forces.append(elem)
+
+	return np.array(elements_with_forces)
+
+def createSmoothingFilter(mesh: mesher.Mesher):
 	## Prepare filter
 	nfilter = int(27 * mesh.num_elems)
 	iH = np.zeros(nfilter)
@@ -48,6 +68,119 @@ def createFilter(mesh: mesher.Mesher):
 	Hs = np.array(H.sum(1)).squeeze()
 	return H, Hs
 
+def createSymmetryFilterXMidPlane(mesh: mesher.Mesher) -> tuple[coo_matrix, np.ndarray]:
+	"""Create a symmetry filter matrix about X mid-plane.
+	
+	Args:
+		mesh: The mesh object.
+	
+	Returns:
+		tuple containing:
+			HX: Sparse matrix that when multiplied with density vector enforces X mid-plane symmetry
+			HXs: Array of row sums of HX matrix
+	"""
+	num_elems = mesh.num_elems
+	x_mid = (mesh.elem_centers[:, 0].max() + mesh.elem_centers[:, 0].min()) / 2
+	
+	# Initialize COO matrix arrays
+	rows = []
+	cols = []
+	data = []
+	
+	for i in range(num_elems):
+		mirror_x = 2 * x_mid - mesh.elem_centers[i, 0]
+		mirror_idx = np.argmin(np.abs(mesh.elem_centers[:, 0] - mirror_x))
+		if (mirror_idx == i):
+			rows.append(i)
+			cols.append(i)
+			data.append(1.0)
+		else:
+			rows.append(i)
+			cols.append(i)
+			data.append(0.5)
+			rows.append(i)
+			cols.append(mirror_idx)
+			data.append(0.5)
+
+	HX = coo_matrix((data, (rows, cols)), shape=(num_elems, num_elems)).tocsc()
+	HXs = np.array(HX.sum(1)).squeeze()
+	return HX, HXs
+
+def createSymmetryFilterYMidPlane(mesh: mesher.Mesher) -> tuple[coo_matrix, np.ndarray]:
+	"""Create a symmetry filter matrix about Y mid-plane.
+	
+	Args:
+		mesh: The mesh object.
+	
+	Returns:
+		tuple containing:
+			HY: Sparse matrix that when multiplied with density vector enforces Y mid-plane symmetry
+			HYs: Array of row sums of HY matrix
+	"""
+	num_elems = mesh.num_elems
+	y_mid = (mesh.elem_centers[:, 1].max() + mesh.elem_centers[:, 1].min()) / 2
+	# Initialize COO matrix arrays
+	rows = []
+	cols = []
+	data = []
+	
+	for i in range(num_elems):
+		mirror_y = 2 * y_mid - mesh.elem_centers[i, 1]
+		mirror_idy = np.argmin(np.abs(mesh.elem_centers[:, 1] - mirror_y))
+		if (mirror_idy == i):
+			rows.append(i)
+			cols.append(i)
+			data.append(1.0)
+		else:
+			rows.append(i)
+			cols.append(i)
+			data.append(0.5)
+			rows.append(i)
+			cols.append(mirror_idy)
+			data.append(0.5)
+
+	HY = coo_matrix((data, (rows, cols)), shape=(num_elems, num_elems)).tocsc()
+	HYs = np.array(HY.sum(1)).squeeze()
+	return HY, HYs
+	
+
+def createSymmetryFilterZMidPlane(mesh: mesher.Mesher) -> tuple[coo_matrix, np.ndarray]:
+	"""Create a symmetry filter matrix about Z mid-plane.
+	
+	Args:
+		mesh: The mesh object.
+	
+	Returns:
+		tuple containing:
+			HZ: Sparse matrix that when multiplied with density vector enforces Z mid-plane symmetry
+			HZs: Array of row sums of HZ matrix
+	"""
+	num_elems = mesh.num_elems
+	z_mid = (mesh.elem_centers[:, 2].max() + mesh.elem_centers[:, 2].min()) / 2
+	
+	# Initialize COO matrix arrays
+	rows = []
+	cols = []
+	data = []
+	
+	for i in range(num_elems):
+		mirror_z = 2 * z_mid - mesh.elem_centers[i, 2]
+		mirror_idz = np.argmin(np.abs(mesh.elem_centers[:, 2] - mirror_z))
+		if (mirror_idz == i):
+			rows.append(i)
+			cols.append(i)
+			data.append(1.0)
+		else:
+			rows.append(i)
+			cols.append(i)
+			data.append(0.5)
+			rows.append(i)
+			cols.append(mirror_idz)
+			data.append(0.5)
+
+	HZ = coo_matrix((data, (rows, cols)), shape=(num_elems, num_elems)).tocsc()
+	HZs = np.array(HZ.sum(1)).squeeze()
+	return HZ, HZs
 
 def _volume_constraint(density: jnp.ndarray,
 											 volfrac: float,
@@ -107,7 +240,7 @@ def topopt_mma(fe_solver: sfea.StructFEA,
 	"""
 	num_elems= fe_solver.mesh.num_elems
 	history = {'compliance': [], 'volume': [], 'change': []}
-	H, Hs = createFilter(fe_solver.mesh)
+	H, Hs = createSmoothingFilter(fe_solver.mesh)
 
 	mma_params = mma.MMAParams(max_iter=maxMMAIterations,
 														kkt_tol = kkt_tol,
@@ -121,17 +254,22 @@ def topopt_mma(fe_solver: sfea.StructFEA,
 	mma_state = mma.init_mma(volfrac * np.ones((num_elems, 1)), mma_params)
 	KE = elem_stiff.hex8_stiffness_matrix_structural( fe_solver.mat_prop,fe_solver.mesh.elem_size)
 	x_old = volfrac*np.ones(num_elems, dtype = float)
+	timeFEA = 0
+	timeMMA = 0
 	while not mma_state.is_converged:
 		x = mma_state.x.reshape(-1)
+		timeFEAStart = time.time()
 		obj,u = _compliance_objective(x, fe_solver, penal)
+		timeFEA += time.time() - timeFEAStart
 		obj = np.array([obj])
 		ce = (np.dot(u[fe_solver.mesh.edofMat].reshape(num_elems, 24), KE) * u[fe_solver.mesh.edofMat].reshape(num_elems, 24)).sum(1)
 		grad_obj = (-penal * x ** (penal - 1)) * ce
 		grad_obj = (H * grad_obj)/Hs
 
 		cons = _volume_constraint(x, volfrac)
-		grad_cons = np.ones(num_elems)/volfrac
+		grad_cons = np.ones(num_elems)/volfrac/num_elems
 
+		timeMMAStart = time.time()
 		mma_state = mma.update_mma(mma_state,
 														   mma_params,
 														 	 obj,
@@ -139,6 +277,7 @@ def topopt_mma(fe_solver: sfea.StructFEA,
 														 	 jnp.array([cons]).reshape((1, 1)),
 															 grad_cons.reshape((1, num_elems))
 															 )
+		timeMMA += time.time() - timeMMAStart
 
 		change = np.max(np.abs(x - x_old))
 		x_old = x
@@ -149,12 +288,13 @@ def topopt_mma(fe_solver: sfea.StructFEA,
 		history['change'].append(change)
 
 	fe_solver.mesh.setPseudoDensity(x)
+	print(f"Time FEA: {timeFEA:.2f} s, Time MMA: {timeMMA:.2f} s")
 	return np.asarray(u), history
 
 
 def topopt_optimality_criteria(
 							fe_solver: sfea.StructFEA,
-			  			maxIterations: int = 500,
+			  				maxIterations: int = 500,
 							volfrac: float = 0.5,
 							penal: float = 3,
 							move: float = 0.2,
@@ -175,7 +315,7 @@ def topopt_optimality_criteria(
 	"""
 	num_elems = fe_solver.mesh.num_elems
 
-	H, Hs = createFilter(fe_solver.mesh)
+	H, Hs = createSmoothingFilter(fe_solver.mesh)
 
 	# Initialize design variables
 	x = volfrac * jnp.ones(num_elems)
@@ -259,6 +399,69 @@ def topopt_pareto(fe_solver: sfea.StructFEA,
 	Returns: A tuple containing the displacement field of the optimized structure
 		and a dictionary containing the optimization history.
 	"""
+	def computeTopologicalSensitivity(mesh: mesher.Mesher,
+																	mat_prop: mat_lib.StructuralMaterial,
+																	u, rho):
+		"""Compute topological sensitivity field."""
+
+		T = np.zeros((mesh.num_elems))
+		e, nu = mat_prop.youngs_modulus, mat_prop.poissons_ratio
+		# Create constitutive matrix
+		v1 = 2*nu**2 + nu - 1
+		v2 = 2*nu + 2
+		D = e * np.array([
+											[(nu - 1)/v1, -nu/v1, -nu/v1, 0, 0, 0],
+											[-nu/v1, (nu - 1)/v1, -nu/v1, 0, 0, 0],
+											[-nu/v1, -nu/v1, (nu - 1)/v1, 0, 0, 0],
+											[0, 0, 0, 1/v2, 0, 0],
+											[0, 0, 0, 0, 1/v2, 0],
+											[0, 0, 0, 0, 0, 1/v2]
+										])
+
+		# Shape function gradients at center
+		gradN = 1/8 * np.array([
+														[-1, 1, 1, -1, -1, 1, 1, -1],
+														[-1, -1, 1, 1, -1, -1, 1, 1],
+														[-1, -1, -1, -1, 1, 1, 1, 1]
+													])
+
+		for elem in range(mesh.num_elems):
+			edof = mesh.edofMat[elem]
+		
+			# Get displacement gradients
+			uGrad = gradN @ u[edof[::3]]
+			vGrad = gradN @ u[edof[1::3]]
+			wGrad = gradN @ u[edof[2::3]]
+
+			# Compute strains
+			strains = np.array([
+				uGrad[0], vGrad[1], wGrad[2],
+				uGrad[1] + vGrad[0],
+				uGrad[2] + wGrad[0],
+				vGrad[2] + wGrad[1]
+			])
+
+			# Compute stresses
+			stresses = rho[elem] * D @ strains
+
+			# Create tensors
+			stress_tensor = np.array([
+																[stresses[0], stresses[3], stresses[4]],
+																[stresses[3], stresses[1], stresses[5]],
+																[stresses[4], stresses[5], stresses[2]]
+															])
+			
+			strain_tensor = np.array([
+																[strains[0], strains[3], strains[4]],
+																[strains[3], strains[1], strains[5]],
+																[strains[4], strains[5], strains[2]]
+															])
+
+			# Compute topological sensitivity
+			T[elem] = (4/(1+nu) * np.sum(stress_tensor * strain_tensor) - 
+							(1-3*nu)/(1-nu**2) * np.trace(stress_tensor) * np.trace(strain_tensor))
+
+		return T
 	totalIter = 1
 
 	# Initialize design field
@@ -268,7 +471,10 @@ def topopt_pareto(fe_solver: sfea.StructFEA,
 	history = {'compliance': [], 'volume': []}
 
 	# Create filter
-	H, Hs = createFilter(fe_solver.mesh)
+	H, Hs = createSmoothingFilter(fe_solver.mesh)
+	HY, HYs = createSymmetryFilterYMidPlane(fe_solver.mesh)
+
+	elemsWithForces = find_elements_with_forces(fe_solver.mesh, fe_solver.bc.force)
 
 	u = np.asarray(fe_solver.solve(rho))
 
@@ -278,12 +484,16 @@ def topopt_pareto(fe_solver: sfea.StructFEA,
 
 	# Compute initial topological sensitivity
 	T = computeTopologicalSensitivity(fe_solver.mesh, fe_solver.mat_prop, u, rho)
+	T[elemsWithForces] = np.max(T)
 	T = (H * T) / Hs
+	T = (HY * T) 
+	
+	
 	print(f"v={volfrac:.2f}; J={history['compliance'][-1]:.2e}; #FEA={totalIter:2d}")
 	vol_decr = vol_decr_max
 	while volfrac > desiredVolFrac:
 		# Move to next volume fraction
-		volfrac = max(desiredVolFrac, volfrac * (1 - vol_decr))
+		volfrac = max(desiredVolFrac, volfrac - vol_decr)
 
 		localIter = 0
 		success = False
@@ -291,7 +501,7 @@ def topopt_pareto(fe_solver: sfea.StructFEA,
 		JPrev = float('inf')  # Initialize JPrev
 		JPrevPrev = float('inf')  # Initialize JPrev
 		while localIter < max_local_iters:
-			if JTemp > 10 * history['compliance'][0]:  # Divergence check
+			if JTemp > 10 * history['compliance'][-1]:  # Divergence check
 				break
 			# Check convergence, and break if converged
 			if localIter >= min_local_iters and abs(min(JPrev,JPrevPrev) - JTemp)/JTemp < rel_err:
@@ -301,7 +511,8 @@ def topopt_pareto(fe_solver: sfea.StructFEA,
 			# Find cutoff value and update design
 			value = np.sort(T.flatten())[int(fe_solver.mesh.num_elems * (1 - volfrac))]
 			rho = np.ones((fe_solver.mesh.num_elems))
-			rho[T < value] = 0.001
+			rho[T < value] = (0.01)
+			
 			JPrevPrev = JPrev  # Store previous value
 			JPrev = JTemp  # Store previous value
 			
@@ -310,87 +521,34 @@ def topopt_pareto(fe_solver: sfea.StructFEA,
 			
 			# Update sensitivity
 			T = computeTopologicalSensitivity(fe_solver.mesh, fe_solver.mat_prop, u, rho)
+			T[elemsWithForces] = np.max(T)
 			T = (H * T) / Hs
+			T = (HY * T) / HYs
 
 			localIter += 1
 			totalIter += 1
 
 		if not success:
+			print("Pareto: Failed to converge in local iterations.")
+			print("Forcing symmetry, if applicable, can help.")
 			break
 		
-		vol_decr = max(0.01,0.95*vol_decr)  # Decrease volume decrease factor
-
 		history['compliance'].append(JTemp)
 		history['volume'].append(volfrac)
-		print(f"v={history['volume'][-1]:.2f}; J={history['compliance'][-1]:.2e}; #FEA={totalIter:2d}")
+		dJdvNormalized = 0
+		if (len(history['compliance'])) >= 2:
+			dJdv = (history['compliance'][-1] - history['compliance'][-2]) / (history['volume'][-1] - history['volume'][-2])
+			dJdvNormalized = abs(dJdv / history['compliance'][0])
+		vol_decr = vol_decr_max/np.sqrt(1 + dJdvNormalized)  # Adjust volume decrease factor
+		vol_decr = max(	0.01, min(vol_decr, vol_decr_max))  # Limit volume decrease factor
+		print(f"v={history['volume'][-1]:.3f}; J={history['compliance'][-1]:.2e};  #FEA={totalIter:2d}")
+		
 		fe_solver.mesh.setPseudoDensity(rho.flatten())
 
 	return u, history
 
 
-def computeTopologicalSensitivity(mesh: mesher.Mesher,
-																	mat_prop: mat_lib.StructuralMaterial,
-																	u, rho):
-	"""Compute topological sensitivity field."""
 
-	T = np.zeros((mesh.num_elems))
-	e, nu = mat_prop.youngs_modulus, mat_prop.poissons_ratio
-	# Create constitutive matrix
-	v1 = 2*nu**2 + nu - 1
-	v2 = 2*nu + 2
-	D = e * np.array([
-										[(nu - 1)/v1, -nu/v1, -nu/v1, 0, 0, 0],
-										[-nu/v1, (nu - 1)/v1, -nu/v1, 0, 0, 0],
-										[-nu/v1, -nu/v1, (nu - 1)/v1, 0, 0, 0],
-										[0, 0, 0, 1/v2, 0, 0],
-										[0, 0, 0, 0, 1/v2, 0],
-										[0, 0, 0, 0, 0, 1/v2]
-									])
-
-	# Shape function gradients at center
-	gradN = 1/8 * np.array([
-													[-1, 1, 1, -1, -1, 1, 1, -1],
-													[-1, -1, 1, 1, -1, -1, 1, 1],
-													[-1, -1, -1, -1, 1, 1, 1, 1]
-												])
-
-	for elem in range(mesh.num_elems):
-		edof = mesh.edofMat[elem]
-	
-		# Get displacement gradients
-		uGrad = gradN @ u[edof[::3]]
-		vGrad = gradN @ u[edof[1::3]]
-		wGrad = gradN @ u[edof[2::3]]
-
-		# Compute strains
-		strains = np.array([
-			uGrad[0], vGrad[1], wGrad[2],
-			uGrad[1] + vGrad[0],
-			uGrad[2] + wGrad[0],
-			vGrad[2] + wGrad[1]
-		])
-
-		# Compute stresses
-		stresses = rho[elem] * D @ strains
-
-		# Create tensors
-		stress_tensor = np.array([
-															[stresses[0], stresses[3], stresses[4]],
-															[stresses[3], stresses[1], stresses[5]],
-															[stresses[4], stresses[5], stresses[2]]
-														])
-		
-		strain_tensor = np.array([
-															[strains[0], strains[3], strains[4]],
-															[strains[3], strains[1], strains[5]],
-															[strains[4], strains[5], strains[2]]
-														])
-
-		# Compute topological sensitivity
-		T[elem] = (4/(1+nu) * np.sum(stress_tensor * strain_tensor) - 
-						  (1-3*nu)/(1-nu**2) * np.trace(stress_tensor) * np.trace(strain_tensor))
-
-	return T
 
 if __name__ == "__main__":    
 	from examples_structural import createCantileverProblem, createLBracketProblem
@@ -399,28 +557,32 @@ if __name__ == "__main__":
 	import time
 	import plots	
 	jax.config.update("jax_enable_x64", True)
-
+	dsolver = deflation.DeflationSolver()
 
 	example = 2
-	nDOFDesired = 10000
+	nDOFDesired = 20000
 	if example == 1:
-		mesh, mat_prop, bc = createCantileverProblem(nDOFDesired = nDOFDesired)
+		mesh, mat_prop, bc = createCantileverProblem(nDOFDesired = nDOFDesired,L = [0.4,0.2,0.1])
 	elif example == 2:
 		mesh, mat_prop, bc = createLBracketProblem(nDOFDesired = nDOFDesired)    
 
+	#plots.plotMesh(mesh, bc)
+
+	solver = lin_solv.Solvers.PARDISO
+		
 	fe_solver = fea.StructFEA(mesh = mesh,
 				mat_prop = mat_prop,
 				bc = bc,
-				solver = lin_solv.Solvers.PARDISO)
-
+				solver = solver)
+	
 	youngs_modulus = np.ones((fe_solver.mesh.num_elems,))
 
 	print('Solver: ', fe_solver.solver.name)
 	print("nDof: ", 3*fe_solver.mesh.num_nodes)
 	
 	
-	volfrac = 0.5
-	num_iter = 100
+	volfrac = 0.3
+	num_iter = 50
 
 	optimizationMethod = 1 # 1: MMA, 2: OC, 3: Pareto	
 
@@ -428,7 +590,7 @@ if __name__ == "__main__":
 	if optimizationMethod == 1:
 		print("optimizationMethod: MMA")
 		u, history = topopt_mma(fe_solver = fe_solver,
-														maxMMAIterations = num_iter,
+									maxMMAIterations = num_iter,
 														volfrac = volfrac
 														)
 		timeTaken = time.time() - startTime

@@ -136,9 +136,8 @@ class Mesher:
 					elem = elem+1
 
 		self.elem_centers = np.zeros((self.num_elems, 3))
-		node_indices= self.node_indices[:, :3]
 		for elem in range(self.num_elems):
-			self.elem_centers[elem, :] = np.array(np.sum(node_indices[self.elemArray[elem]], 
+			self.elem_centers[elem, :] = np.array(np.sum(self.node_xyz[self.elemArray[elem]], 
 																							axis = 0)/8.)
 
 	def translate(self, dx: float, dy: float, dz: float):
