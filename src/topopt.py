@@ -12,6 +12,8 @@ import mat_lib
 import struct_fea as sfea
 import mma
 import deflation
+from scipy.optimize import minimize
+import nlopt
 
 
 _LARGE_NUMBER = 1.e9
@@ -21,6 +23,8 @@ class Optimizers(enum.Enum):
 	MMA = enum.auto()
 	OC = enum.auto()
 	PARETO = enum.auto()
+	SCIPY = enum.auto()
+	NLOPT = enum.auto()
 
 def find_elements_with_forces(mesh: mesher.Mesher, force) -> np.ndarray:
 	"""Find all elements that have nodes on which force has been applied.
@@ -220,11 +224,11 @@ def topopt_mma(fe_solver: sfea.StructFEA,
 			   			 maxMMAIterations: int = 500, 
 			   			 volfrac: float = 0.5,
 							 penal: float = 3.,
-							 move_limit: float = 0.2,
+							 move_limit: float = 0.3,
 							 kkt_tol: float = 1.e-5,
-							 step_tol: float = 1.e-2,
+							 step_tol: float = 0.025,
 							 ) -> tuple[np.ndarray, dict]:
-	"""Optimality Criteria based topology optimization for minimum compliance.
+	"""MMA based topology optimization for minimum compliance.
 
 	Args:
 		fe_solver: The structural FEA solver object.
@@ -298,6 +302,7 @@ def topopt_optimality_criteria(
 							volfrac: float = 0.5,
 							penal: float = 3,
 							move: float = 0.2,
+							conv_tol: float = 0.025,
 							verbose: bool = True
 							) -> tuple[np.ndarray, dict]:
 	"""Optimality Criteria based topology optimization for minimum compliance.
@@ -341,9 +346,10 @@ def topopt_optimality_criteria(
 		# Calculate Lagrange multiplier bounds
 		l1 = 0
 		l2 = _LARGE_NUMBER
-
+		lmid = 0.5 * (l2 + l1)
 		# Bisection loop for volume constraint
-		while (l2 - l1) > 1e-9:
+		
+		while (l2 - l1) > 1e-7:
 			lmid = 0.5 * (l2 + l1)
 			b = -grad_obj / lmid	
 			# OC update with damping and bounds
@@ -358,7 +364,8 @@ def topopt_optimality_criteria(
 		xPhys = x
 	
 		# Calculate change and update densities
-		change = jnp.linalg.norm(x - xold, np.inf)
+		#change = jnp.linalg.norm(x - xold, np.inf)
+		change = jnp.max(jnp.abs(x - xold))
 		fe_solver.mesh.setPseudoDensity(np.asarray(xPhys))
 	
 		history['compliance'].append(obj)
@@ -369,7 +376,7 @@ def topopt_optimality_criteria(
 			print(f"it.: {iter+1:d}, obj.: {obj:.3e}, "
 				  	f"vol.: {np.mean(xPhys):.3f}, ch.: {change:.3f}")
 
-		if change < 0.025:
+		if change < conv_tol:
 			break
 
 	return np.asarray(u), history
@@ -472,8 +479,6 @@ def topopt_pareto(fe_solver: sfea.StructFEA,
 
 	# Create filter
 	H, Hs = createSmoothingFilter(fe_solver.mesh)
-	HY, HYs = createSymmetryFilterYMidPlane(fe_solver.mesh)
-
 	elemsWithForces = find_elements_with_forces(fe_solver.mesh, fe_solver.bc.force)
 
 	u = np.asarray(fe_solver.solve(rho))
@@ -486,8 +491,6 @@ def topopt_pareto(fe_solver: sfea.StructFEA,
 	T = computeTopologicalSensitivity(fe_solver.mesh, fe_solver.mat_prop, u, rho)
 	T[elemsWithForces] = np.max(T)
 	T = (H * T) / Hs
-	T = (HY * T) 
-	
 	
 	print(f"v={volfrac:.2f}; J={history['compliance'][-1]:.2e}; #FEA={totalIter:2d}")
 	vol_decr = vol_decr_max
@@ -511,7 +514,10 @@ def topopt_pareto(fe_solver: sfea.StructFEA,
 			# Find cutoff value and update design
 			value = np.sort(T.flatten())[int(fe_solver.mesh.num_elems * (1 - volfrac))]
 			rho = np.ones((fe_solver.mesh.num_elems))
-			rho[T < value] = (0.01)
+
+			rho = (T - min(T))/(max(T) - min(T))
+			rho = volfrac*rho/np.mean(rho)+0.01
+			#rho[T < value] = (0.01)
 			
 			JPrevPrev = JPrev  # Store previous value
 			JPrev = JTemp  # Store previous value
@@ -523,8 +529,6 @@ def topopt_pareto(fe_solver: sfea.StructFEA,
 			T = computeTopologicalSensitivity(fe_solver.mesh, fe_solver.mat_prop, u, rho)
 			T[elemsWithForces] = np.max(T)
 			T = (H * T) / Hs
-			T = (HY * T) / HYs
-
 			localIter += 1
 			totalIter += 1
 
@@ -547,14 +551,128 @@ def topopt_pareto(fe_solver: sfea.StructFEA,
 
 	return u, history
 
+def topopt_scipy(fe_solver: sfea.StructFEA,
+			  				maxIterations: int = 500,
+							volfrac: float = 0.5,
+							penal: float = 3,
+							verbose: bool = True) -> tuple[np.ndarray, dict]:
+	"""MMA based topology optimization for minimum compliance.
+
+	Args:
+		fe_solver: The structural FEA solver object.
+		maxMMAIterations: Maximum number of MMA iterations.
+		volfrac: The target volume fraction.
+		penal: The penalization factor for the SIMP method.
+		move_limit: The maximum change allowed for the design variables in each
+			iteration.
+		kkt_tol: The tolerance for the KKT conditions.
+		step_tol: The tolerance for the step size.
+
+	Returns: The displacement field of the optimized structure.
+	"""
+	num_elems= fe_solver.mesh.num_elems
+	history = {'compliance': [], 'volume': [], 'change': []}
+	H, Hs = createSmoothingFilter(fe_solver.mesh)
+
+	KE = elem_stiff.hex8_stiffness_matrix_structural( fe_solver.mat_prop,fe_solver.mesh.elem_size)
+
+	x0 = volfrac*np.ones(num_elems, dtype = float)
 
 
+	def volume_constraint(x):
+		return _volume_constraint(x, volfrac)
 
+	def objective_with_grad(x):
+		print(np.min(x), np.max(x))
+		obj, u = _compliance_objective(x, fe_solver, penal)
+		print(obj)
+		ce = (np.dot(u[fe_solver.mesh.edofMat].reshape(num_elems, 24), KE) * 
+			  u[fe_solver.mesh.edofMat].reshape(num_elems, 24)).sum(1)
+		grad = (-penal * x ** (penal - 1)) * ce
+		grad = (H * grad)/Hs
+		return float(obj), grad
+
+	def constraint_grad(x):
+		return np.ones(num_elems)/volfrac/num_elems
+
+	bounds = [(0.001, 1) for _ in range(num_elems)]
+	result = minimize(
+		objective_with_grad,
+		x0,
+		method='trust-constr',
+		jac=True,
+		constraints={'type': 'eq', 'fun': volume_constraint, 'jac': constraint_grad},
+		bounds=bounds,
+		options={'maxiter': maxIterations, 'disp': True}
+	)
+
+	u = fe_solver.solve(result.x)
+	fe_solver.mesh.setPseudoDensity(result.x)
+
+	return np.asarray(u), history
+	
+def topopt_nlopt(fe_solver: sfea.StructFEA,
+			  				maxIterations: int = 500,
+							volfrac: float = 0.5,
+							penal: float = 3,
+							verbose: bool = True) -> tuple[np.ndarray, dict]:
+	"""MMA based topology optimization for minimum compliance.
+
+	Args:
+		fe_solver: The structural FEA solver object.
+		maxMMAIterations: Maximum number of MMA iterations.
+		volfrac: The target volume fraction.
+		penal: The penalization factor for the SIMP method.
+		move_limit: The maximum change allowed for the design variables in each
+			iteration.
+		kkt_tol: The tolerance for the KKT conditions.
+		step_tol: The tolerance for the step size.
+
+	Returns: The displacement field of the optimized structure.
+	"""
+	num_elems= fe_solver.mesh.num_elems
+	history = {'compliance': [], 'volume': [], 'change': []}
+	H, Hs = createSmoothingFilter(fe_solver.mesh)
+	KE = elem_stiff.hex8_stiffness_matrix_structural( fe_solver.mat_prop,fe_solver.mesh.elem_size)
+
+	def objective_with_grad(x,grad):
+		print(np.min(x), np.max(x))
+		obj, u = _compliance_objective(x, fe_solver, penal)
+		print(obj)
+		if (grad.size > 0):
+			ce = (np.dot(u[fe_solver.mesh.edofMat].reshape(num_elems, 24), KE) * 
+			  u[fe_solver.mesh.edofMat].reshape(num_elems, 24)).sum(1)
+			grad = (-penal * x ** (penal - 1)) * ce
+			grad = (H * grad)/Hs
+		return float(obj)
+
+	def constraint_grad(x, grad):
+		if (grad.size >0):
+			grad[:] = np.ones(num_elems)/volfrac/num_elems
+		constraint = (np.mean(x)/volfrac) - 1.0
+		print(constraint)
+		return constraint
+
+	opt = nlopt.opt(nlopt.LD_SLSQP, num_elems)  # LD_SLSQP algorithm
+	opt.set_min_objective(objective_with_grad)
+	opt.add_equality_constraint(constraint_grad)
+	opt.set_lower_bounds(0.001*np.ones(num_elems))
+	opt.set_upper_bounds(np.ones(num_elems))
+	opt.set_maxeval(200)   # Stop after iterations
+	opt.set_maxtime(400)  # Stop after seconds
+
+	x0 = volfrac*np.ones(num_elems, dtype = float)
+	x_opt = opt.optimize(x0)
+	u = fe_solver.solve(x_opt)
+	fe_solver.mesh.setPseudoDensity(x_opt)
+	return np.asarray(u)
+	
 if __name__ == "__main__":    
 	from examples_structural import createCantileverProblem, createLBracketProblem
 	import struct_fea as fea
 	import linear_solvers as lin_solv
 	import time
+
 	import plots	
 	jax.config.update("jax_enable_x64", True)
 	dsolver = deflation.DeflationSolver()
@@ -581,10 +699,10 @@ if __name__ == "__main__":
 	print("nDof: ", 3*fe_solver.mesh.num_nodes)
 	
 	
-	volfrac = 0.3
-	num_iter = 50
+	volfrac = 0.5
+	num_iter = 200
 
-	optimizationMethod = 1 # 1: MMA, 2: OC, 3: Pareto	
+	optimizationMethod = 2 # 1: MMA, 2: OC, 3: Pareto, 4: Scipy, 5: NLOPT
 
 	startTime = time.time()
 	if optimizationMethod == 1:
@@ -612,5 +730,19 @@ if __name__ == "__main__":
 		
 		timeTaken = time.time() - startTime
 		title = f'Pareto: vol: {history['volume'][-1]:0.2f}, J: {history['compliance'][-1]:.3e}, time: {timeTaken:.2f} s'
+	elif optimizationMethod == 4:
+		print("optimizationMethod: Scipy")
+		u, history = topopt_scipy(fe_solver = fe_solver,
+										volfrac =  volfrac)
+		
+		timeTaken = time.time() - startTime
+		title = f'Pareto: vol: {history['volume'][-1]:0.2f}, J: {history['compliance'][-1]:.3e}, time: {timeTaken:.2f} s'
+	elif optimizationMethod == 5:
+		print("optimizationMethod: NLOPT")
+		u = topopt_nlopt(fe_solver = fe_solver,
+										volfrac =  volfrac)
+		
+		timeTaken = time.time() - startTime
+		title = '' 
 
 	plots.plotMesh(fe_solver.mesh, fe_solver.bc, u, title = title)
