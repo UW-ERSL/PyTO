@@ -3,13 +3,14 @@ from stl import mesh #pip install numpy-stl
 from collections import defaultdict
 from queue import Queue
 import numpy as np
-import pyvista as pv
+
 
 class STLGeom:
     TOL = 1e-9
 
     def __init__(self, file_path):
         self.mesh = mesh.Mesh.from_file(file_path)
+        
         self.stl_n_triangles = len(self.mesh.vectors)
         self.tri_normals = [self.compute_normal(vertices) for vertices in self.mesh.vectors]
         self.tri_areas = [self.get_area_of_triangle(i) for i in range(self.stl_n_triangles)]
@@ -369,6 +370,66 @@ class STLGeom:
         ]
         
         return min(edge_distances)
+    
+    def get_triangle_center(self, triangle_index):
+        vertices = self.mesh.vectors[triangle_index]
+        center = [(vertices[0][i] + vertices[1][i] + vertices[2][i])/3 for i in range(3)]
+        return center
+
+    def highlight_triangles_recursive(self, seed_triangle, depth, cutoff_angle_degrees):
+        """
+        Toggle highlight state for triangles recursively based on the angle between normals.
+        If the seed triangle is highlighted, recursively deselect; otherwise, highlight.
+        """
+
+        cumulative_area = 0
+        cos_theta = math.cos(math.radians(cutoff_angle_degrees))
+
+        # Always set to True for left click (no more toggle)
+        target_state = True
+
+        # Initialize queue
+        q = Queue()
+        q.put((seed_triangle, depth))
+        self.tri_highlight[seed_triangle] = target_state
+
+        # Keep track of processed triangles to avoid cycles
+        processed = {seed_triangle}
+
+        while not q.empty():
+            current_tri, current_depth = q.get()
+            if current_depth == 0:
+                continue
+
+            cumulative_area += self.get_area_of_triangle(current_tri)
+            n1 = self.tri_normals[current_tri]
+
+            for neighbor_tri in self.tri_neighbors[current_tri]:
+                if neighbor_tri not in processed:
+                    n2 = self.tri_normals[neighbor_tri]
+                if not self.tri_highlight[neighbor_tri] and np.dot(n1, n2) > cos_theta:
+                    self.tri_highlight[neighbor_tri] = target_state
+                    q.put((neighbor_tri, current_depth - 1))
+                    processed.add(neighbor_tri)
+
+        highlighted_count = sum(1 for x in self.tri_highlight if x)
+        return highlighted_count, cumulative_area
+
+    def store_selected_triangles(self):
+        selected_indices = [i for i, is_highlighted in enumerate(self.tri_highlight) if is_highlighted]
+        selected_triangles_data = []
+        
+        for idx in selected_indices:
+            triangle_data = {
+                'index': idx,
+                'vertices': self.mesh.vectors[idx],
+                'normal': self.tri_normals[idx],
+                'area': self.tri_areas[idx],
+                'center': self.get_triangle_center(idx)
+            }
+            selected_triangles_data.append(triangle_data)
+   
+        return selected_triangles_data
 
 if __name__ == "__main__":
     import os

@@ -222,6 +222,7 @@ class Mesher:
 						z=Extent(np.min(self.node_indices[:,2]), np.max(self.node_indices[:,2])))
 
 
+
 	def createMeshFromSTLFile(self, stlFileName: str,nElemsDesired: int):
 		self.stlMesh = pv.read(stlFileName)
 
@@ -431,8 +432,11 @@ if __name__ == "__main__":
     import os
     import plots
     import time
+
     script_dir = os.path.dirname(os.path.abspath(__file__))
     stlFileName = os.path.join(script_dir, '../TOExamples/Knuckle/Knuckle.STL')
+
+
     mesh = Mesher()
     startTime = time.time()
     mesh.createMeshFromSTLFile(stlFileName,nElemsDesired=100000)

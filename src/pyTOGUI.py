@@ -1,20 +1,36 @@
 import sys
-from PyQt5 import QtWidgets
-from vtkmodules.qt.QVTKRenderWindowInteractor import QVTKRenderWindowInteractor
 import vtk
 import math
-from stl import mesh
-from collections import defaultdict
+import numpy as np
+import os
+import json
+from PyQt5 import QtWidgets
+from PyQt5 import QtCore
+from vtkmodules.qt.QVTKRenderWindowInteractor import QVTKRenderWindowInteractor
+from PyQt5.QtWidgets import QPushButton, QVBoxLayout, QFrame
+from PyQt5.QtGui import QIcon
+from PyQt5.QtCore import QSize, Qt
 from queue import Queue
+from PyQt5.QtWidgets import QPushButton, QVBoxLayout, QFrame
+from PyQt5.QtGui import QIcon
+from PyQt5.QtCore import QSize, Qt  # Updated import: added Qt
+from STLGeom import STLGeom
+from mesher import Mesher
+import plots
+'''
+pyTOGUI To do:
+1. Main: Disable x Buttons
+2. Update Button status
+3. Analysis: Update mesh elements based on mesh quality
 
+'''
 class ProjectData:
     def __init__(self):
-        self.version = "1.0"
+        self.version = "2025.01"
         self.stl_file_path = None
         self.settings = None
-        self.selected_triangles = []
-        self.loads = []
-        self.constraints = []
+        self.material_data = None  # Add this line
+        
 
     def to_dict(self):
         return {
@@ -25,18 +41,21 @@ class ProjectData:
                 'temperature_unit': self.settings.temperature_unit,
                 'angle_unit': self.settings.angle_unit
             } if self.settings else None,
-            'selected_triangles': self.selected_triangles,
-            'loads': self.loads,
-            'constraints': self.constraints
+            'material_data': self.material_data,  # Add this line
+            'structuralBC': self.structuralBC,
+            'topopt_constraints': self.topopt_constraints,
+            'optimization_params': self.optimization_params,
+            
         }
 
     @classmethod
     def from_dict(cls, data):
         project = cls()
-        project.version = data.get('version', "1.0")
+        project.version = data.get('version', "2025.01")
         project.stl_file_path = data.get('stl_file_path')
         
         if data.get('settings'):
+            
             settings = Settings()
             settings.update_settings(
                 data['settings']['unit_system'],
@@ -45,147 +64,11 @@ class ProjectData:
             )
             project.settings = settings
         
-        project.selected_triangles = data.get('selected_triangles', [])
-        project.loads = data.get('loads', [])
-        project.constraints = data.get('constraints', [])
+  
+        project.structuralBC = data.get('structuralBC', [])
+        project.material_data = data.get('material_data')  # Add this line
         return project
-
-class STLGeom:
-    TOL = 1e-9
-
-    def __init__(self, file_path):
-        self.mesh = mesh.Mesh.from_file(file_path)
-        self.stl_n_triangles = len(self.mesh.vectors)
-        self.tri_normals = [self.compute_normal(vertices) for vertices in self.mesh.vectors]
-        self.tri_areas = [self.get_area_of_triangle(i) for i in range(self.stl_n_triangles)]
-        self.tri_neighbors = self.compute_neighbors()
-        self.tri_highlight = [False] * self.stl_n_triangles
-        self.selected_triangles = set()
-        self.file_path = file_path
-
-    def compute_normal(self, vertices):
-        v1 = [vertices[1][i] - vertices[0][i] for i in range(3)]
-        v2 = [vertices[2][i] - vertices[0][i] for i in range(3)]
-        normal = [
-            v1[1] * v2[2] - v2[1] * v1[2],
-            -(v1[0] * v2[2] - v2[0] * v1[2]),
-            v1[0] * v2[1] - v2[0] * v1[1],
-        ]
-        norm = math.sqrt(sum(n ** 2 for n in normal)) or self.TOL
-        return [n / norm for n in normal]
     
-    def compute_neighbors(self):
-        edge_map = defaultdict(list)  # Map of edges to triangle indices
-        neighbors = [[] for _ in range(self.stl_n_triangles)]
-
-        for i, vertices in enumerate(self.mesh.vectors):
-            edges = [
-                tuple(sorted((tuple(vertices[0]), tuple(vertices[1])))),
-                tuple(sorted((tuple(vertices[1]), tuple(vertices[2])))),
-                tuple(sorted((tuple(vertices[2]), tuple(vertices[0])))),
-            ]
-
-            for edge in edges:
-                edge_map[edge].append(i)
-
-        for edge, tri_list in edge_map.items():
-            for t1 in tri_list:
-                for t2 in tri_list:
-                    if t1 != t2 and t2 not in neighbors[t1]:
-                        neighbors[t1].append(t2)
-
-        return neighbors
-
-    def get_area_of_triangle(self, triangle_index):
-        vertices = self.mesh.vectors[triangle_index]
-        x, y, z = vertices[:, 0], vertices[:, 1], vertices[:, 2]
-        return self.compute_area_of_triangle(x, y, z)
-
-    def compute_area_of_triangle(self, x, y, z):
-        v1 = [x[1] - x[0], y[1] - y[0], z[1] - z[0]]
-        v2 = [x[2] - x[0], y[2] - y[0], z[2] - z[0]]
-
-        cross_product = [
-            v1[1] * v2[2] - v2[1] * v1[2],
-            -(v1[0] * v2[2] - v2[0] * v1[2]),
-            v1[0] * v2[1] - v2[0] * v1[1],
-        ]
-        cross_product_norm = math.sqrt(sum(c ** 2 for c in cross_product))
-        return 0.5 * cross_product_norm
-    
-    def highlight_triangles_recursive(self, seed_triangle, depth, cutoff_angle_degrees):
-        """
-        Toggle highlight state for triangles recursively based on the angle between normals.
-        If the seed triangle is highlighted, recursively deselect; otherwise, highlight.
-        """
-
-        # # Clear previous queue
-        # while not self.queue.empty():
-        #     self.queue.get()
-
-        cumulative_area = 0
-        cos_theta = math.cos(math.radians(cutoff_angle_degrees))
-
-        # Always set to True for left click (no more toggle)
-        target_state = True
-
-        # Initialize queue
-        q = Queue()
-        q.put((seed_triangle, depth))
-        self.tri_highlight[seed_triangle] = target_state
-
-        # Keep track of processed triangles to avoid cycles
-        processed = {seed_triangle}
-
-        while not q.empty():
-            current_tri, current_depth = q.get()
-            if current_depth == 0:
-                continue
-
-            cumulative_area += self.get_area_of_triangle(current_tri)
-            n1 = self.tri_normals[current_tri]
-
-            for neighbor_tri in self.tri_neighbors[current_tri]:
-                if neighbor_tri not in processed:
-                    n2 = self.tri_normals[neighbor_tri]
-                if not self.tri_highlight[neighbor_tri] and self.dot_product(n1, n2) > cos_theta:
-                    self.tri_highlight[neighbor_tri] = target_state
-                    q.put((neighbor_tri, current_depth - 1))
-                    processed.add(neighbor_tri)
-
-        highlighted_count = sum(1 for x in self.tri_highlight if x)
-        return highlighted_count, cumulative_area
-
-    def store_selected_triangles(self):
-        selected_indices = [i for i, is_highlighted in enumerate(self.tri_highlight) if is_highlighted]
-        selected_triangles_data = []
-        
-        for idx in selected_indices:
-            triangle_data = {
-                'index': idx,
-                'vertices': self.mesh.vectors[idx],
-                'normal': self.tri_normals[idx],
-                'area': self.tri_areas[idx],
-                'center': self.get_triangle_center(idx)
-            }
-            selected_triangles_data.append(triangle_data)
-   
-        return selected_triangles_data
-
-    def get_triangle_center(self, triangle_index):
-        vertices = self.mesh.vectors[triangle_index]
-        center = [(vertices[0][i] + vertices[1][i] + vertices[2][i])/3 for i in range(3)]
-        return center
-
-    @staticmethod
-    def dot_product(v1, v2):
-        """
-        Compute the dot product of two 3D vectors.
-        """
-        return sum(a * b for a, b in zip(v1, v2))
-
-    
-
 class Settings:
     def __init__(self):
         self.unit_system = "MKS"
@@ -226,9 +109,11 @@ class GeometryWindow(QtWidgets.QDialog):
 
         if file_path:
             try:
+                self.main_window.stl_filepath = file_path[:]
                 self.main_window.load_stl_file(file_path)
             except Exception as e:
                 QtWidgets.QMessageBox.critical(self, "Error", f"Failed to load geometry: {str(e)}")
+        self.close()
 
 class DisplayOptionsWindow(QtWidgets.QDialog):
     def __init__(self, parent):
@@ -249,7 +134,7 @@ class MaterialWindow(QtWidgets.QDialog):
         super().__init__(parent)
         self.setWindowTitle("Material")
         self.parent = parent
-        self.setFixedSize(300, 400)  # Fixed size window
+        self.setFixedSize(400, 400)  # Fixed size window
         
         layout = QtWidgets.QVBoxLayout(self)
         layout.setSpacing(10)
@@ -396,7 +281,7 @@ class MaterialWindow(QtWidgets.QDialog):
             
             # Store material data in parent
             self.parent.material_data = material_data
-            self.parent.message_text.append(f"\nMaterial applied: {material_data['name']}")
+            self.parent.message_text.append(f"Material applied: {material_data['name']}")
             
             # Change geometry color to indicate material application
             if hasattr(self.parent, 'stl_actor'):
@@ -413,127 +298,141 @@ class MaterialWindow(QtWidgets.QDialog):
                 
                 self.parent.vtkWidget.GetRenderWindow().Render()
             
+            # Update Material button icon to check
+            self.parent.update_button_icon("Material", "check")
             self.close()
             
         except ValueError as e:
             QtWidgets.QMessageBox.warning(self, "Invalid Input", str(e))
 
-         
-
 
 class StructuralLoadsWindow(QtWidgets.QDialog):
     def __init__(self, parent):
         super().__init__(parent)
+        self.setWindowModality(Qt.NonModal)  # Allow face selection while dialog is open
         self.setWindowTitle("Structural Loads")
         self.parent = parent
         
+        # Create main layout
         layout = QtWidgets.QVBoxLayout(self)
+        layout.setSpacing(10)
         
-        # Load Type Group
-        load_group = QtWidgets.QGroupBox("Load Type")
-        load_layout = QtWidgets.QVBoxLayout()
+        # Load Set spinbox
+        load_set_layout = QtWidgets.QHBoxLayout()
+        load_set_label = QtWidgets.QLabel("Load Set")
+        self.load_set_spin = QtWidgets.QSpinBox()
+        self.load_set_spin.setMinimum(0)
+        load_set_layout.addWidget(load_set_label)
+        load_set_layout.addWidget(self.load_set_spin)
+        layout.addLayout(load_set_layout)
+        
+        # Selection dropdown
+        selection_layout = QtWidgets.QHBoxLayout()
+        selection_label = QtWidgets.QLabel("Selection")
+        self.selection_combo = QtWidgets.QComboBox()
+        self.selection_combo.addItems(["Coarse Cylinder"])
+        selection_layout.addWidget(selection_label)
+        selection_layout.addWidget(self.selection_combo)
+        layout.addLayout(selection_layout)
+        
+        # Load Type dropdown
+        load_type_layout = QtWidgets.QHBoxLayout()
+        load_type_label = QtWidgets.QLabel("Load Type")
         self.load_type = QtWidgets.QComboBox()
-        self.load_type.addItems(["FixedXYZ", "Force"])
-        self.load_type.currentTextChanged.connect(self.on_load_type_changed)
-        load_layout.addWidget(self.load_type)
-        load_group.setLayout(load_layout)
-        layout.addWidget(load_group)
+        self.load_type.addItems(["Force", "Fixed XYZ", "Fixed X", "Fixed Y", "Fixed Z"])
+        load_type_layout.addWidget(load_type_label)
+        load_type_layout.addWidget(self.load_type)
+        layout.addLayout(load_type_layout)
         
-        # Force Options Group (initially hidden)
-        self.force_options_group = QtWidgets.QGroupBox("Force Options")
-        force_options_layout = QtWidgets.QVBoxLayout()
+        # Force components
+        self.force_group = QtWidgets.QGroupBox()
+        force_layout = QtWidgets.QVBoxLayout(self.force_group)
         
-        # Magnitude input
-        magnitude_layout = QtWidgets.QHBoxLayout()
-        magnitude_layout.addWidget(QtWidgets.QLabel("Magnitude:"))
-        self.magnitude_input = QtWidgets.QLineEdit()
-        self.magnitude_input.setPlaceholderText("Enter magnitude")
-        magnitude_layout.addWidget(self.magnitude_input)
-        self.unit_label = QtWidgets.QLabel("N")
-        magnitude_layout.addWidget(self.unit_label)
-        force_options_layout.addLayout(magnitude_layout)
+        # X Force
+        x_force_layout = QtWidgets.QHBoxLayout()
+        x_force_label = QtWidgets.QLabel("X-Force (N)")
+        self.x_force_spin = QtWidgets.QDoubleSpinBox()
+        self.x_force_spin.setRange(-1e6, 1e6)
+        self.x_force_spin.setDecimals(1)
+        x_force_layout.addWidget(x_force_label)
+        x_force_layout.addWidget(self.x_force_spin)
+        force_layout.addLayout(x_force_layout)
         
-        # Direction selection
-        self.direction_label = QtWidgets.QLabel("Base Direction:")
-        force_options_layout.addWidget(self.direction_label)
-        self.direction_combo = QtWidgets.QComboBox()
-        self.direction_combo.addItems(["Global X", "Global Y", "Global Z"])
-        force_options_layout.addWidget(self.direction_combo)
+        # Y Force
+        y_force_layout = QtWidgets.QHBoxLayout()
+        y_force_label = QtWidgets.QLabel("Y-Force (N)")
+        self.y_force_spin = QtWidgets.QDoubleSpinBox()
+        self.y_force_spin.setRange(-1e6, 1e6)
+        self.y_force_spin.setDecimals(1)
+        y_force_layout.addWidget(y_force_label)
+        y_force_layout.addWidget(self.y_force_spin)
+        force_layout.addLayout(y_force_layout)
         
-        # Angle inputs
-        angles_group = QtWidgets.QGroupBox("Angle Adjustments")
-        angles_layout = QtWidgets.QVBoxLayout()
+        # Z Force
+        z_force_layout = QtWidgets.QHBoxLayout()
+        z_force_label = QtWidgets.QLabel("Z-Force (N)")
+        self.z_force_spin = QtWidgets.QDoubleSpinBox()
+        self.z_force_spin.setRange(-1e6, 1e6)
+        self.z_force_spin.setDecimals(1)
+        z_force_layout.addWidget(z_force_label)
+        z_force_layout.addWidget(self.z_force_spin)
+        force_layout.addLayout(z_force_layout)
         
-        # XY plane rotation
-        xy_layout = QtWidgets.QHBoxLayout()
-        xy_layout.addWidget(QtWidgets.QLabel("XY Plane Angle:"))
-        self.xy_angle_input = QtWidgets.QLineEdit()
-        self.xy_angle_input.setPlaceholderText("Angle in XY plane (degrees)")
-        xy_layout.addWidget(self.xy_angle_input)
-        angles_layout.addLayout(xy_layout)
-        
-        # YZ plane rotation
-        yz_layout = QtWidgets.QHBoxLayout()
-        yz_layout.addWidget(QtWidgets.QLabel("YZ Plane Angle:"))
-        self.yz_angle_input = QtWidgets.QLineEdit()
-        self.yz_angle_input.setPlaceholderText("Angle in YZ plane (degrees)")
-        yz_layout.addWidget(self.yz_angle_input)
-        angles_layout.addLayout(yz_layout)
-        
-        # XZ plane rotation
-        xz_layout = QtWidgets.QHBoxLayout()
-        xz_layout.addWidget(QtWidgets.QLabel("XZ Plane Angle:"))
-        self.xz_angle_input = QtWidgets.QLineEdit()
-        self.xz_angle_input.setPlaceholderText("Angle in XZ plane (degrees)")
-        xz_layout.addWidget(self.xz_angle_input)
-        angles_layout.addLayout(xz_layout)
-        
-        angles_group.setLayout(angles_layout)
-        force_options_layout.addWidget(angles_group)
-        
-        self.force_options_group.setLayout(force_options_layout)
-        layout.addWidget(self.force_options_group)
-        self.force_options_group.hide()  # Initially hidden
+        layout.addWidget(self.force_group)
         
         # Buttons
         button_layout = QtWidgets.QHBoxLayout()
         apply_button = QtWidgets.QPushButton("Apply")
         apply_button.clicked.connect(self.apply_load)
-        clear_button = QtWidgets.QPushButton("Clear")
-        clear_button.clicked.connect(self.clear_angles)
         close_button = QtWidgets.QPushButton("Close")
         close_button.clicked.connect(self.close)
         button_layout.addWidget(apply_button)
-        button_layout.addWidget(clear_button)
         button_layout.addWidget(close_button)
         layout.addLayout(button_layout)
-
-    def clear_angles(self):
-        self.xy_angle_input.clear()
-        self.yz_angle_input.clear()
-        self.xz_angle_input.clear()
-
+        
+        # Connect load type change
+        self.load_type.currentTextChanged.connect(self.on_load_type_changed)
+        
     def on_load_type_changed(self, load_type):
-        show_force_options = load_type == "Force"
-        self.force_options_group.setVisible(show_force_options)
+        # Show/hide force inputs based on load type
+        show_force = load_type == "Force"
+        self.force_group.setVisible(show_force)
         self.adjustSize()
-
+        
     def apply_load(self):
         load_type = self.load_type.currentText()
         
-        if load_type == "FixedXYZ":
-            self.apply_fixed_constraint()
-        elif load_type == "Force":
+        if load_type == "Force":
             self.apply_force()
+        elif load_type == "Fixed XYZ":
+            self.apply_fixed_constraint()
+        elif load_type == "Fixed X":
+            self.apply_fixed_constraint_x()
+        elif load_type == "Fixed Y":
+            self.apply_fixed_constraint_y()
+        elif load_type == "Fixed Z":
+            self.apply_fixed_constraint_z()
             
-    def apply_fixed_constraint(self):
-        if self.parent.stl_geom:
-            # Clear existing constraint markers
-            for actor in self.parent.constraint_actors:
-                self.parent.renderer.RemoveActor(actor)
-            self.parent.constraint_actors = []
+    def apply_force(self):
+        if not self.parent.stl_geom:
+            return
             
+        try:
+            # Get force components from spinboxes
+            force_x = self.x_force_spin.value()
+            force_y = self.y_force_spin.value()
+            force_z = self.z_force_spin.value()
+            
+            # Calculate magnitude
+            magnitude = math.sqrt(force_x**2 + force_y**2 + force_z**2)
+            if magnitude == 0:
+                QtWidgets.QMessageBox.warning(self, "Error", "Force magnitude cannot be zero")
+                return
+                
             selected_faces = self.parent.stl_geom.store_selected_triangles()
+            if not selected_faces:
+                QtWidgets.QMessageBox.warning(self, "Error", "No faces selected")
+                return
             
             MAX_MARKERS = 5
             THRESHOLD = 25
@@ -542,141 +441,1103 @@ class StructuralLoadsWindow(QtWidgets.QDialog):
                 step = len(selected_faces) // MAX_MARKERS
                 display_indices = range(0, len(selected_faces), step)[:MAX_MARKERS]
                 display_faces = [selected_faces[i] for i in display_indices]
-                self.parent.message_text.append(f"\nShowing {len(display_faces)} markers for {len(selected_faces)} selected triangles")
             else:
                 display_faces = selected_faces
                 
             for triangle in display_faces:
-                axes = vtk.vtkAxesActor()
-                axes.SetTotalLength(0.05, 0.05, 0.05)
+                # Create arrow for visualization
+                arrow = vtk.vtkArrowSource()
+                arrow.SetTipLength(0.3)
+                arrow.SetTipRadius(0.1)
+                arrow.SetShaftRadius(0.03)
+                
+                # Set up transform
                 transform = vtk.vtkTransform()
                 transform.Translate(triangle['center'])
-                transform.Scale(1, 1, 1)
-                axes.SetUserTransform(transform)
-                self.parent.renderer.AddActor(axes)
-                self.parent.constraint_actors.append(axes)
+                
+                # Calculate direction angles
+                dx, dy, dz = force_x/magnitude, force_y/magnitude, force_z/magnitude
+                
+                # Calculate rotations
+                if abs(dx) > 0 or abs(dy) > 0:
+                    angle_z = math.degrees(math.atan2(dy, dx))
+                else:
+                    angle_z = 0
+                    
+                angle_y = -math.degrees(math.asin(dz))
+                
+                transform.RotateZ(angle_z)
+                transform.RotateY(angle_y)
+                
+                # Dynamic scaling based on geometry bounding size
+                import numpy as np
+                points = np.array(self.parent.stl_geom.mesh.points)
+                bbox = [points[:,0].min(), points[:,0].max(),
+                        points[:,1].min(), points[:,1].max(),
+                        points[:,2].min(), points[:,2].max()]
+                geom_size = max(bbox[1]-bbox[0], bbox[3]-bbox[2], bbox[5]-bbox[4])
+                scale_factor = 0.10 * geom_size  # Constant scaling factor independent of force magnitude
+                transform.Scale(scale_factor, scale_factor, scale_factor)
+                
+                # Create mapper and actor
+                mapper = vtk.vtkPolyDataMapper()
+                mapper.SetInputConnection(arrow.GetOutputPort())
+                
+                arrow_actor = vtk.vtkActor()
+                arrow_actor.SetMapper(mapper)
+                arrow_actor.SetUserTransform(transform)
+                arrow_actor.GetProperty().SetColor(1, 0, 0)  # Red for force
+                
+                self.parent.renderer.AddActor(arrow_actor)
+                self.parent.force_actors.append(arrow_actor)
+                
+            # Release forced faces from selection
+            for triangle in selected_faces:
+                idx = triangle['index']
+                self.parent.stl_geom.tri_highlight[idx] = False
+            self.parent.update_highlights()
             
             self.parent.vtkWidget.GetRenderWindow().Render()
+            self.parent.message_text.append(f"Applied force of {magnitude:.2f}N to {len(selected_faces)} triangles")
+            # Update Structural Loads button icon to check
+            self.parent.update_button_icon("Structural Loads", "check")
+            self.close()
             
-    def apply_force(self):
-        if not self.parent.stl_geom:
-            return
+        except Exception as e:
+            QtWidgets.QMessageBox.warning(self, "Error", str(e))
             
-        try:
-            magnitude = float(self.magnitude_input.text())
-            xy_angle = float(self.xy_angle_input.text()) if self.xy_angle_input.text() else 0
-            yz_angle = float(self.yz_angle_input.text()) if self.yz_angle_input.text() else 0
-            xz_angle = float(self.xz_angle_input.text()) if self.xz_angle_input.text() else 0
-        except ValueError:
-            QtWidgets.QMessageBox.warning(self, "Error", "Please enter valid numeric values")
-            return
+    def apply_fixed_constraint(self):
+        if self.parent.stl_geom:
+            # Get selected faces
+            selected_faces = self.parent.stl_geom.store_selected_triangles()
+            if not selected_faces:
+                QtWidgets.QMessageBox.warning(self, "Error", "No faces selected")
+                return
+
+            # Create a new actor for the fixed faces
+            points = vtk.vtkPoints()
+            cells = vtk.vtkCellArray()
             
-        # Clear existing force markers
-        for actor in self.parent.force_actors:
-            self.parent.renderer.RemoveActor(actor)
-        self.parent.force_actors = []
-        
-        selected_faces = self.parent.stl_geom.store_selected_triangles()
-        
-        MAX_MARKERS = 5
-        THRESHOLD = 25
-        
-        if len(selected_faces) > THRESHOLD:
-            step = len(selected_faces) // MAX_MARKERS
-            display_indices = range(0, len(selected_faces), step)[:MAX_MARKERS]
-            display_faces = [selected_faces[i] for i in display_indices]
-        else:
-            display_faces = selected_faces
-            
-        for triangle in display_faces:
-            # Create arrow for visualization
-            arrow = vtk.vtkArrowSource()
-            arrow.SetTipLength(0.3)
-            arrow.SetTipRadius(0.1)
-            arrow.SetShaftRadius(0.03)
-            
-            # Set up transform
-            transform = vtk.vtkTransform()
-            transform.Translate(triangle['center'])
-            
-            # Apply base direction
-            direction = self.direction_combo.currentText()
-            if direction == "Global Y":
-                transform.RotateZ(90)
-            elif direction == "Global Z":
-                transform.RotateY(-90)
-            
-            # Apply angle rotations
-            transform.RotateZ(xy_angle)  # Rotation in XY plane
-            transform.RotateY(xz_angle)  # Rotation in XZ plane
-            transform.RotateX(yz_angle)  # Rotation in YZ plane
-            
-            # Scale arrow based on magnitude
-            scale_factor = 0.1 * magnitude / 100
-            transform.Scale(scale_factor, scale_factor, scale_factor)
-            
+            for triangle in selected_faces:
+                vertices = triangle['vertices']
+                point_ids = []
+                for v in vertices:
+                    point_ids.append(points.InsertNextPoint(v))
+                tri = vtk.vtkTriangle()
+                for i in range(3):
+                    tri.GetPointIds().SetId(i, point_ids[i])
+                cells.InsertNextCell(tri)
+
+            poly_data = vtk.vtkPolyData()
+            poly_data.SetPoints(points)
+            poly_data.SetPolys(cells)
+
             # Create mapper and actor
             mapper = vtk.vtkPolyDataMapper()
-            mapper.SetInputConnection(arrow.GetOutputPort())
+            mapper.SetInputData(poly_data)
             
-            arrow_actor = vtk.vtkActor()
-            arrow_actor.SetMapper(mapper)
-            arrow_actor.SetUserTransform(transform)
-            arrow_actor.GetProperty().SetColor(1, 0, 0)  # Red for force
+            constraint_actor = vtk.vtkActor()
+            constraint_actor.SetMapper(mapper)
+            constraint_actor.GetProperty().SetColor(0, 0, 0)  # Set color to black
             
-            self.parent.renderer.AddActor(arrow_actor)
-            self.parent.force_actors.append(arrow_actor)
+            # Add to renderer and store in constraint_actors
+            self.parent.renderer.AddActor(constraint_actor)
+            self.parent.constraint_actors.append(constraint_actor)
             
-        self.parent.vtkWidget.GetRenderWindow().Render()
-        angle_msg = f" at angles (XY: {xy_angle}°, YZ: {yz_angle}°, XZ: {xz_angle}°)" if any([xy_angle, yz_angle, xz_angle]) else ""
-        self.parent.message_text.append(f"\nApplied force to {len(selected_faces)} triangles{angle_msg}")
+            # Update display
+            self.parent.vtkWidget.GetRenderWindow().Render()
+            
+            # Release restrained faces from selection
+            selected = [i for i, sel in enumerate(self.parent.stl_geom.tri_highlight) if sel]
+            for idx in selected:
+                self.parent.stl_geom.tri_highlight[idx] = False
+            self.parent.update_highlights()
+            self.parent.update_button_icon("Structural Loads", "check")
+            self.parent.message_text.append(f"Fixed XYZ constraint applied to {len(selected_faces)} faces")
+            
+
+    def apply_fixed_constraint_x(self):
+        if self.parent.stl_geom:
+            selected_faces = self.parent.stl_geom.store_selected_triangles()
+            if not selected_faces:
+                QtWidgets.QMessageBox.warning(self, "Error", "No faces selected")
+                return
+
+            # Create points and cells for the fixed faces
+            points = vtk.vtkPoints()
+            cells = vtk.vtkCellArray()
+            
+            for triangle in selected_faces:
+                vertices = triangle['vertices']
+                point_ids = []
+                for v in vertices:
+                    point_ids.append(points.InsertNextPoint(v))
+                tri = vtk.vtkTriangle()
+                for i in range(3):
+                    tri.GetPointIds().SetId(i, point_ids[i])
+                cells.InsertNextCell(tri)
+
+            poly_data = vtk.vtkPolyData()
+            poly_data.SetPoints(points)
+            poly_data.SetPolys(cells)
+
+            # Create mapper and actor
+            mapper = vtk.vtkPolyDataMapper()
+            mapper.SetInputData(poly_data)
+            
+            constraint_actor = vtk.vtkActor()
+            constraint_actor.SetMapper(mapper)
+            constraint_actor.GetProperty().SetColor(0, 0, 0)  # Set color to black
+            
+            # Add to renderer and store in constraint_actors
+            self.parent.renderer.AddActor(constraint_actor)
+            self.parent.constraint_actors.append(constraint_actor)
+            
+            # Update display
+            self.parent.vtkWidget.GetRenderWindow().Render()
+            
+            # Release faces from selection
+            for face in selected_faces:
+                idx = face['index']
+                self.parent.stl_geom.tri_highlight[idx] = False
+            self.parent.stl_geom.selected_triangles.clear()
+            self.parent.update_highlights()
+            self.parent.message_text.append(f"Fixed X constraint applied to {len(selected_faces)} faces")
+
+    def apply_fixed_constraint_y(self):
+        if self.parent.stl_geom:
+            selected_faces = self.parent.stl_geom.store_selected_triangles()
+            if not selected_faces:
+                QtWidgets.QMessageBox.warning(self, "Error", "No faces selected")
+                return
+
+            # Create points and cells for the fixed faces
+            points = vtk.vtkPoints()
+            cells = vtk.vtkCellArray()
+            
+            for triangle in selected_faces:
+                vertices = triangle['vertices']
+                point_ids = []
+                for v in vertices:
+                    point_ids.append(points.InsertNextPoint(v))
+                tri = vtk.vtkTriangle()
+                for i in range(3):
+                    tri.GetPointIds().SetId(i, point_ids[i])
+                cells.InsertNextCell(tri)
+
+            poly_data = vtk.vtkPolyData()
+            poly_data.SetPoints(points)
+            poly_data.SetPolys(cells)
+
+            # Create mapper and actor
+            mapper = vtk.vtkPolyDataMapper()
+            mapper.SetInputData(poly_data)
+            
+            constraint_actor = vtk.vtkActor()
+            constraint_actor.SetMapper(mapper)
+            constraint_actor.GetProperty().SetColor(0, 0, 0)  # Set color to black
+            
+            # Add to renderer and store in constraint_actors
+            self.parent.renderer.AddActor(constraint_actor)
+            self.parent.constraint_actors.append(constraint_actor)
+            
+            # Update display
+            self.parent.vtkWidget.GetRenderWindow().Render()
+            
+            # Release faces from selection
+            for face in selected_faces:
+                idx = face['index']
+                self.parent.stl_geom.tri_highlight[idx] = False
+            self.parent.stl_geom.selected_triangles.clear()
+            self.parent.update_highlights()
+            self.parent.message_text.append(f"Fixed Y constraint applied to {len(selected_faces)} faces")
+
+    def apply_fixed_constraint_z(self):
+        if self.parent.stl_geom:
+            selected_faces = self.parent.stl_geom.store_selected_triangles()
+            if not selected_faces:
+                QtWidgets.QMessageBox.warning(self, "Error", "No faces selected")
+                return
+
+            # Create points and cells for the fixed faces
+            points = vtk.vtkPoints()
+            cells = vtk.vtkCellArray()
+            
+            for triangle in selected_faces:
+                vertices = triangle['vertices']
+                point_ids = []
+                for v in vertices:
+                    point_ids.append(points.InsertNextPoint(v))
+                tri = vtk.vtkTriangle()
+                for i in range(3):
+                    tri.GetPointIds().SetId(i, point_ids[i])
+                cells.InsertNextCell(tri)
+
+            poly_data = vtk.vtkPolyData()
+            poly_data.SetPoints(points)
+            poly_data.SetPolys(cells)
+
+            # Create mapper and actor
+            mapper = vtk.vtkPolyDataMapper()
+            mapper.SetInputData(poly_data)
+            
+            constraint_actor = vtk.vtkActor()
+            constraint_actor.SetMapper(mapper)
+            constraint_actor.GetProperty().SetColor(0, 0, 0)  # Set color to black
+            
+            # Add to renderer and store in constraint_actors
+            self.parent.renderer.AddActor(constraint_actor)
+            self.parent.constraint_actors.append(constraint_actor)
+            
+            # Update display
+            self.parent.vtkWidget.GetRenderWindow().Render()
+            
+            # Release faces from selection
+            for face in selected_faces:
+                idx = face['index']
+                self.parent.stl_geom.tri_highlight[idx] = False
+            self.parent.stl_geom.selected_triangles.clear()
+            self.parent.update_highlights()
+            self.parent.message_text.append(f"Fixed Z constraint applied to {len(selected_faces)} faces")
+    
+class AnalysisWindow(QtWidgets.QDialog):
+    def __init__(self, parent):
+        super().__init__(parent)
+        self.setWindowTitle("Analysis")
+        self.resize(300, 300)
+        self.parent = parent
+        
+        # Create main layout
+        layout = QtWidgets.QVBoxLayout(self)
+        layout.setSpacing(10)
+        
+        # Load Set
+        load_set_layout = QtWidgets.QHBoxLayout()
+        load_set_label = QtWidgets.QLabel("Load Set")
+        self.load_set_spin = QtWidgets.QSpinBox()
+        self.load_set_spin.setMinimum(0)
+        load_set_layout.addWidget(load_set_label)
+        load_set_layout.addWidget(self.load_set_spin)
+        layout.addLayout(load_set_layout)
+        
+        # Mesh Quality
+        mesh_quality_layout = QtWidgets.QHBoxLayout()
+        mesh_quality_label = QtWidgets.QLabel("Mesh Quality")
+        self.mesh_quality_combo = QtWidgets.QComboBox()
+        self.mesh_quality_combo.addItems(["Very Coarse", "Coarse", "Normal", "Fine", "Very Fine"])
+        mesh_quality_layout.addWidget(mesh_quality_label)
+        mesh_quality_layout.addWidget(self.mesh_quality_combo)
+        layout.addLayout(mesh_quality_layout)
+        
+        # Number of Elements
+        elements_layout = QtWidgets.QHBoxLayout()
+        elements_label = QtWidgets.QLabel("#Elements")
+        self.elements_spin = QtWidgets.QSpinBox()
+        self.elements_spin.setRange(1000, 1000000)
+        self.elements_spin.setValue(10000)
+        elements_layout.addWidget(elements_label)
+        elements_layout.addWidget(self.elements_spin)
+        layout.addLayout(elements_layout)
+        
+        # Deflation Type
+        deflation_layout = QtWidgets.QHBoxLayout()
+        deflation_label = QtWidgets.QLabel("Deflation Type")
+        self.deflation_combo = QtWidgets.QComboBox()
+        self.deflation_combo.addItems(["Rigid", "Flexible"])
+        deflation_layout.addWidget(deflation_label)
+        deflation_layout.addWidget(self.deflation_combo)
+        layout.addLayout(deflation_layout)
+        
+        # Number of Deflation Groups
+        deflation_groups_layout = QtWidgets.QHBoxLayout()
+        deflation_groups_label = QtWidgets.QLabel("#Deflation Groups")
+        self.deflation_groups_spin = QtWidgets.QSpinBox()
+        self.deflation_groups_spin.setRange(1, 1000)
+        self.deflation_groups_spin.setValue(100)
+        deflation_groups_layout.addWidget(deflation_groups_label)
+        deflation_groups_layout.addWidget(self.deflation_groups_spin)
+        layout.addLayout(deflation_groups_layout)
+        
+        # # Number of Modes
+        # modes_layout = QtWidgets.QHBoxLayout()
+        # modes_label = QtWidgets.QLabel("#Modes")
+        # self.modes_spin = QtWidgets.QSpinBox()
+        # self.modes_spin.setRange(1, 100)
+        # self.modes_spin.setValue(1)
+        # modes_layout.addWidget(modes_label)
+        # modes_layout.addWidget(self.modes_spin)
+        # layout.addLayout(modes_layout)
+        
+        # Include Thermal Effect
+        self.thermal_check = QtWidgets.QCheckBox("Include Thermal Effect")
+        layout.addWidget(self.thermal_check)
+        
+        # Zero-strain Temperature
+        temp_layout = QtWidgets.QHBoxLayout()
+        temp_label = QtWidgets.QLabel("Zero-strain T(K):")
+        self.temp_spin = QtWidgets.QDoubleSpinBox()
+        self.temp_spin.setRange(0, 1000)
+        self.temp_spin.setValue(300.00)
+        self.temp_spin.setDecimals(2)
+        temp_layout.addWidget(temp_label)
+        temp_layout.addWidget(self.temp_spin)
+        layout.addLayout(temp_layout)
+        
+        # Remesh checkbox
+        self.remesh_check = QtWidgets.QCheckBox("Remesh?")
+        layout.addWidget(self.remesh_check)
+        
+        # Analysis buttons
+        self.thermal_button = QtWidgets.QPushButton("Thermal Analysis")
+        self.thermal_button.clicked.connect(self.run_thermal_analysis)
+        layout.addWidget(self.thermal_button)
+        
+        self.structural_button = QtWidgets.QPushButton("Structural Analysis")
+        self.structural_button.clicked.connect(self.run_structural_analysis)
+        layout.addWidget(self.structural_button)
+        
+    def run_thermal_analysis(self):
+        # Implementation for thermal analysis
+        pass
+    
+    def run_structural_analysis(self):
+        # Implementation for structural analysis
+        mesh = Mesher()
+        mesh.createMeshFromSTLFile(self.parent.stl_filepath,nElemsDesired=10000) 
+        plots.plotMesh(mesh)
+
+class Analysis:
+    def __init__(self):
+        self.load_set = 0
+        self.mesh_quality = "Very Coarse"
+        self.num_elements = 10000
+        self.deflation_type = "Rigid"
+        self.num_deflation_groups = 100
+        self.num_modes = 1
+        self.include_thermal = False
+        self.zero_strain_temp = 300.0
+        self.remesh = False
+        
+    def run_thermal_analysis(self, params):
+        # Implementation for thermal analysis
+        pass
+        
+    def run_structural_analysis(self, params):
+        # Implementation for structural analysis
+        pass
+
+class TopOptConstraintsWindow(QtWidgets.QDialog):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("Constraints")
+        self.resize(300, 500)
+        
+        # Main layout
+        layout = QtWidgets.QVBoxLayout(self)
+        layout.setSpacing(10)
+        
+        # Create scrollable area
+        scroll = QtWidgets.QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setHorizontalScrollBarPolicy(QtCore.Qt.ScrollBarAlwaysOff)
+        
+        # Container widget for scroll area
+        container = QtWidgets.QWidget()
+        self.form_layout = QtWidgets.QFormLayout(container)
+        self.form_layout.setSpacing(8)
+        
+        # Manufacturing constraints
+        self.extrude_check = QtWidgets.QCheckBox("Extrude")
+        self.extrude_combo = QtWidgets.QComboBox()
+        self.extrude_combo.addItems(["XDir", "YDir", "ZDir"])
+        self.form_layout.addRow(self.extrude_check, self.extrude_combo)
+        
+        self.am_build_check = QtWidgets.QCheckBox("AM Build")
+        self.am_build_combo = QtWidgets.QComboBox()
+        self.am_build_combo.addItems(["+XDir", "+YDir", "+ZDir", "-XDir", "-YDir", "-ZDir"])
+        self.form_layout.addRow(self.am_build_check, self.am_build_combo)
+        
+        self.draw_direction_check = QtWidgets.QCheckBox("DrawDirection")
+        self.draw_direction_combo = QtWidgets.QComboBox()
+        self.draw_direction_combo.addItems(["XDir", "YDir", "ZDir"])
+        self.form_layout.addRow(self.draw_direction_check, self.draw_direction_combo)
+        
+        self.cyclic_sym_check = QtWidgets.QCheckBox("CyclicSym(Z)")
+        self.cyclic_sym_combo = QtWidgets.QComboBox()
+        self.cyclic_sym_combo.addItems(["+90 deg", "-90 deg"])
+        self.form_layout.addRow(self.cyclic_sym_check, self.cyclic_sym_combo)
+        
+        # Pattern constraints
+        self.x_grid_check = QtWidgets.QCheckBox("XGridPattern")
+        self.x_grid_spin = QtWidgets.QSpinBox()
+        self.x_grid_spin.setRange(1, 10)
+        self.x_grid_spin.setValue(2)
+        self.form_layout.addRow(self.x_grid_check, self.x_grid_spin)
+        
+        self.y_grid_check = QtWidgets.QCheckBox("YGridPattern")
+        self.y_grid_spin = QtWidgets.QSpinBox()
+        self.y_grid_spin.setRange(1, 10)
+        self.y_grid_spin.setValue(2)
+        self.form_layout.addRow(self.y_grid_check, self.y_grid_spin)
+        
+        self.z_grid_check = QtWidgets.QCheckBox("ZGridPattern")
+        self.z_grid_spin = QtWidgets.QSpinBox()
+        self.z_grid_spin.setRange(1, 10)
+        self.z_grid_spin.setValue(2)
+        self.form_layout.addRow(self.z_grid_check, self.z_grid_spin)
+        
+        # Performance constraints
+        self.stress_safety_check = QtWidgets.QCheckBox("StressSafety")
+        self.stress_safety_spin = QtWidgets.QDoubleSpinBox()
+        self.stress_safety_spin.setRange(0.1, 10.0)
+        self.stress_safety_spin.setValue(1.00)
+        self.stress_safety_spin.setSingleStep(0.1)
+        self.form_layout.addRow(self.stress_safety_check, self.stress_safety_spin)
+        
+        self.max_disp_check = QtWidgets.QCheckBox("MaxDisp(m)")
+        self.max_disp_spin = QtWidgets.QDoubleSpinBox()
+        self.max_disp_spin.setRange(0, 1000)
+        self.max_disp_spin.setValue(160.0)
+        self.max_disp_spin.setDecimals(6)
+        self.form_layout.addRow(self.max_disp_check, self.max_disp_spin)
+        
+        self.min_freq_check = QtWidgets.QCheckBox("MinFreq(Hz)")
+        self.min_freq_spin = QtWidgets.QDoubleSpinBox()
+        self.min_freq_spin.setRange(0, 10000)
+        self.min_freq_spin.setValue(1000.00)
+        self.min_freq_spin.setDecimals(2)
+        self.form_layout.addRow(self.min_freq_check, self.min_freq_spin)
+        
+        self.max_temp_check = QtWidgets.QCheckBox("MaxTemp(K)")
+        self.max_temp_spin = QtWidgets.QDoubleSpinBox()
+        self.max_temp_spin.setRange(0, 5000)
+        self.max_temp_spin.setValue(2000.00)
+        self.max_temp_spin.setDecimals(2)
+        self.form_layout.addRow(self.max_temp_check, self.max_temp_spin)
+        
+        self.min_feat_check = QtWidgets.QCheckBox("MinFeat(m)")
+        self.min_feat_spin = QtWidgets.QDoubleSpinBox()
+        self.min_feat_spin.setRange(0, 1)
+        self.min_feat_spin.setValue(0.0)
+        self.min_feat_spin.setDecimals(6)
+        self.form_layout.addRow(self.min_feat_check, self.min_feat_spin)
+        
+        self.max_feat_check = QtWidgets.QCheckBox("MaxFeat(m)")
+        self.max_feat_spin = QtWidgets.QDoubleSpinBox()
+        self.max_feat_spin.setRange(0, 1)
+        self.max_feat_spin.setValue(0.0)
+        self.max_feat_spin.setDecimals(6)
+        self.form_layout.addRow(self.max_feat_check, self.max_feat_spin)
+        
+        # Symmetry constraints
+        self.x_symmetry_check = QtWidgets.QCheckBox("X-Symmetry")
+        self.form_layout.addRow(self.x_symmetry_check)
+        
+        self.y_symmetry_check = QtWidgets.QCheckBox("Y-Symmetry")
+        self.form_layout.addRow(self.y_symmetry_check)
+        
+        self.z_symmetry_check = QtWidgets.QCheckBox("Z-Symmetry")
+        self.form_layout.addRow(self.z_symmetry_check)
+        
+        # Other constraints
+        self.connected_topology_check = QtWidgets.QCheckBox("Connected Topology")
+        self.form_layout.addRow(self.connected_topology_check)
+        
+        self.keep_fixed_faces_check = QtWidgets.QCheckBox("Keep Fixed Faces")
+        self.form_layout.addRow(self.keep_fixed_faces_check)
+        
+        # Set scroll area widget
+        scroll.setWidget(container)
+        layout.addWidget(scroll)
+        
+        # Apply button
+        self.apply_button = QtWidgets.QPushButton("Apply")
+        self.apply_button.clicked.connect(self.apply_constraints)
+        layout.addWidget(self.apply_button)
+        
+        # Set default values
+        self.connected_topology_check.setChecked(True)
+        
+    def apply_constraints(self):
+        """Gather and apply all constraint settings"""
+        constraints = {
+            'manufacturing': {
+                'extrude': {
+                    'enabled': self.extrude_check.isChecked(),
+                    'direction': self.extrude_combo.currentText()
+                },
+                'am_build': {
+                    'enabled': self.am_build_check.isChecked(),
+                    'direction': self.am_build_combo.currentText()
+                },
+                'draw_direction': {
+                    'enabled': self.draw_direction_check.isChecked(),
+                    'direction': self.draw_direction_combo.currentText()
+                },
+                'cyclic_symmetry': {
+                    'enabled': self.cyclic_sym_check.isChecked(),
+                    'angle': self.cyclic_sym_combo.currentText()
+                }
+            },
+            'patterns': {
+                'x_grid': {
+                    'enabled': self.x_grid_check.isChecked(),
+                    'value': self.x_grid_spin.value()
+                },
+                'y_grid': {
+                    'enabled': self.y_grid_check.isChecked(),
+                    'value': self.y_grid_spin.value()
+                },
+                'z_grid': {
+                    'enabled': self.z_grid_check.isChecked(),
+                    'value': self.z_grid_spin.value()
+                }
+            },
+            'performance': {
+                'stress_safety': {
+                    'enabled': self.stress_safety_check.isChecked(),
+                    'value': self.stress_safety_spin.value()
+                },
+                'max_displacement': {
+                    'enabled': self.max_disp_check.isChecked(),
+                    'value': self.max_disp_spin.value()
+                },
+                'min_frequency': {
+                    'enabled': self.min_freq_check.isChecked(),
+                    'value': self.min_freq_spin.value()
+                },
+                'max_temperature': {
+                    'enabled': self.max_temp_check.isChecked(),
+                    'value': self.max_temp_spin.value()
+                },
+                'min_feature': {
+                    'enabled': self.min_feat_check.isChecked(),
+                    'value': self.min_feat_spin.value()
+                },
+                'max_feature': {
+                    'enabled': self.max_feat_check.isChecked(),
+                    'value': self.max_feat_spin.value()
+                }
+            },
+            'symmetry': {
+                'x_symmetry': self.x_symmetry_check.isChecked(),
+                'y_symmetry': self.y_symmetry_check.isChecked(),
+                'z_symmetry': self.z_symmetry_check.isChecked()
+            },
+            'other': {
+                'connected_topology': self.connected_topology_check.isChecked(),
+                'keep_fixed_faces': self.keep_fixed_faces_check.isChecked()
+            }
+        }
+        
+        # Update icon in main window
+        if hasattr(self.parent(), 'update_button_icon'):
+            self.parent().update_button_icon("TopOpt Constraints", "check")
+        
+        # Store constraints in parent window
+        if hasattr(self.parent(), 'topopt_constraints'):
+            self.parent().topopt_constraints = constraints
+            
+        self.parent().message_text.append("TopOpt constraints applied")
         self.close()
 
+
+class OptimizeTopologyWindow(QtWidgets.QDialog):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("Optimize Topology")
+        self.resize(300, 400)
+        self.parent = parent
+        
+        # Main layout
+        layout = QtWidgets.QVBoxLayout(self)
+        layout.setSpacing(10)
+        
+        # Objective selection
+        obj_layout = QtWidgets.QHBoxLayout()
+        obj_label = QtWidgets.QLabel("Objective")
+        self.obj_combo = QtWidgets.QComboBox()
+        self.obj_combo.addItems(["Min. Compliance", "Min. Mass", "Min. Stress"])
+        obj_layout.addWidget(obj_label)
+        obj_layout.addWidget(self.obj_combo)
+        layout.addLayout(obj_layout)
+        
+        # Checkboxes
+        self.use_all_loads = QtWidgets.QCheckBox("Use all Loads?")
+        self.use_all_loads.setChecked(True)
+        layout.addWidget(self.use_all_loads)
+        
+        self.use_simp = QtWidgets.QCheckBox("Use SIMP Method?")
+        layout.addWidget(self.use_simp)
+        
+        self.smooth_surface = QtWidgets.QCheckBox("Smooth surface?")
+        self.smooth_surface.setChecked(True)
+        layout.addWidget(self.smooth_surface)
+        
+        # Load Set
+        load_set_layout = QtWidgets.QHBoxLayout()
+        load_set_label = QtWidgets.QLabel("Use Load Set")
+        self.load_set_spin = QtWidgets.QSpinBox()
+        self.load_set_spin.setRange(0, 100)
+        self.load_set_spin.setValue(0)
+        load_set_layout.addWidget(load_set_label)
+        load_set_layout.addWidget(self.load_set_spin)
+        layout.addLayout(load_set_layout)
+        
+        # Volume Fraction
+        vol_frac_layout = QtWidgets.QHBoxLayout()
+        vol_frac_label = QtWidgets.QLabel("Desired Vol.Frac.")
+        self.vol_frac_spin = QtWidgets.QDoubleSpinBox()
+        self.vol_frac_spin.setRange(0.1, 1.0)
+        self.vol_frac_spin.setValue(0.50)
+        self.vol_frac_spin.setDecimals(2)
+        self.vol_frac_spin.setSingleStep(0.05)
+        vol_frac_layout.addWidget(vol_frac_label)
+        vol_frac_layout.addWidget(self.vol_frac_spin)
+        layout.addLayout(vol_frac_layout)
+        
+        # Volume Step
+        vol_step_layout = QtWidgets.QHBoxLayout()
+        vol_step_label = QtWidgets.QLabel("Volume Step")
+        self.vol_step_spin = QtWidgets.QDoubleSpinBox()
+        self.vol_step_spin.setRange(0.001, 0.1)
+        self.vol_step_spin.setValue(0.02500)
+        self.vol_step_spin.setDecimals(5)
+        self.vol_step_spin.setSingleStep(0.005)
+        vol_step_layout.addWidget(vol_step_label)
+        vol_step_layout.addWidget(self.vol_step_spin)
+        layout.addLayout(vol_step_layout)
+        
+        # Save Intermediate
+        self.save_intermediate = QtWidgets.QCheckBox("Save Intermediate?")
+        layout.addWidget(self.save_intermediate)
+        
+        # Action buttons
+        self.optimize_button = QtWidgets.QPushButton("Optimize")
+        self.optimize_button.clicked.connect(self.start_optimization)
+        layout.addWidget(self.optimize_button)
+        
+        self.stop_button = QtWidgets.QPushButton("STOP OPTIMIZATION!")
+        self.stop_button.clicked.connect(self.stop_optimization)
+        self.stop_button.setEnabled(False)  # Initially disabled
+        layout.addWidget(self.stop_button)
+        
+        # Add stretch to push everything up
+        layout.addStretch()
+        
+        # Initialize optimization state
+        self.optimization_running = False
+        
+    def start_optimization(self):
+        """Start the topology optimization process"""
+        if not self.check_prerequisites():
+            return
+            
+        optimization_params = {
+            'objective': self.obj_combo.currentText(),
+            'use_all_loads': self.use_all_loads.isChecked(),
+            'use_simp': self.use_simp.isChecked(),
+            'smooth_surface': self.smooth_surface.isChecked(),
+            'load_set': self.load_set_spin.value(),
+            'volume_fraction': self.vol_frac_spin.value(),
+            'volume_step': self.vol_step_spin.value(),
+            'save_intermediate': self.save_intermediate.isChecked()
+        }
+        
+        # Update UI state
+        self.optimization_running = True
+        self.optimize_button.setEnabled(False)
+        self.stop_button.setEnabled(True)
+        
+        # Store optimization parameters in parent window
+        if hasattr(self.parent, 'optimization_params'):
+            self.parent.optimization_params = optimization_params
+            
+        self.parent.message_text.append("Starting topology optimization...")
+        
+        # Update sidebar button icon
+        if hasattr(self.parent, 'update_button_icon'):
+            self.parent.update_button_icon("Structural TopOpt", "check")
+            
+        # Here you would typically start the actual optimization process
+        # This would likely involve a separate thread or process
+        # For now, we'll just simulate it with a message
+        self.parent.message_text.append(f"Optimization parameters set:")
+        self.parent.message_text.append(f"Objective: {optimization_params['objective']}")
+        self.parent.message_text.append(f"Volume Fraction: {optimization_params['volume_fraction']}")
+        
+    def stop_optimization(self):
+        """Stop the ongoing optimization process"""
+        if self.optimization_running:
+            self.optimization_running = False
+            self.optimize_button.setEnabled(True)
+            self.stop_button.setEnabled(False)
+            self.parent.message_text.append("Optimization stopped by user")
+            
+    def check_prerequisites(self):
+        """Check if all required conditions are met for optimization"""
+        if not hasattr(self.parent, 'stl_geom') or self.parent.stl_geom is None:
+            QtWidgets.QMessageBox.warning(self, "Error", "No geometry loaded")
+            return False
+            
+        if not hasattr(self.parent, 'material_data') or self.parent.material_data is None:
+            QtWidgets.QMessageBox.warning(self, "Error", "No material assigned")
+            return False
+            
+        if not hasattr(self.parent, 'topopt_constraints') or self.parent.topopt_constraints is None:
+            QtWidgets.QMessageBox.warning(self, "Error", "No optimization constraints defined")
+            return False
+            
+        return True
+
+class ThermalTopOptWindow(QtWidgets.QDialog):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("Optimize Topology")
+        self.resize(300, 250)
+        self.parent = parent
+        
+        # Main layout
+        layout = QtWidgets.QVBoxLayout(self)
+        layout.setSpacing(10)
+        
+        # Volume Fraction
+        vol_frac_layout = QtWidgets.QHBoxLayout()
+        vol_frac_label = QtWidgets.QLabel("Desired Vol.Frac.")
+        self.vol_frac_spin = QtWidgets.QDoubleSpinBox()
+        self.vol_frac_spin.setRange(0.1, 1.0)
+        self.vol_frac_spin.setValue(0.50)
+        self.vol_frac_spin.setDecimals(2)
+        self.vol_frac_spin.setSingleStep(0.05)
+        vol_frac_layout.addWidget(vol_frac_label)
+        vol_frac_layout.addWidget(self.vol_frac_spin)
+        layout.addLayout(vol_frac_layout)
+        
+        # Volume Step
+        vol_step_layout = QtWidgets.QHBoxLayout()
+        vol_step_label = QtWidgets.QLabel("Volume Step")
+        self.vol_step_spin = QtWidgets.QDoubleSpinBox()
+        self.vol_step_spin.setRange(0.001, 0.1)
+        self.vol_step_spin.setValue(0.02500)
+        self.vol_step_spin.setDecimals(5)
+        self.vol_step_spin.setSingleStep(0.005)
+        vol_step_layout.addWidget(vol_step_label)
+        vol_step_layout.addWidget(self.vol_step_spin)
+        layout.addLayout(vol_step_layout)
+        
+        # Save Intermediate
+        self.save_intermediate = QtWidgets.QCheckBox("Save Intermediate?")
+        layout.addWidget(self.save_intermediate)
+        
+        # Add some vertical spacing
+        layout.addSpacing(20)
+        
+        # Action buttons
+        self.optimize_button = QtWidgets.QPushButton("Optimize")
+        self.optimize_button.clicked.connect(self.start_optimization)
+        self.optimize_button.setStyleSheet("""
+            QPushButton {
+                background-color: #f0f0f0;
+                border: 1px solid #dcdcdc;
+                padding: 5px;
+            }
+            QPushButton:hover {
+                background-color: #e5e5e5;
+            }
+        """)
+        layout.addWidget(self.optimize_button)
+        
+        self.stop_button = QtWidgets.QPushButton("STOP OPTIMIZATION!")
+        self.stop_button.clicked.connect(self.stop_optimization)
+        self.stop_button.setEnabled(False)
+        self.stop_button.setStyleSheet("""
+            QPushButton {
+                background-color: #f0f0f0;
+                border: 1px solid #dcdcdc;
+                padding: 5px;
+            }
+            QPushButton:disabled {
+                background-color: #f5f5f5;
+                color: #a0a0a0;
+            }
+        """)
+        layout.addWidget(self.stop_button)
+        
+        # Add stretch to push everything up
+        layout.addStretch()
+        
+        # Initialize optimization state
+        self.optimization_running = False
+        
+    def start_optimization(self):
+        """Start the thermal topology optimization process"""
+        if not self.check_prerequisites():
+            return
+            
+        optimization_params = {
+            'volume_fraction': self.vol_frac_spin.value(),
+            'volume_step': self.vol_step_spin.value(),
+            'save_intermediate': self.save_intermediate.isChecked()
+        }
+        
+        # Update UI state
+        self.optimization_running = True
+        self.optimize_button.setEnabled(False)
+        self.stop_button.setEnabled(True)
+        
+        # Store optimization parameters in parent window
+        if hasattr(self.parent, 'thermal_optimization_params'):
+            self.parent.thermal_optimization_params = optimization_params
+            
+        self.parent.message_text.append("Starting thermal topology optimization...")
+        
+        # Update sidebar button icon
+        if hasattr(self.parent, 'update_button_icon'):
+            self.parent.update_button_icon("Thermal TopOpt", "check")
+            
+        # Here you would typically start the actual thermal optimization process
+        self.parent.message_text.append(f"Thermal optimization parameters set:")
+        self.parent.message_text.append(f"Volume Fraction: {optimization_params['volume_fraction']}")
+        self.parent.message_text.append(f"Volume Step: {optimization_params['volume_step']}")
+        
+    def stop_optimization(self):
+        """Stop the ongoing optimization process"""
+        if self.optimization_running:
+            self.optimization_running = False
+            self.optimize_button.setEnabled(True)
+            self.stop_button.setEnabled(False)
+            self.parent.message_text.append("Thermal optimization stopped by user")
+            
+    def check_prerequisites(self):
+        """Check if all required conditions are met for thermal optimization"""
+        if not hasattr(self.parent, 'stl_geom') or self.parent.stl_geom is None:
+            QtWidgets.QMessageBox.warning(self, "Error", "No geometry loaded")
+            return False
+            
+        if not hasattr(self.parent, 'material_data') or self.parent.material_data is None:
+            QtWidgets.QMessageBox.warning(self, "Error", "No material assigned")
+            return False
+            
+        if not hasattr(self.parent, 'topopt_constraints') or self.parent.topopt_constraints is None:
+            QtWidgets.QMessageBox.warning(self, "Error", "No optimization constraints defined")
+            return False
+            
+        return True
 
 class MainWindow(QtWidgets.QMainWindow):
     def __init__(self, parent=None):
         super(MainWindow, self).__init__(parent)
         self.settings = Settings()
         self.stl_geom = None
+        self.stl_filepath = None    
         self.constraint_actors = []
         self.force_actors = []
         self.material_data = None
+        self.structuralBC = None    # Added initialization for structural BC
+        self.analysis = Analysis()
+        self.topopt_constraints = None
+        self.optimization_params = None
+        self.thermal_optimization_params = None
         
         self.main_widget = QtWidgets.QWidget(self)
         self.setCentralWidget(self.main_widget)
         self.main_layout = QtWidgets.QVBoxLayout(self.main_widget)
         
-        # Create horizontal layout for VTK and sidebar
-        self.h_layout = QtWidgets.QHBoxLayout()
+        # Set size policy for the main widget
+        self.main_widget.setSizePolicy(
+            QtWidgets.QSizePolicy.Expanding,
+            QtWidgets.QSizePolicy.Expanding
+        )
         
-        # VTK Setup
+        # Modify h_layout to use proper stretch factors
+        self.h_layout = QtWidgets.QHBoxLayout()
+        self.h_layout.setSpacing(10)
+        self.h_layout.setContentsMargins(10, 10, 10, 10)
+        
+        # VTK Setup with size policy
         self.vtk_frame = QtWidgets.QFrame()
+        self.vtk_frame.setSizePolicy(
+            QtWidgets.QSizePolicy.Expanding,
+            QtWidgets.QSizePolicy.Expanding
+        )
         self.vtk_layout = QtWidgets.QVBoxLayout(self.vtk_frame)
+        self.vtk_layout.setContentsMargins(0, 0, 0, 0)
         self.vtkWidget = QVTKRenderWindowInteractor(self.vtk_frame)
         self.vtk_layout.addWidget(self.vtkWidget)
-        self.h_layout.addWidget(self.vtk_frame, stretch=3)
+        self.h_layout.addWidget(self.vtk_frame, stretch=4)
         
-        # Sidebar
+        # Sidebar with fixed width and scrollable content
         self.setup_sidebar()
+        self.sidebar.setFixedWidth(250)  # Fixed width for consistency
         self.h_layout.addWidget(self.sidebar, stretch=0)
         
-        # Message Frame
+        # Message Frame with proportional height
         self.setup_message_frame()
         
-        # Add layouts to main layout
-        self.main_layout.addLayout(self.h_layout)
-        self.main_layout.addWidget(self.message_frame)
+        # Add layouts to main layout with proper stretch
+        self.main_layout.addLayout(self.h_layout, stretch=4)
+        self.main_layout.addWidget(self.message_frame, stretch=1)
         
         # Status Bar
         self.setup_status_bar()
         
         self.setup_vtk()
 
+         # Add geometry info text actor
+        self.setup_geometry_info()
+
+    def setup_geometry_info(self):
+        """Setup the geometry information text overlay"""
+        self.text_actor = vtk.vtkTextActor()
+        self.text_actor.SetPosition(10, 10)
+        self.text_actor.GetTextProperty().SetFontSize(12)
+        self.text_actor.GetTextProperty().SetColor(0, 0, 0)  # Black text
+        self.text_actor.GetTextProperty().SetFontFamilyToArial()
+        self.renderer.AddActor2D(self.text_actor)
+
+    def calculate_geometry_metrics(self):
+        """Calculate geometry metrics for the loaded STL file"""
+        if not self.stl_geom:
+            return None
+
+        # Get filename without path
+        filename = os.path.basename(self.stl_geom.file_path)
+        
+        # Calculate volume and center of mass
+        volume = 0
+        min_coords = [float('inf')] * 3
+        max_coords = [float('-inf')] * 3
+
+        for vertices in self.stl_geom.mesh.vectors:
+            # Update bounding box
+            for vertex in vertices:
+                for i in range(3):
+                    min_coords[i] = min(min_coords[i], vertex[i])
+                    max_coords[i] = max(max_coords[i], vertex[i])
+            
+            # Calculate volume contribution of this triangle
+            v1 = vertices[1] - vertices[0]
+            v2 = vertices[2] - vertices[0]
+            normal = np.cross(v1, v2)
+            volume += np.dot(vertices[0], normal) / 6.0
+
+        # Calculate length (maximum dimension)
+        dimensions = [max_coords[i] - min_coords[i] for i in range(3)]
+        max_length = max(dimensions)
+
+        return {
+            'model': filename,
+            'length': abs(max_length),
+            'volume': abs(volume)
+        }
+
+    def update_geometry_info(self):
+        """Update the geometry information display"""
+        if not self.stl_geom:
+            self.text_actor.SetInput("")
+            return
+
+        metrics = self.calculate_geometry_metrics()
+        if metrics:
+            info_text = (
+                f"Model: {metrics['model']}\n"
+                f"Length: {metrics['length']:.2f} (meter)\n"
+                f"Volume: {metrics['volume']:.2e} (m^3)"
+            )
+            self.text_actor.SetInput(info_text)
+
+    def load_stl_file(self, file_path):
+        # Keep existing loading code
+        
+        self.stl_filepath = file_path
+        self.stl_geom = STLGeom(file_path)
+        
+        # Create vtkPolyData
+        points = vtk.vtkPoints()
+        cells = vtk.vtkCellArray()
+        
+        for vertices in self.stl_geom.mesh.vectors:
+            point_ids = []
+            for v in vertices:
+                point_ids.append(points.InsertNextPoint(v))
+            triangle = vtk.vtkTriangle()
+            for i in range(3):
+                triangle.GetPointIds().SetId(i, point_ids[i])
+            cells.InsertNextCell(triangle)
+
+        poly_data = vtk.vtkPolyData()
+        poly_data.SetPoints(points)
+        poly_data.SetPolys(cells)
+        
+        # Create mapper and main actor
+        mapper = vtk.vtkPolyDataMapper()
+        mapper.SetInputData(poly_data)
+        
+        self.stl_actor = vtk.vtkActor()
+        self.stl_actor.SetMapper(mapper)
+        self.stl_actor.GetProperty().SetColor(0.8, 0.8, 0.8)
+        
+        # Extract only feature edges
+        featureEdges = vtk.vtkFeatureEdges()
+        featureEdges.SetInputData(poly_data)
+        featureEdges.BoundaryEdgesOff()
+        featureEdges.ManifoldEdgesOff()
+        featureEdges.NonManifoldEdgesOff()
+        featureEdges.FeatureEdgesOn()
+        featureEdges.SetFeatureAngle(30)
+        featureEdges.Update()
+        
+        edgeMapper = vtk.vtkPolyDataMapper()
+        edgeMapper.SetInputConnection(featureEdges.GetOutputPort())
+        
+        edgeActor = vtk.vtkActor()
+        edgeActor.SetMapper(edgeMapper)
+        edgeActor.GetProperty().SetColor(0, 0, 0)
+        edgeActor.GetProperty().SetLineWidth(1)
+        
+        # Remove existing actors and add new ones
+        self.renderer.RemoveAllViewProps()
+        self.setup_geometry_info()  # Recreate text actor after clearing
+        self.renderer.AddActor(self.stl_actor)
+        self.renderer.AddActor(edgeActor)
+        
+        # Setup highlight actor
+        self.highlight_poly_data = vtk.vtkPolyData()
+        highlight_mapper = vtk.vtkPolyDataMapper()
+        highlight_mapper.SetInputData(self.highlight_poly_data)
+        
+        self.highlight_actor = vtk.vtkActor()
+        self.highlight_actor.SetMapper(highlight_mapper)
+        self.highlight_actor.GetProperty().SetColor(1, 0, 0)
+        self.highlight_actor.GetProperty().SetOpacity(0.6)
+        
+        self.renderer.AddActor(self.highlight_actor)
+        
+        # Configure depth peeling for proper transparency
+        render_window = self.vtkWidget.GetRenderWindow()
+        render_window.SetAlphaBitPlanes(1)
+        render_window.SetMultiSamples(0)
+        self.renderer.UseDepthPeelingOn()
+        self.renderer.SetMaximumNumberOfPeels(100)
+        
+        # Setup interactions
+        self.interactor.AddObserver("LeftButtonPressEvent", self.on_left_button_press)
+        
+        # Update geometry information
+        self.update_geometry_info()
+        
+        self.renderer.ResetCamera()
+        self.vtkWidget.GetRenderWindow().Render()
+        self.message_text.setText(f"Model loaded with {self.stl_geom.stl_n_triangles} triangles")
+
+        # Call the function to update the sidebar
+        self.on_geometry_loaded()
+
     def toggle_edges(self):
         if hasattr(self, 'stl_actor'):
             prop = self.stl_actor.GetProperty()
-            prop.SetEdgeVisibility(not prop.GetEdgeVisibility())
-            prop.SetEdgeColor(0, 0, 0)  # Black edges
+            # prop.SetEdgeVisibility(not prop.GetEdgeVisibility())
+            # prop.SetEdgeColor(0, 0, 0)  # Black edges
             self.vtkWidget.GetRenderWindow().Render()
 
     def open_display_options(self):
@@ -684,53 +1545,117 @@ class MainWindow(QtWidgets.QMainWindow):
         dialog.exec_()
 
     def setup_sidebar(self):
-        self.sidebar = QtWidgets.QFrame()
-        self.sidebar.setFixedWidth(200)
-        sidebar_layout = QtWidgets.QVBoxLayout(self.sidebar)
-        sidebar_layout.setSpacing(1)
+        # Create a scroll area for the sidebar
+        scroll = QtWidgets.QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setHorizontalScrollBarPolicy(QtCore.Qt.ScrollBarAlwaysOff)
+        scroll.setVerticalScrollBarPolicy(QtCore.Qt.ScrollBarAsNeeded)
         
+        sidebar_content = QtWidgets.QWidget()
+        sidebar_layout = QtWidgets.QVBoxLayout(sidebar_content)
+        sidebar_layout.setSpacing(5)
+        sidebar_layout.setContentsMargins(5, 5, 5, 5)
+        
+        # Store buttons for dynamic updates
+        self.sidebar_buttons = {}
+
+        # Define buttons with default icons
         buttons = [
-            ("Save Project", "#009900", self.save_project),
-            ("Load Project", "#009900", self.load_project),
-            ("Units", "#0066CC", self.open_units_window),
-            ("Geometry", "#0066CC", self.open_geometry_window),
-            ("Material", "#0066CC", self.open_material_window),
-            ("Structural Loads", "#0066CC", self.open_structural_loads),
-            ("Thermal Loads", "#FF0000", None),
-            ("Body force", "#FF0000", None),
-            ("Display Options", "#0066CC", self.open_display_options),
-            ("Analysis", "#FF0000", None),
-            ("TopOpt Constraints", "#FF0000", None),
-            ("Structural TopOpt", "#FF0000", None),
-            ("Thermal TopOpt", "#FF0000", None),
-            ("TopOpt Results", "#FF0000", None),
-            ("Projects", "#0066CC", None),
-            ("Help", "#0066CC", None)
+            ("Units", "arrow"),
+            ("Geometry", "arrow"),
+            ("Material", "cross"),
+            ("Structural Loads", "cross"),
+            ("Thermal Loads", "cross"),
+            ("Body force", "cross"),
+            ("Display Options", "arrow"),
+            ("Analysis", "cross"),
+            ("TopOpt Constraints", "cross"),
+            ("Structural TopOpt", "cross"),
+            ("Thermal TopOpt", "cross"),
+            ("TopOpt Results", "cross"),
+            ("Projects", "arrow"),
+            ("Help", "arrow")
         ]
-        
-        for text, color, command in buttons:
+
+        # Add buttons to the sidebar
+        for text, initial_icon in buttons:
             btn = QtWidgets.QPushButton(text)
-            btn.setStyleSheet(f"""
-                QPushButton {{
+            btn.setStyleSheet("""
+                QPushButton {
                     background-color: white;
-                    color: {color};
+                    color: black;
                     border: 1px solid #CCCCCC;
                     text-align: left;
-                    padding: 5px;
+                    padding: 4px;
                     font-family: 'Segoe UI';
-                    font-size: 9pt;
-                }}
-                QPushButton:hover {{
+                    font-size: 12pt;
+                }
+                QPushButton:hover {
                     background-color: #F0F0F0;
-                }}
+                }
             """)
-            if command:
-                btn.clicked.connect(command)
-            else:
-                btn.setEnabled(False)
+            btn.setIcon(self.get_icon(initial_icon))
+            btn.setIconSize(QSize(16, 16))
+            btn.setEnabled(True)  # Enable or disable buttons dynamically if needed
+            btn.clicked.connect(lambda checked, name=text: self.sidebar_button_clicked(name))
             sidebar_layout.addWidget(btn)
+            self.sidebar_buttons[text] = btn  # Store button reference for updates
         
         sidebar_layout.addStretch()
+        scroll.setWidget(sidebar_content)
+        
+        # Create sidebar container
+        self.sidebar = QtWidgets.QFrame()
+        sidebar_main_layout = QtWidgets.QVBoxLayout(self.sidebar)
+        sidebar_main_layout.setContentsMargins(0, 0, 0, 0)
+        sidebar_main_layout.addWidget(scroll)
+
+    def sidebar_button_clicked(self, name):
+        # Route the button action based on its name
+        if name == "Units":
+            self.open_units_window()
+        elif name == "Geometry":
+            self.open_geometry_window()
+        elif name == "Material":
+            self.open_material_window()
+        elif name == "Structural Loads":
+            self.open_structural_loads()
+        elif name == "Display Options":
+            self.open_display_options()
+        elif name == "Analysis":
+            self.open_analysis_window()
+        elif name == "TopOpt Constraints":
+            self.open_topopt_constraints_window()  # Fixed method name to match definition
+        elif name == "Structural TopOpt":
+            self.open_structural_topopt_window()
+        elif name == "Thermal TopOpt":
+            self.open_thermal_topopt_window()
+        elif name == "Projects":
+            dialog = ProjectsWindow(self)
+            dialog.exec_()
+        
+
+    def get_icon(self, icon_type):
+        import os
+        base_path = os.path.dirname(__file__)
+        icon_file = ""
+        if icon_type == "arrow":
+            icon_file = os.path.join(base_path, "arrow-right.png")
+        elif icon_type == "cross":
+            icon_file = os.path.join(base_path, "cross.png")
+        elif icon_type == "check":
+            icon_file = os.path.join(base_path, "check.png")
+        if not os.path.exists(icon_file):
+            print(f"Icon file not found: {icon_file}")
+        return QIcon(icon_file)
+
+    def update_button_icon(self, button_name, new_icon):
+        """
+        Dynamically update the icon of a specific sidebar button.
+        """
+        if button_name in self.sidebar_buttons:
+            button = self.sidebar_buttons[button_name]
+            button.setIcon(self.get_icon(new_icon))
 
     def setup_message_frame(self):
         self.message_frame = QtWidgets.QFrame()
@@ -738,7 +1663,8 @@ class MainWindow(QtWidgets.QMainWindow):
         message_layout = QtWidgets.QVBoxLayout(self.message_frame)
         
         self.message_text = QtWidgets.QTextEdit()
-        self.message_text.setFixedHeight(80)
+        # Updated fixed height to match standard size
+        self.message_text.setFixedHeight(162)
         self.message_text.setStyleSheet("""
             QTextEdit {
                 background-color: #F0F0F0;
@@ -761,8 +1687,8 @@ class MainWindow(QtWidgets.QMainWindow):
             }
         """)
         
-        version_label = QtWidgets.QLabel("Pareto Version 2024.02")
-        build_label = QtWidgets.QLabel("Build Date 4.21")
+        version_label = QtWidgets.QLabel("Pareto Version 2025.01")
+        build_label = QtWidgets.QLabel("Build Date 2.19")
         license_label = QtWidgets.QLabel(
             "This is an academic license, and should not be used for commercial purposes."
         )
@@ -772,11 +1698,25 @@ class MainWindow(QtWidgets.QMainWindow):
         status_bar.addWidget(build_label)
         status_bar.addWidget(license_label)
 
+    def on_geometry_loaded(self):
+        # Change the icon for the "Geometry" button to a green checkmark
+        self.update_button_icon("Geometry", "check")
+        
+        # Enable other buttons if needed
+        self.sidebar_buttons["Material"].setEnabled(True)
+        self.sidebar_buttons["Structural Loads"].setEnabled(True)
+
     def setup_vtk(self):
+        """Modified setup_vtk to handle multiple rendering layers"""
         self.renderer = vtk.vtkRenderer()
+        self.renderer.SetLayer(0)  # Main geometry renderer on base layer
         self.renderer.SetBackground(1, 1, 1)
-        self.vtkWidget.GetRenderWindow().AddRenderer(self.renderer)
-        self.interactor = self.vtkWidget.GetRenderWindow().GetInteractor()
+        
+        render_window = self.vtkWidget.GetRenderWindow()
+        render_window.SetNumberOfLayers(2)  # Enable layered rendering
+        render_window.AddRenderer(self.renderer)
+        
+        self.interactor = render_window.GetInteractor()
         
         # Setup picker and interaction style
         self.picker = vtk.vtkCellPicker()
@@ -795,13 +1735,14 @@ class MainWindow(QtWidgets.QMainWindow):
         self.axes_widget.SetEnabled(1)
         self.axes_widget.InteractiveOn()
 
-        # Add mouse observers for both left and right clicks
+        # Other observers
         self.interactor.AddObserver("LeftButtonPressEvent", self.on_left_button_press)
         self.interactor.AddObserver("RightButtonPressEvent", self.on_right_button_press)
-
+        
         self.renderer.ResetCamera()
+        self.renderer.GetActiveCamera().ParallelProjectionOn()
         self.interactor.Initialize()
-    
+
     def on_interaction(self, obj, event):
         if hasattr(self, 'highlight_poly_data'): 
             self.update_highlights()
@@ -825,18 +1766,40 @@ class MainWindow(QtWidgets.QMainWindow):
         poly_data = vtk.vtkPolyData()
         poly_data.SetPoints(points)
         poly_data.SetPolys(cells)
-
-        # Create mapper and actor
+        
+        # Create mapper and main actor
         mapper = vtk.vtkPolyDataMapper()
         mapper.SetInputData(poly_data)
         
         self.stl_actor = vtk.vtkActor()
         self.stl_actor.SetMapper(mapper)
         self.stl_actor.GetProperty().SetColor(0.8, 0.8, 0.8)
-
-        # Remove existing actors and add new one
+        # Removed triangle edge highlighting:
+        # self.stl_actor.GetProperty().EdgeVisibilityOn()
+        # self.stl_actor.GetProperty().SetEdgeColor(0, 0, 0)
+        
+        # Extract only feature (planar) edges using vtkFeatureEdges
+        featureEdges = vtk.vtkFeatureEdges()
+        featureEdges.SetInputData(poly_data)
+        featureEdges.BoundaryEdgesOff()
+        featureEdges.ManifoldEdgesOff()
+        featureEdges.NonManifoldEdgesOff()
+        featureEdges.FeatureEdgesOn()
+        featureEdges.SetFeatureAngle(30)  # Adjust if necessary
+        featureEdges.Update()
+        
+        edgeMapper = vtk.vtkPolyDataMapper()
+        edgeMapper.SetInputConnection(featureEdges.GetOutputPort())
+        
+        edgeActor = vtk.vtkActor()
+        edgeActor.SetMapper(edgeMapper)
+        edgeActor.GetProperty().SetColor(0, 0, 0)
+        edgeActor.GetProperty().SetLineWidth(1)
+        
+        # Remove existing actors and add new ones
         self.renderer.RemoveAllViewProps()
         self.renderer.AddActor(self.stl_actor)
+        self.renderer.AddActor(edgeActor)
         
         # Setup highlight actor
         self.highlight_poly_data = vtk.vtkPolyData()
@@ -863,6 +1826,9 @@ class MainWindow(QtWidgets.QMainWindow):
         self.renderer.ResetCamera()
         self.vtkWidget.GetRenderWindow().Render()
         self.message_text.setText(f"Model loaded with {self.stl_geom.stl_n_triangles} triangles")
+
+        # Call the function to update the sidebar
+        self.on_geometry_loaded()
     
     def open_material_window(self):
             dialog = MaterialWindow(self)
@@ -870,7 +1836,7 @@ class MainWindow(QtWidgets.QMainWindow):
     
     def open_structural_loads(self):
         dialog = StructuralLoadsWindow(self)
-        dialog.exec_()
+        dialog.show()  # Use show() instead of exec_() to allow main window interaction
 
     def update_highlights(self):
         if not self.stl_geom:
@@ -960,6 +1926,9 @@ class MainWindow(QtWidgets.QMainWindow):
         
         # Render the changes
         self.vtkWidget.GetRenderWindow().Render()
+        
+        # Update the sidebar icon to "cross" for Structural Loads
+        self.update_button_icon("Structural Loads", "cross")
 
     def on_left_button_press(self, obj, event):
         click_pos = self.interactor.GetEventPosition()
@@ -972,7 +1941,6 @@ class MainWindow(QtWidgets.QMainWindow):
                 depth=500,  
                 cutoff_angle_degrees=30
             )
-            self.message_text.append(f"\nSelected {highlighted_count} triangles with area: {area:.2f}")
             self.update_highlights()  
             
             self.interactor.GetInteractorStyle().OnLeftButtonDown()
@@ -983,9 +1951,7 @@ class MainWindow(QtWidgets.QMainWindow):
         
         cell_id = self.picker.GetCellId()
         if cell_id >= 0: 
-            
             self.clear_selections()
-            self.message_text.append("\nSelections cleared")
         
         
         self.interactor.GetInteractorStyle().OnRightButtonDown()
@@ -998,55 +1964,63 @@ class MainWindow(QtWidgets.QMainWindow):
         dialog = GeometryWindow(self, self)
         dialog.exec_()
 
+    def open_analysis_window(self):
+        dialog = AnalysisWindow(self)
+        dialog.exec_()
+
+    def open_topopt_constraints_window(self):
+        dialog = TopOptConstraintsWindow(self)
+        dialog.exec_()
+
+    def open_optimize_topology_window(self):
+        dialog = OptimizeTopologyWindow(self)
+        dialog.exec_()
+
+    def open_structural_topopt_window(self):
+        """Open the structural topology optimization window"""
+        dialog = OptimizeTopologyWindow(self)
+        dialog.exec_()
+
+    def open_thermal_topopt_window(self):
+        dialog = ThermalTopOptWindow(self)
+        dialog.exec_()
+
+    def sidebar_button_clicked(self, name):
+        # Route the button action based on its name
+        if name == "Units":
+            self.open_units_window()
+        elif name == "Geometry":
+            self.open_geometry_window()
+        elif name == "Material":
+            self.open_material_window()
+        elif name == "Structural Loads":
+            self.open_structural_loads()
+        elif name == "Display Options":
+            self.open_display_options()
+        elif name == "Analysis":
+            self.open_analysis_window()
+        elif name == "TopOpt Constraints":
+            self.open_topopt_constraints_window()  # Fixed method name to match definition
+        elif name == "Structural TopOpt":
+            self.open_structural_topopt_window()
+        elif name == "Thermal TopOpt":
+            self.open_thermal_topopt_window()
+        elif name == "Projects":
+            dialog = ProjectsWindow(self)
+            dialog.exec_()
+
     def save_project(self):
         if not self.stl_geom:
             QtWidgets.QMessageBox.warning(self, "Warning", "No geometry loaded to save")
             return
             
         project = ProjectData()
-        project.stl_file_path = self.stl_geom.file_path
+        project.stl_file_path = self.stl_geom.file_path.split('/')[-1]
         project.settings = self.settings
-        
-        # Save selected triangles
-        if hasattr(self, 'stl_geom'):
-            selected_triangles = self.stl_geom.store_selected_triangles()
-            # Convert NumPy arrays and float32 to standard Python types
-            for triangle in selected_triangles:
-                if 'vertices' in triangle:
-                    triangle['vertices'] = [list(map(float, vertex)) for vertex in triangle['vertices'].tolist()]
-                if 'normal' in triangle:
-                    triangle['normal'] = list(map(float, triangle['normal']))
-                if 'center' in triangle:
-                    triangle['center'] = list(map(float, triangle['center']))
-                if 'area' in triangle:
-                    triangle['area'] = float(triangle['area'])
-            project.selected_triangles = selected_triangles
-        
-        # Save loads and constraints data
-        for actor in self.force_actors:
-            transform = actor.GetUserTransform()
-            # Save individual rotation values instead of orientation
-            rot_x, rot_y, rot_z = transform.GetOrientation()
-            force_data = {
-                'type': 'force',
-                'position': list(map(float, transform.GetPosition())),
-                'rotation_x': float(rot_x),
-                'rotation_y': float(rot_y),
-                'rotation_z': float(rot_z),
-                'scale': list(map(float, transform.GetScale())),
-                'color': list(map(float, actor.GetProperty().GetColor()))
-            }
-            project.loads.append(force_data)
-        
-        for actor in self.constraint_actors:
-            transform = actor.GetUserTransform()
-            constraint_data = {
-                'type': 'fixed',
-                'position': list(map(float, transform.GetPosition())),
-                'scale': list(map(float, transform.GetScale()))
-            }
-            project.constraints.append(constraint_data)
-        
+        project.material_data = self.material_data  # Add this line
+        project.structuralBC = self.structuralBC
+     
+
         # Save to file
         options = QtWidgets.QFileDialog.Options()
         file_path, _ = QtWidgets.QFileDialog.getSaveFileName(
@@ -1062,100 +2036,146 @@ class MainWindow(QtWidgets.QMainWindow):
                 file_path += '.prj'
                 
             try:
-                import json
                 with open(file_path, 'w') as f:
                     json.dump(project.to_dict(), f, indent=4)
-                self.message_text.append(f"\nProject saved successfully to {file_path}")
+                self.message_text.append(f"Project saved successfully to {file_path}")
             except Exception as e:
                 QtWidgets.QMessageBox.critical(self, "Error", f"Failed to save project: {str(e)}")
 
     def load_project(self):
-        options = QtWidgets.QFileDialog.Options()
-        file_path, _ = QtWidgets.QFileDialog.getOpenFileName(
-            self,
-            "Load Project",
-            "",
-            "Project Files (*.prj);;All Files (*)",
-            options=options
-        )
-        
-        if file_path:
-            try:
-                import json
-                with open(file_path, 'r') as f:
-                    data = json.load(f)
-                
-                project = ProjectData.from_dict(data)
-                
-                # Clear current state
-                self.clear_selections()
-                
-                # Load STL if needed
-                if project.stl_file_path and (not self.stl_geom or self.stl_geom.file_path != project.stl_file_path):
-                    self.load_stl_file(project.stl_file_path)
-                
-                # Load settings
-                if project.settings:
-                    self.settings = project.settings
-                
-                # Restore selections
-                if self.stl_geom and project.selected_triangles:
-                    for tri_data in project.selected_triangles:
-                        self.stl_geom.tri_highlight[tri_data['index']] = True
-                    self.update_highlights()
-                
-                # Restore loads and constraints
-                for load_data in project.loads:
-                    if load_data['type'] == 'force':
-                        self.restore_force(load_data)
-                
-                for constraint_data in project.constraints:
-                    if constraint_data['type'] == 'fixed':
-                        self.restore_constraint(constraint_data)
-                
-                self.message_text.append(f"\nProject loaded successfully from {file_path}")
-                
-            except Exception as e:
-                QtWidgets.QMessageBox.critical(self, "Error", f"Failed to load project: {str(e)}")
+            options = QtWidgets.QFileDialog.Options()
+            file_path, _ = QtWidgets.QFileDialog.getOpenFileName(
+                self,
+                "Load Project",
+                "",
+                "Project Files (*.prj);;All Files (*)",
+                options=options
+            )
+            
+            if file_path:
+                try:
+                    import json
+                    with open(file_path, 'r') as f:
+                        data = json.load(f)
+                    
+                    project = ProjectData.from_dict(data)
+                    
+                    # Clear current state
+                    self.clear_selections()
+                    
+                    # Load STL if needed
+                    if project.stl_file_path and (not self.stl_geom or self.stl_geom.file_path != project.stl_file_path):
+                        self.load_stl_file(project.stl_file_path)
+                    
+                    # Load settings
+                    if project.settings:
+                        self.settings = project.settings
+                    
+                    # Restore selections
+                    if self.stl_geom and project.selected_triangles:
+                        for tri_data in project.selected_triangles:
+                            self.stl_geom.tri_highlight[tri_data['index']] = True
+                        self.update_highlights()
+                    
+                    # Restore loads and constraints
+                    for load_data in project.loads:
+                        if load_data['type'] == 'force':
+                            self.restore_force(load_data)
+                    
+                    for constraint_data in project.constraints:
+                        if constraint_data['type'] == 'fixed':
+                            self.restore_constraint(constraint_data)
+                    
+                    # Add after settings restoration:
+                    if project.material_data:
+                        self.material_data = project.material_data
+                        # Update geometry color based on material
+                        if hasattr(self, 'stl_actor'):
+                            if project.material_data['name'] == "Custom":
+                                self.stl_actor.GetProperty().SetColor(0.8, 0.8, 0.8)
+                            elif project.material_data['name'] == "AlloySteel":
+                                self.stl_actor.GetProperty().SetColor(0.7, 0.7, 0.8)
+                            elif project.material_data['name'] == "Aluminum":
+                                self.stl_actor.GetProperty().SetColor(0.9, 0.9, 0.9)
+                            elif project.material_data['name'] == "Titanium":
+                                self.stl_actor.GetProperty().SetColor(0.8, 0.8, 0.7)
+                            elif project.material_data['name'] == "StainlessSteel":
+                                self.stl_actor.GetProperty().SetColor(0.85, 0.85, 0.85)
+                            self.vtkWidget.GetRenderWindow().Render()
+                        
+                        self.message_text.append(f"Loaded material: {project.material_data['name']}")
+                    
+                    self.message_text.append(f"Project loaded successfully from {file_path}")
+                    
+                except Exception as e:
+                    QtWidgets.QMessageBox.critical(self, "Error", f"Failed to load project: {str(e)}")
 
     def restore_force(self, load_data):
-        arrow = vtk.vtkArrowSource()
-        arrow.SetTipLength(0.3)
-        arrow.SetTipRadius(0.1)
-        arrow.SetShaftRadius(0.03)
-        
-        transform = vtk.vtkTransform()
-        transform.Translate(*load_data['position'])
-        
-        # Apply rotations in order
-        transform.RotateZ(load_data['rotation_z'])
-        transform.RotateY(load_data['rotation_y'])
-        transform.RotateX(load_data['rotation_x'])
-        
-        transform.Scale(*load_data['scale'])
-        
-        mapper = vtk.vtkPolyDataMapper()
-        mapper.SetInputConnection(arrow.GetOutputPort())
-        
-        actor = vtk.vtkActor()
-        actor.SetMapper(mapper)
-        actor.SetUserTransform(transform)
-        actor.GetProperty().SetColor(*load_data['color'])
-        
-        self.renderer.AddActor(actor)
-        self.force_actors.append(actor)
+            arrow = vtk.vtkArrowSource()
+            arrow.SetTipLength(0.3)
+            arrow.SetTipRadius(0.1)
+            arrow.SetShaftRadius(0.03)
+            
+            transform = vtk.vtkTransform()
+            transform.Translate(*load_data['position'])
+            
+            # Apply rotations in order
+            transform.RotateZ(load_data['rotation_z'])
+            transform.RotateY(load_data['rotation_y'])
+            transform.RotateX(load_data['rotation_x'])
+            
+            transform.Scale(*load_data['scale'])
+            
+            mapper = vtk.vtkPolyDataMapper()
+            mapper.SetInputConnection(arrow.GetOutputPort())
+            
+            actor = vtk.vtkActor()
+            actor.SetMapper(mapper)
+            actor.SetUserTransform(transform)
+            actor.GetProperty().SetColor(*load_data['color'])
+            
+            self.renderer.AddActor(actor)
+            self.force_actors.append(actor)
 
     def restore_constraint(self, constraint_data):
-        axes = vtk.vtkAxesActor()
-        axes.SetTotalLength(0.05, 0.05, 0.05)
-        
-        transform = vtk.vtkTransform()
-        transform.Translate(constraint_data['position'])
-        transform.Scale(constraint_data['scale'])
-        
-        axes.SetUserTransform(transform)
-        self.renderer.AddActor(axes)
-        self.constraint_actors.append(axes)
+            """Restore a constraint with its black color for the saved faces"""
+            if 'faces' not in constraint_data:
+                return
+                
+            # Create points and cells for the constrained faces
+            points = vtk.vtkPoints()
+            cells = vtk.vtkCellArray()
+            
+            # Use the saved face data to recreate the geometry
+            for face in constraint_data['faces']:
+                vertices = face['vertices']
+                point_ids = []
+                for v in vertices:
+                    point_ids.append(points.InsertNextPoint(v))
+                tri = vtk.vtkTriangle()
+                for i in range(3):
+                    tri.GetPointIds().SetId(i, point_ids[i])
+                cells.InsertNextCell(tri)
+
+            # Create polydata for the constrained faces
+            poly_data = vtk.vtkPolyData()
+            poly_data.SetPoints(points)
+            poly_data.SetPolys(cells)
+
+            # Create mapper and actor
+            mapper = vtk.vtkPolyDataMapper()
+            mapper.SetInputData(poly_data)
+            
+            constraint_actor = vtk.vtkActor()
+            constraint_actor.SetMapper(mapper)
+            constraint_actor.GetProperty().SetColor(*constraint_data['color'])  # Set black color
+            
+            # Add to renderer and store in constraint_actors
+            self.renderer.AddActor(constraint_actor)
+            self.constraint_actors.append(constraint_actor)
+            
+            # Update display
+            self.vtkWidget.GetRenderWindow().Render()
 
 class UnitsWindow(QtWidgets.QDialog):
     def __init__(self, parent, settings):
@@ -1191,10 +2211,57 @@ class UnitsWindow(QtWidgets.QDialog):
         )
         self.accept()
 
+class ProjectsWindow(QtWidgets.QDialog):
+    def __init__(self, parent):
+        super().__init__(parent)
+        self.setWindowTitle("Projects")
+        self.resize(300, 150)
+        self.parent = parent
+        
+        layout = QtWidgets.QVBoxLayout(self)
+        
+        save_button = QtWidgets.QPushButton("Save Project")
+        save_button.clicked.connect(self.parent.save_project)
+        layout.addWidget(save_button)
+        
+        load_button = QtWidgets.QPushButton("Load Project")
+        load_button.clicked.connect(self.parent.load_project)
+        layout.addWidget(load_button)
+        
+        close_button = QtWidgets.QPushButton("Close")
+        close_button.clicked.connect(self.close)
+        layout.addWidget(close_button)
+
+def get_screen_geometry():
+    """Get the primary screen geometry"""
+    screen = QtWidgets.QApplication.primaryScreen()
+    geometry = screen.availableGeometry()
+    return geometry.width(), geometry.height()
+
 if __name__ == "__main__":
     app = QtWidgets.QApplication(sys.argv)
     window = MainWindow()
     window.setWindowTitle("Pareto STL Viewer")
-    window.resize(1200, 800)
+    
+    # Get screen dimensions
+    screen_width, screen_height = get_screen_geometry()
+    
+    # Calculate window size (80% of screen size)
+    window_width = int(screen_width * 0.8)
+    window_height = int(screen_height * 0.8)
+    
+    # Set minimum size to prevent window from becoming too small
+    window.setMinimumSize(800, 600)
+    
+    # Set initial window size
+    window.resize(window_width, window_height)
+    
+    # Center the window on screen
+    frame_geometry = window.frameGeometry()
+    screen_center = QtWidgets.QApplication.primaryScreen().availableGeometry().center()
+    frame_geometry.moveCenter(screen_center)
+    window.move(frame_geometry.topLeft())
+    
     window.show()
     sys.exit(app.exec_())
+
