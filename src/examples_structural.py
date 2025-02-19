@@ -46,6 +46,130 @@ def createCantileverProblem(nDOFDesired: int = 10000, L: float = [0.1, 0.1, 0.1]
                       poissons_ratio=poissons_ratio)
   return mesh, mat_prop, bc
 
+def createMBBProblem(nDOFDesired: int = 10000, L: float = [0.5, 0.167, 0.01],youngs_modulus = 2e11, poissons_ratio = 0.3):
+  nVoxelsDesired = nDOFDesired/3    
+  # Let the number of voxels be proportional to the length in each direction
+  alpha = (nVoxelsDesired/(L[0]*L[1]*L[2]))**(1/3)
+  nelx = round(alpha*L[0])
+  nely = round(alpha*L[1])
+  nelz = round(alpha*L[2])
+  mesh = mesher.Mesher()
+  mesh.grid_mesh(num_elems = (nelx, nely, nelz),
+                  elem_size = (L[0]/nelx, L[1]/nely, L[2]/nelz))
+  mesh.createEdofMatStructural()
+
+  symmetry_nodes = mesh.getNodesOnBoundingBoxPlane(0,True) # x = 0 plane
+  symmetry_dofs = np.array([3 * symmetry_nodes]).flatten().astype(int)
+
+  fixed_nodes=np.intersect1d(mesh.getNodesOnBoundingBoxPlane(0,False), mesh.getNodesOnBoundingBoxPlane(1,True))
+  fixed_dofs = np.union1d(symmetry_dofs,np.array([3 * fixed_nodes,
+              3 * fixed_nodes + 1,
+              3 * fixed_nodes + 2]).flatten().astype(int))
+  
+  dirichlet_values = 0*np.ones_like(fixed_dofs, dtype = float)
+  mesh.node_indices[fixed_nodes, 3] = 1
+
+ 
+  load_nodes = np.intersect1d(mesh.getNodesOnBoundingBoxPlane(0,True), mesh.getNodesOnBoundingBoxPlane(1,False))
+  load_dofs = 3 * load_nodes + 1  # y direction
+
+  mesh.node_indices[load_nodes, 3] = 2
+  load_per_dof = -10000/len(load_nodes)
+
+  force = np.zeros(3*mesh.num_nodes)
+  force[load_dofs] = load_per_dof
+
+  bc = bound_cond.BC(force = force,
+            fixed_dofs = fixed_dofs,
+            dirichlet_values = dirichlet_values) 
+
+  mat_prop = mat_lib.StructuralMaterial(youngs_modulus=youngs_modulus,
+                      poissons_ratio=poissons_ratio)
+  return mesh, mat_prop, bc
+
+def createDistributedLoadProblem(nDOFDesired: int = 10000, L: float = [1.0, 0.5, 0.01],youngs_modulus = 2e11, poissons_ratio = 0.3):
+  nVoxelsDesired = nDOFDesired/3    
+  # Let the number of voxels be proportional to the length in each direction
+  alpha = (nVoxelsDesired/(L[0]*L[1]*L[2]))**(1/3)
+  nelx = round(alpha*L[0])
+  nely = round(alpha*L[1])
+  nelz = round(alpha*L[2])
+  mesh = mesher.Mesher()
+  mesh.grid_mesh(num_elems = (nelx, nely, nelz),
+                  elem_size = (L[0]/nelx, L[1]/nely, L[2]/nelz))
+  mesh.createEdofMatStructural()
+
+
+  left_node =np.intersect1d(mesh.getNodesOnBoundingBoxPlane(0,True), mesh.getNodesOnBoundingBoxPlane(1,True))
+  right_node =np.intersect1d(mesh.getNodesOnBoundingBoxPlane(0,False), mesh.getNodesOnBoundingBoxPlane(1,True))
+  fixed_nodes = np.union1d(left_node,right_node)
+  fixed_dofs = np.array([3 * fixed_nodes,
+              3 * fixed_nodes + 1,
+              3 * fixed_nodes + 2]).flatten().astype(int)
+  
+  dirichlet_values = 0*np.ones_like(fixed_dofs, dtype = float)
+  mesh.node_indices[fixed_nodes, 3] = 1
+
+ 
+  load_nodes = mesh.getNodesOnBoundingBoxPlane(1,False)
+  load_dofs = 3 * load_nodes + 1  # y direction
+
+  mesh.node_indices[load_nodes, 3] = 2
+  load_per_dof = -10000/len(load_nodes)
+
+  force = np.zeros(3*mesh.num_nodes)
+  force[load_dofs] = load_per_dof
+
+  bc = bound_cond.BC(force = force,
+            fixed_dofs = fixed_dofs,
+            dirichlet_values = dirichlet_values) 
+
+  mat_prop = mat_lib.StructuralMaterial(youngs_modulus=youngs_modulus,
+                      poissons_ratio=poissons_ratio)
+  return mesh, mat_prop, bc
+
+def createMultiloadProblem(nDOFDesired: int = 10000, L: float = [0.4, 0.2, 0.1],youngs_modulus = 2e11, poissons_ratio = 0.3):
+  # This is an example where a grid mesh is created, and a structural problem is posed on it.
+  # For a perfect cube, an estimate of the number of elements is made, and a grid mesh is created.
+  nVoxelsDesired = nDOFDesired/3    
+  # Let the number of voxels be proportional to the length in each direction
+  alpha = (nVoxelsDesired/(L[0]*L[1]*L[2]))**(1/3)
+  nelx = round(alpha*L[0])
+  nely = round(alpha*L[1])
+  nelz = round(alpha*L[2])
+  mesh = mesher.Mesher()
+  mesh.grid_mesh(num_elems = (nelx, nely, nelz),
+                  elem_size = (L[0]/nelx, L[1]/nely, L[2]/nelz))
+  mesh.createEdofMatStructural()
+
+  fixed_nodes = mesh.getNodesOnBoundingBoxPlane(0,True) # x = 0 plane
+  fixed_dofs = np.array([3 * fixed_nodes,
+              3 * fixed_nodes + 1,
+              3 * fixed_nodes + 2]).flatten().astype(int)
+  dirichlet_values = 0*np.ones_like(fixed_dofs, dtype = float)
+
+  mesh.node_indices[fixed_nodes, 3] = 1
+  load_node1 = mesh.get_nodes_from_locations([L[0], L[1]/2, L[2]/2])  
+  load_dof1 = 3 * load_node1 + 1  
+  load_node2 = mesh.get_nodes_from_locations([L[0]/2, L[1], L[2]/2])  
+  load_dof2 = 3 * load_node2 + 1  
+
+  force = np.zeros(3*mesh.num_nodes)
+  force[load_dof1] = -1000
+  force[load_dof2] = -10000
+  mesh.node_indices[load_node1, 3] = 2
+  mesh.node_indices[load_node2, 3] = 2 # for plotting
+
+
+
+  bc = bound_cond.BC(force = force,
+            fixed_dofs = fixed_dofs,
+            dirichlet_values = dirichlet_values) 
+
+  mat_prop = mat_lib.StructuralMaterial(youngs_modulus=youngs_modulus,
+                      poissons_ratio=poissons_ratio)
+  return mesh, mat_prop, bc
+
 # %%
 def createLBracketProblem(nDOFDesired: int = 10000, youngs_modulus = 2.1e11, poissons_ratio = 0.3,totalLoad = 1000):
   """Creates a structural problem setup for an L-bracket topology optimization.
@@ -76,7 +200,7 @@ def createLBracketProblem(nDOFDesired: int = 10000, youngs_modulus = 2.1e11, poi
   mesh.createMeshFromSTLFile(stl_file, nElemsDesired=nElemsDesired)
   mesh.createEdofMatStructural()
 
-  node_pts = mesh.node_indices[:, :3]*mesh.elem_size +mesh.origin
+  
   
   fixed_nodes = mesh.getNodesOnBoundingBoxPlane(1,False)  # y = yMax plane
   fixed_dofs = np.array([3 * fixed_nodes,
@@ -85,6 +209,7 @@ def createLBracketProblem(nDOFDesired: int = 10000, youngs_modulus = 2.1e11, poi
   dirichlet_values = 0*np.ones_like(fixed_dofs, dtype = float)
   mesh.node_indices[fixed_nodes, 3] = 1 # for plotting
 
+  node_pts = mesh.node_xyz
   load_nodes = np.where((node_pts[:, 1] > 0.039) & (node_pts[:, 0] > 0.09))[0] # hard coded    
   load_dofs = 3 * load_nodes + 1  # z direction
   mesh.node_indices[load_nodes, 3] = 2 # for plotting

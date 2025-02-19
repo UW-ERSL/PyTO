@@ -69,17 +69,24 @@ class StructFEA:
 if __name__ == "__main__":    
   jax.config.update("jax_enable_x64", True)
 
-  from examples_structural import createCantileverProblem, createLBracketProblem, createCompliantMechanismProblem, createBeamSurfaceLoadProblem, createFilletedBeamProblem
+  from examples_structural import *
+
   example = 4
   if example == 1:
     mesh, mat_prop, bc = createCantileverProblem(nDOFDesired=10000)
   elif example == 2:
-    mesh, mat_prop, bc = createLBracketProblem(nDOFDesired=10000)    
+    mesh, mat_prop, bc = createMBBProblem(nDOFDesired=10000)   
   elif example == 3:
-    mesh, mat_prop, bc = createCompliantMechanismProblem(nDOFDesired=10000)
+    mesh, mat_prop, bc = createDistributedLoadProblem(nDOFDesired=10000)    
   elif example == 4:
-    mesh, mat_prop, bc = createBeamSurfaceLoadProblem(nDOFDesired=10000)
+    mesh, mat_prop, bc = createMultiloadProblem(nDOFDesired=10000)
   elif example == 5:
+    mesh, mat_prop, bc = createLBracketProblem(nDOFDesired=10000)    
+  elif example == 6:
+    mesh, mat_prop, bc = createCompliantMechanismProblem(nDOFDesired=10000)
+  elif example == 7:
+    mesh, mat_prop, bc = createBeamSurfaceLoadProblem(nDOFDesired=10000)
+  elif example == 8:
     mesh, mat_prop, bc = createFilletedBeamProblem(nDOFDesired=100000)
 
   fe_solver = fea.StructFEA(mesh = mesh,

@@ -4,17 +4,13 @@ import enum
 import numpy as np
 import jax
 import jax.numpy as jnp
-from scipy.sparse import coo_matrix
-import matplotlib.pyplot as plt
 import element_stiffness as elem_stiff
 import mesher
 import mat_lib
 import struct_fea as sfea
 import mma
 import deflation
-from scipy.optimize import minimize
-import nlopt
-
+from TOfilters import createXSymmetryFilter, createYSymmetryFilter, createZSymmetryFilter, createSmoothingFilter
 
 _LARGE_NUMBER = 1.e9
 
@@ -23,8 +19,6 @@ class Optimizers(enum.Enum):
 	MMA = enum.auto()
 	OC = enum.auto()
 	PARETO = enum.auto()
-	SCIPY = enum.auto()
-	NLOPT = enum.auto()
 
 def find_elements_with_forces(mesh: mesher.Mesher, force) -> np.ndarray:
 	"""Find all elements that have nodes on which force has been applied.
@@ -47,144 +41,6 @@ def find_elements_with_forces(mesh: mesher.Mesher, force) -> np.ndarray:
 
 	return np.array(elements_with_forces)
 
-def createSmoothingFilter(mesh: mesher.Mesher):
-	## Prepare filter
-	nfilter = int(27 * mesh.num_elems)
-	iH = np.zeros(nfilter)
-	jH = np.zeros(nfilter)
-	sH = np.zeros(nfilter)
-	cc = 0
-
-	elemNeighborsArray = mesh.elemNeighborsArray
-	for elem in range(mesh.num_elems):
-		elemNeighbors = elemNeighborsArray[elem]
-		for neighbor in elemNeighbors:
-			if neighbor >= 0:
-				r = np.linalg.norm(mesh.elem_centers[elem, :] -
-											 		 mesh.elem_centers[int(neighbor), :])
-				weight = np.exp(-1*r**2)
-				iH[cc] = elem
-				jH[cc] = neighbor
-				sH[cc] = weight
-				cc = cc + 1
-	# Finalize assembly and convert to csc format
-	H = coo_matrix((sH, (iH, jH)), shape = (mesh.num_elems, mesh.num_elems)).tocsc()
-	Hs = np.array(H.sum(1)).squeeze()
-	return H, Hs
-
-def createSymmetryFilterXMidPlane(mesh: mesher.Mesher) -> tuple[coo_matrix, np.ndarray]:
-	"""Create a symmetry filter matrix about X mid-plane.
-	
-	Args:
-		mesh: The mesh object.
-	
-	Returns:
-		tuple containing:
-			HX: Sparse matrix that when multiplied with density vector enforces X mid-plane symmetry
-			HXs: Array of row sums of HX matrix
-	"""
-	num_elems = mesh.num_elems
-	x_mid = (mesh.elem_centers[:, 0].max() + mesh.elem_centers[:, 0].min()) / 2
-	
-	# Initialize COO matrix arrays
-	rows = []
-	cols = []
-	data = []
-	
-	for i in range(num_elems):
-		mirror_x = 2 * x_mid - mesh.elem_centers[i, 0]
-		mirror_idx = np.argmin(np.abs(mesh.elem_centers[:, 0] - mirror_x))
-		if (mirror_idx == i):
-			rows.append(i)
-			cols.append(i)
-			data.append(1.0)
-		else:
-			rows.append(i)
-			cols.append(i)
-			data.append(0.5)
-			rows.append(i)
-			cols.append(mirror_idx)
-			data.append(0.5)
-
-	HX = coo_matrix((data, (rows, cols)), shape=(num_elems, num_elems)).tocsc()
-	HXs = np.array(HX.sum(1)).squeeze()
-	return HX, HXs
-
-def createSymmetryFilterYMidPlane(mesh: mesher.Mesher) -> tuple[coo_matrix, np.ndarray]:
-	"""Create a symmetry filter matrix about Y mid-plane.
-	
-	Args:
-		mesh: The mesh object.
-	
-	Returns:
-		tuple containing:
-			HY: Sparse matrix that when multiplied with density vector enforces Y mid-plane symmetry
-			HYs: Array of row sums of HY matrix
-	"""
-	num_elems = mesh.num_elems
-	y_mid = (mesh.elem_centers[:, 1].max() + mesh.elem_centers[:, 1].min()) / 2
-	# Initialize COO matrix arrays
-	rows = []
-	cols = []
-	data = []
-	
-	for i in range(num_elems):
-		mirror_y = 2 * y_mid - mesh.elem_centers[i, 1]
-		mirror_idy = np.argmin(np.abs(mesh.elem_centers[:, 1] - mirror_y))
-		if (mirror_idy == i):
-			rows.append(i)
-			cols.append(i)
-			data.append(1.0)
-		else:
-			rows.append(i)
-			cols.append(i)
-			data.append(0.5)
-			rows.append(i)
-			cols.append(mirror_idy)
-			data.append(0.5)
-
-	HY = coo_matrix((data, (rows, cols)), shape=(num_elems, num_elems)).tocsc()
-	HYs = np.array(HY.sum(1)).squeeze()
-	return HY, HYs
-	
-
-def createSymmetryFilterZMidPlane(mesh: mesher.Mesher) -> tuple[coo_matrix, np.ndarray]:
-	"""Create a symmetry filter matrix about Z mid-plane.
-	
-	Args:
-		mesh: The mesh object.
-	
-	Returns:
-		tuple containing:
-			HZ: Sparse matrix that when multiplied with density vector enforces Z mid-plane symmetry
-			HZs: Array of row sums of HZ matrix
-	"""
-	num_elems = mesh.num_elems
-	z_mid = (mesh.elem_centers[:, 2].max() + mesh.elem_centers[:, 2].min()) / 2
-	
-	# Initialize COO matrix arrays
-	rows = []
-	cols = []
-	data = []
-	
-	for i in range(num_elems):
-		mirror_z = 2 * z_mid - mesh.elem_centers[i, 2]
-		mirror_idz = np.argmin(np.abs(mesh.elem_centers[:, 2] - mirror_z))
-		if (mirror_idz == i):
-			rows.append(i)
-			cols.append(i)
-			data.append(1.0)
-		else:
-			rows.append(i)
-			cols.append(i)
-			data.append(0.5)
-			rows.append(i)
-			cols.append(mirror_idz)
-			data.append(0.5)
-
-	HZ = coo_matrix((data, (rows, cols)), shape=(num_elems, num_elems)).tocsc()
-	HZs = np.array(HZ.sum(1)).squeeze()
-	return HZ, HZs
 
 def _volume_constraint(density: jnp.ndarray,
 											 volfrac: float,
@@ -224,9 +80,10 @@ def topopt_mma(fe_solver: sfea.StructFEA,
 			   			 maxMMAIterations: int = 500, 
 			   			 volfrac: float = 0.5,
 							 penal: float = 3.,
-							 move_limit: float = 0.3,
-							 kkt_tol: float = 1.e-5,
+							 move_limit: float = 0.2,
+							 kkt_tol: float = 1.e-6,
 							 step_tol: float = 0.025,
+							 exitOnConvergence: bool = True
 							 ) -> tuple[np.ndarray, dict]:
 	"""MMA based topology optimization for minimum compliance.
 
@@ -285,11 +142,16 @@ def topopt_mma(fe_solver: sfea.StructFEA,
 
 		change = np.max(np.abs(x - x_old))
 		x_old = x
-		print(f"it.: {mma_state.epoch}, obj.: {obj[0]:.3f} vc: {cons:.3f}",
+		print(f"it.: {mma_state.epoch}, obj.: {obj[0]:.3g} vc: {cons:.3f}",
 					f"ch: {change:.3f}")
 		history['compliance'].append(obj[0])
 		history['volume'].append(np.mean(x))
 		history['change'].append(change)
+		if exitOnConvergence and (len(history['compliance'])) >= 2:
+			dJ = (history['compliance'][-1] - history['compliance'][-2]) / history['compliance'][-2]
+			if abs(dJ) < 1e-5 and abs(cons) < 1e-5:
+				break
+
 
 	fe_solver.mesh.setPseudoDensity(x)
 	print(f"Time FEA: {timeFEA:.2f} s, Time MMA: {timeMMA:.2f} s")
@@ -303,7 +165,8 @@ def topopt_optimality_criteria(
 							penal: float = 3,
 							move: float = 0.2,
 							conv_tol: float = 0.025,
-							verbose: bool = True
+							verbose: bool = True,
+							exitOnConvergence: bool = True
 							) -> tuple[np.ndarray, dict]:
 	"""Optimality Criteria based topology optimization for minimum compliance.
 
@@ -366,6 +229,8 @@ def topopt_optimality_criteria(
 		# Calculate change and update densities
 		#change = jnp.linalg.norm(x - xold, np.inf)
 		change = jnp.max(jnp.abs(x - xold))
+
+		cons = _volume_constraint(x, volfrac)
 		fe_solver.mesh.setPseudoDensity(np.asarray(xPhys))
 	
 		history['compliance'].append(obj)
@@ -373,11 +238,17 @@ def topopt_optimality_criteria(
 		history['change'].append(change)
 
 		if verbose:
-			print(f"it.: {iter+1:d}, obj.: {obj:.3e}, "
-				  	f"vol.: {np.mean(xPhys):.3f}, ch.: {change:.3f}")
+			print(f"it.: {iter+1:d}, obj.: {obj:.3g}, "
+				  	f"vol.: {np.mean(xPhys):.3g}, ch.: {change:.3f}")
+			
 
 		if change < conv_tol:
 			break
+		if exitOnConvergence and (len(history['compliance'])) >= 2:
+			dJ = (history['compliance'][-1] - history['compliance'][-2]) / history['compliance'][-2]
+			if abs(dJ) < 1e-4 and abs(cons) < 1e-3:
+				break
+
 
 	return np.asarray(u), history
 
@@ -386,8 +257,12 @@ def topopt_pareto(fe_solver: sfea.StructFEA,
 							desiredVolFrac: float = 0.5,
 							rel_err: float = 0.025,
 							vol_decr_max: float = 0.05,
-							min_local_iters: int = 2,
+							min_local_iters: int = 1,
 							max_local_iters: int = 10,
+							rhoVoid: float = 0,
+							imposeXSymmetry: bool = False,
+							imposeYSymmetry: bool = False,
+							imposeZSymmetry: bool = False
 							)-> tuple[np.ndarray, dict]:
 	"""Pareto method for Topology Optimization.
 
@@ -407,10 +282,11 @@ def topopt_pareto(fe_solver: sfea.StructFEA,
 		and a dictionary containing the optimization history.
 	"""
 	def computeTopologicalSensitivity(mesh: mesher.Mesher,
-																	mat_prop: mat_lib.StructuralMaterial,
-																	u, rho):
+											mat_prop: mat_lib.StructuralMaterial,
+											u, rho):
 		"""Compute topological sensitivity field."""
 
+		
 		T = np.zeros((mesh.num_elems))
 		e, nu = mat_prop.youngs_modulus, mat_prop.poissons_ratio
 		# Create constitutive matrix
@@ -449,10 +325,10 @@ def topopt_pareto(fe_solver: sfea.StructFEA,
 			])
 
 			# Compute stresses
-			stresses = rho[elem] * D @ strains
+			stresses =  D @ strains
 
 			# Create tensors
-			stress_tensor = np.array([
+			stress_tensor = rho[elem]*np.array([
 																[stresses[0], stresses[3], stresses[4]],
 																[stresses[3], stresses[1], stresses[5]],
 																[stresses[4], stresses[5], stresses[2]]
@@ -479,6 +355,13 @@ def topopt_pareto(fe_solver: sfea.StructFEA,
 
 	# Create filter
 	H, Hs = createSmoothingFilter(fe_solver.mesh)
+	if imposeXSymmetry:
+		HX = createXSymmetryFilter(fe_solver.mesh)
+	if imposeYSymmetry:
+		HY = createYSymmetryFilter(fe_solver.mesh)
+	if imposeZSymmetry:
+		HZ = createZSymmetryFilter(fe_solver.mesh)
+
 	elemsWithForces = find_elements_with_forces(fe_solver.mesh, fe_solver.bc.force)
 
 	u = np.asarray(fe_solver.solve(rho))
@@ -489,11 +372,17 @@ def topopt_pareto(fe_solver: sfea.StructFEA,
 
 	# Compute initial topological sensitivity
 	T = computeTopologicalSensitivity(fe_solver.mesh, fe_solver.mat_prop, u, rho)
+	if imposeXSymmetry:
+		T = (HX * T)	
+	if imposeYSymmetry:
+		T = (HY * T)
+	if imposeZSymmetry:
+		T = (HZ * T)	
 	T[elemsWithForces] = np.max(T)
 	T = (H * T) / Hs
-	
-	print(f"v={volfrac:.2f}; J={history['compliance'][-1]:.2e}; #FEA={totalIter:2d}")
+	print(f"v={volfrac:.2f}; J={history['compliance'][-1]:.2g}; #FEA={totalIter:2d}")
 	vol_decr = vol_decr_max
+	wtDamping = 0.5
 	while volfrac > desiredVolFrac:
 		# Move to next volume fraction
 		volfrac = max(desiredVolFrac, volfrac - vol_decr)
@@ -503,23 +392,41 @@ def topopt_pareto(fe_solver: sfea.StructFEA,
 		JTemp = history['compliance'][-1]  # Store previous value
 		JPrev = float('inf')  # Initialize JPrev
 		JPrevPrev = float('inf')  # Initialize JPrev
+		TPrev = T.copy()  # Store previous sensitivity
 		while localIter < max_local_iters:
-			if JTemp > 10 * history['compliance'][-1]:  # Divergence check
-				break
+			#print(JTemp)
+			if abs(JTemp) > 10 * history['compliance'][-1]:  # Divergence check	
+				vol_decr_max /= 2 # Reduce max step size
+				print(f"Pareto: Reducing vol_decr_max to {vol_decr_max:.3f}")
+				if (vol_decr_max < 1e-3):
+					print("Pareto: Failed to reach volume fraction.")
+					print("Recommendations:")
+					print("1. Check for incorrect symmetry constraints")
+					print("2. Decrease vol_decr_max parameter")
+					print("3. Increase mesh size")
+					success = False
+					break
+				
+				volfrac = volfrac + vol_decr # go back to previous step
+				vol_decr = vol_decr_max/scale**2
+				# Need to revert changes and try again with smaller step
+				rho = np.ones((fe_solver.mesh.num_elems))
+				T = TPrev.copy()
+				JTemp = JPrev
+				localIter = 0
+				continue
 			# Check convergence, and break if converged
-			if localIter >= min_local_iters and abs(min(JPrev,JPrevPrev) - JTemp)/JTemp < rel_err:
-				success = True
-				break
+			if localIter >= min_local_iters:
+				if abs(JPrev - JTemp)/JTemp < rel_err or abs(min(JPrev,JPrevPrev) - JTemp)/JTemp < rel_err:
+					success = True
+					break
 
 			# Find cutoff value and update design
 			value = np.sort(T.flatten())[int(fe_solver.mesh.num_elems * (1 - volfrac))]
 			rho = np.ones((fe_solver.mesh.num_elems))
-
-			rho = (T - min(T))/(max(T) - min(T))
-			rho = volfrac*rho/np.mean(rho)+0.01
-			#rho[T < value] = (0.01)
+			rho[T < value] = rhoVoid
 			
-			JPrevPrev = JPrev  # Store previous value
+			JPrevPrev = JPrev  # Store previous to previous value
 			JPrev = JTemp  # Store previous value
 			
 			u = np.asarray(fe_solver.solve(rho))
@@ -527,164 +434,71 @@ def topopt_pareto(fe_solver: sfea.StructFEA,
 			
 			# Update sensitivity
 			T = computeTopologicalSensitivity(fe_solver.mesh, fe_solver.mat_prop, u, rho)
-			T[elemsWithForces] = np.max(T)
 			T = (H * T) / Hs
+			T = ((1-wtDamping)*T + wtDamping*TPrev)  # Damping
+			if imposeXSymmetry:
+				T = (HX * T)	
+			if imposeYSymmetry:
+				T = (HY * T)
+			if imposeZSymmetry:
+				T = (HZ * T)	
+			T[elemsWithForces] = np.max(T)
+
 			localIter += 1
 			totalIter += 1
 
 		if not success:
-			print("Pareto: Failed to converge in local iterations.")
-			print("Forcing symmetry, if applicable, can help.")
 			break
 		
 		history['compliance'].append(JTemp)
 		history['volume'].append(volfrac)
-		dJdvNormalized = 0
-		if (len(history['compliance'])) >= 2:
-			dJdv = (history['compliance'][-1] - history['compliance'][-2]) / (history['volume'][-1] - history['volume'][-2])
-			dJdvNormalized = abs(dJdv / history['compliance'][0])
-		vol_decr = vol_decr_max/np.sqrt(1 + dJdvNormalized)  # Adjust volume decrease factor
-		vol_decr = max(	0.01, min(vol_decr, vol_decr_max))  # Limit volume decrease factor
-		print(f"v={history['volume'][-1]:.3f}; J={history['compliance'][-1]:.2e};  #FEA={totalIter:2d}")
+		scale = history['compliance'][-1] / history['compliance'][0]
+		vol_decr = vol_decr_max/scale**2  # Adjust volume decrease factor for steep increase in compliance
+		print(f"v={history['volume'][-1]:.3f}; J={history['compliance'][-1]:.3g};  #FEA={totalIter:2d}")
 		
 		fe_solver.mesh.setPseudoDensity(rho.flatten())
-
+		
+			
 	return u, history
 
-def topopt_scipy(fe_solver: sfea.StructFEA,
-			  				maxIterations: int = 500,
-							volfrac: float = 0.5,
-							penal: float = 3,
-							verbose: bool = True) -> tuple[np.ndarray, dict]:
-	"""MMA based topology optimization for minimum compliance.
-
-	Args:
-		fe_solver: The structural FEA solver object.
-		maxMMAIterations: Maximum number of MMA iterations.
-		volfrac: The target volume fraction.
-		penal: The penalization factor for the SIMP method.
-		move_limit: The maximum change allowed for the design variables in each
-			iteration.
-		kkt_tol: The tolerance for the KKT conditions.
-		step_tol: The tolerance for the step size.
-
-	Returns: The displacement field of the optimized structure.
-	"""
-	num_elems= fe_solver.mesh.num_elems
-	history = {'compliance': [], 'volume': [], 'change': []}
-	H, Hs = createSmoothingFilter(fe_solver.mesh)
-
-	KE = elem_stiff.hex8_stiffness_matrix_structural( fe_solver.mat_prop,fe_solver.mesh.elem_size)
-
-	x0 = volfrac*np.ones(num_elems, dtype = float)
-
-
-	def volume_constraint(x):
-		return _volume_constraint(x, volfrac)
-
-	def objective_with_grad(x):
-		print(np.min(x), np.max(x))
-		obj, u = _compliance_objective(x, fe_solver, penal)
-		print(obj)
-		ce = (np.dot(u[fe_solver.mesh.edofMat].reshape(num_elems, 24), KE) * 
-			  u[fe_solver.mesh.edofMat].reshape(num_elems, 24)).sum(1)
-		grad = (-penal * x ** (penal - 1)) * ce
-		grad = (H * grad)/Hs
-		return float(obj), grad
-
-	def constraint_grad(x):
-		return np.ones(num_elems)/volfrac/num_elems
-
-	bounds = [(0.001, 1) for _ in range(num_elems)]
-	result = minimize(
-		objective_with_grad,
-		x0,
-		method='trust-constr',
-		jac=True,
-		constraints={'type': 'eq', 'fun': volume_constraint, 'jac': constraint_grad},
-		bounds=bounds,
-		options={'maxiter': maxIterations, 'disp': True}
-	)
-
-	u = fe_solver.solve(result.x)
-	fe_solver.mesh.setPseudoDensity(result.x)
-
-	return np.asarray(u), history
-	
-def topopt_nlopt(fe_solver: sfea.StructFEA,
-			  				maxIterations: int = 500,
-							volfrac: float = 0.5,
-							penal: float = 3,
-							verbose: bool = True) -> tuple[np.ndarray, dict]:
-	"""MMA based topology optimization for minimum compliance.
-
-	Args:
-		fe_solver: The structural FEA solver object.
-		maxMMAIterations: Maximum number of MMA iterations.
-		volfrac: The target volume fraction.
-		penal: The penalization factor for the SIMP method.
-		move_limit: The maximum change allowed for the design variables in each
-			iteration.
-		kkt_tol: The tolerance for the KKT conditions.
-		step_tol: The tolerance for the step size.
-
-	Returns: The displacement field of the optimized structure.
-	"""
-	num_elems= fe_solver.mesh.num_elems
-	history = {'compliance': [], 'volume': [], 'change': []}
-	H, Hs = createSmoothingFilter(fe_solver.mesh)
-	KE = elem_stiff.hex8_stiffness_matrix_structural( fe_solver.mat_prop,fe_solver.mesh.elem_size)
-
-	def objective_with_grad(x,grad):
-		print(np.min(x), np.max(x))
-		obj, u = _compliance_objective(x, fe_solver, penal)
-		print(obj)
-		if (grad.size > 0):
-			ce = (np.dot(u[fe_solver.mesh.edofMat].reshape(num_elems, 24), KE) * 
-			  u[fe_solver.mesh.edofMat].reshape(num_elems, 24)).sum(1)
-			grad = (-penal * x ** (penal - 1)) * ce
-			grad = (H * grad)/Hs
-		return float(obj)
-
-	def constraint_grad(x, grad):
-		if (grad.size >0):
-			grad[:] = np.ones(num_elems)/volfrac/num_elems
-		constraint = (np.mean(x)/volfrac) - 1.0
-		print(constraint)
-		return constraint
-
-	opt = nlopt.opt(nlopt.LD_SLSQP, num_elems)  # LD_SLSQP algorithm
-	opt.set_min_objective(objective_with_grad)
-	opt.add_equality_constraint(constraint_grad)
-	opt.set_lower_bounds(0.001*np.ones(num_elems))
-	opt.set_upper_bounds(np.ones(num_elems))
-	opt.set_maxeval(200)   # Stop after iterations
-	opt.set_maxtime(400)  # Stop after seconds
-
-	x0 = volfrac*np.ones(num_elems, dtype = float)
-	x_opt = opt.optimize(x0)
-	u = fe_solver.solve(x_opt)
-	fe_solver.mesh.setPseudoDensity(x_opt)
-	return np.asarray(u)
-	
 if __name__ == "__main__":    
-	from examples_structural import createCantileverProblem, createLBracketProblem
+	from examples_structural import *
 	import struct_fea as fea
 	import linear_solvers as lin_solv
 	import time
+	import matplotlib.pyplot as plt
 
 	import plots	
 	jax.config.update("jax_enable_x64", True)
 	dsolver = deflation.DeflationSolver()
 
-	example = 2
-	nDOFDesired = 20000
+	example = 3
+	nDOFDesired = 50000
 	if example == 1:
 		mesh, mat_prop, bc = createCantileverProblem(nDOFDesired = nDOFDesired,L = [0.4,0.2,0.1])
+		imposeXSymmetry = False
+		imposeYSymmetry = True
+		imposeZSymmetry = False
 	elif example == 2:
+		mesh, mat_prop, bc = createMBBProblem(nDOFDesired = nDOFDesired)
+		imposeXSymmetry = False
+		imposeYSymmetry = False
+		imposeZSymmetry = False
+	elif example == 3:
+		mesh, mat_prop, bc = createDistributedLoadProblem(nDOFDesired = nDOFDesired)
+		imposeXSymmetry = True
+		imposeYSymmetry = False
+		imposeZSymmetry = False
+	elif example == 4:
+		mesh, mat_prop, bc = createMultiloadProblem(nDOFDesired = nDOFDesired)
+		imposeXSymmetry = False
+		imposeYSymmetry = False
+		imposeZSymmetry = True
+	elif example == 5:
 		mesh, mat_prop, bc = createLBracketProblem(nDOFDesired = nDOFDesired)    
-
-	#plots.plotMesh(mesh, bc)
+		imposeXSymmetry = False
+		imposeYSymmetry = False
+		imposeZSymmetry = False
 
 	solver = lin_solv.Solvers.PARDISO
 		
@@ -697,52 +511,100 @@ if __name__ == "__main__":
 
 	print('Solver: ', fe_solver.solver.name)
 	print("nDof: ", 3*fe_solver.mesh.num_nodes)
+	print("nElem: ", fe_solver.mesh.num_elems)	
 	
-	
-	volfrac = 0.5
-	num_iter = 200
+	title = f'nDOF: {3*fe_solver.mesh.num_nodes}, nElem: {fe_solver.mesh.num_elems}'
+	#plots.plotMesh(mesh, bc,title = title)
+	volfrac = 0.2
+	num_iter = 250
 
-	optimizationMethod = 2 # 1: MMA, 2: OC, 3: Pareto, 4: Scipy, 5: NLOPT
+	optimizationMethod = 3 # 1: MMA, 2: OC, 3: Pareto
 
 	startTime = time.time()
 	if optimizationMethod == 1:
 		print("optimizationMethod: MMA")
 		u, history = topopt_mma(fe_solver = fe_solver,
 									maxMMAIterations = num_iter,
-														volfrac = volfrac
-														)
+														volfrac = volfrac,
+														exitOnConvergence=True)
 		timeTaken = time.time() - startTime
+		fig, ax1 = plt.subplots()
 
-		title = f'MMA: vol: {history['volume'][-1]:0.2f}, J: {history['compliance'][-1]:.3e}, time: {timeTaken:.2f} s'
+		# Plot compliance on left y-axis
+		ax1.set_xlabel('Iterations')
+		ax1.set_ylabel('Compliance', color='tab:blue')
+		ax1.plot(history['compliance'], color='tab:blue', label='Compliance')
+		ax1.tick_params(axis='y', labelcolor='tab:blue')
+
+		# Plot volume fraction on right y-axis with dotted line
+		ax2 = ax1.twinx()
+		ax2.set_ylabel('Volume Fraction', color='tab:orange')
+		ax2.plot(history['volume'], color='tab:orange', linestyle=':', label='Volume Fraction')
+		ax2.tick_params(axis='y', labelcolor='tab:orange')
+		ax2.yaxis.set_major_formatter(plt.FormatStrFormatter('%.2f'))
+
+		plt.title('MMA: Volume and Compliance vs. Iterations')
+
+		# Add legend
+		lines1, labels1 = ax1.get_legend_handles_labels()
+		lines2, labels2 = ax2.get_legend_handles_labels()
+		ax1.legend(lines1 + lines2, labels1 + labels2)
+
+		plt.grid(True)
+		plt.show()
+
+		title = f'MMA: vol: {history['volume'][-1]:0.2f}, J: {history['compliance'][-1]:.3g}, time: {timeTaken:.0f} s'
 	elif optimizationMethod == 2:
 		print("optimizationMethod: OC")
 		u, history = topopt_optimality_criteria(fe_solver = fe_solver,
 												maxIterations= num_iter,
-												volfrac = volfrac
+												volfrac = volfrac,
+												exitOnConvergence=True
 												)
 		timeTaken = time.time() - startTime
-		title = f'OC: vol: {history['volume'][-1]:0.2f}, J: {history['compliance'][-1]:.3e}, time: {timeTaken:.2f} s'
+		title = f'OC: vol: {history['volume'][-1]:0.2f}, J: {history['compliance'][-1]:.3g}, time: {timeTaken:.0f} s'
+
+		fig, ax1 = plt.subplots()
+
+		# Plot compliance on left y-axis
+		ax1.set_xlabel('Iterations')
+		ax1.set_ylabel('Compliance', color='tab:blue')
+		ax1.plot(history['compliance'], color='tab:blue', label='Compliance')
+		ax1.tick_params(axis='y', labelcolor='tab:blue')
+
+		# Plot volume fraction on right y-axis with dotted line
+		ax2 = ax1.twinx()
+		ax2.set_ylabel('Volume Fraction', color='tab:orange')
+		ax2.plot(history['volume'], color='tab:orange', linestyle=':', label='Volume Fraction')
+		ax2.tick_params(axis='y', labelcolor='tab:orange')
+		ax2.yaxis.set_major_formatter(plt.FormatStrFormatter('%.2f'))
+
+		plt.title('MMA: Volume and Compliance vs. Iterations')
+
+		# Add legend
+		lines1, labels1 = ax1.get_legend_handles_labels()
+		lines2, labels2 = ax2.get_legend_handles_labels()
+		ax1.legend(lines1 + lines2, labels1 + labels2)
+
+		plt.grid(True)
+		plt.show()
 
 	elif optimizationMethod == 3:
 		print("optimizationMethod: Pareto")
 		u, history = topopt_pareto(fe_solver = fe_solver,
-										desiredVolFrac =  volfrac)
+										desiredVolFrac =  volfrac,imposeXSymmetry=imposeXSymmetry,
+										imposeYSymmetry=imposeYSymmetry,imposeZSymmetry=imposeZSymmetry)
 		
 		timeTaken = time.time() - startTime
-		title = f'Pareto: vol: {history['volume'][-1]:0.2f}, J: {history['compliance'][-1]:.3e}, time: {timeTaken:.2f} s'
-	elif optimizationMethod == 4:
-		print("optimizationMethod: Scipy")
-		u, history = topopt_scipy(fe_solver = fe_solver,
-										volfrac =  volfrac)
+		title = f'Pareto: vol: {history['volume'][-1]:0.2f}, J: {history['compliance'][-1]:.3g}, time: {timeTaken:.0f} s'
 		
-		timeTaken = time.time() - startTime
-		title = f'Pareto: vol: {history['volume'][-1]:0.2f}, J: {history['compliance'][-1]:.3e}, time: {timeTaken:.2f} s'
-	elif optimizationMethod == 5:
-		print("optimizationMethod: NLOPT")
-		u = topopt_nlopt(fe_solver = fe_solver,
-										volfrac =  volfrac)
-		
-		timeTaken = time.time() - startTime
-		title = '' 
+		# Plot volume vs compliance history
+		plt.figure()
+		plt.plot(history['volume'], history['compliance'], marker='o')
+		plt.xlabel('Volume Fraction')
+		plt.ylabel('Compliance')
+		plt.title('Pareto: Volume vs Compliance History')
+		plt.grid(True)
+		plt.show()
 
-	plots.plotMesh(fe_solver.mesh, fe_solver.bc, u, title = title)
+	plots.plotMesh(fe_solver.mesh, bc = None, u=None, title = title)
