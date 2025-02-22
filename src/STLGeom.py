@@ -12,13 +12,43 @@ class STLGeom:
         self.mesh = mesh.Mesh.from_file(file_path)
         
         self.stl_n_triangles = len(self.mesh.vectors)
-        self.tri_normals = [self.compute_normal(vertices) for vertices in self.mesh.vectors]
-        self.tri_areas = [self.get_area_of_triangle(i) for i in range(self.stl_n_triangles)]
+        #self.tri_normals = [self.compute_normal(vertices) for vertices in self.mesh.vectors]
+        self.tri_normals = self.compute_normals_vectorized()
+        #self.tri_areas = [self.get_area_of_triangle(i) for i in range(self.stl_n_triangles)]
+        self.tri_areas = self.compute_areas_vectorized()
         self.tri_neighbors = self.compute_neighbors()
         self.tri_highlight = [False] * self.stl_n_triangles
         self.selected_triangles = set()
         self.file_path = file_path
 
+    def compute_areas_vectorized(self):
+        """Compute all triangle areas using vectorized operations"""
+        vectors = self.mesh.vectors
+        v1 = vectors[:, 1] - vectors[:, 0]  # Edge vectors from v0 to v1
+        v2 = vectors[:, 2] - vectors[:, 0]  # Edge vectors from v0 to v2
+        
+        # Cross product of edges 
+        cross = np.cross(v1, v2)
+        
+        # Area = 0.5 * |cross product|
+        areas = 0.5 * np.linalg.norm(cross, axis=1)
+        
+        return areas.tolist()
+    def compute_normals_vectorized(self):
+        """Compute all triangle normals using vectorized operations"""
+        vectors = self.mesh.vectors
+        v1 = vectors[:, 1] - vectors[:, 0]  # Edge vectors from v0 to v1 
+        v2 = vectors[:, 2] - vectors[:, 0]  # Edge vectors from v0 to v2
+        
+        # Cross product of edges gives normals 
+        normals = np.cross(v1, v2)
+        
+        # Normalize the normals
+        norms = np.linalg.norm(normals, axis=1, keepdims=True)
+        norms[norms < self.TOL] = self.TOL # Avoid division by zero
+        normals = normals / norms
+        
+        return normals.tolist()
     def compute_normal(self, vertices):
         v1 = [vertices[1][i] - vertices[0][i] for i in range(3)]
         v2 = [vertices[2][i] - vertices[0][i] for i in range(3)]
@@ -31,6 +61,9 @@ class STLGeom:
         return [n / norm for n in normal]
     
     def find_nearest_triangle_normal(self, point):
+       
+     
+         
         """
         Find the outward normal of the nearest triangle to a given point.
         Args:
@@ -50,6 +83,8 @@ class STLGeom:
                 min_normal = self.tri_normals[i]
         
         return min_normal, min_dist
+         
+    
     def compute_neighbors(self):
         edge_map = defaultdict(list)  # Map of edges to triangle indices
         neighbors = [[] for _ in range(self.stl_n_triangles)]

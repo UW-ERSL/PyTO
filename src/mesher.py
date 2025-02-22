@@ -211,15 +211,15 @@ class Mesher:
 			print("#Nodes = ", self.num_nodes, "\n#Elems = ", self.num_elems)
 			file.close()
 			self.elem_centers = np.zeros((self.num_elems, 3))
-			node_indices = self.node_indices[:, :3]
+			
 			for elem in range(self.num_elems):
-				self.elem_centers[elem, :] = np.array(np.sum(node_indices[self.elemArray[elem]],
+				self.elem_centers[elem, :] = np.array(np.sum(self.node_xyz[self.elemArray[elem]],
 																						axis = 0)/8)
 
 			self.bbox = BoundingBox(
-						x=Extent(np.min(self.node_indices[:,0]), np.max(self.node_indices[:,0])),
-						y=Extent(np.min(self.node_indices[:,1]), np.max(self.node_indices[:,1])),
-						z=Extent(np.min(self.node_indices[:,2]), np.max(self.node_indices[:,2])))
+						x=Extent(np.min(self.node_xyz[:,0]), np.max(self.node_xyz[:,0])),
+						y=Extent(np.min(self.node_xyz[:,1]), np.max(self.node_xyz[:,1])),
+						z=Extent(np.min(self.node_xyz[:,2]), np.max(self.node_xyz[:,2])))
 
 
 
@@ -243,6 +243,7 @@ class Mesher:
 		self.grid = [nx, ny, nz]
 		self.elem_size= [Lx/nx, Ly/ny, Lz/nz]
 		print(f"Mesher: Grid size: {nx} x {ny} x {nz}")
+		print(f"Mesher: Element size: {self.elem_size[0]:.2e} x {self.elem_size[1]:.2e} x {self.elem_size[2]:.2e}")	
 		# Voxels near the boundary are being removed. So scale the stl geometry slightly
 		scale = 1.001
 		# Scale the stl  about its center
@@ -273,10 +274,10 @@ class Mesher:
 		
 		self.elemPartIndex = np.zeros(self.num_elems)
 		self.elem_centers = np.zeros((self.num_elems, 3))
-		node_indices = self.node_indices[:, :3]
+
 
 		for elem in range(self.num_elems):
-			self.elem_centers[elem, :] = np.array(np.sum(node_indices[self.elemArray[elem]],
+			self.elem_centers[elem, :] = np.array(np.sum(self.node_xyz[self.elemArray[elem]],
 																						axis = 0)/8)
 
 		self.elemPseudoDensity = np.ones(self.num_elems)
@@ -344,6 +345,45 @@ class Mesher:
 		closest_nodes = np.argmin(distances, axis=0)
 	
 		return closest_nodes
+	
+	def get_element_containing_point(self, point: np.ndarray) -> int:
+		"""Find element that contains given point based on closest element center.
+		
+		Args:
+			point: Array of shape (3,) containing x,y,z coordinates
+			
+		Returns:
+			int: Index of element containing point, or -1 if no element found
+		"""
+		# Calculate distances from point to all element centers
+		distances = np.sqrt(np.sum((self.elem_centers - point)**2, axis=1))
+		# Find element with minimum distance and the minimum distance
+		closest_elem = np.argmin(distances) 
+		min_distance = distances[closest_elem]
+		# If the point is within 1.5 times the maximum element size, return the element
+		if min_distance < 1.5*np.max(self.elem_size):
+			# Calculate natural coordinates for the point within element
+			# Get vertices of element
+			vertices = self.node_xyz[self.elemArray[closest_elem]]
+			# Transform point to element local coordinates (-1 to 1)
+			center = self.elem_centers[closest_elem]
+			xi =  (point - center) / (np.array(self.elem_size)/2)
+			# Calculate shape functions at this point 
+			# For hex8 element, shape functions are:
+			# N = (1±xi)(1±eta)(1±zeta)/8
+			N = np.array([
+				(1-xi[0])*(1-xi[1])*(1-xi[2])/8,
+				(1+xi[0])*(1-xi[1])*(1-xi[2])/8,
+				(1+xi[0])*(1+xi[1])*(1-xi[2])/8,
+				(1-xi[0])*(1+xi[1])*(1-xi[2])/8,
+				(1-xi[0])*(1-xi[1])*(1+xi[2])/8,
+				(1+xi[0])*(1-xi[1])*(1+xi[2])/8,
+				(1+xi[0])*(1+xi[1])*(1+xi[2])/8,
+				(1-xi[0])*(1+xi[1])*(1+xi[2])/8
+			])
+			return closest_elem, N
+		return -1, None
+
 	def getNodesOnBoundingBoxPlane(self, axis:int, minLimit:bool):
 		"""Get the nodes on a bounding box plane.
 

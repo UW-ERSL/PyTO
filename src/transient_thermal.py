@@ -67,7 +67,7 @@ class TransientThermalFEA:
             print("Time step should be reduced for stability")
             input("Press Enter to continue...")
             
-    def solve_newmark(self, time_steps: int, heat_flux_func) -> np.ndarray:
+    def solve_newmark(self, time_steps: int, heat_flux_func, callback=None) -> np.ndarray:
         """
         Solves the transient thermal problem using the Newmark method.
         Parameters:
@@ -76,6 +76,8 @@ class TransientThermalFEA:
             The number of time steps for the simulation.
         heat_flux_func : callable
             A function that takes the current time index, delta time, and mesh as input and returns the heat flux applied.
+        callback : callable, optional
+            A function that is called at each time step with the current time index and temperature distribution.
         Returns:
         --------
         np.ndarray
@@ -94,14 +96,18 @@ class TransientThermalFEA:
         C = self.C_mtrx
         A = K + C/dt
         for timeIndex in range(time_steps):
-            print(f"Time step {timeIndex} / {time_steps-1}")
-            heatFluxApplied = heat_flux_func(timeIndex, self.deltaTime,self.mesh)
-            if (timeIndex == 0):
-                b =  heatFluxApplied
+            heatFluxApplied = heat_flux_func(timeIndex, self.deltaTime, self.mesh)
+            if timeIndex == 0:
+                b = heatFluxApplied
             else:
-                b = self.C_mtrx  @ self.u[:, timeIndex-1]/self.deltaTime +  heatFluxApplied
-            self.u[:, timeIndex] = lin_sol.solve(A, b, self.solver, self.bc) # 
+                b = self.C_mtrx @ self.u[:, timeIndex-1]/self.deltaTime + heatFluxApplied
+            self.u[:, timeIndex] = lin_sol.solve(A, b, self.solver, self.bc)
+            
+            if callback:
+                callback(timeIndex, self.u[:, timeIndex])
+                
         return self.u
+
 
     def solve_newmark_generalized(self, time_steps: int, heat_flux_func, beta=0.9, gamma=0.25) -> np.ndarray:
         """Solve using Newmark beta method for thermal problems.

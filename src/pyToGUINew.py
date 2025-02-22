@@ -16,7 +16,7 @@ from PyQt5.QtGui import QIcon
 from PyQt5.QtCore import QSize, Qt  # Updated import: added Qt
 from STLGeom import STLGeom
 from mesher import Mesher
-import plots
+# import plots
 '''
 pyTOGUI To do:
 1. Main: Disable x Buttons
@@ -416,7 +416,7 @@ class StructuralLoadsWindow(QtWidgets.QDialog):
     def apply_force(self):
         if not self.parent.stl_geom:
             return
-            
+                
         try:
             # Get force components from spinboxes
             force_x = self.x_force_spin.value()
@@ -434,6 +434,16 @@ class StructuralLoadsWindow(QtWidgets.QDialog):
                 QtWidgets.QMessageBox.warning(self, "Error", "No faces selected")
                 return
             
+            # Store selected face data for later node selection
+            if not hasattr(self.parent, 'load_faces_groups'):
+                self.parent.load_faces_groups = []
+                self.parent.load_forces = []
+                
+            # Add this group of faces and its force
+            self.parent.load_faces_groups.append(selected_faces)
+            self.parent.load_forces.append([force_x, force_y, force_z])
+            
+            # Visualization code
             MAX_MARKERS = 5
             THRESHOLD = 25
             
@@ -470,13 +480,12 @@ class StructuralLoadsWindow(QtWidgets.QDialog):
                 transform.RotateY(angle_y)
                 
                 # Dynamic scaling based on geometry bounding size
-                import numpy as np
                 points = np.array(self.parent.stl_geom.mesh.points)
                 bbox = [points[:,0].min(), points[:,0].max(),
                         points[:,1].min(), points[:,1].max(),
                         points[:,2].min(), points[:,2].max()]
                 geom_size = max(bbox[1]-bbox[0], bbox[3]-bbox[2], bbox[5]-bbox[4])
-                scale_factor = 0.10 * geom_size  # Constant scaling factor independent of force magnitude
+                scale_factor = 0.10 * geom_size
                 transform.Scale(scale_factor, scale_factor, scale_factor)
                 
                 # Create mapper and actor
@@ -499,7 +508,6 @@ class StructuralLoadsWindow(QtWidgets.QDialog):
             
             self.parent.vtkWidget.GetRenderWindow().Render()
             self.parent.message_text.append(f"Applied force of {magnitude:.2f}N to {len(selected_faces)} triangles")
-            # Update Structural Loads button icon to check
             self.parent.update_button_icon("Structural Loads", "check")
             self.close()
             
@@ -507,53 +515,62 @@ class StructuralLoadsWindow(QtWidgets.QDialog):
             QtWidgets.QMessageBox.warning(self, "Error", str(e))
             
     def apply_fixed_constraint(self):
-        if self.parent.stl_geom:
-            # Get selected faces
-            selected_faces = self.parent.stl_geom.store_selected_triangles()
-            if not selected_faces:
-                QtWidgets.QMessageBox.warning(self, "Error", "No faces selected")
-                return
+        if not self.parent.stl_geom:
+            return
+            
+        # Get selected faces
+        selected_faces = self.parent.stl_geom.store_selected_triangles()
+        if not selected_faces:
+            QtWidgets.QMessageBox.warning(self, "Error", "No faces selected")
+            return
 
-            # Create a new actor for the fixed faces
-            points = vtk.vtkPoints()
-            cells = vtk.vtkCellArray()
-            
-            for triangle in selected_faces:
-                vertices = triangle['vertices']
-                point_ids = []
-                for v in vertices:
-                    point_ids.append(points.InsertNextPoint(v))
-                tri = vtk.vtkTriangle()
-                for i in range(3):
-                    tri.GetPointIds().SetId(i, point_ids[i])
-                cells.InsertNextCell(tri)
+        # Create visualization first
+        points = vtk.vtkPoints()
+        cells = vtk.vtkCellArray()
+        
+        for triangle in selected_faces:
+            vertices = triangle['vertices']
+            point_ids = []
+            for v in vertices:
+                point_ids.append(points.InsertNextPoint(v))
+            tri = vtk.vtkTriangle()
+            for i in range(3):
+                tri.GetPointIds().SetId(i, point_ids[i])
+            cells.InsertNextCell(tri)
 
-            poly_data = vtk.vtkPolyData()
-            poly_data.SetPoints(points)
-            poly_data.SetPolys(cells)
+        poly_data = vtk.vtkPolyData()
+        poly_data.SetPoints(points)
+        poly_data.SetPolys(cells)
 
-            # Create mapper and actor
-            mapper = vtk.vtkPolyDataMapper()
-            mapper.SetInputData(poly_data)
-            
-            constraint_actor = vtk.vtkActor()
-            constraint_actor.SetMapper(mapper)
-            constraint_actor.GetProperty().SetColor(0, 0, 0)  # Set color to black
-            
-            # Add to renderer and store in constraint_actors
-            self.parent.renderer.AddActor(constraint_actor)
-            self.parent.constraint_actors.append(constraint_actor)
-            
-            # Update display
-            self.parent.vtkWidget.GetRenderWindow().Render()
-            
-            # Release restrained faces from selection
-            selected = [i for i, sel in enumerate(self.parent.stl_geom.tri_highlight) if sel]
-            for idx in selected:
-                self.parent.stl_geom.tri_highlight[idx] = False
-            self.parent.update_highlights()
-            self.parent.update_button_icon("Structural Loads", "check")
-            self.parent.message_text.append(f"Fixed XYZ constraint applied to {len(selected_faces)} faces")
+        # Create mapper and actor
+        mapper = vtk.vtkPolyDataMapper()
+        mapper.SetInputData(poly_data)
+        
+        constraint_actor = vtk.vtkActor()
+        constraint_actor.SetMapper(mapper)
+        constraint_actor.GetProperty().SetColor(0, 0, 0)  # Black color
+        
+        self.parent.renderer.AddActor(constraint_actor)
+        self.parent.constraint_actors.append(constraint_actor)
+        
+        # Store selected face data for later node selection
+        if not hasattr(self.parent, 'fixed_faces'):
+            self.parent.fixed_faces = []
+        
+        self.parent.fixed_faces.extend(selected_faces)
+        
+        # Add debug message
+        self.parent.message_text.append(f"\nStored {len(selected_faces)} faces for fixed constraint")
+        
+        # Release constrained faces from selection
+        for triangle in selected_faces:
+            idx = triangle['index']
+            self.parent.stl_geom.tri_highlight[idx] = False
+        self.parent.update_highlights()
+        
+        # Update display
+        self.parent.vtkWidget.GetRenderWindow().Render()
+        self.parent.update_button_icon("Structural Loads", "check")
             
 
     def apply_fixed_constraint_x(self):
@@ -593,16 +610,22 @@ class StructuralLoadsWindow(QtWidgets.QDialog):
             self.parent.renderer.AddActor(constraint_actor)
             self.parent.constraint_actors.append(constraint_actor)
             
+            # Store selected face data for later node selection
+            if not hasattr(self.parent, 'fixed_faces_x'):
+                self.parent.fixed_faces_x = []
+            
+            self.parent.fixed_faces_x.extend(selected_faces)
+            
+            # Release constrained faces from selection
+            for triangle in selected_faces:
+                idx = triangle['index']
+                self.parent.stl_geom.tri_highlight[idx] = False
+            self.parent.update_highlights()
+            
             # Update display
             self.parent.vtkWidget.GetRenderWindow().Render()
-            
-            # Release faces from selection
-            for face in selected_faces:
-                idx = face['index']
-                self.parent.stl_geom.tri_highlight[idx] = False
-            self.parent.stl_geom.selected_triangles.clear()
-            self.parent.update_highlights()
-            self.parent.message_text.append(f"Fixed X constraint applied to {len(selected_faces)} faces")
+            self.parent.message_text.append(f"\nStored {len(selected_faces)} faces for fixed X constraint")
+            self.parent.update_button_icon("Structural Loads", "check")
 
     def apply_fixed_constraint_y(self):
         if self.parent.stl_geom:
@@ -641,16 +664,22 @@ class StructuralLoadsWindow(QtWidgets.QDialog):
             self.parent.renderer.AddActor(constraint_actor)
             self.parent.constraint_actors.append(constraint_actor)
             
+            # Store selected face data for later node selection
+            if not hasattr(self.parent, 'fixed_faces_y'):
+                self.parent.fixed_faces_y = []
+            
+            self.parent.fixed_faces_y.extend(selected_faces)
+            
+            # Release constrained faces from selection
+            for triangle in selected_faces:
+                idx = triangle['index']
+                self.parent.stl_geom.tri_highlight[idx] = False
+            self.parent.update_highlights()
+            
             # Update display
             self.parent.vtkWidget.GetRenderWindow().Render()
-            
-            # Release faces from selection
-            for face in selected_faces:
-                idx = face['index']
-                self.parent.stl_geom.tri_highlight[idx] = False
-            self.parent.stl_geom.selected_triangles.clear()
-            self.parent.update_highlights()
-            self.parent.message_text.append(f"Fixed Y constraint applied to {len(selected_faces)} faces")
+            self.parent.message_text.append(f"\nStored {len(selected_faces)} faces for fixed Y constraint")
+            self.parent.update_button_icon("Structural Loads", "check")
 
     def apply_fixed_constraint_z(self):
         if self.parent.stl_geom:
@@ -689,16 +718,22 @@ class StructuralLoadsWindow(QtWidgets.QDialog):
             self.parent.renderer.AddActor(constraint_actor)
             self.parent.constraint_actors.append(constraint_actor)
             
+            # Store selected face data for later node selection
+            if not hasattr(self.parent, 'fixed_faces_z'):
+                self.parent.fixed_faces_z = []
+            
+            self.parent.fixed_faces_z.extend(selected_faces)
+            
+            # Release constrained faces from selection
+            for triangle in selected_faces:
+                idx = triangle['index']
+                self.parent.stl_geom.tri_highlight[idx] = False
+            self.parent.update_highlights()
+            
             # Update display
             self.parent.vtkWidget.GetRenderWindow().Render()
-            
-            # Release faces from selection
-            for face in selected_faces:
-                idx = face['index']
-                self.parent.stl_geom.tri_highlight[idx] = False
-            self.parent.stl_geom.selected_triangles.clear()
-            self.parent.update_highlights()
-            self.parent.message_text.append(f"Fixed Z constraint applied to {len(selected_faces)} faces")
+            self.parent.message_text.append(f"\nStored {len(selected_faces)} faces for fixed Z constraint")
+            self.parent.update_button_icon("Structural Loads", "check")
     
 class AnalysisWindow(QtWidgets.QDialog):
     def __init__(self, parent):
@@ -783,9 +818,10 @@ class AnalysisWindow(QtWidgets.QDialog):
         temp_layout.addWidget(self.temp_spin)
         layout.addLayout(temp_layout)
         
-        # Remesh checkbox
-        self.remesh_check = QtWidgets.QCheckBox("Remesh?")
-        layout.addWidget(self.remesh_check)
+        # Mesh and Analysis buttons
+        self.mesh_button = QtWidgets.QPushButton("Generate Mesh")
+        self.mesh_button.clicked.connect(self.generate_mesh)
+        layout.addWidget(self.mesh_button)
         
         # Analysis buttons
         self.thermal_button = QtWidgets.QPushButton("Thermal Analysis")
@@ -805,8 +841,24 @@ class AnalysisWindow(QtWidgets.QDialog):
         try:
             num_elements = self.elements_spin.value()
             self.parent.generate_analysis_mesh(num_elements)
-            self.parent.message_text.append(f"nMesh generated with {num_elements} elements")
+            
+            # Debug messages
+            self.parent.message_text.append(f"\nMesh generated with {num_elements} elements")
+            self.parent.message_text.append(f"Total nodes in mesh: {self.parent.analysis_mesher.num_nodes}")
+            
+            # Check for boundary nodes
+            boundary_nodes = self.parent.analysis_mesher.get_boundary_nodes()
+            self.parent.message_text.append(f"Found {len(boundary_nodes)} boundary nodes")
+            
+            # Check if we have stored any fixed nodes
+            if hasattr(self.parent, 'fixed_nodes') and self.parent.fixed_nodes:
+                # self.parent.message_text.append(f"Number of fixed nodes: {len(self.parent.fixed_nodes)}")
+                self.parent.message_text.append(f"Fixed node indices: {sorted(list(self.parent.fixed_nodes))}")
+            else:
+                self.parent.message_text.append("No fixed nodes found")
+                
             self.parent.update_button_icon("Analysis", "check")
+            
         except Exception as e:
             QtWidgets.QMessageBox.critical(self, "Error", f"Failed to generate mesh: {str(e)}")
 
@@ -1721,39 +1773,241 @@ class MainWindow(QtWidgets.QMainWindow):
         self.sidebar_buttons["Material"].setEnabled(True)
         self.sidebar_buttons["Structural Loads"].setEnabled(True)
 
+    # def generate_analysis_mesh(self, num_elements):
+    #     """Modified generate_analysis_mesh to use better node selection"""
+    #     if not self.stl_geom:
+    #         return
+            
+    #     # Use the mesher to create the mesh
+    #     self.analysis_mesher = Mesher()
+    #     self.analysis_mesher.createMeshFromSTLFile(self.stl_geom.file_path, num_elements)
+        
+    #     # Create structural DOF mapping
+    #     self.analysis_mesher.createEdofMatStructural()
+        
+    #     # If we have stored fixed faces, find corresponding nodes
+    #     if hasattr(self, 'fixed_faces') and self.fixed_faces:
+    #         fixed_nodes = set()
+            
+    #         # Get first face normal to determine predominant direction
+    #         first_face = self.fixed_faces[0]
+    #         normal = np.array(first_face['normal'])
+            
+    #         # Determine which axis this face most aligns with
+    #         axis_alignment = np.abs(normal)
+    #         predominant_axis = np.argmax(axis_alignment)
+    #         is_min = normal[predominant_axis] < 0
+            
+    #         # Get nodes on that plane
+    #         plane_nodes = set(self.analysis_mesher.getNodesOnBoundingBoxPlane(predominant_axis, is_min))
+            
+    #         # Intersect with boundary nodes for additional filtering
+    #         boundary_nodes = set(self.analysis_mesher.get_boundary_nodes())
+    #         candidate_nodes = plane_nodes.intersection(boundary_nodes)
+            
+    #         # For each candidate node, check if it's near our selected faces
+    #         for node_idx in candidate_nodes:
+    #             node_pos = self.analysis_mesher.node_xyz[node_idx]
+                
+    #             # Check against each selected face
+    #             for face in self.fixed_faces:
+    #                 vertices = face['vertices']
+    #                 center = face['center']
+    #                 face_normal = face['normal']
+                    
+    #                 # Project node onto face plane
+    #                 v = node_pos - center
+    #                 dist = abs(np.dot(v, face_normal))
+                    
+    #                 # If node is close to the face plane
+    #                 tolerance = min(self.analysis_mesher.elem_size) * 0.1
+    #                 if dist < tolerance:
+    #                     # Get face bounds
+    #                     min_coords = np.min(vertices, axis=0)
+    #                     max_coords = np.max(vertices, axis=0)
+                        
+    #                     # Check if node is within face bounds
+    #                     if (np.all(node_pos >= min_coords - tolerance) and 
+    #                         np.all(node_pos <= max_coords + tolerance)):
+    #                         fixed_nodes.add(node_idx)
+    #                         break  # Found a matching face, move to next node
+            
+    #         self.fixed_nodes = fixed_nodes
+            
+    #         # Get DOFs for fixed nodes
+    #         fixed_dofs = []
+    #         for node in fixed_nodes:
+    #             # Each node has 3 DOFs for structural analysis
+    #             fixed_dofs.extend([3*node, 3*node + 1, 3*node + 2])
+    #         self.fixed_dofs = fixed_dofs
+            
+    #         # Print debug information
+    #         self.message_text.append(f"\nIdentified {len(fixed_nodes)} nodes for fixed constraints")
+    #         self.message_text.append(f"Corresponding to {len(fixed_dofs)} fixed DOFs")
+            
+    #         # Create visualization
+    #         colors = vtk.vtkUnsignedCharArray()
+    #         colors.SetNumberOfComponents(3)
+    #         colors.SetName("Colors")
+            
+    #         for i in range(self.analysis_mesher.num_nodes):
+    #             if i in fixed_nodes:
+    #                 colors.InsertNextTuple3(255, 0, 0)  # Red for fixed nodes
+    #             else:
+    #                 colors.InsertNextTuple3(200, 200, 200)  # Gray for other nodes
+        
+    #     # Create points and cells for VTK visualization
+    #     points = vtk.vtkPoints()
+    #     cells = vtk.vtkCellArray()
+        
+    #     # Add points
+    #     for node in self.analysis_mesher.node_xyz:
+    #         points.InsertNextPoint(node)
+        
+    #     # Add cells (hex elements)
+    #     for elem in self.analysis_mesher.elemArray:
+    #         hex_cell = vtk.vtkHexahedron()
+    #         for i in range(8):
+    #             hex_cell.GetPointIds().SetId(i, elem[i])
+    #         cells.InsertNextCell(hex_cell)
+        
+    #     # Create mesh structure
+    #     mesh = vtk.vtkUnstructuredGrid()
+    #     mesh.SetPoints(points)
+    #     mesh.SetCells(vtk.VTK_HEXAHEDRON, cells)
+        
+    #     if hasattr(self, 'fixed_nodes'):
+    #         mesh.GetPointData().SetScalars(colors)
+        
+    #     # Create mapper and actor
+    #     mapper = vtk.vtkDataSetMapper()
+    #     mapper.SetInputData(mesh)
+        
+    #     if hasattr(self, 'mesh_actor'):
+    #         self.renderer.RemoveActor(self.mesh_actor)
+        
+    #     self.mesh_actor = vtk.vtkActor()
+    #     self.mesh_actor.SetMapper(mapper)
+    #     self.mesh_actor.GetProperty().SetOpacity(1.0)
+    #     self.mesh_actor.GetProperty().EdgeVisibilityOn()
+    #     self.mesh_actor.GetProperty().SetEdgeColor(0, 0, 0)
+        
+    #     # Hide STL geometry
+    #     if hasattr(self, 'stl_actor'):
+    #         self.stl_actor.SetVisibility(False)
+        
+    #     # Add mesh actor to renderer
+    #     self.renderer.AddActor(self.mesh_actor)
+        
+    #     # Reset camera and render
+    #     self.renderer.ResetCamera()
+    #     self.vtkWidget.GetRenderWindow().Render()
+
     def generate_analysis_mesh(self, num_elements):
-        """Generate analysis mesh and display it in the main window."""
+        """Generate mesh and identify fixed/loaded nodes using existing STLGeom methods"""
         if not self.stl_geom:
             return
-            
-        # Import mesher here to keep it separate
-        from mesher import Mesher
+                
+        # Use the mesher to create the mesh
+        self.analysis_mesher = Mesher()
+        self.analysis_mesher.createMeshFromSTLFile(self.stl_filepath, num_elements)
+        self.analysis_mesher.createEdofMatStructural()
         
-        # Create mesher instance
-        mesher = Mesher()
+        # Debug info about mesh
+        self.message_text.append(f"\nMesh generated with {num_elements} elements")
+        self.message_text.append(f"Total nodes in mesh: {self.analysis_mesher.num_nodes}")
         
-        # Generate mesh from STL
-        mesher.createMeshFromSTLFile(self.stl_geom.file_path, num_elements)
+        # Get boundary nodes
+        boundary_nodes = self.analysis_mesher.get_boundary_nodes()
+        boundary_points = self.analysis_mesher.node_xyz[boundary_nodes]
+        self.message_text.append(f"Found {len(boundary_nodes)} boundary nodes")
         
-        # Create vtkPoints for the mesh nodes
+        # Helper function to find nodes for faces
+        def find_nodes_for_faces(faces):
+            if not faces:
+                return set()
+            nodes = set()
+            for face in faces:
+                distances = self.stl_geom.find_points_single_triangle_distances(boundary_points, face['index'])
+                tolerance = min(self.analysis_mesher.elem_size) * 0.1
+                close_points_mask = distances < tolerance
+                nodes.update(boundary_nodes[close_points_mask])
+            return nodes
+        
+        # Process fixed constraint faces
+        fixed_nodes_xyz = find_nodes_for_faces(self.fixed_faces if hasattr(self, 'fixed_faces') else None)
+        fixed_nodes_x = find_nodes_for_faces(self.fixed_faces_x if hasattr(self, 'fixed_faces_x') else None)
+        fixed_nodes_y = find_nodes_for_faces(self.fixed_faces_y if hasattr(self, 'fixed_faces_y') else None)
+        fixed_nodes_z = find_nodes_for_faces(self.fixed_faces_z if hasattr(self, 'fixed_faces_z') else None)
+        
+        # Process load faces
+        load_nodes_groups = []
+        if hasattr(self, 'load_faces_groups') and hasattr(self, 'load_forces'):
+            for i, faces_group in enumerate(self.load_faces_groups):
+                nodes = find_nodes_for_faces(faces_group)
+                load_nodes_groups.append(nodes)
+                force = self.load_forces[i]
+                self.message_text.append(f"\nLoad group {i+1}: {len(nodes)} nodes with force ({force[0]}, {force[1]}, {force[2]})N")
+        
+        # Store nodes for later use
+        self.fixed_nodes = {
+            'xyz': fixed_nodes_xyz,
+            'x': fixed_nodes_x,
+            'y': fixed_nodes_y,
+            'z': fixed_nodes_z
+        }
+        self.load_nodes_groups = load_nodes_groups
+        
+        # Summary of fixed nodes
+        self.message_text.append(f"\nFixed nodes summary:")
+        self.message_text.append(f"- XYZ fixed: {len(fixed_nodes_xyz)} nodes")
+        self.message_text.append(f"- X fixed: {len(fixed_nodes_x)} nodes")
+        self.message_text.append(f"- Y fixed: {len(fixed_nodes_y)} nodes")
+        self.message_text.append(f"- Z fixed: {len(fixed_nodes_z)} nodes")
+        
+        # Create visualization
         points = vtk.vtkPoints()
-        for node in mesher.node_xyz:
+        cells = vtk.vtkCellArray()
+        
+        # Add points
+        for node in self.analysis_mesher.node_xyz:
             points.InsertNextPoint(node)
         
-        # Create cells for the mesh elements
-        cells = vtk.vtkCellArray()
-        for elem in mesher.elemArray:
+        # Add cells (hex elements)
+        for elem in self.analysis_mesher.elemArray:
             hex_cell = vtk.vtkHexahedron()
             for i in range(8):
                 hex_cell.GetPointIds().SetId(i, elem[i])
             cells.InsertNextCell(hex_cell)
         
-        # Create vtkUnstructuredGrid for the mesh
+        # Create mesh structure
         mesh = vtk.vtkUnstructuredGrid()
         mesh.SetPoints(points)
         mesh.SetCells(vtk.VTK_HEXAHEDRON, cells)
         
-        # Create mapper and actor for the mesh
+        # Create color array for visualization
+        colors = vtk.vtkUnsignedCharArray()
+        colors.SetNumberOfComponents(3)
+        colors.SetName("Colors")
+        
+        # Set colors for visualization
+        for i in range(self.analysis_mesher.num_nodes):
+            if i in fixed_nodes_xyz:
+                colors.InsertNextTuple3(255, 0, 0)  # Red for fully fixed
+            elif i in fixed_nodes_x:
+                colors.InsertNextTuple3(255, 128, 128)  # Light red for X
+            elif i in fixed_nodes_y:
+                colors.InsertNextTuple3(128, 255, 128)  # Light green for Y
+            elif i in fixed_nodes_z:
+                colors.InsertNextTuple3(128, 128, 255)  # Light blue for Z
+            elif any(i in nodes for nodes in load_nodes_groups):
+                colors.InsertNextTuple3(255, 165, 0)  # Orange for loaded nodes
+            else:
+                colors.InsertNextTuple3(200, 200, 200)  # Gray for unfixed/unloaded
+        
+        mesh.GetPointData().SetScalars(colors)
+        
+        # Create mapper and actor
         mapper = vtk.vtkDataSetMapper()
         mapper.SetInputData(mesh)
         
@@ -1762,12 +2016,11 @@ class MainWindow(QtWidgets.QMainWindow):
         
         self.mesh_actor = vtk.vtkActor()
         self.mesh_actor.SetMapper(mapper)
-        self.mesh_actor.GetProperty().SetColor(0.8, 0.8, 0.8)
         self.mesh_actor.GetProperty().SetOpacity(1.0)
         self.mesh_actor.GetProperty().EdgeVisibilityOn()
         self.mesh_actor.GetProperty().SetEdgeColor(0, 0, 0)
         
-        # Hide the original STL geometry if it exists
+        # Hide STL geometry
         if hasattr(self, 'stl_actor'):
             self.stl_actor.SetVisibility(False)
         
@@ -1777,9 +2030,6 @@ class MainWindow(QtWidgets.QMainWindow):
         # Reset camera and render
         self.renderer.ResetCamera()
         self.vtkWidget.GetRenderWindow().Render()
-        
-        # Store the mesher instance for later use
-        self.analysis_mesher = mesher
 
 
     def setup_vtk(self):

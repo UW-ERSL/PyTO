@@ -11,6 +11,7 @@ import mesher
 def plotMesh(mesh: mesher.Mesher,
              bc = None,
              u = None,
+             uLimits = None,
              cmap='jet',
              show_edges=True, 
 	           window_size=(716, 538),
@@ -18,6 +19,7 @@ def plotMesh(mesh: mesher.Mesher,
              edge_color='black',
 	           title='Mesh Visualization',
              save_path=None,
+
              fontsize=10):
   # Create vertices array
   vertices = mesh.node_xyz
@@ -85,26 +87,47 @@ def plotMesh(mesh: mesher.Mesher,
   pv_mesh.cell_data['density'] = face_densities
 
   # Create plotter
-  plotter = pv.Plotter(window_size=window_size)
+  if save_path is  None:
+    plotter = pv.Plotter(window_size=window_size)
+  else:
+    plotter = pv.Plotter(window_size=window_size,off_screen=True)
   plotter.set_background(background_color)
 
   # Add mesh to plotter
   if u is not None:
-    plotter.add_mesh(
-                      pv_mesh,
-                      scalars='values' if values is not None else 'density',
-                      cmap=cmap,
-                      show_edges=show_edges,
-                      edge_color=edge_color,
-                      line_width=1,
-                      scalar_bar_args={
-                                        'title': '',
-                                        'vertical': True,
-                                        'position_x': 0.8,
-                                        'position_y': 0.3,
-                                        'width': 0.1
-                                      }
-                    )
+    if (uLimits is not None):
+      plotter.add_mesh(
+              pv_mesh,
+              scalars='values' if values is not None else 'density',
+              cmap=cmap,
+              show_edges=show_edges,
+              edge_color=edge_color,
+              line_width=1,
+              clim=uLimits,  # Set color limits
+              scalar_bar_args={ 
+                      'title': '',
+                      'vertical': True,
+                      'position_x': 0.8,
+                      'position_y': 0.3,
+                      'width': 0.1
+                      }
+            )
+    else:
+        plotter.add_mesh(
+                  pv_mesh,
+                  scalars='values' if values is not None else 'density',
+                  cmap=cmap,
+                  show_edges=show_edges,
+                  edge_color=edge_color,
+                  line_width=1,
+                  scalar_bar_args={
+                          'title': '',
+                          'vertical': True,
+                          'position_x': 0.8,
+                          'position_y': 0.3,
+                          'width': 0.1
+                          }
+                )
   else:
     # Light green color when no deformation
     plotter.add_mesh(
@@ -197,7 +220,9 @@ def plotMesh(mesh: mesher.Mesher,
   
   # Save image if path is provided
   if save_path:
-    plotter.show(screenshot=save_path)
+    #plotter.show(screenshot = save_path)
+    plotter.screenshot(save_path)
+    plotter.close()
   else:
     plotter.show()
   
@@ -347,7 +372,7 @@ def plotIsocontour(mesh: mesher.Mesher,
   
   # Save or show
   if save_path:
-    plotter.show(screenshot=save_path)
+    plotter.show(save_path  = save_path)
   else:
     plotter.show()
   
