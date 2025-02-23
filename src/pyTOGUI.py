@@ -4,6 +4,9 @@ import math
 import numpy as np
 import os
 import json
+import time
+import bound_cond
+import mat_lib
 from PyQt5 import QtWidgets
 from PyQt5 import QtCore
 from vtkmodules.qt.QVTKRenderWindowInteractor import QVTKRenderWindowInteractor
@@ -16,7 +19,11 @@ from PyQt5.QtGui import QIcon
 from PyQt5.QtCore import QSize, Qt  # Updated import: added Qt
 from STLGeom import STLGeom
 from mesher import Mesher
-import plots
+# import bound_cond  # For BC class
+# import mat_lib    # For StructuralMaterial class
+from examples_structural import createCantileverProblem
+# import struct_fea
+# import plots
 '''
 pyTOGUI To do:
 1. Main: Disable x Buttons
@@ -416,7 +423,7 @@ class StructuralLoadsWindow(QtWidgets.QDialog):
     def apply_force(self):
         if not self.parent.stl_geom:
             return
-            
+                
         try:
             # Get force components from spinboxes
             force_x = self.x_force_spin.value()
@@ -434,6 +441,16 @@ class StructuralLoadsWindow(QtWidgets.QDialog):
                 QtWidgets.QMessageBox.warning(self, "Error", "No faces selected")
                 return
             
+            # Store selected face data for later node selection
+            if not hasattr(self.parent, 'load_faces_groups'):
+                self.parent.load_faces_groups = []
+                self.parent.load_forces = []
+                
+            # Add this group of faces and its force
+            self.parent.load_faces_groups.append(selected_faces)
+            self.parent.load_forces.append([force_x, force_y, force_z])
+            
+            # Visualization code
             MAX_MARKERS = 5
             THRESHOLD = 25
             
@@ -470,13 +487,12 @@ class StructuralLoadsWindow(QtWidgets.QDialog):
                 transform.RotateY(angle_y)
                 
                 # Dynamic scaling based on geometry bounding size
-                import numpy as np
                 points = np.array(self.parent.stl_geom.mesh.points)
                 bbox = [points[:,0].min(), points[:,0].max(),
                         points[:,1].min(), points[:,1].max(),
                         points[:,2].min(), points[:,2].max()]
                 geom_size = max(bbox[1]-bbox[0], bbox[3]-bbox[2], bbox[5]-bbox[4])
-                scale_factor = 0.10 * geom_size  # Constant scaling factor independent of force magnitude
+                scale_factor = 0.10 * geom_size
                 transform.Scale(scale_factor, scale_factor, scale_factor)
                 
                 # Create mapper and actor
@@ -499,7 +515,6 @@ class StructuralLoadsWindow(QtWidgets.QDialog):
             
             self.parent.vtkWidget.GetRenderWindow().Render()
             self.parent.message_text.append(f"Applied force of {magnitude:.2f}N to {len(selected_faces)} triangles")
-            # Update Structural Loads button icon to check
             self.parent.update_button_icon("Structural Loads", "check")
             self.close()
             
@@ -507,53 +522,62 @@ class StructuralLoadsWindow(QtWidgets.QDialog):
             QtWidgets.QMessageBox.warning(self, "Error", str(e))
             
     def apply_fixed_constraint(self):
-        if self.parent.stl_geom:
-            # Get selected faces
-            selected_faces = self.parent.stl_geom.store_selected_triangles()
-            if not selected_faces:
-                QtWidgets.QMessageBox.warning(self, "Error", "No faces selected")
-                return
+        if not self.parent.stl_geom:
+            return
+            
+        # Get selected faces
+        selected_faces = self.parent.stl_geom.store_selected_triangles()
+        if not selected_faces:
+            QtWidgets.QMessageBox.warning(self, "Error", "No faces selected")
+            return
 
-            # Create a new actor for the fixed faces
-            points = vtk.vtkPoints()
-            cells = vtk.vtkCellArray()
-            
-            for triangle in selected_faces:
-                vertices = triangle['vertices']
-                point_ids = []
-                for v in vertices:
-                    point_ids.append(points.InsertNextPoint(v))
-                tri = vtk.vtkTriangle()
-                for i in range(3):
-                    tri.GetPointIds().SetId(i, point_ids[i])
-                cells.InsertNextCell(tri)
+        # Create visualization first
+        points = vtk.vtkPoints()
+        cells = vtk.vtkCellArray()
+        
+        for triangle in selected_faces:
+            vertices = triangle['vertices']
+            point_ids = []
+            for v in vertices:
+                point_ids.append(points.InsertNextPoint(v))
+            tri = vtk.vtkTriangle()
+            for i in range(3):
+                tri.GetPointIds().SetId(i, point_ids[i])
+            cells.InsertNextCell(tri)
 
-            poly_data = vtk.vtkPolyData()
-            poly_data.SetPoints(points)
-            poly_data.SetPolys(cells)
+        poly_data = vtk.vtkPolyData()
+        poly_data.SetPoints(points)
+        poly_data.SetPolys(cells)
 
-            # Create mapper and actor
-            mapper = vtk.vtkPolyDataMapper()
-            mapper.SetInputData(poly_data)
-            
-            constraint_actor = vtk.vtkActor()
-            constraint_actor.SetMapper(mapper)
-            constraint_actor.GetProperty().SetColor(0, 0, 0)  # Set color to black
-            
-            # Add to renderer and store in constraint_actors
-            self.parent.renderer.AddActor(constraint_actor)
-            self.parent.constraint_actors.append(constraint_actor)
-            
-            # Update display
-            self.parent.vtkWidget.GetRenderWindow().Render()
-            
-            # Release restrained faces from selection
-            selected = [i for i, sel in enumerate(self.parent.stl_geom.tri_highlight) if sel]
-            for idx in selected:
-                self.parent.stl_geom.tri_highlight[idx] = False
-            self.parent.update_highlights()
-            self.parent.update_button_icon("Structural Loads", "check")
-            self.parent.message_text.append(f"Fixed XYZ constraint applied to {len(selected_faces)} faces")
+        # Create mapper and actor
+        mapper = vtk.vtkPolyDataMapper()
+        mapper.SetInputData(poly_data)
+        
+        constraint_actor = vtk.vtkActor()
+        constraint_actor.SetMapper(mapper)
+        constraint_actor.GetProperty().SetColor(0, 0, 0)  # Black color
+        
+        self.parent.renderer.AddActor(constraint_actor)
+        self.parent.constraint_actors.append(constraint_actor)
+        
+        # Store selected face data for later node selection
+        if not hasattr(self.parent, 'fixed_faces'):
+            self.parent.fixed_faces = []
+        
+        self.parent.fixed_faces.extend(selected_faces)
+        
+        # Add debug message
+        self.parent.message_text.append(f"\nStored {len(selected_faces)} faces for fixed constraint")
+        
+        # Release constrained faces from selection
+        for triangle in selected_faces:
+            idx = triangle['index']
+            self.parent.stl_geom.tri_highlight[idx] = False
+        self.parent.update_highlights()
+        
+        # Update display
+        self.parent.vtkWidget.GetRenderWindow().Render()
+        self.parent.update_button_icon("Structural Loads", "check")
             
 
     def apply_fixed_constraint_x(self):
@@ -593,16 +617,22 @@ class StructuralLoadsWindow(QtWidgets.QDialog):
             self.parent.renderer.AddActor(constraint_actor)
             self.parent.constraint_actors.append(constraint_actor)
             
+            # Store selected face data for later node selection
+            if not hasattr(self.parent, 'fixed_faces_x'):
+                self.parent.fixed_faces_x = []
+            
+            self.parent.fixed_faces_x.extend(selected_faces)
+            
+            # Release constrained faces from selection
+            for triangle in selected_faces:
+                idx = triangle['index']
+                self.parent.stl_geom.tri_highlight[idx] = False
+            self.parent.update_highlights()
+            
             # Update display
             self.parent.vtkWidget.GetRenderWindow().Render()
-            
-            # Release faces from selection
-            for face in selected_faces:
-                idx = face['index']
-                self.parent.stl_geom.tri_highlight[idx] = False
-            self.parent.stl_geom.selected_triangles.clear()
-            self.parent.update_highlights()
-            self.parent.message_text.append(f"Fixed X constraint applied to {len(selected_faces)} faces")
+            self.parent.message_text.append(f"\nStored {len(selected_faces)} faces for fixed X constraint")
+            self.parent.update_button_icon("Structural Loads", "check")
 
     def apply_fixed_constraint_y(self):
         if self.parent.stl_geom:
@@ -641,16 +671,22 @@ class StructuralLoadsWindow(QtWidgets.QDialog):
             self.parent.renderer.AddActor(constraint_actor)
             self.parent.constraint_actors.append(constraint_actor)
             
+            # Store selected face data for later node selection
+            if not hasattr(self.parent, 'fixed_faces_y'):
+                self.parent.fixed_faces_y = []
+            
+            self.parent.fixed_faces_y.extend(selected_faces)
+            
+            # Release constrained faces from selection
+            for triangle in selected_faces:
+                idx = triangle['index']
+                self.parent.stl_geom.tri_highlight[idx] = False
+            self.parent.update_highlights()
+            
             # Update display
             self.parent.vtkWidget.GetRenderWindow().Render()
-            
-            # Release faces from selection
-            for face in selected_faces:
-                idx = face['index']
-                self.parent.stl_geom.tri_highlight[idx] = False
-            self.parent.stl_geom.selected_triangles.clear()
-            self.parent.update_highlights()
-            self.parent.message_text.append(f"Fixed Y constraint applied to {len(selected_faces)} faces")
+            self.parent.message_text.append(f"\nStored {len(selected_faces)} faces for fixed Y constraint")
+            self.parent.update_button_icon("Structural Loads", "check")
 
     def apply_fixed_constraint_z(self):
         if self.parent.stl_geom:
@@ -689,16 +725,22 @@ class StructuralLoadsWindow(QtWidgets.QDialog):
             self.parent.renderer.AddActor(constraint_actor)
             self.parent.constraint_actors.append(constraint_actor)
             
+            # Store selected face data for later node selection
+            if not hasattr(self.parent, 'fixed_faces_z'):
+                self.parent.fixed_faces_z = []
+            
+            self.parent.fixed_faces_z.extend(selected_faces)
+            
+            # Release constrained faces from selection
+            for triangle in selected_faces:
+                idx = triangle['index']
+                self.parent.stl_geom.tri_highlight[idx] = False
+            self.parent.update_highlights()
+            
             # Update display
             self.parent.vtkWidget.GetRenderWindow().Render()
-            
-            # Release faces from selection
-            for face in selected_faces:
-                idx = face['index']
-                self.parent.stl_geom.tri_highlight[idx] = False
-            self.parent.stl_geom.selected_triangles.clear()
-            self.parent.update_highlights()
-            self.parent.message_text.append(f"Fixed Z constraint applied to {len(selected_faces)} faces")
+            self.parent.message_text.append(f"\nStored {len(selected_faces)} faces for fixed Z constraint")
+            self.parent.update_button_icon("Structural Loads", "check")
     
 class AnalysisWindow(QtWidgets.QDialog):
     def __init__(self, parent):
@@ -783,9 +825,10 @@ class AnalysisWindow(QtWidgets.QDialog):
         temp_layout.addWidget(self.temp_spin)
         layout.addLayout(temp_layout)
         
-        # Remesh checkbox
-        self.remesh_check = QtWidgets.QCheckBox("Remesh?")
-        layout.addWidget(self.remesh_check)
+        # Mesh and Analysis buttons
+        self.mesh_button = QtWidgets.QPushButton("Generate Mesh")
+        self.mesh_button.clicked.connect(self.generate_mesh)
+        layout.addWidget(self.mesh_button)
         
         # Analysis buttons
         self.thermal_button = QtWidgets.QPushButton("Thermal Analysis")
@@ -795,6 +838,20 @@ class AnalysisWindow(QtWidgets.QDialog):
         self.structural_button = QtWidgets.QPushButton("Structural Analysis")
         self.structural_button.clicked.connect(self.run_structural_analysis)
         layout.addWidget(self.structural_button)
+        # self.toggle_results_button = QtWidgets.QPushButton("Toggle Results View")
+        # self.toggle_results_button.clicked.connect(self.toggle_results_view)
+        # layout.addWidget(self.toggle_results_button)
+
+        # def toggle_results_view(self):
+        #     """Toggle between original and deformed mesh"""
+        #     if hasattr(self.parent, 'results_actor'):
+        #         if self.parent.results_actor:
+        #             visible = self.parent.results_actor.GetVisibility()
+        #             self.parent.results_actor.SetVisibility(not visible)
+        #             self.parent.scalar_bar.SetVisibility(not visible)
+        #             if hasattr(self.parent, 'mesh_actor'):
+        #                 self.parent.mesh_actor.SetVisibility(visible)
+        #             self.parent.vtkWidget.GetRenderWindow().Render()
     
     def generate_mesh(self):
         """Generate mesh from geometry"""
@@ -805,21 +862,238 @@ class AnalysisWindow(QtWidgets.QDialog):
         try:
             num_elements = self.elements_spin.value()
             self.parent.generate_analysis_mesh(num_elements)
-            self.parent.message_text.append(f"nMesh generated with {num_elements} elements")
+            
+            # Debug messages
+            self.parent.message_text.append(f"\nMesh generated with {num_elements} elements")
+            self.parent.message_text.append(f"Total nodes in mesh: {self.parent.analysis_mesher.num_nodes}")
+            
+            # Check for boundary nodes
+            boundary_nodes = self.parent.analysis_mesher.get_boundary_nodes()
+            self.parent.message_text.append(f"Found {len(boundary_nodes)} boundary nodes")
+            
+            # Check if we have stored any fixed nodes
+            if hasattr(self.parent, 'fixed_nodes') and self.parent.fixed_nodes:
+                # self.parent.message_text.append(f"Number of fixed nodes: {len(self.parent.fixed_nodes)}")
+                self.parent.message_text.append(f"Fixed node indices: {sorted(list(self.parent.fixed_nodes))}")
+            else:
+                self.parent.message_text.append("No fixed nodes found")
+                
             self.parent.update_button_icon("Analysis", "check")
+            
         except Exception as e:
             QtWidgets.QMessageBox.critical(self, "Error", f"Failed to generate mesh: {str(e)}")
 
-    def run_thermal_analysis(self):
+    def run_thermal_analysis(self, params):
         # Implementation for thermal analysis
         pass
-    
+
     def run_structural_analysis(self):
-        """Generate mesh and run analysis"""
-        self.generate_mesh()
-        # Don't close dialog after mesh generation
-        # Additional structural analysis code would go here
-        pass
+        """Run structural analysis using existing mesh and boundary conditions"""
+        try:
+            # Check if mesh exists and all required components are present
+            if not hasattr(self.parent, 'analysis_mesher'):
+                QtWidgets.QMessageBox.warning(self, "Error", "Please generate mesh first")
+                return
+                
+            if not hasattr(self.parent, 'material_props'):
+                # Create material properties if they don't exist but material data is available
+                if hasattr(self.parent, 'material_data'):
+                    self.parent.material_props = mat_lib.StructuralMaterial(
+                        youngs_modulus=self.parent.material_data['young_modulus'],
+                        poissons_ratio=self.parent.material_data['poisson_ratio']
+                    )
+                else:
+                    QtWidgets.QMessageBox.warning(self, "Error", "No material properties defined")
+                    return
+
+            if not hasattr(self.parent, 'boundary_conditions'):
+                # Process boundary conditions if they haven't been created
+                try:
+                    mesh = self.parent.analysis_mesher
+                    fixed_nodes = self.parent.fixed_nodes
+                    load_data = {
+                        'load_nodes_groups': self.parent.load_nodes_groups,
+                        'load_forces': self.parent.load_forces
+                    }
+                    
+                    # Process mesh and create boundary conditions
+                    _, _, self.parent.boundary_conditions = MainWindow.ProcessDataforSolver(
+                        existing_mesh=mesh,
+                        fixed_nodes=fixed_nodes,
+                        load_data=load_data,
+                        youngs_modulus=self.parent.material_data['young_modulus'],
+                        poissons_ratio=self.parent.material_data['poisson_ratio']
+                    )
+                except Exception as e:
+                    QtWidgets.QMessageBox.warning(self, "Error", f"Failed to create boundary conditions: {str(e)}")
+                    return
+
+            # Continue with structural analysis
+            import struct_fea as fea
+            import linear_solvers as lin_solv
+            import jax
+            
+            # Enable double precision
+            jax.config.update("jax_enable_x64", True)
+            
+            # Create FE solver using the data from generate_analysis_mesh
+            fe_solver = fea.StructFEA(
+                mesh=self.parent.analysis_mesher,
+                mat_prop=self.parent.material_props,
+                bc=self.parent.boundary_conditions,
+                solver=lin_solv.Solvers.PARDISO
+            )
+
+            # Run analysis
+            self.parent.message_text.append("\nRunning structural analysis...")
+            youngs_modulus = np.ones((fe_solver.mesh.num_elems,))
+            startTime = time.time()
+            u = np.asarray(fe_solver.solve(elem_youngs_modulus=youngs_modulus))
+            
+            # Calculate displacements
+            delta = np.sqrt(u[0::3]**2 + u[1::3]**2 + u[2::3]**2)
+            deltaMax = np.max(delta)
+            nDOF = 3*fe_solver.mesh.num_nodes
+            
+            # Print results
+            self.parent.message_text.append('-----------------------------')
+            self.parent.message_text.append(f"nDof: {nDOF}")
+            self.parent.message_text.append(f'Solver: {fe_solver.solver.name}')
+            self.parent.message_text.append(f"FEA time: {time.time() - startTime}")
+            self.parent.message_text.append(f'Max displacement: {deltaMax}')
+            self.parent.message_text.append('-----------------------------')
+            
+            # Store results
+            self.parent.analysis_results = {
+                'displacements': u,
+                'max_displacement': deltaMax,
+                'delta': delta
+            }
+            
+            # Update button status
+            self.parent.update_button_icon("Analysis", "check")
+
+            self.visualize_results()  # Add this line   
+
+        except Exception as e:
+            QtWidgets.QMessageBox.critical(self, "Error", f"Analysis failed: {str(e)}")
+            print(f"Detailed error: {str(e)}") 
+
+
+    def visualize_results(self):
+        """Visualize structural analysis results with node displacements"""
+        try:
+            if not hasattr(self.parent, 'analysis_results'):
+                QtWidgets.QMessageBox.warning(self, "Error", "No analysis results available")
+                return
+
+            # Get displacement results
+            u = self.parent.analysis_results['displacements']
+            delta = self.parent.analysis_results['delta']
+            
+            # Calculate scaling factor based on model size
+            model_size = np.max(self.parent.analysis_mesher.node_xyz.max(axis=0) - 
+                            self.parent.analysis_mesher.node_xyz.min(axis=0))
+            max_disp = np.max(delta)
+            scale_factor = 0.1 * model_size / max_disp if max_disp > 0 else 1.0
+            
+            # Create points for deformed mesh
+            points = vtk.vtkPoints()
+            cells = vtk.vtkCellArray()
+            
+            # Add points with scaled displacements
+            for i in range(self.parent.analysis_mesher.num_nodes):
+                original_pos = self.parent.analysis_mesher.node_xyz[i]
+                dx = u[3*i] * scale_factor
+                dy = u[3*i + 1] * scale_factor
+                dz = u[3*i + 2] * scale_factor
+                points.InsertNextPoint(
+                    original_pos[0] + dx,
+                    original_pos[1] + dy,
+                    original_pos[2] + dz
+                )
+            
+            # Add hex elements
+            for elem in self.parent.analysis_mesher.elemArray:
+                hex_cell = vtk.vtkHexahedron()
+                for i in range(8):
+                    hex_cell.GetPointIds().SetId(i, elem[i])
+                cells.InsertNextCell(hex_cell)
+            
+            # Create mesh structure
+            mesh = vtk.vtkUnstructuredGrid()
+            mesh.SetPoints(points)
+            mesh.SetCells(vtk.VTK_HEXAHEDRON, cells)
+            
+            # Add displacement magnitude as scalars
+            scalars = vtk.vtkFloatArray()
+            scalars.SetNumberOfComponents(1)
+            scalars.SetName("Displacement")
+            for d in delta:
+                scalars.InsertNextValue(d)
+            
+            mesh.GetPointData().SetScalars(scalars)
+            
+            # Create mapper with improved color mapping
+            mapper = vtk.vtkDataSetMapper()
+            mapper.SetInputData(mesh)
+            mapper.SetScalarRange(0, np.max(delta))
+            
+            # Create custom color lookup table
+            lut = vtk.vtkLookupTable()
+            lut.SetHueRange(0.667, 0.0)  # Blue to red
+            lut.SetSaturationRange(1.0, 1.0)
+            lut.SetValueRange(1.0, 1.0)
+            lut.SetNumberOfTableValues(256)
+            lut.Build()
+            mapper.SetLookupTable(lut)
+            
+            # Create actor for deformed mesh
+            if hasattr(self.parent, 'results_actor'):
+                self.parent.renderer.RemoveActor(self.parent.results_actor)
+            
+            self.parent.results_actor = vtk.vtkActor()
+            self.parent.results_actor.SetMapper(mapper)
+            self.parent.results_actor.GetProperty().EdgeVisibilityOn()
+            self.parent.results_actor.GetProperty().SetEdgeColor(0.1, 0.1, 0.1)
+            self.parent.results_actor.GetProperty().SetLineWidth(1)
+            
+            # Create enhanced scalar bar
+            if hasattr(self.parent, 'scalar_bar'):
+                self.parent.renderer.RemoveActor(self.parent.scalar_bar)
+            
+            scalar_bar = vtk.vtkScalarBarActor()
+            scalar_bar.SetLookupTable(mapper.GetLookupTable())
+            scalar_bar.SetTitle("Displacement (m)")
+            scalar_bar.SetNumberOfLabels(5)
+            scalar_bar.SetPosition(0.85, 0.05)
+            scalar_bar.SetWidth(0.1)
+            scalar_bar.SetHeight(0.8)
+            scalar_bar.GetLabelTextProperty().SetColor(0, 0, 0)
+            scalar_bar.GetTitleTextProperty().SetColor(0, 0, 0)
+            self.parent.scalar_bar = scalar_bar
+            
+            # Hide original mesh
+            if hasattr(self.parent, 'mesh_actor'):
+                self.parent.mesh_actor.SetVisibility(False)
+            
+            # Add actors to renderer
+            self.parent.renderer.AddActor(self.parent.results_actor)
+            self.parent.renderer.AddActor(self.parent.scalar_bar)
+            
+            # Reset camera and render
+            self.parent.renderer.ResetCamera()
+            self.parent.vtkWidget.GetRenderWindow().Render()
+            
+            # Add results summary
+            max_disp = np.max(delta)
+            self.parent.message_text.append(f"\nVisualization updated:")
+            self.parent.message_text.append(f"Maximum displacement: {max_disp:.6f} m")
+            self.parent.message_text.append(f"Scale factor: {scale_factor:.2f}")
+            
+        except Exception as e:
+            QtWidgets.QMessageBox.critical(self, "Error", f"Failed to visualize results: {str(e)}")
+
 
 class Analysis:
     def __init__(self):
@@ -833,13 +1107,7 @@ class Analysis:
         self.zero_strain_temp = 300.0
         self.remesh = False
         
-    def run_thermal_analysis(self, params):
-        # Implementation for thermal analysis
-        pass
-        
-    def run_structural_analysis(self, params):
-        # Implementation for structural analysis
-        pass
+    
 
 class TopOptConstraintsWindow(QtWidgets.QDialog):
     def __init__(self, parent=None):
@@ -1353,6 +1621,10 @@ class MainWindow(QtWidgets.QMainWindow):
         self.topopt_constraints = None
         self.optimization_params = None
         self.thermal_optimization_params = None
+        # self.cantilever_problem = CantileverProblem()
+        self.results_actor = None
+        self.scalar_bar = None
+        self.analysis_results = None
         
         self.main_widget = QtWidgets.QWidget(self)
         self.setCentralWidget(self.main_widget)
@@ -1722,65 +1994,233 @@ class MainWindow(QtWidgets.QMainWindow):
         self.sidebar_buttons["Structural Loads"].setEnabled(True)
 
     def generate_analysis_mesh(self, num_elements):
-        """Generate analysis mesh and display it in the main window."""
-        if not self.stl_geom:
-            return
-            
-        # Import mesher here to keep it separate
-        from mesher import Mesher
-        
-        # Create mesher instance
-        mesher = Mesher()
-        
-        # Generate mesh from STL
-        mesher.createMeshFromSTLFile(self.stl_geom.file_path, num_elements)
-        
-        # Create vtkPoints for the mesh nodes
-        points = vtk.vtkPoints()
-        for node in mesher.node_xyz:
-            points.InsertNextPoint(node)
-        
-        # Create cells for the mesh elements
-        cells = vtk.vtkCellArray()
-        for elem in mesher.elemArray:
-            hex_cell = vtk.vtkHexahedron()
-            for i in range(8):
-                hex_cell.GetPointIds().SetId(i, elem[i])
-            cells.InsertNextCell(hex_cell)
-        
-        # Create vtkUnstructuredGrid for the mesh
-        mesh = vtk.vtkUnstructuredGrid()
-        mesh.SetPoints(points)
-        mesh.SetCells(vtk.VTK_HEXAHEDRON, cells)
-        
-        # Create mapper and actor for the mesh
-        mapper = vtk.vtkDataSetMapper()
-        mapper.SetInputData(mesh)
-        
-        if hasattr(self, 'mesh_actor'):
-            self.renderer.RemoveActor(self.mesh_actor)
-        
-        self.mesh_actor = vtk.vtkActor()
-        self.mesh_actor.SetMapper(mapper)
-        self.mesh_actor.GetProperty().SetColor(0.8, 0.8, 0.8)
-        self.mesh_actor.GetProperty().SetOpacity(1.0)
-        self.mesh_actor.GetProperty().EdgeVisibilityOn()
-        self.mesh_actor.GetProperty().SetEdgeColor(0, 0, 0)
-        
-        # Hide the original STL geometry if it exists
-        if hasattr(self, 'stl_actor'):
-            self.stl_actor.SetVisibility(False)
-        
-        # Add mesh actor to renderer
-        self.renderer.AddActor(self.mesh_actor)
-        
-        # Reset camera and render
-        self.renderer.ResetCamera()
-        self.vtkWidget.GetRenderWindow().Render()
-        
-        # Store the mesher instance for later use
-        self.analysis_mesher = mesher
+           if not self.stl_geom:
+                return
+                
+           try:
+                # Get material properties from the material data
+                if not hasattr(self, 'material_data'):
+                    QtWidgets.QMessageBox.warning(self, "Error", "No material assigned")
+                    return
+                    
+                # Use the mesher to create the mesh
+                self.analysis_mesher = Mesher()
+                self.analysis_mesher.createMeshFromSTLFile(self.stl_filepath, num_elements)
+                self.analysis_mesher.createEdofMatStructural()
+                
+                # Debug info about mesh
+                self.message_text.append(f"\nMesh generated with {num_elements} elements")
+                self.message_text.append(f"Total nodes in mesh: {self.analysis_mesher.num_nodes}")
+                
+                # Get boundary nodes
+                boundary_nodes = self.analysis_mesher.get_boundary_nodes()
+                boundary_points = self.analysis_mesher.node_xyz[boundary_nodes]
+                self.message_text.append(f"Found {len(boundary_nodes)} boundary nodes")
+                
+                # Helper function to find nodes for faces
+                def find_nodes_for_faces(faces):
+                    if not faces:
+                        return set()
+                    nodes = set()
+                    for face in faces:
+                        distances = self.stl_geom.find_points_triangle_distances_vectorized(boundary_points, face['index'])
+                        tolerance = min(self.analysis_mesher.elem_size)*0.9
+                        close_points_mask = distances < tolerance
+                        nodes.update(boundary_nodes[close_points_mask])
+                    return nodes
+                
+                # Process fixed constraint faces
+                fixed_nodes_xyz = find_nodes_for_faces(self.fixed_faces if hasattr(self, 'fixed_faces') else None)
+                fixed_nodes_x = find_nodes_for_faces(self.fixed_faces_x if hasattr(self, 'fixed_faces_x') else None)
+                fixed_nodes_y = find_nodes_for_faces(self.fixed_faces_y if hasattr(self, 'fixed_faces_y') else None)
+                fixed_nodes_z = find_nodes_for_faces(self.fixed_faces_z if hasattr(self, 'fixed_faces_z') else None)
+                
+                # Process load faces
+                load_nodes_groups = []
+                if hasattr(self, 'load_faces_groups') and hasattr(self, 'load_forces'):
+                    for i, faces_group in enumerate(self.load_faces_groups):
+                        nodes = find_nodes_for_faces(faces_group)
+                        load_nodes_groups.append(nodes)
+                        force = self.load_forces[i]
+                        self.message_text.append(f"\nLoad group {i+1}: {len(nodes)} nodes with force ({force[0]}, {force[1]}, {force[2]})N")
+                
+                # Store nodes for later use
+                self.fixed_nodes = {
+                    'xyz': fixed_nodes_xyz,
+                    'x': fixed_nodes_x,
+                    'y': fixed_nodes_y,
+                    'z': fixed_nodes_z
+                }
+                self.load_nodes_groups = load_nodes_groups
+                
+                # Summary of fixed nodes
+                self.message_text.append(f"\nFixed nodes summary:")
+                self.message_text.append(f"- XYZ fixed: {len(fixed_nodes_xyz)} nodes")
+                self.message_text.append(f"- X fixed: {len(fixed_nodes_x)} nodes")
+                self.message_text.append(f"- Y fixed: {len(fixed_nodes_y)} nodes")
+                self.message_text.append(f"- Z fixed: {len(fixed_nodes_z)} nodes")
+                
+                
 
+                # # Prepare data for cantilever problem
+                # problem_data = {
+                #     'mesh': self.analysis_mesher,
+                #     'fixed_nodes_data': self.fixed_nodes,
+                #     'load_nodes_groups': self.load_nodes_groups,
+                #     'load_forces': self.load_forces,
+                #     'youngs_modulus': self.material_data['young_modulus'],
+                #     'poissons_ratio': self.material_data['poisson_ratio']
+                # }
+                
+                # # Store results
+                # self.analysis_mesher = mesh
+                # self.material_props = mat_props
+                # self.boundary_conditions = boundary_conditions
+
+
+                # Create visualization
+                points = vtk.vtkPoints()
+                cells = vtk.vtkCellArray()
+                
+                # Add points
+                for node in self.analysis_mesher.node_xyz:
+                    points.InsertNextPoint(node)
+                
+                # Add cells (hex elements)
+                for elem in self.analysis_mesher.elemArray:
+                    hex_cell = vtk.vtkHexahedron()
+                    for i in range(8):
+                        hex_cell.GetPointIds().SetId(i, elem[i])
+                    cells.InsertNextCell(hex_cell)
+                
+                # Create mesh structure
+                mesh = vtk.vtkUnstructuredGrid()
+                mesh.SetPoints(points)
+                mesh.SetCells(vtk.VTK_HEXAHEDRON, cells)
+                
+                # Create color array for visualization
+                colors = vtk.vtkUnsignedCharArray()
+                colors.SetNumberOfComponents(3)
+                colors.SetName("Colors")
+                
+                # Set colors for visualization
+                for i in range(self.analysis_mesher.num_nodes):
+                    if i in fixed_nodes_xyz:
+                        colors.InsertNextTuple3(255, 0, 0)  # Red for fully fixed
+                    elif i in fixed_nodes_x:
+                        colors.InsertNextTuple3(255, 128, 128)  # Light red for X
+                    elif i in fixed_nodes_y:
+                        colors.InsertNextTuple3(128, 255, 128)  # Light green for Y
+                    elif i in fixed_nodes_z:
+                        colors.InsertNextTuple3(128, 128, 255)  # Light blue for Z
+                    elif any(i in nodes for nodes in load_nodes_groups):
+                        colors.InsertNextTuple3(255, 165, 0)  # Orange for loaded nodes
+                    else:
+                        colors.InsertNextTuple3(200, 200, 200)  # Gray for unfixed/unloaded
+                
+                mesh.GetPointData().SetScalars(colors)
+                
+                # Create mapper and actor
+                mapper = vtk.vtkDataSetMapper()
+                mapper.SetInputData(mesh)
+                
+                if hasattr(self, 'mesh_actor'):
+                    self.renderer.RemoveActor(self.mesh_actor)
+                
+                self.mesh_actor = vtk.vtkActor()
+                self.mesh_actor.SetMapper(mapper)
+                self.mesh_actor.GetProperty().SetOpacity(1.0)
+                self.mesh_actor.GetProperty().EdgeVisibilityOn()
+                self.mesh_actor.GetProperty().SetEdgeColor(0, 0, 0)
+                
+                # Hide STL geometry
+                if hasattr(self, 'stl_actor'):
+                    self.stl_actor.SetVisibility(False)
+                
+                # Add mesh actor to renderer
+                self.renderer.AddActor(self.mesh_actor)
+                
+                # Reset camera and render
+                self.renderer.ResetCamera()
+                self.vtkWidget.GetRenderWindow().Render()
+
+                # Prepare load data
+                load_data = {
+                    'load_nodes_groups': self.load_nodes_groups,
+                    'load_forces': self.load_forces
+                }
+            
+                # Call processDataforSolver to get mesh, material props, and boundary conditions
+                # It looks like you're working on a comprehensive GUI application for structural and thermal topology optimization using VTK for visualization. Below, I'll provide a more detailed implementation of the `MainWindow` class, including the `generate_analysis_mesh` method, and the `ProcessDataforSolver` method for preparing data for the solver.
+                # To ensure the `MainWindow` class and its methods are fully functional, let's break down the implementation step by step. Here's the complete implementation of the `MainWindow` class, including the `generate_analysis_mesh` and `ProcessDataforSolver` methods:
+                # Certainly! Let's break down the implementation of the `MainWindow` class and the `generate_analysis_mesh` and `ProcessDataforSolver` methods step by step.
+                self.analysis_mesher, self.material_props, self.boundary_conditions = MainWindow.ProcessDataforSolver(
+                    existing_mesh=self.analysis_mesher,
+                    fixed_nodes=self.fixed_nodes,
+                    load_data=load_data,
+                    youngs_modulus=self.material_data['young_modulus'],
+                    poissons_ratio=self.material_data['poisson_ratio']
+                )
+
+           except Exception as e:
+                QtWidgets.QMessageBox.critical(self, "Error", f"Failed to generate analysis mesh: {str(e)}")
+
+    @staticmethod
+    def ProcessDataforSolver(existing_mesh, fixed_nodes, load_data, youngs_modulus, poissons_ratio):
+        """""
+        Parameters:
+        -----------
+        existing_mesh : Mesher object
+            Pre-generated mesh from GUI
+        fixed_nodes : dict
+            Dictionary of fixed nodes {'xyz': set(), 'x': set(), 'y': set(), 'z': set()}
+        load_data : dict
+            Dictionary containing load_nodes_groups and load_forces
+        youngs_modulus : float
+            Young's modulus from material selection
+        poissons_ratio : float
+            Poisson's ratio from material selection
+        """
+        mesh = existing_mesh
+        
+        # Process fixed nodes
+        fixed_dofs = []
+        for node in fixed_nodes['xyz']:
+            fixed_dofs.extend([3*node, 3*node + 1, 3*node + 2])
+            mesh.node_indices[node, 3] = 1
+            
+        for node in fixed_nodes['x']:
+            fixed_dofs.append(3*node)
+            mesh.node_indices[node, 3] = 2
+            
+        for node in fixed_nodes['y']:
+            fixed_dofs.append(3*node + 1)
+            mesh.node_indices[node, 3] = 3
+            
+        for node in fixed_nodes['z']:
+            fixed_dofs.append(3*node + 2)
+            mesh.node_indices[node, 3] = 4
+            
+        fixed_dofs = np.array(fixed_dofs).astype(int)
+        dirichlet_values = np.zeros_like(fixed_dofs, dtype=float)
+        
+        # Process loads
+        force = np.zeros(3*mesh.num_nodes)
+        for nodes, force_vector in zip(load_data['load_nodes_groups'], load_data['load_forces']):
+            if nodes:
+                force_per_node = np.array(force_vector) / len(nodes)
+                for node in nodes:
+                    force[3*node:3*node + 3] += force_per_node
+                    mesh.node_indices[node, 3] = 5
+
+        # Create boundary conditions and material properties
+        bc = bound_cond.BC(force=force,
+                        fixed_dofs=fixed_dofs,
+                        dirichlet_values=dirichlet_values)
+        mat_prop = mat_lib.StructuralMaterial(youngs_modulus=youngs_modulus,
+                                            poissons_ratio=poissons_ratio)
+        
+        return mesh, mat_prop, bc
 
     def setup_vtk(self):
         """Modified setup_vtk to handle multiple rendering layers"""
@@ -2084,6 +2524,21 @@ class MainWindow(QtWidgets.QMainWindow):
         elif name == "Projects":
             dialog = ProjectsWindow(self)
             dialog.exec_()
+
+    def reset_visualization(self):
+        """Reset visualization state"""
+        if hasattr(self, 'results_actor') and self.results_actor:
+            self.renderer.RemoveActor(self.results_actor)
+            self.results_actor = None
+        
+        if hasattr(self, 'scalar_bar') and self.scalar_bar:
+            self.renderer.RemoveActor(self.scalar_bar)
+            self.scalar_bar = None
+            
+        if hasattr(self, 'mesh_actor'):
+            self.mesh_actor.SetVisibility(True)
+            
+        self.vtkWidget.GetRenderWindow().Render()
 
     def save_project(self):
         if not self.stl_geom:
