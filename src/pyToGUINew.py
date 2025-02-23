@@ -1927,9 +1927,10 @@ class MainWindow(QtWidgets.QMainWindow):
             if not faces:
                 return set()
             nodes = set()
+            
             for face in faces:
-                distances = self.stl_geom.find_points_single_triangle_distances(boundary_points, face['index'])
-                tolerance = min(self.analysis_mesher.elem_size) * 0.1
+                distances = self.stl_geom.find_points_triangle_distances_vectorized(boundary_points, face['index'])
+                tolerance = min(self.analysis_mesher.elem_size)*0.9
                 close_points_mask = distances < tolerance
                 nodes.update(boundary_nodes[close_points_mask])
             return nodes
@@ -1940,6 +1941,14 @@ class MainWindow(QtWidgets.QMainWindow):
         fixed_nodes_y = find_nodes_for_faces(self.fixed_faces_y if hasattr(self, 'fixed_faces_y') else None)
         fixed_nodes_z = find_nodes_for_faces(self.fixed_faces_z if hasattr(self, 'fixed_faces_z') else None)
         
+        if fixed_nodes_xyz:
+            self.message_text.append("\nFully Fixed Nodes (XYZ):")
+            self.message_text.append(f"Number of nodes: {len(fixed_nodes_xyz)}")
+            self.message_text.append(f"Node coordinates:")
+            for node_idx in sorted(fixed_nodes_xyz):
+                coords = self.analysis_mesher.node_xyz[node_idx]
+                self.message_text.append(f"Node {node_idx}: ({coords[0]:.4f}, {coords[1]:.4f}, {coords[2]:.4f})")
+ 
         # Process load faces
         load_nodes_groups = []
         if hasattr(self, 'load_faces_groups') and hasattr(self, 'load_forces'):

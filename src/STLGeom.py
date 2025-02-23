@@ -61,9 +61,6 @@ class STLGeom:
         return [n / norm for n in normal]
     
     def find_nearest_triangle_normal(self, point):
-       
-     
-         
         """
         Find the outward normal of the nearest triangle to a given point.
         Args:
@@ -303,108 +300,127 @@ class STLGeom:
             plotter.add_point_labels([[bounds[0], bounds[2], bounds[4]]],
                                     [f'({bounds[0]:.2f}, {bounds[2]:.2f}, {bounds[4]:.2f})'])
         plotter.show()
-
-    def find_points_single_triangle_distances(self, points, triangle_id):
+   
+    def find_points_triangle_distances_loop(self, points, triangle_id):
         """
-        Vectorized calculation of minimum distances between multiple points and a single triangle.
+        Calculate the minimum distances between multiple points and a single triangle.
         Args:
-            points: numpy array of shape (n, 3) containing points [x, y, z]
+            points: list of numpy arrays, each representing [x, y, z] coordinates
             triangle_id: index of the triangle in the mesh
         Returns:
-            distances: array of minimum distances between points and the triangle
+            distances: list of minimum distances between each point and the triangle
         """
-        points = np.asarray(points)
+        distances = []
+        for point in points:
+            distance = self.find_point_triangle_distance(point, triangle_id)
+            distances.append(distance)
+        return np.array(distances)
+  
+    def find_points_triangle_distances_vectorized(self, points, triangle_id):
+        """
+        Calculate the minimum distances between multiple points and a single triangle using vectorized operations.
+        Args:
+            points: numpy array of shape (n, 3), each row representing [x, y, z] coordinates
+            triangle_id: index of the triangle in the mesh
+        Returns:
+            distances: numpy array of minimum distances between each point and the triangle
+        """
+
         vertices = self.mesh.vectors[triangle_id]
-        normal = np.array(self.tri_normals[triangle_id])
-        
-        # Project points onto triangle plane
-        point_to_plane = np.dot(points - vertices[0], normal)
-        projected_points = points - point_to_plane[:, np.newaxis] * normal
-        
-        # Compute barycentric coordinates
-        v0 = vertices[1] - vertices[0]
-        v1 = vertices[2] - vertices[0]
-        v2 = projected_points - vertices[0]
-        
-        d00 = np.dot(v0, v0)
-        d01 = np.dot(v0, v1)
-        d11 = np.dot(v1, v1)
-        d20 = np.dot(v2, v0)
-        d21 = np.dot(v2, v1)
-        
+        points = np.array(points)
+        a, b, c = np.array(vertices[0]), np.array(vertices[1]), np.array(vertices[2])
+
+        # Calculate normal of the triangle
+        normal = np.cross(b - a, c - a)
+        normal /= np.linalg.norm(normal)
+
+        # Project points onto the plane of the triangle
+        plane_points = points - np.dot(points - a, normal)[:, np.newaxis] * normal
+ 
+        # Check if the projected points are inside the triangle using barycentric coordinates
+        v0, v1 = b - a, c - a
+        d00, d01, d11 = np.dot(v0, v0), np.dot(v0, v1), np.dot(v1, v1)
+        v2 = plane_points - a
+        d20, d21 = np.dot(v2, v0), np.dot(v2, v1)
         denom = d00 * d11 - d01 * d01
         v = (d11 * d20 - d01 * d21) / denom
         w = (d00 * d21 - d01 * d20) / denom
         u = 1.0 - v - w
-        
-        # Check if points project inside triangle
-        inside_triangle = (u >= 0) & (v >= 0) & (w >= 0) & (np.abs(u + v + w - 1.0) < self.TOL)
-        
-        # Calculate distances to edges where needed
-        distances = np.where(inside_triangle,
-                            np.linalg.norm(points - projected_points, axis=1),
-                            np.minimum.reduce([
-                                np.linalg.norm(np.cross(vertices[1] - vertices[0], points - vertices[0]), axis=1) / np.linalg.norm(vertices[1] - vertices[0]),
-                                np.linalg.norm(np.cross(vertices[2] - vertices[1], points - vertices[1]), axis=1) / np.linalg.norm(vertices[2] - vertices[1]),
-                                np.linalg.norm(np.cross(vertices[0] - vertices[2], points - vertices[2]), axis=1) / np.linalg.norm(vertices[0] - vertices[2])
-                            ]))
-        
+
+        inside_triangle = (u >= 0) & (v >= 0) & (w >= 0)
+        distances = np.full(points.shape[0], np.inf)
+
+        # Calculate distances for points inside the triangle
+        distances[inside_triangle] = np.linalg.norm(points[inside_triangle] - plane_points[inside_triangle], axis=1)
+
+        # Calculate distances for points outside the triangle
+        def point_to_segment_distance(p, a, b):
+            ab = b - a
+            ap = p - a
+            t = np.sum(ap * ab, axis=1) / np.sum(ab * ab)
+            t = np.clip(t, 0, 1)
+            projection = a + np.outer(t, ab)
+            return np.linalg.norm(p - projection, axis=1)
+
+        if not np.all(inside_triangle):
+            points_outside = points[~inside_triangle]
+            distances_outside = np.min(np.array([
+                point_to_segment_distance(points_outside, a, b),
+                point_to_segment_distance(points_outside, b, c),
+                point_to_segment_distance(points_outside, c, a)
+            ]), axis=0)
+            distances[~inside_triangle] = distances_outside
+
         return distances
-   
-    
     
     def find_point_triangle_distance(self, point, triangle_id):
         """
-        Calculate the minimum distance between a point and a triangle.
+        Find the shortest distance from a point to a triangle.
         Args:
             point: numpy array [x, y, z]
             triangle_id: index of the triangle in the mesh
         Returns:
-            distance: minimum distance between point and triangle
+            distance: shortest distance from point to triangle
         """
         vertices = self.mesh.vectors[triangle_id]
-        
-        # Convert to numpy arrays for easier computation
         p = np.array(point)
-        a = np.array(vertices[0])
-        b = np.array(vertices[1])
-        c = np.array(vertices[2])
-        
-        # Calculate triangle normal
-        normal = np.array(self.tri_normals[triangle_id])
-        
-        # Project point onto triangle plane
+        a, b, c = np.array(vertices[0]), np.array(vertices[1]), np.array(vertices[2])
+
+        # Calculate normal of the triangle
+        normal = np.cross(b - a, c - a)
+        normal /= np.linalg.norm(normal)
+
+        # Project point onto the plane of the triangle
         plane_point = p - np.dot(p - a, normal) * normal
-        
-        # Compute barycentric coordinates
-        v0 = b - a
-        v1 = c - a
-        v2 = plane_point - a
-        
-        d00 = np.dot(v0, v0)
-        d01 = np.dot(v0, v1)
-        d11 = np.dot(v1, v1)
-        d20 = np.dot(v2, v0)
-        d21 = np.dot(v2, v1)
-        
+
+        # Check if the projected point is inside the triangle using barycentric coordinates
+        v0, v1, v2 = b - a, c - a, plane_point - a
+        d00, d01, d11 = np.dot(v0, v0), np.dot(v0, v1), np.dot(v1, v1)
+        d20, d21 = np.dot(v2, v0), np.dot(v2, v1)
         denom = d00 * d11 - d01 * d01
         v = (d11 * d20 - d01 * d21) / denom
         w = (d00 * d21 - d01 * d20) / denom
         u = 1.0 - v - w
-        
-        # If barycentric coordinates are all between 0 and 1,
-        # projected point lies within triangle
-        if (u >= 0 and v >= 0 and w >= 0 and abs(u + v + w - 1.0) < self.TOL):
+
+        if (u >= 0) and (v >= 0) and (w >= 0):
             return np.linalg.norm(p - plane_point)
-        
-        # Otherwise, find minimum distance to triangle edges
-        edge_distances = [
-            np.linalg.norm(np.cross(b - a, p - a)) / np.linalg.norm(b - a),
-            np.linalg.norm(np.cross(c - b, p - b)) / np.linalg.norm(c - b),
-            np.linalg.norm(np.cross(a - c, p - c)) / np.linalg.norm(a - c)
+
+        # If the projected point is outside the triangle, find the shortest distance to the edges
+        def point_to_segment_distance(p, a, b):
+            ab = b - a
+            t = np.dot(p - a, ab) / np.dot(ab, ab)
+            t = np.clip(t, 0, 1)
+            projection = a + t * ab
+            return np.linalg.norm(p - projection)
+
+        distances = [
+            point_to_segment_distance(p, a, b),
+            point_to_segment_distance(p, b, c),
+            point_to_segment_distance(p, c, a)
         ]
-        
-        return min(edge_distances)
+
+        return min(distances)
+
     
     def get_triangle_center(self, triangle_index):
         vertices = self.mesh.vectors[triangle_index]
