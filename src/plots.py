@@ -155,7 +155,7 @@ def plotMesh(mesh: mesher.Mesher,
   label2_nodes = np.where(mesh.node_indices[:, 3] == 2)[0]
   if len(label2_nodes) > 0 and mesh.dofs_per_node == 3 and bc is not None: #structural
     # Add force arrows
-    arrow_scale = 0.2 * mesh.bbox.diag_length
+    arrow_scale = 0.1 * mesh.bbox.diag_length
     for node in label2_nodes:
       # Get force components for this node
       fx = bc.force[3*node]

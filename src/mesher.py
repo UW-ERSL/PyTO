@@ -326,6 +326,40 @@ class Mesher:
 		nodes_within_radius = np.where(distances_sq <= r**2)[0]
 		return nodes_within_radius
 	
+	def get_nodes_within_annular_region(self, pt: np.ndarray, axis: np.ndarray, 
+									  r_inner: float, r_outer: float) -> np.ndarray:
+		"""Find nodes that lie within an annular region defined by two radii.
+		
+		Args:
+			pt: Array of shape (3,) containing center point coordinates
+			axis: Array of shape (3,) defining axis direction of cylinder
+			r_inner: Inner radius of annular region
+			r_outer: Outer radius of annular region
+			
+		Returns:
+			np.ndarray: Indices of nodes within the annular region
+		"""
+		# Normalize axis vector
+		axis = np.array(axis)
+		axis = axis / np.linalg.norm(axis)
+		
+		# Vector from center to each node
+		vectors = self.node_xyz - pt
+		
+		# Project vectors onto axis
+		projections = np.dot(vectors, axis)[:, np.newaxis] * axis
+		
+		# Get perpendicular components
+		perp_vectors = vectors - projections
+		
+		# Calculate radial distances
+		radial_distances = np.linalg.norm(perp_vectors, axis=1)
+		
+		# Find nodes within annular region
+		nodes_in_region = np.where((radial_distances >= r_inner) & 
+								  (radial_distances <= r_outer))[0]
+		
+		return nodes_in_region
 	def get_nodes_from_locations(self, locations: np.ndarray) -> np.ndarray:
 		"""Find nodes closest to given x,y,z locations.
 		

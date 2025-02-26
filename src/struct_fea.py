@@ -71,7 +71,7 @@ if __name__ == "__main__":
 
   from examples_structural import *
 
-  example = 5
+  example = 9
   if example == 1:
     mesh, mat_prop, bc = createCantileverProblem(nDOFDesired=10000)
   elif example == 2:
@@ -88,11 +88,13 @@ if __name__ == "__main__":
     mesh, mat_prop, bc = createBeamSurfaceLoadProblem(nDOFDesired=10000)
   elif example == 8:
     mesh, mat_prop, bc = createFilletedBeamProblem(nDOFDesired=100000)
+  elif example == 9:
+    mesh, mat_prop, bc = createCircularPlateProblem(nDOFDesired=50000)
 
   fe_solver = fea.StructFEA(mesh = mesh,
         mat_prop = mat_prop,
         bc = bc,
-        solver = lin_solv.Solvers.SPSOLVE)
+        solver = lin_solv.Solvers.PARDISO)
 
   youngs_modulus = np.ones((fe_solver.mesh.num_elems,))
   startTime = time.time()
