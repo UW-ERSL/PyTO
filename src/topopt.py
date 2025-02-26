@@ -472,8 +472,8 @@ if __name__ == "__main__":
 	jax.config.update("jax_enable_x64", True)
 	dsolver = deflation.DeflationSolver()
 
-	example = 3
-	nDOFDesired = 50000
+	example = 1
+	nDOFDesired = 10000
 	if example == 1:
 		mesh, mat_prop, bc = createCantileverProblem(nDOFDesired = nDOFDesired,L = [0.4,0.2,0.1])
 		imposeXSymmetry = False
@@ -518,7 +518,7 @@ if __name__ == "__main__":
 	volfrac = 0.2
 	num_iter = 250
 
-	optimizationMethod = 3 # 1: MMA, 2: OC, 3: Pareto
+	optimizationMethod = 1 # 1: MMA, 2: OC, 3: Pareto
 
 	startTime = time.time()
 	if optimizationMethod == 1:

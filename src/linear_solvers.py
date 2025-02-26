@@ -10,11 +10,13 @@ import scipy.sparse as spy_sprs
 import scipy.sparse.linalg as spy_linalg
 
 import pyamg # pip install pyamg
-import pypardiso # pip install pypardiso
+# Mac does not support pypardiso, so we skip 
+try:
+  import pypardiso # pip install pypardiso
+except ImportError:
+  pypardiso = None
 
 import bound_cond
-
-#import ilupp # pip install ilupp
 
 class Preconditioners(enum.Enum):
   JACOBI = enum.auto()

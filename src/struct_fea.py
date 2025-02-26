@@ -71,7 +71,7 @@ if __name__ == "__main__":
 
   from examples_structural import *
 
-  example = 4
+  example = 5
   if example == 1:
     mesh, mat_prop, bc = createCantileverProblem(nDOFDesired=10000)
   elif example == 2:
@@ -92,7 +92,7 @@ if __name__ == "__main__":
   fe_solver = fea.StructFEA(mesh = mesh,
         mat_prop = mat_prop,
         bc = bc,
-        solver = lin_solv.Solvers.PARDISO)
+        solver = lin_solv.Solvers.SPSOLVE)
 
   youngs_modulus = np.ones((fe_solver.mesh.num_elems,))
   startTime = time.time()

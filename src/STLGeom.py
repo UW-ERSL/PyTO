@@ -5,6 +5,7 @@ from queue import Queue
 import numpy as np
 
 
+
 class STLGeom:
     TOL = 1e-9
 
@@ -481,6 +482,30 @@ class STLGeom:
             selected_triangles_data.append(triangle_data)
    
         return selected_triangles_data
+    
+    def create_refined_mesh(self, target_edge_length):
+        """
+        Create a refined triangular mesh with approximately uniform edge lengths
+        Args:
+            target_edge_length: desired length for mesh edges
+        Returns:
+            vertices: nx3 array of vertex coordinates
+            faces: mx3 array of vertex indices forming triangles
+        """
+        import trimesh  # pip install trimesh
+
+        # Convert STL mesh to trimesh format
+        vertices = self.mesh.vectors.reshape(-1, 3)
+        faces = np.arange(len(vertices)).reshape(-1, 3)
+        mesh = trimesh.Trimesh(vertices=vertices, faces=faces)
+
+        # Remove duplicate vertices
+        mesh.remove_duplicate_vertices()
+
+        # Subdivide mesh to achieve target edge length
+        mesh = mesh.subdivide_to_size(max_edge=target_edge_length)
+
+        return mesh.vertices, mesh.faces
 
 if __name__ == "__main__":
     import os
