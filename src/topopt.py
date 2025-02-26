@@ -473,7 +473,7 @@ if __name__ == "__main__":
 	dsolver = deflation.DeflationSolver()
 
 	example = 1
-	nDOFDesired = 10000
+	nDOFDesired = 20000
 	if example == 1:
 		mesh, mat_prop, bc = createCantileverProblem(nDOFDesired = nDOFDesired,L = [0.4,0.2,0.1])
 		imposeXSymmetry = False
@@ -507,7 +507,6 @@ if __name__ == "__main__":
 				bc = bc,
 				solver = solver)
 	
-	youngs_modulus = np.ones((fe_solver.mesh.num_elems,))
 
 	print('Solver: ', fe_solver.solver.name)
 	print("nDof: ", 3*fe_solver.mesh.num_nodes)
@@ -518,7 +517,7 @@ if __name__ == "__main__":
 	volfrac = 0.2
 	num_iter = 250
 
-	optimizationMethod = 1 # 1: MMA, 2: OC, 3: Pareto
+	optimizationMethod = 3 # 1: MMA, 2: OC, 3: Pareto
 
 	startTime = time.time()
 	if optimizationMethod == 1:

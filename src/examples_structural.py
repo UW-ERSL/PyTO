@@ -280,7 +280,62 @@ def createCircularPlateProblem(nDOFDesired: int = 10000, youngs_modulus = 2.1e11
   mat_prop = mat_lib.StructuralMaterial(youngs_modulus=youngs_modulus,
                       poissons_ratio=poissons_ratio)
   return mesh, mat_prop, bc
-    
+
+
+def createArrowHeadProblem(nDOFDesired: int = 10000, youngs_modulus = 2.1e11, poissons_ratio = 0.3,totalLoad = 1000):
+  """Creates a structural problem setup for an L-bracket topology optimization.
+  This function sets up a finite element mesh and boundary conditions for a arrow head 
+  structural problem from an STL file. The mesh is created with approximately the desired
+  number of degrees of freedom. The problem includes fixed boundary conditions on the top
+  surface and a distributed load on a portion of the right surface.
+  Args:
+    nDOFDesired (int, optional): Desired number of degrees of freedom for the mesh. 
+                  Defaults to 10000.
+  Returns:
+    tuple: A tuple containing:
+      - mesh (Mesher): Mesh object with the L-bracket discretization
+      - mat_prop (StructuralMaterial): Material properties object with structural parameters
+      - bc (BC): Boundary conditions object with forces and constraints
+  Notes:
+    - The mesh is created from an STL file located at '../TOExamples/LBracket/LBracket.STL'
+    - Fixed boundary conditions are applied at y = yMax
+    - Load is applied in the -y direction on nodes where y > 0.039 and x > 0.09
+    - Total applied load is 1000 units distributed equally among loaded nodes
+    - Material properties are set to E = 2.1e5 and ν = 0.3
+  """
+  # Read the STL model, create a mesh of desired size, and a structural problem is posed on it.
+  stl_file = os.path.join(script_dir, '../TOExamples/ArrowHead/ArrowHead3x3.STL')
+  nElemsDesired = nDOFDesired/3    # estimate
+  mesh = mesher.Mesher()
+  
+  mesh.createMeshFromSTLFile(stl_file, nElemsDesired=nElemsDesired)
+  mesh.createEdofMatStructural()
+
+  
+  
+
+  fixed_nodes = mesh.getNodesOnBoundingBoxPlane(2,True)  # z = 0 plane
+  fixed_dofs = np.array([3 * fixed_nodes,
+              3 * fixed_nodes + 1,
+              3 * fixed_nodes + 2]).flatten().astype(int)
+  dirichlet_values = 0*np.ones_like(fixed_dofs, dtype = float)
+  mesh.node_indices[fixed_nodes, 3] = 1 # for plotting
+
+
+ 
+  load_nodes = mesh.getNodesOnBoundingBoxPlane(2,False)  # z = zMax plane
+  load_dofs = 3 * load_nodes + 2
+  mesh.node_indices[load_nodes, 3] = 2 # for plotting
+  
+  force = np.zeros(3*mesh.num_nodes)
+  force[load_dofs] = -totalLoad/len(load_nodes)
+
+  bc = bound_cond.BC(force = force,fixed_dofs = fixed_dofs,dirichlet_values = dirichlet_values) 
+
+  mat_prop = mat_lib.StructuralMaterial(youngs_modulus=youngs_modulus,
+                      poissons_ratio=poissons_ratio)
+  return mesh, mat_prop, bc
+
 def createCompliantMechanismProblem(nDOFDesired: int = 10000, youngs_modulus = 2.1e5, poissons_ratio = 0.3,totalLoad = 1e3):
   """Creates a structural problem setup for an Compliant Mechanism 
   This function sets up a finite element mesh and boundary conditions for an Compliant Mechanism

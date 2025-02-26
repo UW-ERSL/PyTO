@@ -40,19 +40,21 @@ class StructFEA:
                       ).T.astype(int)
 
 
-  def solve(self, elem_youngs_modulus: jnp.ndarray) -> jnp.ndarray:
+  def solve(self, elem_material_scaling: jnp.ndarray = None) -> jnp.ndarray:
     """Solve the structural finite element problem.
 
     Args:
-      elem_youngs_modulus: Array of (num_elems,) of the young's modulus of each
-        element.
+      elem_material_scaling: Array of (num_elems,) of the material scaling.
+      This is used in SIMP topology optimization
 
     Returns: Array of (num_dofs,) of the solution to the finite element problem.
     """
+    if elem_material_scaling is None:
+      elem_material_scaling = jnp.ones((self.mesh.num_elems,))
 
     elem_stiff_mtrx = jnp.einsum('ij, e -> eij',
                                  self.elem_stiff,
-									               elem_youngs_modulus).flatten(order = 'C')
+									               elem_material_scaling).flatten(order = 'C')
 
     stiff_mtrx = jax_sprs.BCOO((elem_stiff_mtrx, self.node_idx),
                                 shape=(self.bc.num_dofs, self.bc.num_dofs))
@@ -71,7 +73,7 @@ if __name__ == "__main__":
 
   from examples_structural import *
 
-  example = 9
+  example = 10
   if example == 1:
     mesh, mat_prop, bc = createCantileverProblem(nDOFDesired=10000)
   elif example == 2:
@@ -90,15 +92,17 @@ if __name__ == "__main__":
     mesh, mat_prop, bc = createFilletedBeamProblem(nDOFDesired=100000)
   elif example == 9:
     mesh, mat_prop, bc = createCircularPlateProblem(nDOFDesired=50000)
+  elif example == 10:
+    mesh, mat_prop, bc = createArrowHeadProblem(nDOFDesired=200000)
 
   fe_solver = fea.StructFEA(mesh = mesh,
         mat_prop = mat_prop,
         bc = bc,
         solver = lin_solv.Solvers.PARDISO)
 
-  youngs_modulus = np.ones((fe_solver.mesh.num_elems,))
+
   startTime = time.time()
-  u = np.asarray(fe_solver.solve(elem_youngs_modulus= youngs_modulus))
+  u = np.asarray(fe_solver.solve())
   delta = np.sqrt(u[0::3]**2 +  u[1::3]**2 +  u[2::3]**2)
   deltaMax = np.max(delta)
   nDOF = 3*fe_solver.mesh.num_nodes

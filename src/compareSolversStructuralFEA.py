@@ -111,8 +111,7 @@ for dofDesired in dofs:
 								rtol = 1e-8,
 								verbose = False)
 		nDOF = 3*fe_solver.mesh.num_nodes
-		youngs_modulus = np.ones((fe_solver.mesh.num_elems,)) * fe_solver.mat_prop.youngs_modulus
-		u = np.asarray(fe_solver.solve(elem_youngs_modulus= youngs_modulus))
+		u = np.asarray(fe_solver.solve())
 		totalTime = time.time() - startTime
 		delta = np.sqrt(u[0::3]**2 +  u[1::3]**2 +  u[2::3]**2)
 		deltaMax = np.max(delta)
