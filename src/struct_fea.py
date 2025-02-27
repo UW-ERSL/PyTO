@@ -15,7 +15,6 @@ import linear_solvers as lin_solv
 import mat_lib
 import os
 
-
 script_dir = os.path.dirname(os.path.abspath(__file__))
 
 
@@ -27,6 +26,7 @@ class StructFEA:
 							 mat_prop: mat_lib.StructuralMaterial,
 							 bc: bound_cond.BC,
 							 solver: lin_sol.Solvers,
+               elem_body_force: jnp.ndarray = None,
 							 **kwargs):
 
     self.mesh, self.mat_prop, self.bc = mesh, mat_prop, bc
@@ -38,6 +38,7 @@ class StructFEA:
                       np.kron(self.mesh.edofMat, np.ones((24, 1))).flatten(),
                       np.kron(self.mesh.edofMat, np.ones((1, 24))).flatten())
                       ).T.astype(int)
+    self.elem_body_force = elem_body_force
 
 
   def solve(self, elem_material_scaling: jnp.ndarray = None) -> jnp.ndarray:
@@ -58,9 +59,22 @@ class StructFEA:
 
     stiff_mtrx = jax_sprs.BCOO((elem_stiff_mtrx, self.node_idx),
                                 shape=(self.bc.num_dofs, self.bc.num_dofs))
-    
+  
 
-    
+    if self.elem_body_force is not None:
+      elem_force = self.elem_body_force.copy()
+      for i in range(3):
+        elem_force[i::3]  *= elem_material_scaling[:]
+      nNodes = self.mesh.num_nodes
+      tStart  = time.time()
+      node_forces = np.zeros((nNodes * 3,))
+      node_forces[0::3] = self.mesh.elem_to_node_field_mapping* elem_force[0::3] 
+      node_forces[1::3] = self.mesh.elem_to_node_field_mapping* elem_force[1::3] 
+      node_forces[2::3] = self.mesh.elem_to_node_field_mapping* elem_force[2::3] 
+      
+      self.bc.force += node_forces
+
+
     u =  lin_sol.solve(stiff_mtrx,
                       self.bc.force,
                       self.solver,
@@ -73,7 +87,11 @@ if __name__ == "__main__":
 
   from examples_structural import *
 
-  example = 10
+
+  example = 1
+  elem_body_force = None # by default no body force
+
+
   if example == 1:
     mesh, mat_prop, bc = createCantileverProblem(nDOFDesired=10000)
   elif example == 2:
@@ -91,14 +109,15 @@ if __name__ == "__main__":
   elif example == 8:
     mesh, mat_prop, bc = createFilletedBeamProblem(nDOFDesired=100000)
   elif example == 9:
-    mesh, mat_prop, bc = createCircularPlateProblem(nDOFDesired=50000)
+    mesh, mat_prop, bc, elem_body_force  = createCircularPlateProblem(nDOFDesired=100000)
   elif example == 10:
     mesh, mat_prop, bc = createArrowHeadProblem(nDOFDesired=200000)
 
   fe_solver = fea.StructFEA(mesh = mesh,
         mat_prop = mat_prop,
         bc = bc,
-        solver = lin_solv.Solvers.PARDISO)
+        solver = lin_solv.Solvers.PARDISO,
+        elem_body_force = elem_body_force)
 
 
   startTime = time.time()

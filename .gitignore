@@ -5,3 +5,4 @@
 *.sldprt
 *.png
 /TOExamples
+/__pycache__

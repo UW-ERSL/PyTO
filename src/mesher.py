@@ -4,6 +4,8 @@ import dataclasses
 from typing import Optional
 import numpy as np
 import pyvista as pv # pip install pyvista
+from scipy.sparse import coo_matrix
+import time
 
 @dataclasses.dataclass
 class Extent:
@@ -65,6 +67,7 @@ class Mesher:
 			elem_size: Tuple of floats of the size of each element in each direction
 				(dx, dy, dz).
 		"""
+		startTime = time.time()
 		print(f"Mesher: Grid size: {num_elems[0]} x {num_elems[1]} x {num_elems[2]}")
 		nelx, nely, nelz = num_elems
 		self.bbox = BoundingBox(x=Extent(0.0, nelx*elem_size[0]),
@@ -139,6 +142,20 @@ class Mesher:
 		for elem in range(self.num_elems):
 			self.elem_centers[elem, :] = np.array(np.sum(self.node_xyz[self.elemArray[elem]], 
 																							axis = 0)/8.)
+		self.createElementToNodeFieldMapping()
+
+		# Report the time taken and the error in volume compared to box volume
+		
+		endTime = time.time()
+		voxel_volume = self.num_elems * np.prod(self.elem_size)
+		box_volume = self.bbox.lx * self.bbox.ly * self.bbox.lz
+		volume_error = np.abs(voxel_volume - box_volume) / box_volume * 100
+		endTime = time.time()
+		print(f"Time taken to create mesh: {endTime - startTime:.2f} seconds")
+		print(f"STL Volume: {box_volume:.2e}")
+		print(f"Voxelized Mesh Volume: {voxel_volume:.2e}")
+		print(f"Volume Error: {volume_error:.2f}%")
+	
 
 	def translate(self, dx: float, dy: float, dz: float):
 		"""Translate mesh by specified amounts.
@@ -224,6 +241,7 @@ class Mesher:
 
 
 	def createMeshFromSTLFile(self, stlFileName: str,nElemsDesired: int):
+		startTime = time.time()
 		self.stlMesh = pv.read(stlFileName)
 
 		bounds = self.stlMesh.bounds
@@ -308,6 +326,16 @@ class Mesher:
 						x=Extent(bounds[0], bounds[1]),	
 						y=Extent(bounds[2], bounds[3]),	
 						z=Extent(bounds[4], bounds[5]))
+		
+		self.createElementToNodeFieldMapping()
+		# Report the time taken and the error in volume compared to STL volume
+		voxel_volume = self.num_elems * np.prod(self.elem_size)
+		volume_error = np.abs(voxel_volume - stlVolume) / stlVolume * 100
+		endTime = time.time()
+		print(f"Time taken to create mesh: {endTime - startTime:.2f} seconds")
+		print(f"STL Volume: {stlVolume:.2e}")
+		print(f"Voxelized Mesh Volume: {voxel_volume:.2e}")
+		print(f"Volume Error: {volume_error:.2f}%")
 
 	def get_nodes_within_radius(self, pt: np.ndarray, r: float) -> np.ndarray:
 		"""Find nodes within a given radius from a point.
@@ -465,6 +493,29 @@ class Mesher:
 			)
 		return
 	
+	def createElementToNodeFieldMapping(self):
+		"""Create a sparse matrix mapping elements to nodes for field variables.
+		This matrix is used to map element-based field variables (like density)		
+		to node-based field variables.
+		"""
+		# Each element is associated with 8 nodes, and each node can belong to multiple elements
+		# Initialize lists to store row indices, column indices, and data for the sparse matrix
+		row_indices = []
+		col_indices = []
+		data = []
+
+		# Loop over each element
+		for elem in range(self.num_elems):
+			# Loop over each node in the element
+			for node in self.elemArray[elem]:
+				row_indices.append(node)
+				col_indices.append(elem)
+				data.append(1/8)  # Each element value is divided equally among its 8 nodes
+
+		# Create the sparse matrix
+		self.elem_to_node_field_mapping = coo_matrix((data, (row_indices, col_indices)), shape=(self.num_nodes, self.num_elems))
+		return
+	
 	def createEdofMatThermal(self):
 		self.dofs_per_node = 1
 		self.edofMat = np.zeros((self.num_elems, 8), dtype = int)
@@ -507,13 +558,10 @@ if __name__ == "__main__":
     import plots
     import time
 
+
     script_dir = os.path.dirname(os.path.abspath(__file__))
     stlFileName = os.path.join(script_dir, '../TOExamples/Knuckle/Knuckle.STL')
-
-
     mesh = Mesher()
-    startTime = time.time()
     mesh.createMeshFromSTLFile(stlFileName,nElemsDesired=100000)
-    endTime = time.time()
-    plots.plotMesh(mesh,  title=f'Knuckle; nElems = {mesh.num_nodes} in {endTime-startTime:.2f} s')
+    plots.plotMesh(mesh,  title=f'Knuckle; nElems = {mesh.num_nodes}')
   

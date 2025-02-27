@@ -223,7 +223,7 @@ def createLBracketProblem(nDOFDesired: int = 10000, youngs_modulus = 2.1e11, poi
                       poissons_ratio=poissons_ratio)
   return mesh, mat_prop, bc
 
-def createCircularPlateProblem(nDOFDesired: int = 10000, youngs_modulus = 2.1e11, poissons_ratio = 0.3,totalLoad = 1000):
+def createCircularPlateProblem(nDOFDesired: int = 10000, youngs_modulus = 2.1e11, poissons_ratio = 0.28, material_density = 7700):
   """Creates a structural problem setup for an L-bracket topology optimization.
   This function sets up a finite element mesh and boundary conditions for a circular plate
   structural problem from an STL file. The mesh is created with approximately the desired
@@ -251,8 +251,8 @@ def createCircularPlateProblem(nDOFDesired: int = 10000, youngs_modulus = 2.1e11
   
   mesh.createMeshFromSTLFile(stl_file, nElemsDesired=nElemsDesired)
   mesh.createEdofMatStructural()
+ 
 
-  
   centerPt = [0,0,0]
   axis = [0,0,1]
   innerRadius = 0.01-mesh.elem_size[0]/2
@@ -264,22 +264,18 @@ def createCircularPlateProblem(nDOFDesired: int = 10000, youngs_modulus = 2.1e11
   dirichlet_values = 0*np.ones_like(fixed_dofs, dtype = float)
   mesh.node_indices[fixed_nodes, 3] = 1 # for plotting
 
-  centerPt = [0,0,0]
-  axis = [0,0,1]
-  innerRadius = 0.05-mesh.elem_size[0]/2
-  outerRadius = 0.05+mesh.elem_size[0]/2
-  load_nodes = mesh.get_nodes_within_annular_region(centerPt,axis,innerRadius,outerRadius) 
-  load_dofs = 3 * load_nodes + 2
-  mesh.node_indices[load_nodes, 3] = 2 # for plotting
-  
-  force = np.zeros(3*mesh.num_nodes)
-  force[load_dofs] = -totalLoad/len(load_nodes)
 
-  bc = bound_cond.BC(force = force,fixed_dofs = fixed_dofs,dirichlet_values = dirichlet_values) 
+   # We have to consider body force on elements since during TO, we will need to apply pseudo-density scaling
+  elem_body_force = np.zeros(3*mesh.num_elems)
+  elem_body_force[2::3] = -9.81*material_density*np.prod(mesh.elem_size)    # Apply gravity in -z direction to each element
+
+  boundaryForce = np.zeros(3*mesh.num_nodes) # no boundary force
+
+  bc = bound_cond.BC(force = boundaryForce,fixed_dofs = fixed_dofs,dirichlet_values = dirichlet_values) 
 
   mat_prop = mat_lib.StructuralMaterial(youngs_modulus=youngs_modulus,
                       poissons_ratio=poissons_ratio)
-  return mesh, mat_prop, bc
+  return mesh, mat_prop, bc, elem_body_force
 
 
 def createArrowHeadProblem(nDOFDesired: int = 10000, youngs_modulus = 2.1e11, poissons_ratio = 0.3,totalLoad = 1000):
@@ -311,17 +307,12 @@ def createArrowHeadProblem(nDOFDesired: int = 10000, youngs_modulus = 2.1e11, po
   mesh.createMeshFromSTLFile(stl_file, nElemsDesired=nElemsDesired)
   mesh.createEdofMatStructural()
 
-  
-  
-
   fixed_nodes = mesh.getNodesOnBoundingBoxPlane(2,True)  # z = 0 plane
   fixed_dofs = np.array([3 * fixed_nodes,
               3 * fixed_nodes + 1,
               3 * fixed_nodes + 2]).flatten().astype(int)
   dirichlet_values = 0*np.ones_like(fixed_dofs, dtype = float)
   mesh.node_indices[fixed_nodes, 3] = 1 # for plotting
-
-
  
   load_nodes = mesh.getNodesOnBoundingBoxPlane(2,False)  # z = zMax plane
   load_dofs = 3 * load_nodes + 2
@@ -370,14 +361,12 @@ def createCompliantMechanismProblem(nDOFDesired: int = 10000, youngs_modulus = 2
               3 * fixed_nodes + 1,
               3 * fixed_nodes + 2]).flatten().astype(int)
   dirichlet_values = 0*np.ones_like(fixed_dofs, dtype = float)
-
   mesh.node_indices[fixed_nodes, 3] = 1 # for plotting
 
   load_nodes = np.where((node_pts[:, 0] == np.min(node_pts[:, 0])) & (abs(node_pts[:, 1] - 55) < 20))[0] # the middle face of the mechanism    
   load_dofs = 3 * load_nodes  
   mesh.node_indices[load_nodes, 3] = 2 # for plotting
   
-
   force = np.zeros(3*mesh.num_nodes)
   force[load_dofs] = -totalLoad/len(load_nodes)
 
