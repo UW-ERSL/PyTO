@@ -60,23 +60,19 @@ class StructFEA:
     stiff_mtrx = jax_sprs.BCOO((elem_stiff_mtrx, self.node_idx),
                                 shape=(self.bc.num_dofs, self.bc.num_dofs))
   
-
+    self.total_force = self.bc.force.copy()
     if self.elem_body_force is not None:
       elem_force = self.elem_body_force.copy()
       for i in range(3):
-        elem_force[i::3]  *= elem_material_scaling[:]
-      nNodes = self.mesh.num_nodes
-      tStart  = time.time()
-      node_forces = np.zeros((nNodes * 3,))
+        elem_force[i::3]  *= (elem_material_scaling[:]**(1/3))
+        
+      node_forces = np.zeros((self.mesh.num_nodes * 3,))
       node_forces[0::3] = self.mesh.elem_to_node_field_mapping* elem_force[0::3] 
       node_forces[1::3] = self.mesh.elem_to_node_field_mapping* elem_force[1::3] 
       node_forces[2::3] = self.mesh.elem_to_node_field_mapping* elem_force[2::3] 
-      
-      self.bc.force += node_forces
-
-
+      self.total_force += node_forces
     u =  lin_sol.solve(stiff_mtrx,
-                      self.bc.force,
+                      self.total_force,
                       self.solver,
                       self.bc,
                       **self.kwargs)
@@ -87,13 +83,11 @@ if __name__ == "__main__":
 
   from examples_structural import *
 
-
-  example = 1
+  example =11
   elem_body_force = None # by default no body force
 
-
   if example == 1:
-    mesh, mat_prop, bc = createCantileverProblem(nDOFDesired=10000)
+    mesh, mat_prop, bc = createEdgeCantileverProblem(nDOFDesired=10000)
   elif example == 2:
     mesh, mat_prop, bc = createMBBProblem(nDOFDesired=10000)   
   elif example == 3:
@@ -111,16 +105,19 @@ if __name__ == "__main__":
   elif example == 9:
     mesh, mat_prop, bc, elem_body_force  = createCircularPlateProblem(nDOFDesired=100000)
   elif example == 10:
+    mesh, mat_prop, bc, elem_body_force  = createGravityBarProblem(nDOFDesired=10000)
+  elif example == 11:
+    mesh, mat_prop, bc, elem_body_force  = createGravityPlateProblem(nDOFDesired=30000)
+  elif example == 12:
     mesh, mat_prop, bc = createArrowHeadProblem(nDOFDesired=200000)
 
+  startTime = time.time()
   fe_solver = fea.StructFEA(mesh = mesh,
         mat_prop = mat_prop,
         bc = bc,
         solver = lin_solv.Solvers.PARDISO,
         elem_body_force = elem_body_force)
 
-
-  startTime = time.time()
   u = np.asarray(fe_solver.solve())
   delta = np.sqrt(u[0::3]**2 +  u[1::3]**2 +  u[2::3]**2)
   deltaMax = np.max(delta)

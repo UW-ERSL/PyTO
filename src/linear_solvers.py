@@ -84,7 +84,6 @@ class Solvers(enum.Enum):
 	PYAMG = enum.auto()
 	DPCG = enum.auto()
 	PARDISO = enum.auto()
-	#ILUPP = enum.auto()
 
 
 def solve(A: spy_sprs.coo_matrix, 
@@ -139,18 +138,14 @@ def solve(A: spy_sprs.coo_matrix,
     elif solver == Solvers.PARDISO:
       x = pypardiso.spsolve(A, np.array(b))
       pypardiso.ps.free_memory()
-    # elif solver == Solvers.ILUPP:
-    #   print("Does not seem to work ...")
-    #   iChol = ilupp.icholt(A, add_fill_in=0, threshold=0.1)
-    #   x, _ = spy_linalg.cg(A, b, M = iChol, rtol = kwargs['rtol'])
     else:
       raise ValueError('Unknown solver type')
 
     u = jnp.zeros(b0.shape)
     u = u.at[bc.free_dofs].set(x)
     return u
-
-  result_shape = jax.ShapeDtypeStruct(b.shape, b.dtype)
-  cust_solver = lambda mv, b: jax.pure_callback(solver_wrapper, result_shape, A, b)
-  sol = jax.lax.custom_linear_solve(mv, b, cust_solver, symmetric=True)
-  return sol.reshape(-1)
+  return solver_wrapper(A,b)
+  # result_shape = jax.ShapeDtypeStruct(b.shape, b.dtype)
+  # cust_solver = lambda mv, b: jax.pure_callback(solver_wrapper, result_shape, A, b)
+  # sol = jax.lax.custom_linear_solve(mv, b, cust_solver, symmetric=True)
+  # return sol.reshape(-1)

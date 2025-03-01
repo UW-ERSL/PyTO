@@ -7,9 +7,28 @@ import os
 
 script_dir = os.path.dirname(os.path.abspath(__file__))
 
-def createCantileverProblem(nDOFDesired: int = 10000, L: float = [0.1, 0.1, 0.1],youngs_modulus = 2e11, poissons_ratio = 0.3):
-  # This is an example where a grid mesh is created, and a structural problem is posed on it.
-  # For a perfect cube, an estimate of the number of elements is made, and a grid mesh is created.
+def createEdgeCantileverProblem(nDOFDesired: int = 10000, L: float = [0.4, 0.2, 0.1],youngs_modulus = 2e11, poissons_ratio = 0.3):
+  """Creates a edge loaded cantilever beam problem with approximate desired DOFs.
+
+  Parameters:
+  ----------
+  nDOFDesired : int
+    Desired number of degrees of freedom (default 10000)
+  L : list of float
+    Dimensions [Lx, Ly, Lz] of domain (default [0.1, 0.1, 0.1])
+  youngs_modulus : float
+    Young's modulus of material (default 2e11)
+  poissons_ratio : float 
+    Poisson's ratio of material (default 0.3)
+
+  Returns:
+  -------
+  tuple
+    (mesh, mat_prop, bc) containing:
+    - mesh: Mesher object with grid discretization
+    - mat_prop: Material properties object
+    - bc: Boundary conditions with fixed left face and load on right face
+  """
   nVoxelsDesired = nDOFDesired/3    
   # Let the number of voxels be proportional to the length in each direction
   alpha = (nVoxelsDesired/(L[0]*L[1]*L[2]))**(1/3)
@@ -46,6 +65,8 @@ def createCantileverProblem(nDOFDesired: int = 10000, L: float = [0.1, 0.1, 0.1]
                       poissons_ratio=poissons_ratio)
   return mesh, mat_prop, bc
 
+  # ----------------------------------------
+  
 def createMBBProblem(nDOFDesired: int = 10000, L: float = [0.5, 0.167, 0.01],youngs_modulus = 2e11, poissons_ratio = 0.3):
   nVoxelsDesired = nDOFDesired/3    
   # Let the number of voxels be proportional to the length in each direction
@@ -87,6 +108,8 @@ def createMBBProblem(nDOFDesired: int = 10000, L: float = [0.5, 0.167, 0.01],you
                       poissons_ratio=poissons_ratio)
   return mesh, mat_prop, bc
 
+  # ----------------------------------------
+  
 def createDistributedLoadProblem(nDOFDesired: int = 10000, L: float = [1.0, 0.5, 0.01],youngs_modulus = 2e11, poissons_ratio = 0.3):
   nVoxelsDesired = nDOFDesired/3    
   # Let the number of voxels be proportional to the length in each direction
@@ -128,6 +151,8 @@ def createDistributedLoadProblem(nDOFDesired: int = 10000, L: float = [1.0, 0.5,
                       poissons_ratio=poissons_ratio)
   return mesh, mat_prop, bc
 
+  # ----------------------------------------
+  
 def createMultiloadProblem(nDOFDesired: int = 10000, L: float = [0.4, 0.2, 0.1],youngs_modulus = 2e11, poissons_ratio = 0.3):
   # This is an example where a grid mesh is created, and a structural problem is posed on it.
   # For a perfect cube, an estimate of the number of elements is made, and a grid mesh is created.
@@ -170,7 +195,8 @@ def createMultiloadProblem(nDOFDesired: int = 10000, L: float = [0.4, 0.2, 0.1],
                       poissons_ratio=poissons_ratio)
   return mesh, mat_prop, bc
 
-# %%
+  # ----------------------------------------
+  
 def createLBracketProblem(nDOFDesired: int = 10000, youngs_modulus = 2.1e11, poissons_ratio = 0.3,totalLoad = 1000):
   """Creates a structural problem setup for an L-bracket topology optimization.
   This function sets up a finite element mesh and boundary conditions for an L-bracket
@@ -200,8 +226,6 @@ def createLBracketProblem(nDOFDesired: int = 10000, youngs_modulus = 2.1e11, poi
   mesh.createMeshFromSTLFile(stl_file, nElemsDesired=nElemsDesired)
   mesh.createEdofMatStructural()
 
-  
-  
   fixed_nodes = mesh.getNodesOnBoundingBoxPlane(1,False)  # y = yMax plane
   fixed_dofs = np.array([3 * fixed_nodes,
               3 * fixed_nodes + 1,
@@ -223,40 +247,26 @@ def createLBracketProblem(nDOFDesired: int = 10000, youngs_modulus = 2.1e11, poi
                       poissons_ratio=poissons_ratio)
   return mesh, mat_prop, bc
 
-def createCircularPlateProblem(nDOFDesired: int = 10000, youngs_modulus = 2.1e11, poissons_ratio = 0.28, material_density = 7700):
-  """Creates a structural problem setup for an L-bracket topology optimization.
-  This function sets up a finite element mesh and boundary conditions for a circular plate
-  structural problem from an STL file. The mesh is created with approximately the desired
-  number of degrees of freedom. The problem includes fixed boundary conditions on the top
-  surface and a distributed load on a portion of the right surface.
-  Args:
-    nDOFDesired (int, optional): Desired number of degrees of freedom for the mesh. 
-                  Defaults to 10000.
-  Returns:
-    tuple: A tuple containing:
-      - mesh (Mesher): Mesh object with the L-bracket discretization
-      - mat_prop (StructuralMaterial): Material properties object with structural parameters
-      - bc (BC): Boundary conditions object with forces and constraints
-  Notes:
-    - The mesh is created from an STL file located at '../TOExamples/LBracket/LBracket.STL'
-    - Fixed boundary conditions are applied at y = yMax
-    - Load is applied in the -y direction on nodes where y > 0.039 and x > 0.09
-    - Total applied load is 1000 units distributed equally among loaded nodes
-    - Material properties are set to E = 2.1e5 and ν = 0.3
-  """
+  # ----------------------------------------
+
+def createCircularPlateProblem(nDOFDesired: int = 10000, youngs_modulus = 2.1e11, 
+                               poissons_ratio = 0.28, material_density = 7700,omega = 104.72):
+ 
   # Read the STL model, create a mesh of desired size, and a structural problem is posed on it.
   stl_file = os.path.join(script_dir, '../TOExamples/CircularPlateHole/CircularPlateHole.STL')
+  print("SolidWorks maximum displacement: 8.21e-9 m")
+
   nElemsDesired = nDOFDesired/3    # estimate
   mesh = mesher.Mesher()
   
   mesh.createMeshFromSTLFile(stl_file, nElemsDesired=nElemsDesired)
   mesh.createEdofMatStructural()
- 
+
 
   centerPt = [0,0,0]
   axis = [0,0,1]
-  innerRadius = 0.01-mesh.elem_size[0]/2
-  outerRadius = 0.01+mesh.elem_size[0]/2
+  innerRadius = 0.01-mesh.elem_size[0]*0.707
+  outerRadius = 0.01+mesh.elem_size[0]*0.707
   fixed_nodes = mesh.get_nodes_within_annular_region(centerPt,axis,innerRadius,outerRadius)  
   fixed_dofs = np.array([3 * fixed_nodes,
               3 * fixed_nodes + 1,
@@ -265,9 +275,11 @@ def createCircularPlateProblem(nDOFDesired: int = 10000, youngs_modulus = 2.1e11
   mesh.node_indices[fixed_nodes, 3] = 1 # for plotting
 
 
-   # We have to consider body force on elements since during TO, we will need to apply pseudo-density scaling
+   # Apply centrifugal on all elements
   elem_body_force = np.zeros(3*mesh.num_elems)
-  elem_body_force[2::3] = -9.81*material_density*np.prod(mesh.elem_size)    # Apply gravity in -z direction to each element
+  for e in range(mesh.num_elems):
+    center = mesh.elem_centers[e]
+    elem_body_force[3*e:3*e+2] = (material_density*np.prod(mesh.elem_size)) * omega**2 *  center[:2]
 
   boundaryForce = np.zeros(3*mesh.num_nodes) # no boundary force
 
@@ -278,26 +290,147 @@ def createCircularPlateProblem(nDOFDesired: int = 10000, youngs_modulus = 2.1e11
   return mesh, mat_prop, bc, elem_body_force
 
 
+  # ----------------------------------------
+
+def createGravityBarProblem(nDOFDesired: int = 10000, youngs_modulus = 2.1e11, poissons_ratio = 0.28, material_density = 7700):
+  """Creates a structural problem setup for a vertical bar under gravity loading.
+  This function sets up a finite element analysis problem for a vertical bar by:
+  1. Reading an STL file of a vertical bar
+  2. Creating a mesh with desired number of degrees of freedom
+  3. Setting up fixed boundary conditions at the top surface
+  4. Applying gravitational body forces
+  Parameters
+  ----------
+  nDOFDesired : int, optional
+    Desired number of degrees of freedom in the mesh (default is 10000)
+  youngs_modulus : float, optional
+    Young's modulus of the material in Pa (default is 2.1e11)
+  poissons_ratio : float, optional  
+    Poisson's ratio of the material (default is 0.28)
+  material_density : float, optional
+    Density of the material in kg/m³ (default is 7700)
+  Returns
+  -------
+  tuple
+    A tuple containing:
+    - mesh: Mesh object with the discretized geometry
+    - mat_prop: Material properties object
+    - bc: Boundary conditions object
+    - elem_body_force: Array of body forces on elements
+  Notes
+  -----
+  - The STL file must be located at '../TOExamples/VerticalBar/VerticalBar.STL'
+  - The problem fixes all DOFs at the top surface (z = zMax plane)
+  - Gravity acts in the negative z direction
+  - SolidWorks validation shows maximum displacement of 1.7906e-9 m
+  """
+
+  # Read the STL model, create a mesh of desired size, and a structural problem is posed on it.
+  stl_file = os.path.join(script_dir, '../TOExamples/VerticalBar/VerticalBar.STL')
+  print("SolidWorks maximum displacement: 1.7906e-9 m")
+  nElemsDesired = nDOFDesired/3    # estimate
+  mesh = mesher.Mesher()
+  
+  mesh.createMeshFromSTLFile(stl_file, nElemsDesired=nElemsDesired)
+  mesh.createEdofMatStructural()
+ 
+  fixed_nodes =  mesh.getNodesOnBoundingBoxPlane(2,False)  # z = zMax plane
+  fixed_dofs = np.array([3 * fixed_nodes,
+              3 * fixed_nodes + 1,
+              3 * fixed_nodes + 2]).flatten().astype(int)
+  dirichlet_values = 0*np.ones_like(fixed_dofs, dtype = float)
+  mesh.node_indices[fixed_nodes, 3] = 1 # for plotting
+
+  elem_body_force = np.zeros(3*mesh.num_elems)
+  elem_body_force[2::3] = -9.81*material_density*np.prod(mesh.elem_size)    # Apply gravity in -z direction to each element
+
+  boundaryForce = np.zeros(3*mesh.num_nodes) # no boundary force
+  bc = bound_cond.BC(force = boundaryForce,fixed_dofs = fixed_dofs,dirichlet_values = dirichlet_values) 
+  mat_prop = mat_lib.StructuralMaterial(youngs_modulus=youngs_modulus,
+                      poissons_ratio=poissons_ratio)
+  return mesh, mat_prop, bc, elem_body_force
+
+  # ----------------------------------------
+  
+def createGravityPlateProblem(nDOFDesired: int = 10000, L: float = [1.0, 0.5, 0.01],
+                               youngs_modulus = 2e11, poissons_ratio = 0.3,material_density = 7700):
+  nVoxelsDesired = nDOFDesired/3    
+  # Let the number of voxels be proportional to the length in each direction
+  alpha = (nVoxelsDesired/(L[0]*L[1]*L[2]))**(1/3)
+  nelx = round(alpha*L[0])
+  nely = round(alpha*L[1])
+  nelz = round(alpha*L[2])
+  mesh = mesher.Mesher()
+  mesh.grid_mesh(num_elems = (nelx, nely, nelz),
+                  elem_size = (L[0]/nelx, L[1]/nely, L[2]/nelz))
+  mesh.createEdofMatStructural()
+
+
+  left_nodes =np.intersect1d(mesh.getNodesOnBoundingBoxPlane(0,True), mesh.getNodesOnBoundingBoxPlane(1,True))
+  right_nodes =np.intersect1d(mesh.getNodesOnBoundingBoxPlane(0,False), mesh.getNodesOnBoundingBoxPlane(1,True))
+  fixed_nodes = np.union1d(left_nodes,right_nodes)
+  fixed_dofs = np.array([3 * fixed_nodes,
+              3 * fixed_nodes + 1,
+              3 * fixed_nodes + 2]).flatten().astype(int)
+  
+  dirichlet_values = 0*np.ones_like(fixed_dofs, dtype = float)
+  mesh.node_indices[fixed_nodes, 3] = 1
+
+  load_nodes = mesh.get_nodes_from_locations([L[0]/2, L[1], L[2]/2])  
+  load_dofs = 3 * load_nodes + 1  
+
+  boundary_force = np.zeros(3*mesh.num_nodes)
+  totalLoad = 0
+
+  boundary_force[load_dofs] = -totalLoad/len(load_nodes)
+
+  bc = bound_cond.BC(force = boundary_force,
+            fixed_dofs = fixed_dofs,
+            dirichlet_values = dirichlet_values) 
+
+  mat_prop = mat_lib.StructuralMaterial(youngs_modulus=youngs_modulus,
+                      poissons_ratio=poissons_ratio)
+  
+  elem_body_force = np.zeros(3*mesh.num_elems)
+  elem_body_force[1::3] = -9.81*material_density*np.prod(mesh.elem_size)    # Apply gravity in -y direction to each element
+
+  return mesh, mat_prop, bc,elem_body_force
+
+  # ----------------------------------------
+  
 def createArrowHeadProblem(nDOFDesired: int = 10000, youngs_modulus = 2.1e11, poissons_ratio = 0.3,totalLoad = 1000):
-  """Creates a structural problem setup for an L-bracket topology optimization.
-  This function sets up a finite element mesh and boundary conditions for a arrow head 
-  structural problem from an STL file. The mesh is created with approximately the desired
-  number of degrees of freedom. The problem includes fixed boundary conditions on the top
-  surface and a distributed load on a portion of the right surface.
-  Args:
-    nDOFDesired (int, optional): Desired number of degrees of freedom for the mesh. 
-                  Defaults to 10000.
-  Returns:
-    tuple: A tuple containing:
-      - mesh (Mesher): Mesh object with the L-bracket discretization
-      - mat_prop (StructuralMaterial): Material properties object with structural parameters
-      - bc (BC): Boundary conditions object with forces and constraints
-  Notes:
-    - The mesh is created from an STL file located at '../TOExamples/LBracket/LBracket.STL'
-    - Fixed boundary conditions are applied at y = yMax
-    - Load is applied in the -y direction on nodes where y > 0.039 and x > 0.09
-    - Total applied load is 1000 units distributed equally among loaded nodes
-    - Material properties are set to E = 2.1e5 and ν = 0.3
+  """Creates a structural problem setup for an arrowhead-shaped bracket.
+
+  This function sets up a finite element analysis problem for an arrowhead bracket by:
+  1. Reading an STL file of the arrowhead geometry 
+  2. Creating a mesh with desired number of degrees of freedom
+  3. Setting fixed boundary conditions on the bottom surface
+  4. Applying distributed load on the top surface
+
+  Parameters
+  ----------
+  nDOFDesired : int, optional
+    Desired number of degrees of freedom in the mesh (default is 10000)
+  youngs_modulus : float, optional 
+    Young's modulus of the material in Pa (default is 2.1e11)
+  poissons_ratio : float, optional
+    Poisson's ratio of the material (default is 0.3)
+  totalLoad : float, optional
+    Total applied force in N (default is 1000)
+
+  Returns
+  -------
+  tuple
+    A tuple containing:
+    - mesh: Mesh object with the discretized geometry 
+    - mat_prop: Material properties object
+    - bc: Boundary conditions object
+
+  Notes
+  -----
+  - The STL file must be located at '../TOExamples/ArrowHead/ArrowHead3x3.STL'
+  - The problem fixes all DOFs at z=0 plane
+  - Load is distributed uniformly on the top surface (z=zMax plane)
   """
   # Read the STL model, create a mesh of desired size, and a structural problem is posed on it.
   stl_file = os.path.join(script_dir, '../TOExamples/ArrowHead/ArrowHead3x3.STL')
@@ -327,6 +460,8 @@ def createArrowHeadProblem(nDOFDesired: int = 10000, youngs_modulus = 2.1e11, po
                       poissons_ratio=poissons_ratio)
   return mesh, mat_prop, bc
 
+  # ----------------------------------------
+  
 def createCompliantMechanismProblem(nDOFDesired: int = 10000, youngs_modulus = 2.1e5, poissons_ratio = 0.3,totalLoad = 1e3):
   """Creates a structural problem setup for an Compliant Mechanism 
   This function sets up a finite element mesh and boundary conditions for an Compliant Mechanism
@@ -376,8 +511,9 @@ def createCompliantMechanismProblem(nDOFDesired: int = 10000, youngs_modulus = 2
   mat_prop = mat_lib.StructuralMaterial(youngs_modulus=youngs_modulus,
                       poissons_ratio=poissons_ratio)
   return mesh, mat_prop, bc
-    
-# %%
+
+  # ----------------------------------------
+  
 def createAlcoaProblem(youngs_modulus = 2.1e11, poissons_ratio = 0.3):
   # This is an example where an existing mesh is read, and a structural problem is posed on it.
   mesh = mesher.Mesher()
@@ -404,6 +540,8 @@ def createAlcoaProblem(youngs_modulus = 2.1e11, poissons_ratio = 0.3):
                       poissons_ratio=poissons_ratio)
   return mesh, mat_prop, bc
 
+  # ----------------------------------------
+  
 def createBeamSurfaceLoadProblem(nDOFDesired: int = 20000, L: float = [0.1, 0.01, 0.01],
                   youngs_modulus = 3e7, poissons_ratio = 0.3,totalLoad = 30000):
   # This is for large deformation
@@ -445,7 +583,9 @@ def createBeamSurfaceLoadProblem(nDOFDesired: int = 20000, L: float = [0.1, 0.01
                       poissons_ratio=poissons_ratio)
   return mesh, mat_prop, bc
 
-# %%
+
+  # ----------------------------------------
+  
 def createFilletedBeamProblem(nDOFDesired=50000, youngs_modulus = 2.1e5, poissons_ratio = 0.3,totalLoad = 1000):
   stl_file = os.path.join(script_dir, '../TOExamples/FilletedBeam/FilletedBeam.STL')
 

@@ -518,6 +518,7 @@ if __name__ == "__main__":
     stl_file = os.path.join(script_dir, '../TOExamples/AlcoaGrabCAD/AlcoaGrabCAD.STL')
     stl_file = os.path.join(script_dir, '../TOExamples/LBracket/LBracket.STL')
     stl_file =  os.path.join(script_dir, '../TOExamples/CompliantMechanism/CompliantMechanism.STL')
+    stl_file =  os.path.join(script_dir, '../TOExamples/CircularPlateHole/CircularPlateHole.STL')
     stl_geom = STLGeom(stl_file)
 
     [area, volume, cg, inertia] = stl_geom.compute_mass_properties()
@@ -527,4 +528,4 @@ if __name__ == "__main__":
     print(f"Inertia: {inertia}")
 
 
-    #stl_geom.plotGeometry()
+    stl_geom.plotGeometry()

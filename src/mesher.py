@@ -154,9 +154,8 @@ class Mesher:
 		print(f"Time taken to create mesh: {endTime - startTime:.2f} seconds")
 		print(f"STL Volume: {box_volume:.2e}")
 		print(f"Voxelized Mesh Volume: {voxel_volume:.2e}")
-		print(f"Volume Error: {volume_error:.2f}%")
+		print(f"Meshing Volume Error: {volume_error:.2f}%")
 	
-
 	def translate(self, dx: float, dy: float, dz: float):
 		"""Translate mesh by specified amounts.
 		
@@ -335,7 +334,7 @@ class Mesher:
 		print(f"Time taken to create mesh: {endTime - startTime:.2f} seconds")
 		print(f"STL Volume: {stlVolume:.2e}")
 		print(f"Voxelized Mesh Volume: {voxel_volume:.2e}")
-		print(f"Volume Error: {volume_error:.2f}%")
+		print(f"Meshing Volume Error: {volume_error:.2f}%")
 
 	def get_nodes_within_radius(self, pt: np.ndarray, r: float) -> np.ndarray:
 		"""Find nodes within a given radius from a point.
