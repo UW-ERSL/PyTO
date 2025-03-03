@@ -249,12 +249,11 @@ def createLBracketProblem(nDOFDesired: int = 10000, youngs_modulus = 2.1e11, poi
 
   # ----------------------------------------
 
-def createCircularPlateProblem(nDOFDesired: int = 10000, youngs_modulus = 2.1e11, 
-                               poissons_ratio = 0.28, material_density = 7700,omega = 104.72):
+def createCentrifugalPlateProblem(nDOFDesired: int = 10000, youngs_modulus = 2.1e11, 
+                               poissons_ratio = 0.28, material_density = 7700):
  
   # Read the STL model, create a mesh of desired size, and a structural problem is posed on it.
   stl_file = os.path.join(script_dir, '../TOExamples/CircularPlateHole/CircularPlateHole.STL')
-  print("SolidWorks maximum displacement: 8.21e-9 m")
 
   nElemsDesired = nDOFDesired/3    # estimate
   mesh = mesher.Mesher()
@@ -275,13 +274,34 @@ def createCircularPlateProblem(nDOFDesired: int = 10000, youngs_modulus = 2.1e11
   mesh.node_indices[fixed_nodes, 3] = 1 # for plotting
 
 
-   # Apply centrifugal on all elements
+   # Apply centrifugal on all elements .. not working correctly
   elem_body_force = np.zeros(3*mesh.num_elems)
-  for e in range(mesh.num_elems):
-    center = mesh.elem_centers[e]
-    elem_body_force[3*e:3*e+2] = (material_density*np.prod(mesh.elem_size)) * omega**2 *  center[:2]
+  # omega = 0
+  # for e in range(mesh.num_elems):
+  #   center = mesh.elem_centers[e]
+  #   elem_body_force[3*e:3*e+2] = (material_density*np.prod(mesh.elem_size)) * omega**2 *  center[:2]
 
-  boundaryForce = np.zeros(3*mesh.num_nodes) # no boundary force
+  
+  centerPt = [0,0,0]
+  axis = [0,0,1]
+  innerRadius = 0.05-mesh.elem_size[0]*0.707
+  outerRadius = 0.05+mesh.elem_size[0]*0.707
+  load_nodes = mesh.get_nodes_within_annular_region(centerPt,axis,innerRadius,outerRadius)    
+  
+ 
+  mesh.node_indices[load_nodes, 3] = 2 # for plotting
+  boundaryForce = np.zeros(3*mesh.num_nodes) 
+  # Apply radial force on each node on the circumference
+  totalLoad = 10000
+  for node in load_nodes:
+    node_pos = mesh.node_xyz[node,:2] # get x,y coordinates
+    r = np.sqrt(np.sum(node_pos**2)) # distance from center
+    if r > 0:
+      # Unit vector in radial direction
+      radial_dir = node_pos/r
+      # Add x and y dofs with force components
+      boundaryForce[3*node] = totalLoad/len(load_nodes) * radial_dir[0]  
+      boundaryForce[3*node + 1] = totalLoad/len(load_nodes) * radial_dir[1]
 
   bc = bound_cond.BC(force = boundaryForce,fixed_dofs = fixed_dofs,dirichlet_values = dirichlet_values) 
 
@@ -615,3 +635,59 @@ def createFilletedBeamProblem(nDOFDesired=50000, youngs_modulus = 2.1e5, poisson
                       poissons_ratio=poissons_ratio)
   return mesh, mat_prop, bc
 
+def createBliskModelProblem(nDOFDesired: int = 10000, youngs_modulus = 2.1e11, 
+                               poissons_ratio = 0.28, material_density = 7700,omega = 104.72):
+ 
+  # Read the STL model, create a mesh of desired size, and a structural problem is posed on it.
+  stl_file = os.path.join(script_dir, '../TOExamples/BliskModel/BliskModel.STL')
+
+
+  nElemsDesired = nDOFDesired/3    # estimate
+  mesh = mesher.Mesher()
+  
+  mesh.createMeshFromSTLFile(stl_file, nElemsDesired=nElemsDesired)
+  mesh.createEdofMatStructural()
+
+
+  centerPt = [0,0,0]
+  axis = [1,0,0]
+
+  rInner = 0.01085
+  innerRadius = rInner-mesh.elem_size[0]*0.707
+  outerRadius = rInner+mesh.elem_size[0]*0.707
+  fixed_nodes = mesh.get_nodes_within_annular_region(centerPt,axis,innerRadius,outerRadius)  
+  fixed_dofs = np.array([3 * fixed_nodes,
+              3 * fixed_nodes + 1,
+              3 * fixed_nodes + 2]).flatten().astype(int)
+  dirichlet_values = 0*np.ones_like(fixed_dofs, dtype = float)
+  mesh.node_indices[fixed_nodes, 3] = 1 # for plotting
+
+  rOuter = 0.0565
+  innerRadius = rOuter-mesh.elem_size[0]*0.707
+  outerRadius = rOuter+mesh.elem_size[0]*0.707
+  load_nodes = mesh.get_nodes_within_annular_region(centerPt,axis,innerRadius,outerRadius)    
+  
+ 
+  mesh.node_indices[load_nodes, 3] = 2 # for plotting
+  boundaryForce = np.zeros(3*mesh.num_nodes) 
+  # Apply radial force on each node on the circumference
+  totalLoad = 10000
+  for node in load_nodes:
+    # Get y,z coordinates since loading is in y-z plane
+    node_pos = mesh.node_xyz[node,1:] # get y,z coordinates
+    r = np.sqrt(np.sum(node_pos**2)) # radial distance from axis
+    if r > 0:
+      # Unit vector in radial direction
+      radial_dir = node_pos/r
+      # Add y and z dofs with radial force components 
+      boundaryForce[3*node + 1] = totalLoad/len(load_nodes) * radial_dir[0] # y component
+      boundaryForce[3*node + 2] = totalLoad/len(load_nodes) * radial_dir[1] # z component
+
+  bc = bound_cond.BC(force = boundaryForce,fixed_dofs = fixed_dofs,dirichlet_values = dirichlet_values) 
+
+  mat_prop = mat_lib.StructuralMaterial(youngs_modulus=youngs_modulus,
+                      poissons_ratio=poissons_ratio)
+  return mesh, mat_prop, bc
+
+
+  # ----------------------------------------

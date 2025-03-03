@@ -50,6 +50,9 @@ class DeflationSolver:
 	def __init__(self, minNodesPerGroup: int = 15):	
 		"""Initialize the deflation solver with default parameters."""
 		self.minNodesPerGroup = 15
+		self.maxGroups = 2000
+		self.minGroups = 10
+		self.dofPerGroup = 500
 
 
 	def setPseudoDensity(self,rho):
@@ -203,6 +206,7 @@ class DeflationSolver:
 			print('Invalid assignment of nodes to groups. Technical bug.')
 			return False
 
+		print("Number of deflation groups: ", self.ws_nGroups)
 		return True
 
 	def create_deflation_groups_connectivity(self, meshData, nGroupsDesired: int):
@@ -327,8 +331,8 @@ class DeflationSolver:
 									W: _Array,
 									M: _Array,
 									rtol=1e-8,
-									maxIters=500,
-									verbose=True):
+									maxIters=1500,
+									verbose=False):
 		"""Deflated Preconditioned Conjugate Gradient."""
 
 		n = f.shape[0]
@@ -362,7 +366,7 @@ class DeflationSolver:
 		# Initial search direction
 		Kz = K @ z
 		if (pypardiso is None):
-			mu = spy_linalg.cho_solve(L, WT @ Kz)
+			mu = spy_linalg.cho_solve(WKW,WT @ Kz)
 		else:
 			mu = pypardiso.spsolve(WKW,WT @ Kz)
 		
@@ -390,12 +394,12 @@ class DeflationSolver:
 			beta = rz_new / rz
 			Kz = K @ z
 			if (pypardiso is None):
-				mu = spy_linalg.cho_solve(L, WT @ Kz)
+				mu = spy_linalg.spsolve(WKW,WT @ Kz)
 			else:
 				mu = pypardiso.spsolve(WKW,WT @ Kz)
 			p = z + beta * p - W @ mu
 			
 			rz = rz_new
 		if (iter_num == maxIters - 1):
-			print("Warning: Maximum iterations reached")
+			print("Warning: Maximum iterations reached in DPCG")
 		return x

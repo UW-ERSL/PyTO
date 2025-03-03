@@ -14,7 +14,7 @@ import struct_fea as fea
 import linear_solvers as lin_solv
 import mat_lib
 import os
-
+import deflation 
 script_dir = os.path.dirname(os.path.abspath(__file__))
 
 
@@ -83,9 +83,9 @@ if __name__ == "__main__":
 
   from examples_structural import *
 
-  example =11
+  example = 1
   elem_body_force = None # by default no body force
-
+  dsolver = deflation.DeflationSolver()
   if example == 1:
     mesh, mat_prop, bc = createEdgeCantileverProblem(nDOFDesired=10000)
   elif example == 2:
@@ -103,19 +103,31 @@ if __name__ == "__main__":
   elif example == 8:
     mesh, mat_prop, bc = createFilletedBeamProblem(nDOFDesired=100000)
   elif example == 9:
-    mesh, mat_prop, bc, elem_body_force  = createCircularPlateProblem(nDOFDesired=100000)
+    mesh, mat_prop, bc, elem_body_force  = createCentrifugalPlateProblem(nDOFDesired=20000)
   elif example == 10:
     mesh, mat_prop, bc, elem_body_force  = createGravityBarProblem(nDOFDesired=10000)
   elif example == 11:
     mesh, mat_prop, bc, elem_body_force  = createGravityPlateProblem(nDOFDesired=30000)
   elif example == 12:
     mesh, mat_prop, bc = createArrowHeadProblem(nDOFDesired=200000)
+  elif example == 13:
+    mesh, mat_prop, bc = createBliskModelProblem(nDOFDesired=20000)
+
+  solver = lin_solv.Solvers.DPCG # typically DPCG or PARDISO
 
   startTime = time.time()
+  if (solver == lin_solv.Solvers.DPCG):
+    nGroups =  min(dsolver.maxGroups,max(dsolver.minGroups,round(3*mesh.num_nodes/dsolver.dofPerGroup)))
+    dsolver.create_deflation_groups(mesh, nGroups)
+    dsolver.create_delfation_matrix(mesh)
+    dsolver.W = dsolver.W[bc.free_dofs, :]
+  
   fe_solver = fea.StructFEA(mesh = mesh,
         mat_prop = mat_prop,
         bc = bc,
-        solver = lin_solv.Solvers.PARDISO,
+        solver = solver,
+        dsolver = dsolver,
+        rtol = 1e-8,
         elem_body_force = elem_body_force)
 
   u = np.asarray(fe_solver.solve())

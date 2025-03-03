@@ -148,6 +148,60 @@ def createZSymmetryFilter(mesh: mesher.Mesher) -> tuple[coo_matrix, np.ndarray]:
 	HZ = coo_matrix((data, (rows, cols)), shape=(num_elems, num_elems)).tocsc()
 	return HZ
 
+def createAngularSymmetryFilter(mesh: mesher.Mesher, n_fold: int) -> tuple[coo_matrix, np.ndarray]:
+	"""Create a filter matrix for n-fold angular symmetry about Z axis.
+	
+	Args:
+		mesh: The mesh object.
+		n_fold: Number of symmetric segments 
+	
+	Returns:
+		tuple containing:
+			HA: Sparse matrix that enforces angular symmetry
+			HAs: Array of row sums of HA matrix
+	"""
+
+	num_elems = mesh.num_elems
+	angle_step = 2 * np.pi / n_fold
+	
+	rows = []
+	cols = []
+	data = []
+	
+	for i in range(num_elems):
+		elemCenter = mesh.elem_centers[i, :]
+		r = np.sqrt(elemCenter[0]**2 + elemCenter[1]**2)
+		theta = np.arctan2(elemCenter[1], elemCenter[0])
+		
+		weight = 1.0 / n_fold
+		rows.append(i)
+		cols.append(i)
+		data.append(weight)
+		
+		# Vectorized computation for all k at once
+		k_values = np.arange(1, n_fold)
+		new_thetas = theta + k_values[:, None] * angle_step
+		new_x = r * np.cos(new_thetas)
+		new_y = r * np.sin(new_thetas)
+		
+		# Create array of other element centers for all k
+		otherElemCenters = np.column_stack((new_x.flatten(), 
+										   new_y.flatten(), 
+										   np.full_like(new_x.flatten(), elemCenter[2])))
+		
+		# Compute all distances at once
+		distances = np.linalg.norm(mesh.elem_centers[None, :, :] - otherElemCenters[:, None, :], axis=2)
+		sym_indices = np.argmin(distances, axis=1)
+		
+		# Append to COO matrix components
+		rows.extend([i] * (n_fold - 1))
+		cols.extend(sym_indices)
+		data.extend([weight] * (n_fold - 1))
+	
+	HAZ = coo_matrix((data, (rows, cols)), shape=(num_elems, num_elems)).tocsc()
+	return HAZ
+
+
 def createXExtrudeFilter(mesh: mesher.Mesher) -> tuple[coo_matrix, np.ndarray]:
 	"""Create a filter matrix for extruding elements all the way through in the X direction.
 	
@@ -188,3 +242,48 @@ def createXExtrudeFilter(mesh: mesher.Mesher) -> tuple[coo_matrix, np.ndarray]:
 	HXE = coo_matrix((data, (rows, cols)), shape=(num_elems, num_elems)).tocsc()
 	HXEs = np.array(HXE.sum(1)).squeeze()
 	return HXE, HXEs
+
+def createZBuildFilter(mesh: mesher.Mesher) -> tuple[coo_matrix, np.ndarray]:
+	"""Create a filter matrix to enforce z-direction build constraints for additive manufacturing.
+	
+	Args:
+		mesh: The mesh object.
+	
+	Returns:
+		tuple containing:
+			HZB: Sparse matrix that enforces material must be supported from below
+			HZBs: Array of row sums of HZB matrix
+	"""
+	num_elems = mesh.num_elems
+	z_min = mesh.elem_centers[:, 2].min()
+	
+	rows = []
+	cols = []
+	data = []
+	
+	for i in range(num_elems):
+		elemCenter = mesh.elem_centers[i, :]
+		elem_height = elemCenter[2] - z_min
+		
+		# Find all elements below current element
+		mask = (mesh.elem_centers[:, 0] == elemCenter[0]) & \
+				(mesh.elem_centers[:, 1] == elemCenter[1]) & \
+				(mesh.elem_centers[:, 2] < elemCenter[2])
+				
+		if np.any(mask):
+			# Connect to all elements below
+			below_elems = np.where(mask)[0]
+			weight = 1.0 / (len(below_elems) + 1)
+			
+			rows.extend([i] * (len(below_elems) + 1))
+			cols.extend(list(below_elems) + [i])
+			data.extend([weight] * (len(below_elems) + 1))
+		else:
+			# Element is at bottom or has no support
+			rows.append(i)
+			cols.append(i) 
+			data.append(1.0)
+
+	HZAM = coo_matrix((data, (rows, cols)), shape=(num_elems, num_elems)).tocsc()
+	HZAMs = np.array(HZAM.sum(1)).squeeze()
+	return HZAM, HZAMs

@@ -10,7 +10,7 @@ import mat_lib
 import struct_fea as sfea
 import mma
 import deflation
-from TOfilters import createXSymmetryFilter, createYSymmetryFilter, createZSymmetryFilter, createSmoothingFilter
+from TOfilters import *
 
 _LARGE_NUMBER = 1.e9
 
@@ -82,13 +82,14 @@ def topopt_mma(fe_solver: sfea.StructFEA,
 							 penal: float = 3.,
 							 move_limit: float = 0.2,
 							 kkt_tol: float = 1.e-6,
-							 terminate_tol: float = 1.e-4,
 							 step_tol: float = 0.025,
 							 continuationScheme: bool = False,
 							 imposeXSymmetry: bool = False,
 							 imposeYSymmetry: bool = False,
 							 imposeZSymmetry: bool = False,
-							 exitOnComplianceConvergence: bool = True
+							 exitOnComplianceConvergence: bool = True,
+							 compliance_tol: float = 1.e-4,
+							 debug: bool = False
 							 ) -> tuple[np.ndarray, dict]:
 	"""MMA based topology optimization for minimum compliance.
 
@@ -115,7 +116,10 @@ def topopt_mma(fe_solver: sfea.StructFEA,
 		HY = createYSymmetryFilter(fe_solver.mesh)
 	if imposeZSymmetry:
 		HZ = createZSymmetryFilter(fe_solver.mesh)
+	if imposeZAxisAngularSymmetry >	0:
+		HAZ = createAngularSymmetryFilter(fe_solver.mesh, imposeZAxisAngularSymmetry)
 
+	HZAM, HZAMs = createZBuildFilter(fe_solver.mesh)
 	elemsWithForces = find_elements_with_forces(fe_solver.mesh, fe_solver.bc.force)
 
 	mma_params = mma.MMAParams(max_iter=maxMMAIterations,
@@ -143,19 +147,22 @@ def topopt_mma(fe_solver: sfea.StructFEA,
 		nodal_body_force = None
 	if (continuationScheme):
 		penal = 1.2
+
 	while not mma_state.is_converged:
 		x = mma_state.x.reshape(-1)
 		if imposeXSymmetry:
-				x = (HX * x)	
+			x = (HX * x)	
 		if imposeYSymmetry:
-				x = (HY * x)
+			x = (HY * x)
 		if imposeZSymmetry:
-				x = (HZ * x)	
-			
+			x = (HZ * x)	
+	
+		
 		if (elemsWithForces.size > 0):
 			x[elemsWithForces] = 1.0
 		timeFEAStart = time.time()
 		obj,u = _compliance_objective(x, fe_solver, penal)
+		
 		timeFEA += time.time() - timeFEAStart
 		obj = np.array([obj])
 		ce = (np.dot(u[fe_solver.mesh.edofMat].reshape(num_elems, 24), KE) * u[fe_solver.mesh.edofMat].reshape(num_elems, 24)).sum(1)
@@ -164,6 +171,7 @@ def topopt_mma(fe_solver: sfea.StructFEA,
 			ce_body_force = (u[fe_solver.mesh.edofMat].reshape(num_elems, 24) * nodal_body_force[fe_solver.mesh.edofMat].reshape(num_elems, 24)).sum(1)
 			grad_obj +=  penal * x ** (penal - 1) * ce_body_force
 			
+	
 		grad_obj = (H * grad_obj)/Hs
 		vf = np.mean(x)
 		cons = _volume_constraint(x, volfrac)
@@ -186,9 +194,11 @@ def topopt_mma(fe_solver: sfea.StructFEA,
 		history['compliance'].append(obj[0])
 		history['volume'].append(np.mean(x))
 		history['change'].append(change)
-		if exitOnComplianceConvergence and (len(history['compliance'])) >= 2:
+		if (len(history['compliance'])) >= 2:
 			dJ = (history['compliance'][-1] - history['compliance'][-2]) / history['compliance'][-2]
-			if abs(dJ) < terminate_tol and abs(cons) < terminate_tol:
+			if (debug):
+				print(f"dJ: {abs(dJ):.7g}, cons: {abs(cons):.7g}")
+			if exitOnComplianceConvergence and abs(dJ) < compliance_tol and abs(cons) < compliance_tol:
 				break
 		if (continuationScheme):
 			penal *= 1.1
@@ -235,9 +245,10 @@ def topopt_optimality_criteria(
 	if imposeZSymmetry:
 		HZ = createZSymmetryFilter(fe_solver.mesh)
 
+
 	elemsWithForces = find_elements_with_forces(fe_solver.mesh, fe_solver.bc.force)
 	# Initialize design variables
-	x = volfrac * jnp.ones(num_elems)
+	x = volfrac * np.ones(num_elems, dtype = float)
 	xPhys = x.copy()
 
 	if (fe_solver.elem_body_force is not None):
@@ -255,23 +266,28 @@ def topopt_optimality_criteria(
 	xmin = 0.001  # Minimum density
 	xmax = 1.0    # Maximum density
 	KE = elem_stiff.hex8_stiffness_matrix_structural( fe_solver.mat_prop,fe_solver.mesh.elem_size)
+	obj0,u = _compliance_objective(x, fe_solver, penal)
+	
 	for iter in range(maxIterations):
 		if imposeXSymmetry:
-				x = (HX * x)	
+			x = (HX * x)	
 		if imposeYSymmetry:
-				x = (HY * x)
+			x = (HY * x)
 		if imposeZSymmetry:
-				x = (HZ * x)	
-			
+			x = (HZ * x)	
+
+		x = np.array(x)
 		if (elemsWithForces.size > 0):
 			x[elemsWithForces] = 1.0
 		obj,u = _compliance_objective(x, fe_solver, penal)
+	
 		ce = (np.dot(u[fe_solver.mesh.edofMat].reshape(num_elems, 24), KE) * u[fe_solver.mesh.edofMat].reshape(num_elems, 24)).sum(1)
 		grad_obj = (-penal * x ** (penal - 1)) * ce
 		if (nodal_body_force is not None):
 			ce_body_force = (u[fe_solver.mesh.edofMat].reshape(num_elems, 24) * nodal_body_force[fe_solver.mesh.edofMat].reshape(num_elems, 24)).sum(1)
 			grad_obj +=  penal * x ** (penal - 1) * ce_body_force
 			
+		grad_obj /= obj0
 		grad_obj = (H * grad_obj)/Hs
 
 		# Optimality criteria update
@@ -327,7 +343,8 @@ def topopt_optimality_criteria(
 def topopt_pareto(fe_solver: sfea.StructFEA,
 							desiredVolFrac: float = 0.5,
 							rel_err: float = 0.025,
-							vol_decr_max: float = 0.025,
+							vol_decr_max: float = 0.05,
+							vol_decr_min: float = 0.0025,
 							min_local_iters: int = 1,
 							max_local_iters: int = 10,
 							rhoVoid: float = 0,
@@ -438,6 +455,7 @@ def topopt_pareto(fe_solver: sfea.StructFEA,
 	if imposeZSymmetry:
 		HZ = createZSymmetryFilter(fe_solver.mesh)
 
+
 	elemsWithForces = find_elements_with_forces(fe_solver.mesh, fe_solver.bc.force)
 
 	if (fe_solver.elem_body_force is not None):
@@ -475,7 +493,7 @@ def topopt_pareto(fe_solver: sfea.StructFEA,
 	if (elemsWithForces.size > 0): #For pure body forces, this may be empty
 		T[elemsWithForces] = np.max(T)
 	T = (H * T) / Hs
-	print(f"v={volfrac:.2f}; J={history['compliance'][-1]:.2g}; #FEA={totalIter:2d}")
+	print(f"J={history['compliance'][-1]:.3g}, vf={history['volume'][-1]:.3f},  #FEA={totalIter:2d}")
 	vol_decr = vol_decr_max
 	wtDamping = 0.5 # 0 means full wt to current T values, else previous T values are damped in
 	scale = 1.0
@@ -541,6 +559,7 @@ def topopt_pareto(fe_solver: sfea.StructFEA,
 			if imposeZSymmetry:
 				T = (HZ * T)	
 			
+			
 			if (elemsWithForces.size > 0):
 				T[elemsWithForces] = np.max(T)
 
@@ -559,7 +578,7 @@ def topopt_pareto(fe_solver: sfea.StructFEA,
 			history['compliance'].append(JTemp)
 			history['volume'].append(volfrac)
 			scale = history['compliance'][-1] / history['compliance'][0]
-			vol_decr = vol_decr_max/scale**2  # Adjust volume decrease factor for steep increase in compliance
+			vol_decr = max(vol_decr_min,vol_decr_max/scale**2) # Adjust volume decrease factor for steep increase in compliance
 			
 			print(f"J={history['compliance'][-1]:.3g}, vf={history['volume'][-1]:.3f},  #FEA={totalIter:2d}")
 			
@@ -573,56 +592,60 @@ if __name__ == "__main__":
 	import linear_solvers as lin_solv
 	import time
 	import matplotlib.pyplot as plt
-
+	import deflation
 	import plots	
+
+
 	jax.config.update("jax_enable_x64", True)
 	dsolver = deflation.DeflationSolver()
 
-	example = 6
-	nDOFDesired = 50000
-	volfrac = 0.25
+	example = 1
+	nDOFDesired = 20000
+	volfrac = 0.2
 	
-	optimizationMethod =  3 # 1: MMA, 2: OC, 3: Pareto
-	num_iter_max = 150  # for MMA and OC
+	optimizationMethod =  1 # 1: MMA, 2: OC, 3: Pareto
+	num_iter_max = 250  # for MMA and OC
 
 	elem_body_force = None # by default no body force
+	imposeXSymmetry = False
+	imposeYSymmetry = False
+	imposeZSymmetry = False
+	imposeZAxisAngularSymmetry = 0  # 0: no symmetry, 1: 180 degree symmetry, 2: 90 degree symmetry
 	if example == 1:
 		mesh, mat_prop, bc = createEdgeCantileverProblem(nDOFDesired = nDOFDesired)
-		imposeXSymmetry = False
 		imposeYSymmetry = True
-		imposeZSymmetry = False
 	elif example == 2:
 		mesh, mat_prop, bc = createMBBProblem(nDOFDesired = nDOFDesired)
-		imposeXSymmetry = False
-		imposeYSymmetry = False
-		imposeZSymmetry = False
 	elif example == 3:
 		mesh, mat_prop, bc = createDistributedLoadProblem(nDOFDesired = nDOFDesired)
 		imposeXSymmetry = True
-		imposeYSymmetry = False
-		imposeZSymmetry = False
 	elif example == 4:
 		mesh, mat_prop, bc = createMultiloadProblem(nDOFDesired = nDOFDesired)
-		imposeXSymmetry = False
-		imposeYSymmetry = False
 		imposeZSymmetry = True
 	elif example == 5:
 		mesh, mat_prop, bc = createLBracketProblem(nDOFDesired = nDOFDesired)    
-		imposeXSymmetry = False
-		imposeYSymmetry = False
-		imposeZSymmetry = False
 	elif example == 6:
 		mesh, mat_prop, bc, elem_body_force  = createGravityPlateProblem(nDOFDesired = nDOFDesired)    
 		imposeXSymmetry = True
-		imposeYSymmetry = False
-		imposeZSymmetry = False
+	elif example == 7:
+		mesh, mat_prop, bc, elem_body_force  = createCentrifugalPlateProblem(nDOFDesired = nDOFDesired)    
+		#imposeZAxisAngularSymmetry = 4  
+	elif example == 8:
+		mesh, mat_prop, bc  = createBliskModelProblem(nDOFDesired = nDOFDesired)    
 
-	solver = lin_solv.Solvers.PARDISO
-		
+	solver = lin_solv.Solvers.PARDISO # typically DPCG or PARDISO
+	if (solver == lin_solv.Solvers.DPCG):
+		nGroups =  min(dsolver.maxGroups,max(dsolver.minGroups,round(3*mesh.num_nodes/dsolver.dofPerGroup)))
+		dsolver.create_deflation_groups(mesh, nGroups)
+		dsolver.create_delfation_matrix(mesh)
+		dsolver.W = dsolver.W[bc.free_dofs, :]
+
 	fe_solver = fea.StructFEA(mesh = mesh,
 				mat_prop = mat_prop,
 				bc = bc,
 				solver = solver,
+				dsolver = dsolver,
+				rtol = 1e-8,
         		elem_body_force = elem_body_force)
 	
 
@@ -707,7 +730,7 @@ if __name__ == "__main__":
 		u, history = topopt_pareto(fe_solver = fe_solver,
 										desiredVolFrac =  volfrac,imposeXSymmetry=imposeXSymmetry,
 										imposeYSymmetry=imposeYSymmetry,imposeZSymmetry=imposeZSymmetry,
-										debug = True)
+										debug = False)
 		
 		timeTaken = time.time() - startTime
 		title = f'Pareto: vol: {history['volume'][-1]:0.2f}, J: {history['compliance'][-1]:.3g}, time: {timeTaken:.0f} s'
