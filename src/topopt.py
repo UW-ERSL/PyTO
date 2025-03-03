@@ -119,7 +119,7 @@ def topopt_mma(fe_solver: sfea.StructFEA,
 	if imposeZAxisAngularSymmetry >	0:
 		HAZ = createAngularSymmetryFilter(fe_solver.mesh, imposeZAxisAngularSymmetry)
 
-	HZAM, HZAMs = createZBuildFilter(fe_solver.mesh)
+	
 	elemsWithForces = find_elements_with_forces(fe_solver.mesh, fe_solver.bc.force)
 
 	mma_params = mma.MMAParams(max_iter=maxMMAIterations,
