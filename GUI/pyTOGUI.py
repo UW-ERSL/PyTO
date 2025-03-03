@@ -5,8 +5,7 @@ import numpy as np
 import os
 import json
 import time
-import bound_cond
-import mat_lib
+
 from PyQt5 import QtWidgets
 from PyQt5 import QtCore
 from vtkmodules.qt.QVTKRenderWindowInteractor import QVTKRenderWindowInteractor
@@ -17,13 +16,13 @@ from queue import Queue
 from PyQt5.QtWidgets import QPushButton, QVBoxLayout, QFrame
 from PyQt5.QtGui import QIcon
 from PyQt5.QtCore import QSize, Qt  # Updated import: added Qt
+sys.path.append('../src') #assuming the src files is in the parent directory
 from STLGeom import STLGeom
 from mesher import Mesher
-# import bound_cond  # For BC class
-# import mat_lib    # For StructuralMaterial class
-from examples_structural import createCantileverProblem
-# import struct_fea
-# import plots
+import bound_cond
+import mat_lib
+
+
 '''
 pyTOGUI To do:
 1. Main: Disable x Buttons
