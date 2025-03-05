@@ -456,6 +456,10 @@ def topopt_pareto(fe_solver: sfea.StructFEA,
 		HZ = createZSymmetryFilter(fe_solver.mesh)
 
 
+	if imposeZAxisAngularSymmetry >	0:
+		print("Computing angular symmetry filter ...", end="")
+		HAZ = createAngularSymmetryFilter(fe_solver.mesh, imposeZAxisAngularSymmetry)
+		print("done")
 	elemsWithForces = find_elements_with_forces(fe_solver.mesh, fe_solver.bc.force)
 
 	if (fe_solver.elem_body_force is not None):
@@ -558,7 +562,8 @@ def topopt_pareto(fe_solver: sfea.StructFEA,
 				T = (HY * T)
 			if imposeZSymmetry:
 				T = (HZ * T)	
-			
+			if imposeZAxisAngularSymmetry >	0:
+				T = (HAZ * T)
 			
 			if (elemsWithForces.size > 0):
 				T[elemsWithForces] = np.max(T)
@@ -599,12 +604,12 @@ if __name__ == "__main__":
 	jax.config.update("jax_enable_x64", True)
 	dsolver = deflation.DeflationSolver()
 
-	example = 1
-	nDOFDesired = 20000
-	volfrac = 0.2
+	example = 8
+	nDOFDesired = 150000
+	volfrac = 0.4
 	
-	optimizationMethod =  1 # 1: MMA, 2: OC, 3: Pareto
-	num_iter_max = 250  # for MMA and OC
+	optimizationMethod =  3 # 1: MMA, 2: OC, 3: Pareto
+	num_iter_max = 160  # for MMA and OC
 
 	elem_body_force = None # by default no body force
 	imposeXSymmetry = False
@@ -628,10 +633,21 @@ if __name__ == "__main__":
 		mesh, mat_prop, bc, elem_body_force  = createGravityPlateProblem(nDOFDesired = nDOFDesired)    
 		imposeXSymmetry = True
 	elif example == 7:
-		mesh, mat_prop, bc, elem_body_force  = createCentrifugalPlateProblem(nDOFDesired = nDOFDesired)    
-		#imposeZAxisAngularSymmetry = 4  
+		mesh, mat_prop, bc, elem_body_force  = createCentrifugalPlateProblem(nDOFDesired = 50000,
+																	   rpm = 10000,radialForce =0,
+																	   downwardForce = 100)    
+		imposeZAxisAngularSymmetry = 6
 	elif example == 8:
-		mesh, mat_prop, bc  = createBliskModelProblem(nDOFDesired = nDOFDesired)    
+		mesh, mat_prop, bc  = createBliskQuarterModelProblem(nDOFDesired = nDOFDesired,
+														rpm = 10000,radialForce =10,
+															downwardForce = 10)    
+		imposeXSymmetry = True
+  
+	elif example == 9:
+		mesh, mat_prop, bc  = createBliskFullModelProblem(nDOFDesired = nDOFDesired,
+														rpm = 10000,radialForce =0,
+															downwardForce = 100)  
+		imposeZAxisAngularSymmetry = 4
 
 	solver = lin_solv.Solvers.PARDISO # typically DPCG or PARDISO
 	if (solver == lin_solv.Solvers.DPCG):
@@ -730,7 +746,7 @@ if __name__ == "__main__":
 		u, history = topopt_pareto(fe_solver = fe_solver,
 										desiredVolFrac =  volfrac,imposeXSymmetry=imposeXSymmetry,
 										imposeYSymmetry=imposeYSymmetry,imposeZSymmetry=imposeZSymmetry,
-										debug = False)
+										debug = True)
 		
 		timeTaken = time.time() - startTime
 		title = f'Pareto: vol: {history['volume'][-1]:0.2f}, J: {history['compliance'][-1]:.3g}, time: {timeTaken:.0f} s'

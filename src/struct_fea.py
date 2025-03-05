@@ -83,7 +83,7 @@ if __name__ == "__main__":
 
   from examples_structural import *
 
-  example = 1
+  example = 13
   elem_body_force = None # by default no body force
   dsolver = deflation.DeflationSolver()
   if example == 1:
@@ -111,7 +111,9 @@ if __name__ == "__main__":
   elif example == 12:
     mesh, mat_prop, bc = createArrowHeadProblem(nDOFDesired=200000)
   elif example == 13:
-    mesh, mat_prop, bc = createBliskModelProblem(nDOFDesired=20000)
+    mesh, mat_prop, bc = createBliskQuarterModelProblem(nDOFDesired=20000)
+  elif example == 14:
+    mesh, mat_prop, bc = createBliskFullModelProblem(nDOFDesired=20000)
 
   solver = lin_solv.Solvers.DPCG # typically DPCG or PARDISO
 
