@@ -199,7 +199,7 @@ def topopt_mma(fe_solver: sfea.StructFEA,
 			
 		if (nodal_body_force is not None):
 			ce_body_force = (u[fe_solver.mesh.edofMat].reshape(num_elems, 24) * nodal_body_force[fe_solver.mesh.edofMat].reshape(num_elems, 24)).sum(1)
-			grad_obj +=  ce_body_force # Assumes body force is linear w.r.t. x : https://doi.org/10.1002/nme.2499 , https://doi.org/10.1016/j.cma.2017.04.021 
+			grad_obj +=  2*ce_body_force # Assumes body force is linear w.r.t. x : https://doi.org/10.1002/nme.2499 , https://doi.org/10.1016/j.cma.2017.04.021 
 	
 		grad_obj = (H * grad_obj)/Hs
 		vf = np.mean(x)
@@ -316,39 +316,67 @@ def topopt_optimality_criteria(
 		grad_obj = (-penal * x ** (penal - 1)) * ce
 		if (nodal_body_force is not None):
 			ce_body_force = (u[fe_solver.mesh.edofMat].reshape(num_elems, 24) * nodal_body_force[fe_solver.mesh.edofMat].reshape(num_elems, 24)).sum(1)
-			grad_obj +=  penal * x ** (penal - 1) * ce_body_force
+			grad_obj +=  2*ce_body_force
 			
 		grad_obj /= obj0
 		grad_obj = (H * grad_obj)/Hs
 
+		cons = _volume_constraint(x, volfrac)
+		grad_cons = np.ones(num_elems)/volfrac/num_elems
 		# Optimality criteria update
 		xold = x.copy()
 
-		# Calculate Lagrange multiplier bounds
-		l1 = 0
-		l2 = _LARGE_NUMBER
-		lmid = 0.5 * (l2 + l1)
-		# Bisection loop for volume constraint
-		
-		while (l2 - l1) > 1e-7:
+		bisectionMethod = True
+		if  bisectionMethod:
+			# Calculate Lagrange multiplier bounds
+			l1 = 0
+			l2 = _LARGE_NUMBER
 			lmid = 0.5 * (l2 + l1)
-			b = -grad_obj / lmid	
-			# OC update with damping and bounds
-			xnew = jnp.maximum(xmin,jnp.maximum(x - move,jnp.minimum(xmax, jnp.minimum(x + move, x * np.sqrt(b)))))
+			# Bisection loop for volume constraint
+			while (l2 - l1) > 1e-7:
+				lmid = 0.5 * (l2 + l1)
+				b = -grad_obj / lmid	
+				# OC update with damping and bounds
+				xnew = jnp.maximum(xmin,jnp.maximum(x - move,jnp.minimum(xmax, jnp.minimum(x + move, x * np.sqrt(b)))))
 
-			if jnp.sum(xnew) - volfrac * num_elems > 0:
-				l1 = lmid
-			else:
-				l2 = lmid
-		
-		x = xnew
-		xPhys = x
-	
+				if jnp.sum(xnew) - volfrac * num_elems > 0:
+					l1 = lmid
+				else:
+					l2 = lmid
+			
+			x = xnew
+			xPhys = x
+		else: # direct method
+			# Implement the change1 logic
+			change1 = True
+			eta = 0.5
+			varIn = np.ones(num_elems, dtype=bool)
+			x1 = x.copy()
+			dc = grad_obj.copy()
+			dv = grad_cons.copy()
+			xMax = np.minimum(x1 + move, 1)
+			xMin = np.maximum(x1 - move, 0)
+			gRem = volfrac * num_elems
+			gToDist = gRem
+			xTimesR = x1 * ((-dc / dv) ** eta)
+
+			while change1:
+				xnew = xTimesR*gToDist / (np.sum(xTimesR[varIn])+1e-12) 
+				upLgc = xnew > xMax
+				dnLgc = xnew < xMin
+				gToDist = gRem - np.sum(xMax[upLgc]) - np.sum(xMin[dnLgc])
+				change1 = not np.array_equal(~varIn, (upLgc | dnLgc))
+				varIn = ~(upLgc | dnLgc)
+
+			x = np.maximum(xMin, np.minimum(xMax, xnew))
+			
+			xPhys = x
+
 		# Calculate change and update densities
 		#change = jnp.linalg.norm(x - xold, np.inf)
 		change = jnp.max(jnp.abs(x - xold))
 
-		cons = _volume_constraint(x, volfrac)
+		
 		fe_solver.mesh.setPseudoDensity(np.asarray(xPhys))
 	
 		history['compliance'].append(obj)
@@ -635,12 +663,12 @@ if __name__ == "__main__":
 	jax.config.update("jax_enable_x64", True)
 	dsolver = deflation.DeflationSolver()
 
-	example = StructuralExamples.EdgeCantilever
-	nDOFDesired = 50000
+	example = StructuralExamples.GravityPlate
+	nDOFDesired = 30000
 	volfrac = 0.5
 	
 	optimizationMethod = Optimizers.MMA 
-	material_model = MaterialModel.SIMP 
+	material_model = MaterialModel.CUSTOM 
 	solver = lin_solv.Solvers.PARDISO # typically DPCG or PARDISO
 
 	num_iter_max = 250  # for MMA and OC
@@ -664,7 +692,7 @@ if __name__ == "__main__":
 	elif example == StructuralExamples.LBracket:
 		mesh, mat_prop, bc = createLBracketProblem(nDOFDesired = nDOFDesired)    
 	elif example == StructuralExamples.GravityPlate:
-		mesh, mat_prop, bc, elem_body_force  = createGravityPlateProblem(nDOFDesired = nDOFDesired,verticalForce= 0)    
+		mesh, mat_prop, bc, elem_body_force  = createGravityPlateProblem(nDOFDesired = nDOFDesired,verticalForce=100)    
 		imposeXSymmetry = True
 	elif example == StructuralExamples.CentrifugalPlate:
 		mesh, mat_prop, bc, elem_body_force  = createCentrifugalPlateProblem(nDOFDesired = 50000,
@@ -777,7 +805,7 @@ if __name__ == "__main__":
 
 		plt.grid(True)
 		plt.show()
-
+	
 	elif optimizationMethod == Optimizers.PARETO:
 		print("OptimizationMethod: Pareto")
 		u, history = topopt_pareto(fe_solver = fe_solver,

@@ -5,4 +5,5 @@
 *.sldprt
 *.png
 /TOExamples
+/Slides
 /__pycache__
