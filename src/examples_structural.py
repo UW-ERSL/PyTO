@@ -311,7 +311,8 @@ def createGravityBarProblem(nDOFDesired: int = 10000, youngs_modulus = 2.1e11, p
   # ----------------------------------------
   
 def createGravityPlateProblem(nDOFDesired: int = 10000, L: float = [1.0, 0.5, 0.01],
-                               youngs_modulus = 2e11, poissons_ratio = 0.3,material_density = 7700):
+                               youngs_modulus = 6.687e11, poissons_ratio = 0.3,material_density = 2100,
+                               verticalForce = 100):
   nVoxelsDesired = nDOFDesired/3    
   # Let the number of voxels be proportional to the length in each direction
   alpha = (nVoxelsDesired/(L[0]*L[1]*L[2]))**(1/3)
@@ -333,15 +334,12 @@ def createGravityPlateProblem(nDOFDesired: int = 10000, L: float = [1.0, 0.5, 0.
   
   dirichlet_values = 0*np.ones_like(fixed_dofs, dtype = float)
   mesh.node_indices[fixed_nodes, 3] = 1
-
-  load_nodes = mesh.get_nodes_from_locations([L[0]/2, L[1], L[2]/2])  
-  load_dofs = 3 * load_nodes + 1  
-
   boundary_force = np.zeros(3*mesh.num_nodes)
-  totalLoad = 0
-
-  boundary_force[load_dofs] = -totalLoad/len(load_nodes)
-
+  node_pts = mesh.node_xyz
+  load_nodes = np.where((np.abs(node_pts[:, 0]-L[0]/2) < mesh.elem_size[0]/2) & (node_pts[:, 1] > L[1]-mesh.elem_size[2]/2))[0] # hard coded    
+  load_dof = 3 * load_nodes + 1  # y direction
+  boundary_force[load_dof] = -verticalForce/len(load_nodes)
+  mesh.node_indices[load_nodes, 3] = 2 # for plotting
   bc = bound_cond.BC(force = boundary_force,
             fixed_dofs = fixed_dofs,
             dirichlet_values = dirichlet_values) 
@@ -669,6 +667,7 @@ def createBliskQuarterModelProblem(nDOFDesired: int = 10000, youngs_modulus = 2.
     center = mesh.elem_centers[e]
     elem_body_force[3*e:3*e+2] = (material_density*np.prod(mesh.elem_size)) * omega**2 *  center[:2]
 
+  print("total body force ",np.sum(elem_body_force[3::3]))
   # Apply centrifugal force on each node on the circumference
   # this is in addition to the body force
   outerRadius = 0.0565

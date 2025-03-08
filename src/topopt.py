@@ -58,9 +58,9 @@ def _volume_constraint(density: jnp.ndarray,
 	return (jnp.mean(density)/volfrac) - 1.0
 
 
-def _compliance_objective(density: jnp.ndarray,
+def _compliance_objective(x: jnp.ndarray,
 													fe_solver: sfea.StructFEA,
-													penal: float = 3.0,
+													material_model_dict = None,
 													) -> jnp.ndarray:
 	"""Compute the structural compliance objective.
 
@@ -71,15 +71,14 @@ def _compliance_objective(density: jnp.ndarray,
 
 	Returns: The compliance objective value.
 	"""
-	penal_dens = density ** penal
-	u = fe_solver.solve(penal_dens)
+	u = fe_solver.solve(x, material_model_dict)
 	return jnp.einsum('i, i -> ', fe_solver.total_force, u), u
 
 
 def topopt_mma(fe_solver: sfea.StructFEA,
 			   			 maxMMAIterations: int = 250, 
 			   			 volfrac: float = 0.5,
-							 penal: float = 3.,
+						   penal: float = 3.0,
 							 move_limit: float = 0.2,
 							 kkt_tol: float = 1.e-6,
 							 step_tol: float = 0.025,
@@ -89,7 +88,8 @@ def topopt_mma(fe_solver: sfea.StructFEA,
 							 imposeZSymmetry: bool = False,
 							 exitOnComplianceConvergence: bool = True,
 							 compliance_tol: float = 1.e-4,
-							 debug: bool = False
+							 debug: bool = False,
+							 material_model: int = 1,
 							 ) -> tuple[np.ndarray, dict]:
 	"""MMA based topology optimization for minimum compliance.
 
@@ -107,6 +107,13 @@ def topopt_mma(fe_solver: sfea.StructFEA,
 	"""
 	num_elems= fe_solver.mesh.num_elems
 	history = {'compliance': [], 'volume': [], 'change': []}
+	if material_model == 1:
+		material_model_dict = {'name': 'SIMP', 'penal': 3.0} # Default SIMP model
+	elif material_model == 2:
+		material_model_dict = {'name': 'Custom', 'penal': 3.0, 'alpha': 16} 
+		# Custom body-force model from the papers here: https://doi.org/10.1002/nme.2499, https://doi.org/10.1016/j.cma.2017.04.021 
+
+	# Define more such models here	
 
 	# Create  filters
 	H, Hs = createSmoothingFilter(fe_solver.mesh)
@@ -147,7 +154,7 @@ def topopt_mma(fe_solver: sfea.StructFEA,
 		nodal_body_force = None
 	if (continuationScheme):
 		penal = 1.2
-
+	
 	while not mma_state.is_converged:
 		x = mma_state.x.reshape(-1)
 		if imposeXSymmetry:
@@ -160,17 +167,35 @@ def topopt_mma(fe_solver: sfea.StructFEA,
 		
 		if (elemsWithForces.size > 0):
 			x[elemsWithForces] = 1.0
+
+
+
+		obj0,_ = _compliance_objective(x, fe_solver, material_model_dict)
+		obj0 = np.array([obj0])
 		timeFEAStart = time.time()
-		obj,u = _compliance_objective(x, fe_solver, penal)
+		obj,u = _compliance_objective(x, fe_solver, material_model_dict)
 		
 		timeFEA += time.time() - timeFEAStart
 		obj = np.array([obj])
 		ce = (np.dot(u[fe_solver.mesh.edofMat].reshape(num_elems, 24), KE) * u[fe_solver.mesh.edofMat].reshape(num_elems, 24)).sum(1)
-		grad_obj = (-penal * x ** (penal - 1)) * ce
+		if material_model == 1:
+			penal = material_model_dict['penal']
+			grad_obj = (-penal * x ** (penal - 1)) * ce
+
+		elif material_model == 2:
+		# Derivative of elem_material_scaling with respect to x
+			alpha = material_model_dict['alpha']
+			penal = material_model_dict['penal']
+			d_elem_material_scaling_dx = (alpha - 1) / alpha * penal * x ** (penal - 1) + 1 / alpha
+			grad_obj = -d_elem_material_scaling_dx * ce
+			
+
 		if (nodal_body_force is not None):
 			ce_body_force = (u[fe_solver.mesh.edofMat].reshape(num_elems, 24) * nodal_body_force[fe_solver.mesh.edofMat].reshape(num_elems, 24)).sum(1)
-			grad_obj +=  penal * x ** (penal - 1) * ce_body_force
-			
+			grad_obj +=  ce_body_force # Assumes body force is linear w.r.t. x : https://doi.org/10.1002/nme.2499 , https://doi.org/10.1016/j.cma.2017.04.021 
+
+
+
 	
 		grad_obj = (H * grad_obj)/Hs
 		vf = np.mean(x)
@@ -180,7 +205,7 @@ def topopt_mma(fe_solver: sfea.StructFEA,
 		timeMMAStart = time.time()
 		mma_state = mma.update_mma(mma_state,
 														   mma_params,
-														 	 obj,
+														 	 obj/obj0,
 															 np.array([grad_obj]).reshape((num_elems, 1)),
 														 	 jnp.array([cons]).reshape((1, 1)),
 															 grad_cons.reshape((1, num_elems))
@@ -216,6 +241,7 @@ def topopt_optimality_criteria(
 							penal: float = 3,
 							move: float = 0.2,
 							conv_tol: float = 0.025,
+							compliance_tol: float = 1.e-5,
 							verbose: bool = True,
 							imposeXSymmetry: bool = False,
 							imposeYSymmetry: bool = False,
@@ -266,7 +292,7 @@ def topopt_optimality_criteria(
 	xmin = 0.001  # Minimum density
 	xmax = 1.0    # Maximum density
 	KE = elem_stiff.hex8_stiffness_matrix_structural( fe_solver.mat_prop,fe_solver.mesh.elem_size)
-	obj0,u = _compliance_objective(x, fe_solver, penal)
+	obj0,u = _compliance_objective(x, fe_solver)
 	
 	for iter in range(maxIterations):
 		if imposeXSymmetry:
@@ -279,7 +305,7 @@ def topopt_optimality_criteria(
 		x = np.array(x)
 		if (elemsWithForces.size > 0):
 			x[elemsWithForces] = 1.0
-		obj,u = _compliance_objective(x, fe_solver, penal)
+		obj,u = _compliance_objective(x, fe_solver)
 	
 		ce = (np.dot(u[fe_solver.mesh.edofMat].reshape(num_elems, 24), KE) * u[fe_solver.mesh.edofMat].reshape(num_elems, 24)).sum(1)
 		grad_obj = (-penal * x ** (penal - 1)) * ce
@@ -333,7 +359,7 @@ def topopt_optimality_criteria(
 			break
 		if exitOnConvergence and (len(history['compliance'])) >= 2:
 			dJ = (history['compliance'][-1] - history['compliance'][-2]) / history['compliance'][-2]
-			if abs(dJ) < 1e-4 and abs(cons) < 1e-3:
+			if abs(dJ) < compliance_tol and abs(cons) < compliance_tol:
 				break
 
 
@@ -605,11 +631,12 @@ if __name__ == "__main__":
 	dsolver = deflation.DeflationSolver()
 
 	example = 8
-	nDOFDesired = 150000
-	volfrac = 0.4
+	nDOFDesired = 250000
+	volfrac = 0.25
 	
-	optimizationMethod =  3 # 1: MMA, 2: OC, 3: Pareto
-	num_iter_max = 160  # for MMA and OC
+	optimizationMethod = 1 # 1: MMA, 2: OC, 3: Pareto
+	num_iter_max = 250  # for MMA and OC
+	material_model = 2 # 1: SIMP, 2: Custom body-force model (See topopt_mma/struct_fea for details)
 
 	elem_body_force = None # by default no body force
 	imposeXSymmetry = False
@@ -630,7 +657,7 @@ if __name__ == "__main__":
 	elif example == 5:
 		mesh, mat_prop, bc = createLBracketProblem(nDOFDesired = nDOFDesired)    
 	elif example == 6:
-		mesh, mat_prop, bc, elem_body_force  = createGravityPlateProblem(nDOFDesired = nDOFDesired)    
+		mesh, mat_prop, bc, elem_body_force  = createGravityPlateProblem(nDOFDesired = nDOFDesired,verticalForce= 0)    
 		imposeXSymmetry = True
 	elif example == 7:
 		mesh, mat_prop, bc, elem_body_force  = createCentrifugalPlateProblem(nDOFDesired = 50000,
@@ -639,8 +666,8 @@ if __name__ == "__main__":
 		imposeZAxisAngularSymmetry = 6
 	elif example == 8:
 		mesh, mat_prop, bc  = createBliskQuarterModelProblem(nDOFDesired = nDOFDesired,
-														rpm = 10000,radialForce =10,
-															downwardForce = 10)    
+														rpm = 10000,radialForce =10000,
+															downwardForce = 0)    
 		imposeXSymmetry = True
   
 	elif example == 9:
@@ -649,7 +676,7 @@ if __name__ == "__main__":
 															downwardForce = 100)  
 		imposeZAxisAngularSymmetry = 4
 
-	solver = lin_solv.Solvers.PARDISO # typically DPCG or PARDISO
+	solver = lin_solv.Solvers.DPCG # typically DPCG or PARDISO
 	if (solver == lin_solv.Solvers.DPCG):
 		nGroups =  min(dsolver.maxGroups,max(dsolver.minGroups,round(3*mesh.num_nodes/dsolver.dofPerGroup)))
 		dsolver.create_deflation_groups(mesh, nGroups)
@@ -672,12 +699,14 @@ if __name__ == "__main__":
 	title = f'nDOF: {3*fe_solver.mesh.num_nodes}, nElem: {fe_solver.mesh.num_elems}'
 	#plots.plotMesh(mesh, bc,title = title)
 
+
 	startTime = time.time()
 	if optimizationMethod == 1:
 		print("optimizationMethod: MMA")
 		u, history = topopt_mma(fe_solver = fe_solver,
 									maxMMAIterations = num_iter_max,
 									volfrac = volfrac,
+									material_model = material_model,
 									exitOnComplianceConvergence=True)
 		timeTaken = time.time() - startTime
 		fig, ax1 = plt.subplots()
@@ -705,7 +734,8 @@ if __name__ == "__main__":
 		plt.grid(True)
 		plt.show()
 
-		title = f'MMA: vol: {history['volume'][-1]:0.2f}, J: {history['compliance'][-1]:.3g}, time: {timeTaken:.0f} s'
+		title = f"MMA: vol: {history['volume'][-1]:0.2f}, J: {history['compliance'][-1]:.3g}, time: {timeTaken:.0f} s"
+
 	elif optimizationMethod == 2:
 		print("optimizationMethod: OC")
 		u, history = topopt_optimality_criteria(fe_solver = fe_solver,
@@ -714,7 +744,7 @@ if __name__ == "__main__":
 												exitOnConvergence=True
 												)
 		timeTaken = time.time() - startTime
-		title = f'OC: vol: {history['volume'][-1]:0.2f}, J: {history['compliance'][-1]:.3g}, time: {timeTaken:.0f} s'
+		title = f"OC: vol: {history['volume'][-1]:0.2f}, J: {history['compliance'][-1]:.3g}, time: {timeTaken:.0f} s"
 
 		fig, ax1 = plt.subplots()
 
@@ -749,7 +779,7 @@ if __name__ == "__main__":
 										debug = True)
 		
 		timeTaken = time.time() - startTime
-		title = f'Pareto: vol: {history['volume'][-1]:0.2f}, J: {history['compliance'][-1]:.3g}, time: {timeTaken:.0f} s'
+		title = f"Pareto: vol: {history['volume'][-1]:0.2f}, J: {history['compliance'][-1]:.3g}, time: {timeTaken:.0f} s"
 		
 		# Plot volume vs compliance history
 		plt.figure()

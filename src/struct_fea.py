@@ -41,7 +41,9 @@ class StructFEA:
     self.elem_body_force = elem_body_force
 
 
-  def solve(self, elem_material_scaling: jnp.ndarray = None) -> jnp.ndarray:
+  def solve(self,
+            x: jnp.ndarray = None,
+            elasticity_material_model: dict = None) -> jnp.ndarray:
     """Solve the structural finite element problem.
 
     Args:
@@ -50,8 +52,22 @@ class StructFEA:
 
     Returns: Array of (num_dofs,) of the solution to the finite element problem.
     """
-    if elem_material_scaling is None:
-      elem_material_scaling = jnp.ones((self.mesh.num_elems,))
+    if x is None:
+      x = jnp.ones((self.mesh.num_elems,))
+
+    if elasticity_material_model is None:
+      elem_material_scaling = x**3 # default to SIMP with penal = 3 if nothing is provided
+
+    elif elasticity_material_model['name'] == 'SIMP':
+      penal = elasticity_material_model['penal']
+      elem_material_scaling = x**penal
+
+    elif elasticity_material_model['name'] == 'Custom':
+      # Custom model from the paper here: https://doi.org/10.1002/nme.2499 
+      alpha = elasticity_material_model['alpha']
+      penal = elasticity_material_model['penal']
+      elem_material_scaling = (alpha-1)/alpha * x ** penal + (1/alpha) * x
+
 
     elem_stiff_mtrx = jnp.einsum('ij, e -> eij',
                                  self.elem_stiff,
@@ -64,7 +80,7 @@ class StructFEA:
     if self.elem_body_force is not None:
       elem_force = self.elem_body_force.copy()
       for i in range(3):
-        elem_force[i::3]  *= (elem_material_scaling[:]**(1/3))
+        elem_force[i::3]  *= x
         
       node_forces = np.zeros((self.mesh.num_nodes * 3,))
       node_forces[0::3] = self.mesh.elem_to_node_field_mapping* elem_force[0::3] 
@@ -83,7 +99,7 @@ if __name__ == "__main__":
 
   from examples_structural import *
 
-  example = 13
+  example = 11
   elem_body_force = None # by default no body force
   dsolver = deflation.DeflationSolver()
   if example == 1:
@@ -111,11 +127,11 @@ if __name__ == "__main__":
   elif example == 12:
     mesh, mat_prop, bc = createArrowHeadProblem(nDOFDesired=200000)
   elif example == 13:
-    mesh, mat_prop, bc = createBliskQuarterModelProblem(nDOFDesired=20000)
+    mesh, mat_prop, bc = createBliskQuarterModelProblem(nDOFDesired=50000)
   elif example == 14:
     mesh, mat_prop, bc = createBliskFullModelProblem(nDOFDesired=20000)
 
-  solver = lin_solv.Solvers.DPCG # typically DPCG or PARDISO
+  solver = lin_solv.Solvers.PARDISO # typically DPCG or PARDISO
 
   startTime = time.time()
   if (solver == lin_solv.Solvers.DPCG):
