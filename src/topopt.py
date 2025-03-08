@@ -91,7 +91,7 @@ def topopt_mma(fe_solver: sfea.StructFEA,
 							 imposeYSymmetry: bool = False,
 							 imposeZSymmetry: bool = False,
 							 exitOnComplianceConvergence: bool = True,
-							 compliance_tol: float = 1.e-4,
+							 rel_conv_tol: float = 1.e-4,
 							 debug: bool = False,
 							 material_model = MaterialModel.SIMP,
 							 ) -> tuple[np.ndarray, dict]:
@@ -218,7 +218,7 @@ def topopt_mma(fe_solver: sfea.StructFEA,
 
 		change = np.max(np.abs(x - x_old))
 		x_old = x
-		print(f"it.: {mma_state.epoch}, obj.: {obj[0]:.3g} vf: {vf:.3f}",
+		print(f"it.: {mma_state.epoch}, obj.: {obj[0]:.6g} vf: {vf:.3f}",
 					f"ch: {change:.3f}")
 		history['compliance'].append(obj[0])
 		history['volume'].append(np.mean(x))
@@ -227,7 +227,7 @@ def topopt_mma(fe_solver: sfea.StructFEA,
 			dJ = (history['compliance'][-1] - history['compliance'][-2]) / history['compliance'][-2]
 			if (debug):
 				print(f"dJ: {abs(dJ):.7g}, cons: {abs(cons):.7g}")
-			if exitOnComplianceConvergence and abs(dJ) < compliance_tol and abs(cons) < compliance_tol:
+			if exitOnComplianceConvergence and abs(dJ) < rel_conv_tol and abs(cons) < rel_conv_tol:
 				break
 		if (continuationScheme):
 			penal *= 1.1
@@ -347,30 +347,27 @@ def topopt_optimality_criteria(
 			x = xnew
 			xPhys = x
 		else: # direct method
-			# Implement the change1 logic
-			change1 = True
+			#Reference: https://link.springer.com/article/10.1007/s00158-020-02740-y
 			eta = 0.5
-			varIn = np.ones(num_elems, dtype=bool)
-			x1 = x.copy()
-			dc = grad_obj.copy()
-			dv = grad_cons.copy()
-			xMax = np.minimum(x1 + move, 1)
-			xMin = np.maximum(x1 - move, 0)
-			gRem = volfrac * num_elems
-			gToDist = gRem
-			xTimesR = x1 * ((-dc / dv) ** eta)
+			SP = set()
+			SA = set(range(num_elems))
+			Delta_SP = 1
+			while Delta_SP:
+				# Compute Lambda
+				Re = grad_obj/grad_cons
+				temp = np.sum([x[i] for i in SP])
+				Lambda = (np.sum([x[i] * (-Re[i])**eta for i in SA]) / (num_elems*volfrac -temp))**(1/eta)
+				xnew = x*(-Re/Lambda)**eta
+				
+				# Set SP and identify Delta_SP
+				SP_new = {i for i in range(num_elems) if xnew[i] < xmin or xnew[i] > xmax}
+				xnew  = np.maximum(xmin, np.minimum(xmax, xnew))
+				Delta_SP = len(SP_new - SP) + len(SP - SP_new)
+				SP = SP_new
+				SA = set(range(num_elems)) - SP
+				x = xnew.copy()
 
-			while change1:
-				xnew = xTimesR*gToDist / (np.sum(xTimesR[varIn])+1e-12) 
-				upLgc = xnew > xMax
-				dnLgc = xnew < xMin
-				gToDist = gRem - np.sum(xMax[upLgc]) - np.sum(xMin[dnLgc])
-				change1 = not np.array_equal(~varIn, (upLgc | dnLgc))
-				varIn = ~(upLgc | dnLgc)
-
-			x = np.maximum(xMin, np.minimum(xMax, xnew))
-			
-			xPhys = x
+			xPhys = x.copy()
 
 		# Calculate change and update densities
 		#change = jnp.linalg.norm(x - xold, np.inf)
@@ -387,7 +384,6 @@ def topopt_optimality_criteria(
 			print(f"it.: {iter+1:d}, obj.: {obj:.3g}, "
 				  	f"vol.: {np.mean(xPhys):.3g}, ch.: {change:.3f}")
 			
-
 		if change < conv_tol:
 			break
 		if exitOnConvergence and (len(history['compliance'])) >= 2:
@@ -559,8 +555,7 @@ def topopt_pareto(fe_solver: sfea.StructFEA,
 	print(f"J={history['compliance'][-1]:.3g}, vf={history['volume'][-1]:.3f},  #FEA={totalIter:2d}")
 	vol_decr = vol_decr_max
 	wtDamping = 0.5 # 0 means full wt to current T values, else previous T values are damped in
-	scale = 1.0
-	
+
 	terminatePareto = False
 	while volfrac > desiredVolFrac:
 		# Move to next volume fraction
@@ -581,10 +576,10 @@ def topopt_pareto(fe_solver: sfea.StructFEA,
 			if (localIter >= max_local_iters) or abs(JTemp) > 10 * history['compliance'][-1]:  # Divergence check	
 				innerLoopSuccess = False
 				terminatePareto = True
-				# Need to revert changes and try again with smaller step
 				rho = np.ones((fe_solver.mesh.num_elems))
 				T = TPrev.copy()
 				JTemp = JPrev
+				
 				break
 			# Check convergence, and break if converged
 			if localIter >= min_local_iters:
@@ -663,15 +658,14 @@ if __name__ == "__main__":
 	jax.config.update("jax_enable_x64", True)
 	dsolver = deflation.DeflationSolver()
 
-	example = StructuralExamples.GravityPlate
-	nDOFDesired = 30000
-	volfrac = 0.5
+	example = StructuralExamples.BliskQuarter
+	nDOFDesired = 50000
+	volfrac = 0.25
 	
-	optimizationMethod = Optimizers.MMA 
-	material_model = MaterialModel.CUSTOM 
+	optimizationMethod = Optimizers.PARETO 
+	material_model = MaterialModel.CUSTOM # for MMA and OC
 	solver = lin_solv.Solvers.PARDISO # typically DPCG or PARDISO
 
-	num_iter_max = 250  # for MMA and OC
 
 	elem_body_force = None # by default no body force
 	imposeXSymmetry = False
@@ -700,7 +694,7 @@ if __name__ == "__main__":
 																	   downwardForce = 100)    
 		imposeZAxisAngularSymmetry = 6
 	elif example == StructuralExamples.BliskQuarter:
-		mesh, mat_prop, bc  = createBliskQuarterModelProblem(nDOFDesired = nDOFDesired,
+		mesh, mat_prop, bc, elem_body_force   = createBliskQuarterModelProblem(nDOFDesired = nDOFDesired,
 														rpm = 10000,radialForce =10000,
 															downwardForce = 0)    
 		imposeXSymmetry = True
@@ -739,7 +733,6 @@ if __name__ == "__main__":
 	if optimizationMethod == Optimizers.MMA:
 		print("OptimizationMethod: MMA")
 		u, history = topopt_mma(fe_solver = fe_solver,
-									maxMMAIterations = num_iter_max,
 									volfrac = volfrac,
 									material_model = material_model,
 									exitOnComplianceConvergence=True)
@@ -774,7 +767,6 @@ if __name__ == "__main__":
 	elif optimizationMethod == Optimizers.OC:
 		print("OptimizationMethod: OC")
 		u, history = topopt_optimality_criteria(fe_solver = fe_solver,
-												maxIterations= num_iter_max,
 												volfrac = volfrac,
 												exitOnConvergence=True
 												)

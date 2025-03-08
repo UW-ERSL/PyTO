@@ -650,8 +650,8 @@ def createCentrifugalPlateProblem(nDOFDesired: int = 10000, youngs_modulus = 2.1
   return mesh, mat_prop, bc, elem_body_force
 
 def createBliskQuarterModelProblem(nDOFDesired: int = 10000, youngs_modulus = 2.1e11, 
-                               poissons_ratio = 0.28, material_density = 7700,rpm = 0,radialForce =0,
-																	   downwardForce = 100):
+                               poissons_ratio = 0.28, material_density = 7700,rpm = 10000,radialForce =10000,
+																	   downwardForce = 0):
  
   # Read the STL model, create a mesh of desired size, and a structural problem is posed on it.
   stl_file = os.path.join(script_dir, '../TOExamples/BliskModel/BliskQuarter.STL')
@@ -708,7 +708,7 @@ def createBliskQuarterModelProblem(nDOFDesired: int = 10000, youngs_modulus = 2.
 
   mat_prop = mat_lib.StructuralMaterial(youngs_modulus=youngs_modulus,
                       poissons_ratio=poissons_ratio)
-  return mesh, mat_prop, bc
+  return mesh, mat_prop, bc, elem_body_force
 
 
   # ----------------------------------------

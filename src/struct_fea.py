@@ -101,40 +101,40 @@ if __name__ == "__main__":
 
   from examples_structural import *
 
-  example = StructuralExamples.EdgeCantilever
+  example = StructuralExamples.BliskQuarter
   elem_body_force = None # by default no body force
-  solver = lin_solv.Solvers.PARDISO # typically DPCG or PARDISO
-  
+  solver = lin_solv.Solvers.DPCG # typically DPCG or PARDISO
+  nDOFDesired = 250000
 
 
   if example == StructuralExamples.EdgeCantilever:
-    mesh, mat_prop, bc = createEdgeCantileverProblem(nDOFDesired=10000)
+    mesh, mat_prop, bc = createEdgeCantileverProblem(nDOFDesired=nDOFDesired)
   elif example == StructuralExamples.MBB:
-    mesh, mat_prop, bc = createMBBProblem(nDOFDesired=10000)   
+    mesh, mat_prop, bc = createMBBProblem(nDOFDesired=nDOFDesired)   
   elif example == StructuralExamples.DistributedLoad:
-    mesh, mat_prop, bc = createDistributedLoadProblem(nDOFDesired=10000)    
+    mesh, mat_prop, bc = createDistributedLoadProblem(nDOFDesired=nDOFDesired)    
   elif example == StructuralExamples.Multiload:
-    mesh, mat_prop, bc = createMultiloadProblem(nDOFDesired=10000)
+    mesh, mat_prop, bc = createMultiloadProblem(nDOFDesired=nDOFDesired)
   elif example == StructuralExamples.LBracket:
-    mesh, mat_prop, bc = createLBracketProblem(nDOFDesired=10000)    
+    mesh, mat_prop, bc = createLBracketProblem(nDOFDesired=nDOFDesired)    
   elif example == StructuralExamples.CompliantMechanism:
-    mesh, mat_prop, bc = createCompliantMechanismProblem(nDOFDesired=10000)
+    mesh, mat_prop, bc = createCompliantMechanismProblem(nDOFDesired=nDOFDesired)
   elif example == StructuralExamples.BeamSurfaceLoad:
-    mesh, mat_prop, bc = createBeamSurfaceLoadProblem(nDOFDesired=10000)
+    mesh, mat_prop, bc = createBeamSurfaceLoadProblem(nDOFDesired=nDOFDesired)
   elif example == StructuralExamples.FilletedBeam:
-    mesh, mat_prop, bc = createFilletedBeamProblem(nDOFDesired=100000)
+    mesh, mat_prop, bc = createFilletedBeamProblem(nDOFDesired=nDOFDesired)
   elif example == StructuralExamples.CentrifugalPlate:
-    mesh, mat_prop, bc, elem_body_force  = createCentrifugalPlateProblem(nDOFDesired=20000)
+    mesh, mat_prop, bc, elem_body_force  = createCentrifugalPlateProblem(nDOFDesired=nDOFDesired)
   elif example == StructuralExamples.GravityBar:
-    mesh, mat_prop, bc, elem_body_force  = createGravityBarProblem(nDOFDesired=10000)
+    mesh, mat_prop, bc, elem_body_force  = createGravityBarProblem(nDOFDesired=nDOFDesired)
   elif example == StructuralExamples.GravityPlate:
-    mesh, mat_prop, bc, elem_body_force  = createGravityPlateProblem(nDOFDesired=30000)
+    mesh, mat_prop, bc, elem_body_force  = createGravityPlateProblem(nDOFDesired=nDOFDesired)
   elif example == StructuralExamples.ArrowHead:
-    mesh, mat_prop, bc = createArrowHeadProblem(nDOFDesired=200000)
+    mesh, mat_prop, bc = createArrowHeadProblem(nDOFDesired=nDOFDesired)
   elif example == StructuralExamples.BliskQuarter:
-    mesh, mat_prop, bc = createBliskQuarterModelProblem(nDOFDesired=50000)
+    mesh, mat_prop, bc, elem_body_force  = createBliskQuarterModelProblem(nDOFDesired=nDOFDesired,radialForce=0.0)
   elif example == StructuralExamples.BliskFull:
-    mesh, mat_prop, bc = createBliskFullModelProblem(nDOFDesired=20000)
+    mesh, mat_prop, bc = createBliskFullModelProblem(nDOFDesired=nDOFDesired)
 
   
   dsolver = deflation.DeflationSolver()
@@ -165,5 +165,5 @@ if __name__ == "__main__":
   print('Max displacement: ', deltaMax)
   print('-----------------------------')
 
-  plots.plotMesh(fe_solver.mesh, fe_solver.bc, u,
+  plots.plotMesh(fe_solver.mesh, bc = None, u = u,
       title=f'dof = {nDOF}, Max deformation: {deltaMax:.3e}')

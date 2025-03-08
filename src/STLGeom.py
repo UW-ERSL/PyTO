@@ -482,31 +482,7 @@ class STLGeom:
             selected_triangles_data.append(triangle_data)
    
         return selected_triangles_data
-    
-    def create_refined_mesh(self, target_edge_length):
-        """
-        Create a refined triangular mesh with approximately uniform edge lengths
-        Args:
-            target_edge_length: desired length for mesh edges
-        Returns:
-            vertices: nx3 array of vertex coordinates
-            faces: mx3 array of vertex indices forming triangles
-        """
-        import trimesh  # pip install trimesh
-
-        # Convert STL mesh to trimesh format
-        vertices = self.mesh.vectors.reshape(-1, 3)
-        faces = np.arange(len(vertices)).reshape(-1, 3)
-        mesh = trimesh.Trimesh(vertices=vertices, faces=faces)
-
-        # Remove duplicate vertices
-        mesh.remove_duplicate_vertices()
-
-        # Subdivide mesh to achieve target edge length
-        mesh = mesh.subdivide_to_size(max_edge=target_edge_length)
-
-        return mesh.vertices, mesh.faces
-
+   
 if __name__ == "__main__":
     import os
     import pyvista as pv
@@ -519,6 +495,7 @@ if __name__ == "__main__":
     stl_file = os.path.join(script_dir, '../TOExamples/LBracket/LBracket.STL')
     stl_file =  os.path.join(script_dir, '../TOExamples/CompliantMechanism/CompliantMechanism.STL')
     stl_file =  os.path.join(script_dir, '../TOExamples/CircularPlateHole/CircularPlateHole.STL')
+    stl_file =  os.path.join(script_dir, '../TOExamples/BliskModel/BliskQuarter.STL')
     stl_geom = STLGeom(stl_file)
 
     [area, volume, cg, inertia] = stl_geom.compute_mass_properties()
