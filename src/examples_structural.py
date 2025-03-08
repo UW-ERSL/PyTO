@@ -4,8 +4,26 @@ import bound_cond
 import mesher
 import mat_lib
 import os
-
+import enum
 script_dir = os.path.dirname(os.path.abspath(__file__))
+
+
+class StructuralExamples(enum.Enum):
+	EdgeCantilever = enum.auto()
+	MBB = enum.auto()
+	DistributedLoad = enum.auto()
+	Multiload = enum.auto()
+	GravityBar = enum.auto() 
+	GravityPlate = enum.auto()
+	LBracket = enum.auto()
+	ArrowHead = enum.auto()
+	CompliantMechanism = enum.auto()
+	Alcoa = enum.auto()
+	FilletedBeam = enum.auto()
+	BeamSurfaceLoad = enum.auto()
+	CentrifugalPlate = enum.auto()
+	BliskQuarter = enum.auto()
+	BliskFull =  enum.auto()
 
 def createEdgeCantileverProblem(nDOFDesired: int = 10000, L: float = [0.4, 0.2, 0.1],youngs_modulus = 2e11, poissons_ratio = 0.3):
   """Creates a edge loaded cantilever beam problem with approximate desired DOFs.
@@ -248,7 +266,6 @@ def createLBracketProblem(nDOFDesired: int = 10000, youngs_modulus = 2.1e11, poi
   return mesh, mat_prop, bc
 
   # ----------------------------------------
-
 
 def createGravityBarProblem(nDOFDesired: int = 10000, youngs_modulus = 2.1e11, poissons_ratio = 0.28, material_density = 7700):
   """Creates a structural problem setup for a vertical bar under gravity loading.
@@ -570,7 +587,6 @@ def createFilletedBeamProblem(nDOFDesired=50000, youngs_modulus = 2.1e5, poisson
   mat_prop = mat_lib.StructuralMaterial(youngs_modulus=youngs_modulus,
                       poissons_ratio=poissons_ratio)
   return mesh, mat_prop, bc
-
 
 def createCentrifugalPlateProblem(nDOFDesired: int = 10000, youngs_modulus = 2.1e11, 
                                poissons_ratio = 0.28, material_density = 7700,

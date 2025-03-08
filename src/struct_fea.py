@@ -61,7 +61,9 @@ class StructFEA:
     elif elasticity_material_model['name'] == 'SIMP':
       penal = elasticity_material_model['penal']
       elem_material_scaling = x**penal
-
+    elif elasticity_material_model['name'] == 'RAMP': 
+      penal = elasticity_material_model['penal']
+      elem_material_scaling = x/(1+penal*(1-x))
     elif elasticity_material_model['name'] == 'Custom':
       # Custom model from the paper here: https://doi.org/10.1002/nme.2499 
       alpha = elasticity_material_model['alpha']
@@ -99,40 +101,43 @@ if __name__ == "__main__":
 
   from examples_structural import *
 
-  example = 11
+  example = StructuralExamples.EdgeCantilever
   elem_body_force = None # by default no body force
-  dsolver = deflation.DeflationSolver()
-  if example == 1:
+  solver = lin_solv.Solvers.PARDISO # typically DPCG or PARDISO
+  
+
+
+  if example == StructuralExamples.EdgeCantilever:
     mesh, mat_prop, bc = createEdgeCantileverProblem(nDOFDesired=10000)
-  elif example == 2:
+  elif example == StructuralExamples.MBB:
     mesh, mat_prop, bc = createMBBProblem(nDOFDesired=10000)   
-  elif example == 3:
+  elif example == StructuralExamples.DistributedLoad:
     mesh, mat_prop, bc = createDistributedLoadProblem(nDOFDesired=10000)    
-  elif example == 4:
+  elif example == StructuralExamples.Multiload:
     mesh, mat_prop, bc = createMultiloadProblem(nDOFDesired=10000)
-  elif example == 5:
+  elif example == StructuralExamples.LBracket:
     mesh, mat_prop, bc = createLBracketProblem(nDOFDesired=10000)    
-  elif example == 6:
+  elif example == StructuralExamples.CompliantMechanism:
     mesh, mat_prop, bc = createCompliantMechanismProblem(nDOFDesired=10000)
-  elif example == 7:
+  elif example == StructuralExamples.BeamSurfaceLoad:
     mesh, mat_prop, bc = createBeamSurfaceLoadProblem(nDOFDesired=10000)
-  elif example == 8:
+  elif example == StructuralExamples.FilletedBeam:
     mesh, mat_prop, bc = createFilletedBeamProblem(nDOFDesired=100000)
-  elif example == 9:
+  elif example == StructuralExamples.CentrifugalPlate:
     mesh, mat_prop, bc, elem_body_force  = createCentrifugalPlateProblem(nDOFDesired=20000)
-  elif example == 10:
+  elif example == StructuralExamples.GravityBar:
     mesh, mat_prop, bc, elem_body_force  = createGravityBarProblem(nDOFDesired=10000)
-  elif example == 11:
+  elif example == StructuralExamples.GravityPlate:
     mesh, mat_prop, bc, elem_body_force  = createGravityPlateProblem(nDOFDesired=30000)
-  elif example == 12:
+  elif example == StructuralExamples.ArrowHead:
     mesh, mat_prop, bc = createArrowHeadProblem(nDOFDesired=200000)
-  elif example == 13:
+  elif example == StructuralExamples.BliskQuarter:
     mesh, mat_prop, bc = createBliskQuarterModelProblem(nDOFDesired=50000)
-  elif example == 14:
+  elif example == StructuralExamples.BliskFull:
     mesh, mat_prop, bc = createBliskFullModelProblem(nDOFDesired=20000)
 
-  solver = lin_solv.Solvers.PARDISO # typically DPCG or PARDISO
-
+  
+  dsolver = deflation.DeflationSolver()
   startTime = time.time()
   if (solver == lin_solv.Solvers.DPCG):
     nGroups =  min(dsolver.maxGroups,max(dsolver.minGroups,round(3*mesh.num_nodes/dsolver.dofPerGroup)))
