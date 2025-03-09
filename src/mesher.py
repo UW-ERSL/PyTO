@@ -532,6 +532,60 @@ class Mesher:
 			)
 		return 
 	
+	def find_connected_components(self, threshold: float = 0.01) -> list[np.ndarray]:
+		"""Find connected components of the mesh based on elemPseudoDensity.
+		
+		Args:
+			threshold: Elements with pseudo-density below this value are considered "absent".
+			
+		Returns:
+			A list of numpy arrays, where each array contains the indices of elements
+			belonging to a connected component.
+		"""
+		
+		# Create an adjacency matrix representing connections between elements
+		adj_matrix = np.zeros((self.num_elems, self.num_elems), dtype=bool)
+		
+		# Iterate through each element and its neighbors
+		for elem in range(self.num_elems):
+			if self.elemPseudoDensity[elem] > threshold:
+				neighbors = self.elemNeighborsArray[elem]
+				# Set adjacency to True for valid neighbors (not -1)
+				valid_neighbors = neighbors[neighbors != -1]
+				adj_matrix[elem, valid_neighbors] = True
+		
+		# Convert adjacency matrix to a sparse format for efficiency
+		adj_matrix_sparse = coo_matrix(adj_matrix)
+		
+		# Find connected components using depth-first search (DFS)
+		visited = np.zeros(self.num_elems, dtype=bool)
+		components = []
+		
+		
+		# Iteratively find connected components using a stack
+		for elem in range(self.num_elems):
+			if self.elemPseudoDensity[elem] > threshold and not visited[elem]:
+				current_component = []
+				stack = [elem]  # Initialize stack with the starting element
+				
+				while stack:
+					elem_idx = stack.pop()  # Get the last element from the stack
+					
+					if not visited[elem_idx]:
+						visited[elem_idx] = True
+						current_component.append(elem_idx)
+						
+						# Get neighbors of the current element
+						neighbors = adj_matrix_sparse.row[adj_matrix_sparse.col == elem_idx]
+						
+						# Add unvisited neighbors to the stack
+						for neighbor in neighbors:
+							if self.elemPseudoDensity[neighbor] > threshold and not visited[neighbor]:
+								stack.append(neighbor)
+				
+				components.append(np.array(current_component))
+		
+		return components
 	def get_boundary_nodes(self) -> np.ndarray:
 		"""Find nodes that lie on the boundary of the mesh.
 		
