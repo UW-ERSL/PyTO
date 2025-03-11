@@ -692,9 +692,9 @@ if __name__ == "__main__":
 
 	# Select the problem and various options
 	problem = StructuralExamples.EdgeCantilever
-	optimizationMethod = Optimizers.MMA # MMA, OC or PARETO
+	optimizationMethod = Optimizers.PARETO # MMA, OC or PARETO
 	nDOFDesired = 50000
-	desiredVolFraction = 0.25
+	desiredVolFraction = 0.1
 	material_model = MaterialModel.SIMP# Only for MMA, OC. Use SIMPPLUS for problems with body forces
 	solver = lin_solv.Solvers.PARDISO # Typically PARDISO, but DPCG for DOF > 200,000
 

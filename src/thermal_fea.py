@@ -134,14 +134,14 @@ def createLBracketThermalProblem(nDOFDesired: int = 10000,thermal_conductivity =
             - bc (BC): Boundary conditions object with heat loads and temperature constraints
 
     Notes:
-        - The mesh is created from an STL file located at '../TOExamples/LBracket/LBracket.STL'
+        - The mesh is created from an STL file located at '../Models/LBracket/LBracket.STL'
         - Fixed temperature boundary condition (T=0) applied at y = yMax
         - Heat load is applied where y > 0.039 and x > 0.09
         - Total heat load is 1000 W distributed equally among loaded nodes
         - Material properties are set to k = 45 W/mK
 	"""
 	# Read the STL model, create a mesh of desired size, and a structural problem is posed on it.
-    stl_file = os.path.join(script_dir, '../TOExamples/LBracket/LBracket.STL')
+    stl_file = os.path.join(script_dir, '../Models/LBracket/LBracket.STL')
     nElemsDesired = nDOFDesired	# estimate
     mesh = mesher.Mesher()
 	
