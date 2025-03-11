@@ -613,7 +613,7 @@ if __name__ == "__main__":
 
 
     script_dir = os.path.dirname(os.path.abspath(__file__))
-    stlFileName = os.path.join(script_dir, '../TOExamples/Knuckle/Knuckle.STL')
+    stlFileName = os.path.join(script_dir, '../Models/Knuckle/Knuckle.STL')
     mesh = Mesher()
     mesh.createMeshFromSTLFile(stlFileName,nElemsDesired=100000)
     plots.plotMesh(mesh,  title=f'Knuckle; nElems = {mesh.num_nodes}')

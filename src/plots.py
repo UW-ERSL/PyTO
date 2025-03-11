@@ -228,6 +228,105 @@ def plotMesh(mesh: mesher.Mesher,
   
   return plotter
 
+def plotElementField(mesh: mesher.Mesher,
+            field,
+            cmap='jet',
+            show_edges=True,
+            window_size=(716, 538),
+            background_color='white',
+            edge_color='black',
+            title='Element Field Visualization',
+            save_path=None,
+            fontsize=10):
+    """Plot element field on the mesh.
+
+    Args:
+    mesh (mesher.Mesher): The mesh object.
+    field (ndarray): Element field values.
+    cmap (str): Colormap for visualization.
+    show_edges (bool): Whether to show mesh edges.
+    window_size (tuple): Window size for visualization.
+    background_color (str): Background color.
+    edge_color (str): Edge color.
+    title (str): Plot title.
+    save_path (str, optional): Path to save the visualization.
+    fontsize (int): Font size for title.
+    """
+    # Create vertices array
+    vertices = mesh.node_xyz
+
+    # Create cells array for PyVista
+    cells = np.hstack((
+              np.full((mesh.num_elems, 1), 8),  # 8 vertices per hexahedron
+              mesh.elemArray
+            ))
+
+    # Create PyVista mesh
+    pv_mesh = pv.UnstructuredGrid({12: cells[:, 1:]}, vertices)  # 12 is VTK_HEXAHEDRON
+
+    # Add field data to cell data
+    pv_mesh.cell_data['field'] = field
+
+    # Create plotter
+    if save_path is None:
+      plotter = pv.Plotter(window_size=window_size)
+    else:
+      plotter = pv.Plotter(window_size=window_size, off_screen=True)
+      plotter.set_background(background_color)
+
+    # Add mesh to plotter
+    plotter.add_mesh(
+            pv_mesh,
+            scalars='field',
+            cmap=cmap,
+            show_edges=show_edges,
+            edge_color=edge_color,
+            line_width=1,
+            scalar_bar_args={
+              'title': '',
+              'vertical': True,
+              'position_x': 0.8,
+              'position_y': 0.3,
+              'width': 0.1
+            }
+          )
+
+    # Add title
+    if title:
+      plotter.add_title(title, font_size=fontsize)
+
+    # Add coordinate axes widget
+    plotter.add_axes(
+            xlabel='X',
+            ylabel='Y',
+            zlabel='Z',
+            line_width=2,
+            labels_off=False,  # Show axis labels
+            color='black'
+            )
+
+    # Set camera position for left-bottom-forward view
+    view_distance = 2.5 * mesh.bbox.diag_length
+    offset = 0.2 * view_distance  # Offset for object position
+    plotter.camera_position = [
+            (view_distance*0.5, -view_distance*0.3, view_distance),
+            (offset, offset, 0),   # Focus point - right and bottom
+            (0, 0.8, 0.4)]         # Up vector - Y axis up
+
+    # Reset camera and zoom out slightly
+    plotter.camera.zoom(0.8)
+
+    # Enable anti-aliasing for better quality
+    plotter.enable_anti_aliasing()
+
+    # Save image if path is provided
+    if save_path:
+      plotter.screenshot(save_path)
+      plotter.close()
+    else:
+      plotter.show()
+
+    return plotter
 
 def plotIsocontour(mesh: mesher.Mesher,
                    u=None,

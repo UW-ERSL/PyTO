@@ -64,8 +64,8 @@ class StructFEA:
     elif elasticity_material_model['name'] == 'RAMP': 
       penal = elasticity_material_model['penal']
       elem_material_scaling = x/(1+penal*(1-x))
-    elif elasticity_material_model['name'] == 'Custom':
-      # Custom model from the paper here: https://doi.org/10.1002/nme.2499 
+    elif elasticity_material_model['name'] == 'SIMPPLUS':
+      #  model from the paper here: https://doi.org/10.1002/nme.2499 
       alpha = elasticity_material_model['alpha']
       penal = elasticity_material_model['penal']
       elem_material_scaling = (alpha-1)/alpha * x ** penal + (1/alpha) * x
@@ -96,46 +96,89 @@ class StructFEA:
                       **self.kwargs)
     return u
 
+  def postprocess(self, u: jnp.ndarray) -> jnp.ndarray:
+      """Computes the stresses at the center of each element.
+
+      Args:
+          u: Displacement field (num_dofs,).
+
+      Returns:
+          Array of (num_elems, 6) of the stresses at the center of each element.
+          The order of the stress components is:
+          sigma_xx, sigma_yy, sigma_zz, sigma_yz, sigma_xz, sigma_xy
+      """
+      num_elems = self.mesh.num_elems
+      num_nodes_per_elem = 8 # hard coded for hex8 elements
+      elemArray = self.mesh.elemArray
+      element_size = self.mesh.elem_size
+      
+      # reshape u into a matrix of size (num_nodes, 3)
+      u_matrix = u.reshape(-1, 3)
+
+      # collect the displacement of each node for each element
+      element_u = u_matrix[elemArray, :] # (num_elems, num_nodes_per_elem, 3)
+      element_u = jnp.reshape(element_u, (num_elems, num_nodes_per_elem*3)) # (num_elems, num_nodes_per_elem*3)
+
+      
+      # Shape function derivatives at center point (xi=eta=zeta=0)
+      dNdxi = jnp.array([-0.125, 0.125, 0.125, -0.125, -0.125, 0.125, 0.125, -0.125])
+      dNdeta = jnp.array([-0.125, -0.125, 0.125, 0.125, -0.125, -0.125, 0.125, 0.125])
+      dNdzeta = jnp.array([-0.125, -0.125, -0.125, -0.125, 0.125, 0.125, 0.125, 0.125])
+
+      # Compute dN/dx = J^(-1) * dN/dxi
+      dNdx = 2*dNdxi / element_size[0]
+      dNdy = 2*dNdeta / element_size[1]
+      dNdz = 2*dNdzeta / element_size[2]
+
+      # Fill B matrix
+      B = np.zeros((6, 24))
+      for i in range(8):
+        # Normal strains
+        B[0, i*3] = dNdx[i]
+        B[1, i*3+1] = dNdy[i]
+        B[2, i*3+2] = dNdz[i]
+        
+        # Shear strains
+        B[3, i*3+1] = dNdz[i]
+        B[3, i*3+2] = dNdy[i]
+        B[4, i*3] = dNdz[i]
+        B[4, i*3+2] = dNdx[i]
+        B[5, i*3] = dNdy[i]
+        B[5, i*3+1] = dNdx[i]
+  
+      strain = jnp.einsum('ij,je->ei', B, element_u.T)
+
+       # Constitutive matrix D for plane stress
+      E = self.mat_prop.youngs_modulus # Young's modulus
+      nu = self.mat_prop.poissons_ratio # Poisson's ratio
+
+      D = E / ((1 + nu) * (1 - 2*nu)) * jnp.array([
+        [1-nu, nu, nu, 0, 0, 0],
+        [nu, 1-nu, nu, 0, 0, 0],
+        [nu, nu, 1-nu, 0, 0, 0],
+        [0, 0, 0, (1-2*nu)/2, 0, 0],
+        [0, 0, 0, 0, (1-2*nu)/2, 0],
+        [0, 0, 0, 0, 0, (1-2*nu)/2]
+      ])
+      element_stress = jnp.einsum('ij,ej->ei', D, strain)
+      self.strainComponents = strain
+      self.stressComponents = element_stress
+      self.vonMisesStress = jnp.sqrt(0.5*((element_stress[:,0]-element_stress[:,1])**2 +
+                (element_stress[:,1]-element_stress[:,2])**2 +
+                (element_stress[:,2]-element_stress[:,0])**2) +
+                3*(element_stress[:,3]**2 + element_stress[:,4]**2 +
+                   element_stress[:,5]**2))
+      return 
+  
 if __name__ == "__main__":    
   jax.config.update("jax_enable_x64", True)
 
   from examples_structural import *
 
-  example = StructuralExamples.BliskQuarter
-  elem_body_force = None # by default no body force
+  problem = StructuralExamples.BliskQuarter
+  nDOFDesired = 50000
+  mesh, mat_prop, bc,elem_body_force,symmetry = getStructuralProblem(problem,nDOFDesired = nDOFDesired)
   solver = lin_solv.Solvers.DPCG # typically DPCG or PARDISO
-  nDOFDesired = 250000
-
-
-  if example == StructuralExamples.EdgeCantilever:
-    mesh, mat_prop, bc = createEdgeCantileverProblem(nDOFDesired=nDOFDesired)
-  elif example == StructuralExamples.MBB:
-    mesh, mat_prop, bc = createMBBProblem(nDOFDesired=nDOFDesired)   
-  elif example == StructuralExamples.DistributedLoad:
-    mesh, mat_prop, bc = createDistributedLoadProblem(nDOFDesired=nDOFDesired)    
-  elif example == StructuralExamples.Multiload:
-    mesh, mat_prop, bc = createMultiloadProblem(nDOFDesired=nDOFDesired)
-  elif example == StructuralExamples.LBracket:
-    mesh, mat_prop, bc = createLBracketProblem(nDOFDesired=nDOFDesired)    
-  elif example == StructuralExamples.CompliantMechanism:
-    mesh, mat_prop, bc = createCompliantMechanismProblem(nDOFDesired=nDOFDesired)
-  elif example == StructuralExamples.BeamSurfaceLoad:
-    mesh, mat_prop, bc = createBeamSurfaceLoadProblem(nDOFDesired=nDOFDesired)
-  elif example == StructuralExamples.FilletedBeam:
-    mesh, mat_prop, bc = createFilletedBeamProblem(nDOFDesired=nDOFDesired)
-  elif example == StructuralExamples.CentrifugalPlate:
-    mesh, mat_prop, bc, elem_body_force  = createCentrifugalPlateProblem(nDOFDesired=nDOFDesired)
-  elif example == StructuralExamples.GravityBar:
-    mesh, mat_prop, bc, elem_body_force  = createGravityBarProblem(nDOFDesired=nDOFDesired)
-  elif example == StructuralExamples.GravityPlate:
-    mesh, mat_prop, bc, elem_body_force  = createGravityPlateProblem(nDOFDesired=nDOFDesired)
-  elif example == StructuralExamples.ArrowHead:
-    mesh, mat_prop, bc = createArrowHeadProblem(nDOFDesired=nDOFDesired)
-  elif example == StructuralExamples.BliskQuarter:
-    mesh, mat_prop, bc, elem_body_force  = createBliskQuarterModelProblem(nDOFDesired=nDOFDesired,radialForce=0.0)
-  elif example == StructuralExamples.BliskFull:
-    mesh, mat_prop, bc = createBliskFullModelProblem(nDOFDesired=nDOFDesired)
-
   
   dsolver = deflation.DeflationSolver()
   startTime = time.time()
@@ -157,13 +200,20 @@ if __name__ == "__main__":
   delta = np.sqrt(u[0::3]**2 +  u[1::3]**2 +  u[2::3]**2)
   deltaMax = np.max(delta)
   nDOF = 3*fe_solver.mesh.num_nodes
-
+  fe_solver.postprocess(u)
+  maxStress = np.max(fe_solver.vonMisesStress)
+ 
   print('-----------------------------')
   print("nDof: ", nDOF)
   print('Solver: ', fe_solver.solver.name)
   print("FEA time: ", time.time() - startTime)
-  print('Max displacement: ', deltaMax)
+  print('Max displacement: ', f"{deltaMax:.2g}")
+  print("Max von Mises stress: ", f"{maxStress:.2g}")
   print('-----------------------------')
-
-  plots.plotMesh(fe_solver.mesh, bc = None, u = u,
-      title=f'dof = {nDOF}, Max deformation: {deltaMax:.3e}')
+  
+  plots.plotMesh(fe_solver.mesh, bc=None, u=u, 
+                 title=f'dof = {nDOF}, Max deformation: {deltaMax:.3e}')
+  
+  plots.plotElementField(fe_solver.mesh, fe_solver.vonMisesStress,
+                        title='von Mises stress', cmap='jet')
+  

@@ -9,6 +9,8 @@ script_dir = os.path.dirname(os.path.abspath(__file__))
 
 
 class StructuralExamples(enum.Enum):
+	TensileBar = enum.auto()
+	BeamBending = enum.auto()
 	EdgeCantilever = enum.auto()
 	MBB = enum.auto()
 	DistributedLoad = enum.auto()
@@ -18,12 +20,263 @@ class StructuralExamples(enum.Enum):
 	LBracket = enum.auto()
 	ArrowHead = enum.auto()
 	CompliantMechanism = enum.auto()
-	Alcoa = enum.auto()
 	FilletedBeam = enum.auto()
 	BeamSurfaceLoad = enum.auto()
 	CentrifugalPlate = enum.auto()
 	BliskQuarter = enum.auto()
 	BliskFull =  enum.auto()
+
+def getStructuralProblem(problem: StructuralExamples, **kwargs):
+  """Returns a structural problem based on the given problem name.
+
+  Parameters:
+  ----------
+  problem : StructuralExamples
+    The name of the problem to return.
+  **kwargs : dict
+    Additional keyword arguments to pass to the problem creation function.
+
+  Returns:
+  -------
+  tuple
+    A tuple containing the mesh, material properties, and boundary conditions for the problem.
+  """
+  if problem == StructuralExamples.TensileBar:
+    return createTensileBarProblem(**kwargs)
+  elif problem == StructuralExamples.BeamBending:
+    return createBeamBendingProblem(**kwargs)
+  elif problem == StructuralExamples.EdgeCantilever:
+    return createEdgeCantileverProblem(**kwargs)
+  elif problem == StructuralExamples.MBB:
+    return createMBBProblem(**kwargs)
+  elif problem == StructuralExamples.DistributedLoad:
+    return createDistributedLoadProblem(**kwargs)
+  elif problem == StructuralExamples.Multiload:
+    return createMultiloadProblem(**kwargs)
+  elif problem == StructuralExamples.GravityBar:
+    return createGravityBarProblem(**kwargs)
+  elif problem == StructuralExamples.GravityPlate:
+    return createGravityPlateProblem(**kwargs)
+  elif problem == StructuralExamples.CompliantMechanism:
+    return createCompliantMechanismProblem(**kwargs)
+  elif problem == StructuralExamples.LBracket:
+    return createLBracketProblem(**kwargs)
+  elif problem == StructuralExamples.FilletedBeam:
+    return createFilletedBeamProblem(**kwargs)
+  elif problem == StructuralExamples.BeamSurfaceLoad:
+    return createBeamSurfaceLoadProblem(**kwargs)
+  elif problem == StructuralExamples.CentrifugalPlate:
+    return createCentrifugalPlateProblem(**kwargs)
+  elif problem == StructuralExamples.BliskQuarter:
+    return createBliskQuarterProblem(**kwargs)
+  elif problem == StructuralExamples.ArrowHead:
+    return createArrowHeadProblem(**kwargs)
+  else:
+    raise ValueError("Invalid structural example name.")
+  
+
+def createTensileBarProblem(nDOFDesired: int = 10000, L: float = [10, 1, 1],youngs_modulus = 2e11, 
+                            poissons_ratio = 0.3,tensileForce = 10000):
+  """Creates a tensile problem with approximate desired DOFs.
+
+  Parameters:
+  ----------
+  nDOFDesired : int
+    Desired number of degrees of freedom (default 10000)
+  L : list of float
+    Dimensions [Lx, Ly, Lz] of domain (default [1, 0.1, 0.1])
+  youngs_modulus : float
+    Young's modulus of material (default 2e11)
+  poissons_ratio : float 
+    Poisson's ratio of material (default 0.3)
+
+  Returns:
+  -------
+  tuple
+    (mesh, mat_prop, bc) containing:
+    - mesh: Mesher object with grid discretization
+    - mat_prop: Material properties object
+    - bc: Boundary conditions with fixed left face and load on right face
+  """
+  print('-----------------------------')
+  print("Theoretical max displacement: {:.2g}".format(tensileForce*L[0]/(youngs_modulus*L[1]*L[2])))
+  print("Theoretical max stress: {:.2g}".format(tensileForce/(L[1]*L[2])))
+  print('-----------------------------')
+  nVoxelsDesired = nDOFDesired/3    
+  # Let the number of voxels be proportional to the length in each direction
+  alpha = (nVoxelsDesired/(L[0]*L[1]*L[2]))**(1/3)
+  nelx = round(alpha*L[0])
+  nely = round(alpha*L[1])
+  nelz = round(alpha*L[2])
+  mesh = mesher.Mesher()
+  mesh.grid_mesh(num_elems = (nelx, nely, nelz),
+                  elem_size = (L[0]/nelx, L[1]/nely, L[2]/nelz))
+  mesh.createEdofMatStructural()
+
+  fixed_nodes = mesh.getNodesOnBoundingBoxPlane(0,True) # x = 0 plane
+  fixed_dofs = np.array([3 * fixed_nodes]).flatten().astype(int) # fixed in x direction
+  fixed_dofs = np.array([3 * fixed_nodes,
+              3 * fixed_nodes + 1,
+              3 * fixed_nodes + 2]).flatten().astype(int)
+  dirichlet_values = 0*np.ones_like(fixed_dofs, dtype = float)
+  mesh.node_indices[fixed_nodes, 3] = 1
+  
+  # Add forces on x=xMax plane with different magnitudes for edges and corners
+  # that is consistent with numerical integration over the surface
+  load_nodes = mesh.getNodesOnBoundingBoxPlane(0,False) # x = xMax plane
+  # Find edge and corner nodes
+  edge_nodes = []
+  corner_nodes = []
+  face_nodes = [] 
+
+  for node in load_nodes:
+    coords = mesh.node_xyz[node]
+    num_extremes = 0
+    if abs(coords[1] - min(mesh.node_xyz[:,1])) < mesh.elem_size[1]/2 or abs(coords[1] - max(mesh.node_xyz[:,1])) < mesh.elem_size[1]/2:
+      num_extremes += 1
+    if abs(coords[2] - min(mesh.node_xyz[:,2])) < mesh.elem_size[2]/2 or abs(coords[2] - max(mesh.node_xyz[:,2])) < mesh.elem_size[2]/2:
+      num_extremes += 1
+    
+    if num_extremes == 2:
+      corner_nodes.append(node)
+    elif num_extremes == 1:
+      edge_nodes.append(node) 
+    else:
+      face_nodes.append(node)
+  
+  # Split into lists for clarity
+  corner_nodes = np.array(corner_nodes)
+  edge_nodes = np.array(edge_nodes)
+  face_nodes = np.array(face_nodes)
+  # Apply forces according to node type
+  force = np.zeros(3*mesh.num_nodes)
+  force[3*face_nodes] = 4.0  
+  force[3*edge_nodes] = 2.0  
+  force[3*corner_nodes] = 1.0 
+  
+  # Normalize forces to achieve desired total load
+  total_load = np.sum(force[3*load_nodes])
+  force[3*load_nodes] *= tensileForce/total_load
+  print("Total force:", np.sum(force[3*load_nodes]))
+  load_nodes = np.union1d(np.union1d(face_nodes, edge_nodes), corner_nodes)
+  mesh.node_indices[load_nodes, 3] = 2
+  
+  bc = bound_cond.BC(force = force,
+            fixed_dofs = fixed_dofs,
+            dirichlet_values = dirichlet_values) 
+
+  mat_prop = mat_lib.StructuralMaterial(youngs_modulus=youngs_modulus,
+                      poissons_ratio=poissons_ratio)
+  
+  elem_body_force = None
+  # Symmetry can be used during topology optimization
+  symmetry = [False,False,False,0] # X symmetry,Y Symmetry,Z symmetry,Angular symmetry about Z axis
+  return mesh, mat_prop, bc, elem_body_force,symmetry
+
+
+  # ----------------------------------------
+
+def createBeamBendingProblem(nDOFDesired: int = 10000, L: float = [10, 1, 1],youngs_modulus = 2e11, 
+                            poissons_ratio = 0.3,tensileForce = 10000):
+  """Creates a tensile problem with approximate desired DOFs.
+
+  Parameters:
+  ----------
+  nDOFDesired : int
+    Desired number of degrees of freedom (default 10000)
+  L : list of float
+    Dimensions [Lx, Ly, Lz] of domain (default [1, 0.1, 0.1])
+  youngs_modulus : float
+    Young's modulus of material (default 2e11)
+  poissons_ratio : float 
+    Poisson's ratio of material (default 0.3)
+
+  Returns:
+  -------
+  tuple
+    (mesh, mat_prop, bc) containing:
+    - mesh: Mesher object with grid discretization
+    - mat_prop: Material properties object
+    - bc: Boundary conditions with fixed left face and load on right face
+  """
+  print('-----------------------------')
+  # For a beam with rectangular cross-section under end load P
+  # Maximum deflection = PL^3/(3EI) where I = (w*h^3)/12
+  I = (L[1]*L[2]**3)/12
+  print("Theoretical max deflection: {:.2g}".format(tensileForce*L[0]**3/(3*youngs_modulus*I)))
+  # Maximum bending stress = My/I where M = PL and y = h/2
+  print("Theoretical max stress: {:.2g}".format(tensileForce*L[0]*L[2]/(2*I)))
+  print('-----------------------------')
+  nVoxelsDesired = nDOFDesired/3    
+  # Let the number of voxels be proportional to the length in each direction
+  alpha = (nVoxelsDesired/(L[0]*L[1]*L[2]))**(1/3)
+  nelx = round(alpha*L[0])
+  nely = round(alpha*L[1])
+  nelz = round(alpha*L[2])
+  mesh = mesher.Mesher()
+  mesh.grid_mesh(num_elems = (nelx, nely, nelz),
+                  elem_size = (L[0]/nelx, L[1]/nely, L[2]/nelz))
+  mesh.createEdofMatStructural()
+
+  # Fix all DOFs at x=0 plane (cantilever)
+  fixed_nodes = mesh.getNodesOnBoundingBoxPlane(0,True) # x = 0 plane
+  fixed_dofs = np.array([3 * fixed_nodes,
+              3 * fixed_nodes + 1,
+              3 * fixed_nodes + 2]).flatten().astype(int)
+  dirichlet_values = 0*np.ones_like(fixed_dofs, dtype = float)
+  mesh.node_indices[fixed_nodes, 3] = 1
+  
+  # Add downward forces at x=xMax plane
+  load_nodes = mesh.getNodesOnBoundingBoxPlane(0,False) # x = xMax plane
+  # Find edge and corner nodes
+  edge_nodes = []
+  corner_nodes = []
+  face_nodes = [] 
+
+  for node in load_nodes:
+    coords = mesh.node_xyz[node]
+    num_extremes = 0
+    if abs(coords[1] - min(mesh.node_xyz[:,1])) < mesh.elem_size[1]/2 or abs(coords[1] - max(mesh.node_xyz[:,1])) < mesh.elem_size[1]/2:
+      num_extremes += 1
+    if abs(coords[2] - min(mesh.node_xyz[:,2])) < mesh.elem_size[2]/2 or abs(coords[2] - max(mesh.node_xyz[:,2])) < mesh.elem_size[2]/2:
+      num_extremes += 1
+    
+    if num_extremes == 2:
+      corner_nodes.append(node)
+    elif num_extremes == 1:
+      edge_nodes.append(node) 
+    else:
+      face_nodes.append(node)
+  
+  # Split into lists for clarity
+  corner_nodes = np.array(corner_nodes)
+  edge_nodes = np.array(edge_nodes)
+  face_nodes = np.array(face_nodes)
+  
+  # Apply downward forces according to node type
+  force = np.zeros(3*mesh.num_nodes)
+  force[3*face_nodes + 2] = -4.0  # Apply force in z direction (downward)
+  force[3*edge_nodes + 2] = -2.0  
+  force[3*corner_nodes + 2] = -1.0 
+  
+  # Normalize forces to achieve desired total load
+  load_nodes = np.union1d(np.union1d(face_nodes, edge_nodes), corner_nodes)
+  total_load = np.sum(force[3*load_nodes + 2])
+  force[3*load_nodes + 2] *= tensileForce/abs(total_load)
+  print("Total force:", np.sum(force[3*load_nodes + 2]))
+  mesh.node_indices[load_nodes, 3] = 2
+  
+  bc = bound_cond.BC(force = force,
+            fixed_dofs = fixed_dofs,
+            dirichlet_values = dirichlet_values) 
+
+  mat_prop = mat_lib.StructuralMaterial(youngs_modulus=youngs_modulus,
+                      poissons_ratio=poissons_ratio)
+  elem_body_force = None
+  symmetry = [False,False,False,0] # X symmetry,Y Symmetry,Z symmetry,Angular symmetry about Z axis
+  return mesh, mat_prop, bc, elem_body_force,symmetry
+
+  # ----------------------------------------
 
 def createEdgeCantileverProblem(nDOFDesired: int = 10000, L: float = [0.4, 0.2, 0.1],youngs_modulus = 2e11, poissons_ratio = 0.3):
   """Creates a edge loaded cantilever beam problem with approximate desired DOFs.
@@ -81,7 +334,10 @@ def createEdgeCantileverProblem(nDOFDesired: int = 10000, L: float = [0.4, 0.2, 
 
   mat_prop = mat_lib.StructuralMaterial(youngs_modulus=youngs_modulus,
                       poissons_ratio=poissons_ratio)
-  return mesh, mat_prop, bc
+  elem_body_force = None
+   # Symmetry can be used during topology optimization
+  symmetry = [False,True,False,0] # X symmetry,Y Symmetry,Z symmetry,Angular symmetry about Z axis
+  return mesh, mat_prop, bc, elem_body_force,symmetry
 
   # ----------------------------------------
   
@@ -124,7 +380,10 @@ def createMBBProblem(nDOFDesired: int = 10000, L: float = [0.5, 0.167, 0.01],you
 
   mat_prop = mat_lib.StructuralMaterial(youngs_modulus=youngs_modulus,
                       poissons_ratio=poissons_ratio)
-  return mesh, mat_prop, bc
+  elem_body_force = None
+   # Symmetry can be used during topology optimization
+  symmetry = [False,False,False,0] # X symmetry,Y Symmetry,Z symmetry,Angular symmetry about Z axis
+  return mesh, mat_prop, bc, elem_body_force,symmetry
 
   # ----------------------------------------
   
@@ -167,7 +426,10 @@ def createDistributedLoadProblem(nDOFDesired: int = 10000, L: float = [1.0, 0.5,
 
   mat_prop = mat_lib.StructuralMaterial(youngs_modulus=youngs_modulus,
                       poissons_ratio=poissons_ratio)
-  return mesh, mat_prop, bc
+  elem_body_force = None
+   # Symmetry can be used during topology optimization
+  symmetry = [True,False,False,0] # X symmetry,Y Symmetry,Z symmetry,Angular symmetry about Z axis
+  return mesh, mat_prop, bc, elem_body_force,symmetry
 
   # ----------------------------------------
   
@@ -211,7 +473,9 @@ def createMultiloadProblem(nDOFDesired: int = 10000, L: float = [0.4, 0.2, 0.1],
 
   mat_prop = mat_lib.StructuralMaterial(youngs_modulus=youngs_modulus,
                       poissons_ratio=poissons_ratio)
-  return mesh, mat_prop, bc
+  elem_body_force = None
+  symmetry = [False,False,True,0] # X symmetry,Y Symmetry,Z symmetry,Angular symmetry about Z axis
+  return mesh, mat_prop, bc, elem_body_force,symmetry
 
   # ----------------------------------------
   
@@ -230,14 +494,14 @@ def createLBracketProblem(nDOFDesired: int = 10000, youngs_modulus = 2.1e11, poi
       - mat_prop (StructuralMaterial): Material properties object with structural parameters
       - bc (BC): Boundary conditions object with forces and constraints
   Notes:
-    - The mesh is created from an STL file located at '../TOExamples/LBracket/LBracket.STL'
+    - The mesh is created from an STL file located at '../Models/LBracket/LBracket.STL'
     - Fixed boundary conditions are applied at y = yMax
     - Load is applied in the -y direction on nodes where y > 0.039 and x > 0.09
     - Total applied load is 1000 units distributed equally among loaded nodes
     - Material properties are set to E = 2.1e5 and ν = 0.3
   """
   # Read the STL model, create a mesh of desired size, and a structural problem is posed on it.
-  stl_file = os.path.join(script_dir, '../TOExamples/LBracket/LBracket.STL')
+  stl_file = os.path.join(script_dir, '../Models/LBracket/LBracket.STL')
   nElemsDesired = nDOFDesired/3    # estimate
   mesh = mesher.Mesher()
   
@@ -263,7 +527,10 @@ def createLBracketProblem(nDOFDesired: int = 10000, youngs_modulus = 2.1e11, poi
 
   mat_prop = mat_lib.StructuralMaterial(youngs_modulus=youngs_modulus,
                       poissons_ratio=poissons_ratio)
-  return mesh, mat_prop, bc
+  elem_body_force = None
+   # Symmetry can be used during topology optimization
+  symmetry = [False,False,False,0] # X symmetry,Y Symmetry,Z symmetry,Angular symmetry about Z axis
+  return mesh, mat_prop, bc, elem_body_force,symmetry
 
   # ----------------------------------------
 
@@ -294,14 +561,14 @@ def createGravityBarProblem(nDOFDesired: int = 10000, youngs_modulus = 2.1e11, p
     - elem_body_force: Array of body forces on elements
   Notes
   -----
-  - The STL file must be located at '../TOExamples/VerticalBar/VerticalBar.STL'
+  - The STL file must be located at '../Models/VerticalBar/VerticalBar.STL'
   - The problem fixes all DOFs at the top surface (z = zMax plane)
   - Gravity acts in the negative z direction
   - SolidWorks validation shows maximum displacement of 1.7906e-9 m
   """
 
   # Read the STL model, create a mesh of desired size, and a structural problem is posed on it.
-  stl_file = os.path.join(script_dir, '../TOExamples/VerticalBar/VerticalBar.STL')
+  stl_file = os.path.join(script_dir, '../Models/VerticalBar/VerticalBar.STL')
   print("SolidWorks maximum displacement: 1.7906e-9 m")
   nElemsDesired = nDOFDesired/3    # estimate
   mesh = mesher.Mesher()
@@ -323,7 +590,9 @@ def createGravityBarProblem(nDOFDesired: int = 10000, youngs_modulus = 2.1e11, p
   bc = bound_cond.BC(force = boundaryForce,fixed_dofs = fixed_dofs,dirichlet_values = dirichlet_values) 
   mat_prop = mat_lib.StructuralMaterial(youngs_modulus=youngs_modulus,
                       poissons_ratio=poissons_ratio)
-  return mesh, mat_prop, bc, elem_body_force
+
+  symmetry = [False,False,False,0] # X symmetry,Y Symmetry,Z symmetry,Angular symmetry about Z axis
+  return mesh, mat_prop, bc, elem_body_force,symmetry
 
   # ----------------------------------------
   
@@ -367,7 +636,8 @@ def createGravityPlateProblem(nDOFDesired: int = 10000, L: float = [1.0, 0.5, 0.
   elem_body_force = np.zeros(3*mesh.num_elems)
   elem_body_force[1::3] = -9.81*material_density*np.prod(mesh.elem_size)    # Apply gravity in -y direction to each element
 
-  return mesh, mat_prop, bc,elem_body_force
+  symmetry = [True,False,False,0] # X symmetry,Y Symmetry,Z symmetry,Angular symmetry about Z axis
+  return mesh, mat_prop, bc, elem_body_force,symmetry
 
   # ----------------------------------------
   
@@ -401,12 +671,12 @@ def createArrowHeadProblem(nDOFDesired: int = 10000, youngs_modulus = 2.1e11, po
 
   Notes
   -----
-  - The STL file must be located at '../TOExamples/ArrowHead/ArrowHead3x3.STL'
+  - The STL file must be located at '../Models/ArrowHead/ArrowHead3x3.STL'
   - The problem fixes all DOFs at z=0 plane
   - Load is distributed uniformly on the top surface (z=zMax plane)
   """
   # Read the STL model, create a mesh of desired size, and a structural problem is posed on it.
-  stl_file = os.path.join(script_dir, '../TOExamples/ArrowHead/ArrowHead3x3.STL')
+  stl_file = os.path.join(script_dir, '../Models/ArrowHead/ArrowHead3x3.STL')
   nElemsDesired = nDOFDesired/3    # estimate
   mesh = mesher.Mesher()
   
@@ -431,7 +701,9 @@ def createArrowHeadProblem(nDOFDesired: int = 10000, youngs_modulus = 2.1e11, po
 
   mat_prop = mat_lib.StructuralMaterial(youngs_modulus=youngs_modulus,
                       poissons_ratio=poissons_ratio)
-  return mesh, mat_prop, bc
+  elem_body_force = None
+  symmetry = [False,False,False,0] # X symmetry,Y Symmetry,Z symmetry,Angular symmetry about Z axis
+  return mesh, mat_prop, bc, elem_body_force,symmetry
 
   # ----------------------------------------
   
@@ -449,14 +721,14 @@ def createCompliantMechanismProblem(nDOFDesired: int = 10000, youngs_modulus = 2
       - mat_prop (StructuralMaterial): Material properties object with structural parameters
       - bc (BC): Boundary conditions object with forces and constraints
   Notes:
-    - The mesh is created from an STL file located at '../TOExamples/LBracket/LBracket.STL'
+    - The mesh is created from an STL file located at '../Models/LBracket/LBracket.STL'
     - Fixed boundary conditions are applied at y = yMax
     - Load is applied in the -y direction on nodes where y > 0.039 and x > 0.09
     - Total applied load is 1000 units distributed equally among loaded nodes
     - Material properties are set to E = 2.1e5 and ν = 0.3
   """
   # Read the STL model, create a mesh of desired size, and a structural problem is posed on it.
-  stl_file = os.path.join(script_dir, '../TOExamples/CompliantMechanism/CompliantMechanism.STL')
+  stl_file = os.path.join(script_dir, '../Models/CompliantMechanism/CompliantMechanism.STL')
   nElemsDesired = nDOFDesired/3    # estimate
   mesh = mesher.Mesher()
   
@@ -483,37 +755,11 @@ def createCompliantMechanismProblem(nDOFDesired: int = 10000, youngs_modulus = 2
   
   mat_prop = mat_lib.StructuralMaterial(youngs_modulus=youngs_modulus,
                       poissons_ratio=poissons_ratio)
-  return mesh, mat_prop, bc
+  elem_body_force = None
+  symmetry = [False,True,False,0] # X symmetry,Y Symmetry,Z symmetry,Angular symmetry about Z axis
+  return mesh, mat_prop, bc, elem_body_force,symmetry
 
-  # ----------------------------------------
-  
-def createAlcoaProblem(youngs_modulus = 2.1e11, poissons_ratio = 0.3):
-  # This is an example where an existing mesh is read, and a structural problem is posed on it.
-  mesh = mesher.Mesher()
-  mesh.read_pareto_mesh("../meshFiles/AlcoaGrabCAD.msh")
-  mesh.createEdofMatStructural()
-  node_indices = mesh.node_indices
-
-  fixed_nodes = np.where(node_indices[:, 3] == 1)[0]
-  fixed_dofs = np.array([3 * fixed_nodes,
-              3 * fixed_nodes + 1,
-                3 * fixed_nodes + 2]).flatten().astype(int)
-  dirichlet_values = np.zeros_like(fixed_dofs, dtype = float)
-
-  load_nodes = np.where(node_indices[:, 3] == 2)[0]
-  load_dofs = 3 * load_nodes + 1  # y direction
-  force = np.zeros(3*mesh.num_nodes)
-  force[load_dofs] = -1000.
-
-  bc = bound_cond.BC(force = force,
-            fixed_dofs = fixed_dofs,
-            dirichlet_values = dirichlet_values)
-
-  mat_prop = mat_lib.StructuralMaterial(youngs_modulus=youngs_modulus,
-                      poissons_ratio=poissons_ratio)
-  return mesh, mat_prop, bc
-
-  # ----------------------------------------
+  # ---------------------------------------
   
 def createBeamSurfaceLoadProblem(nDOFDesired: int = 20000, L: float = [0.1, 0.01, 0.01],
                   youngs_modulus = 3e7, poissons_ratio = 0.3,totalLoad = 30000):
@@ -554,13 +800,15 @@ def createBeamSurfaceLoadProblem(nDOFDesired: int = 20000, L: float = [0.1, 0.01
 
   mat_prop = mat_lib.StructuralMaterial(youngs_modulus=youngs_modulus,
                       poissons_ratio=poissons_ratio)
-  return mesh, mat_prop, bc
+  elem_body_force = None
+  symmetry = [False,False,False,0] # X symmetry,Y Symmetry,Z symmetry,Angular symmetry about Z axis
+  return mesh, mat_prop, bc, elem_body_force,symmetry
 
 
   # ----------------------------------------
   
 def createFilletedBeamProblem(nDOFDesired=50000, youngs_modulus = 2.1e5, poissons_ratio = 0.3,totalLoad = 1000):
-  stl_file = os.path.join(script_dir, '../TOExamples/FilletedBeam/FilletedBeam.STL')
+  stl_file = os.path.join(script_dir, '../Models/FilletedBeam/FilletedBeam.STL')
 
   mesh = mesher.Mesher()
   nElemsDesired = round(nDOFDesired/3)    # estimate
@@ -586,7 +834,9 @@ def createFilletedBeamProblem(nDOFDesired=50000, youngs_modulus = 2.1e5, poisson
 
   mat_prop = mat_lib.StructuralMaterial(youngs_modulus=youngs_modulus,
                       poissons_ratio=poissons_ratio)
-  return mesh, mat_prop, bc
+  elem_body_force = None
+  symmetry = [False,False,False,0] # X symmetry,Y Symmetry,Z symmetry,Angular symmetry about Z axis
+  return mesh, mat_prop, bc, elem_body_force,symmetry
 
 def createCentrifugalPlateProblem(nDOFDesired: int = 10000, youngs_modulus = 2.1e11, 
                                poissons_ratio = 0.28, material_density = 7700,
@@ -594,7 +844,7 @@ def createCentrifugalPlateProblem(nDOFDesired: int = 10000, youngs_modulus = 2.1
 																	   downwardForce = 10000):
  
   # Read the STL model, create a mesh of desired size, and a structural problem is posed on it.
-  stl_file = os.path.join(script_dir, '../TOExamples/CircularPlateHole/CircularPlateHole.STL')
+  stl_file = os.path.join(script_dir, '../Models/CircularPlateHole/CircularPlateHole.STL')
 
   nElemsDesired = nDOFDesired/3    # estimate
   mesh = mesher.Mesher()
@@ -647,14 +897,16 @@ def createCentrifugalPlateProblem(nDOFDesired: int = 10000, youngs_modulus = 2.1
 
   mat_prop = mat_lib.StructuralMaterial(youngs_modulus=youngs_modulus,
                       poissons_ratio=poissons_ratio)
-  return mesh, mat_prop, bc, elem_body_force
+  
+  symmetry = [False,False,False,4] # X symmetry,Y Symmetry,Z symmetry,Angular symmetry about Z axis
+  return mesh, mat_prop, bc, elem_body_force,symmetry
 
-def createBliskQuarterModelProblem(nDOFDesired: int = 10000, youngs_modulus = 2.1e11, 
+def createBliskQuarterProblem(nDOFDesired: int = 10000, youngs_modulus = 2.1e11, 
                                poissons_ratio = 0.28, material_density = 7700,rpm = 10000,radialForce =10000,
 																	   downwardForce = 0):
  
   # Read the STL model, create a mesh of desired size, and a structural problem is posed on it.
-  stl_file = os.path.join(script_dir, '../TOExamples/BliskModel/BliskQuarter.STL')
+  stl_file = os.path.join(script_dir, '../Models/BliskModel/BliskQuarter.STL')
 
 
   nElemsDesired = nDOFDesired/3    # estimate
@@ -708,7 +960,9 @@ def createBliskQuarterModelProblem(nDOFDesired: int = 10000, youngs_modulus = 2.
 
   mat_prop = mat_lib.StructuralMaterial(youngs_modulus=youngs_modulus,
                       poissons_ratio=poissons_ratio)
-  return mesh, mat_prop, bc, elem_body_force
+  
+  symmetry = [True,False,False,0] # X symmetry,Y Symmetry,Z symmetry,Angular symmetry about Z axis
+  return mesh, mat_prop, bc, elem_body_force,symmetry
 
 
   # ----------------------------------------
@@ -718,7 +972,7 @@ def createBliskFullModelProblem(nDOFDesired: int = 10000, youngs_modulus = 2.1e1
 																	   downwardForce = 100):
  
   # Read the STL model, create a mesh of desired size, and a structural problem is posed on it.
-  stl_file = os.path.join(script_dir, '../TOExamples/BliskModel/BliskFull.STL')
+  stl_file = os.path.join(script_dir, '../Models/BliskModel/BliskFull.STL')
 
 
   nElemsDesired = nDOFDesired/3    # estimate
@@ -771,7 +1025,9 @@ def createBliskFullModelProblem(nDOFDesired: int = 10000, youngs_modulus = 2.1e1
 
   mat_prop = mat_lib.StructuralMaterial(youngs_modulus=youngs_modulus,
                       poissons_ratio=poissons_ratio)
-  return mesh, mat_prop, bc
+   
+  symmetry = [False,False,False,0] # X symmetry,Y Symmetry,Z symmetry,Angular symmetry about Z axis
+  return mesh, mat_prop, bc, elem_body_force,symmetry
 
 
   # ----------------------------------------

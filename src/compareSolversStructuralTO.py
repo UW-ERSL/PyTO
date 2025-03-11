@@ -11,8 +11,7 @@ import linear_solvers as lin_solv
 import topopt as topopt
 import os
 import plots
-from struct_fea import createCantileverProblem, createLBracketProblem, createCompliantMechanismProblem,createFilletedBeamProblem
-
+from examples_structural import *
 jax.config.update("jax_enable_x64", True)
 dsolver = deflation.DeflationSolver()
 
@@ -90,7 +89,8 @@ def run_topopt(fe_solver: fea.StructFEA,
 		plt.ylabel(key)
 		plt.show()
 
-mesh, mat_prop, bc = createCantileverProblem(nDOFDesired=20000,L=[0.02,0.01,0.01])	
+problem = StructuralExamples.EdgeCantilever
+mesh, mat_prop, bc,elem_body_force,symmetry = getStructuralProblem(problem,nDOFDesired = 10000)
 num_deflation_groups =  cfg_defl['num_groups']
 timeStart = time.time()
 dsolver.create_deflation_groups(mesh,nGroupsDesired=num_deflation_groups)

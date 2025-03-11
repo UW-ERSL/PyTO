@@ -1,4 +1,4 @@
-"""Structural Finite Element Analysis."""
+"""Thermal Finite Element Analysis."""
 
 import time
 import numpy as np

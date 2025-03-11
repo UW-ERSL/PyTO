@@ -16,7 +16,7 @@ from queue import Queue
 from PyQt5.QtWidgets import QPushButton, QVBoxLayout, QFrame
 from PyQt5.QtGui import QIcon
 from PyQt5.QtCore import QSize, Qt  # Updated import: added Qt
-sys.path.append('../src') #assuming the src files is in the parent directory
+sys.path.append('./src') #assuming the pyTO src files is in the parent directory
 from STLGeom import STLGeom
 from mesher import Mesher
 import bound_cond
