@@ -87,7 +87,7 @@ def topopt_mma(fe_solver: sfea.StructFEA,
 						   penal: float = 3.0,
 							 move_limit: float = 0.2,
 							 kkt_tol: float = 1.e-6,
-							 step_tol: float = 0.05,
+							 step_tol: float = 0.025,
 							 continuationScheme: bool = False,
 							 imposeXSymmetry: bool = False,
 							 imposeYSymmetry: bool = False,
@@ -245,7 +245,7 @@ def topopt_optimality_criteria(
 							penal: float = 3,
 							move: float = 0.2,
 							step_tol: float = 0.025,
-							rel_conv_tol: float = 1.e-5,
+							rel_conv_tol: float = 1.e-4,
 							verbose: bool = True,
 							imposeXSymmetry: bool = False,
 							imposeYSymmetry: bool = False,
@@ -402,7 +402,7 @@ def topopt_optimality_criteria(
 		history['change'].append(change)
 
 		if verbose:
-			print(f"it.: {iter+1:d}, obj.: {obj:.3g}, "
+			print(f"it.: {iter+1:d}, obj.: {obj:.5g}, "
 				  	f"vol.: {np.mean(xPhys):.3g}, ch.: {change:.3f}")
 		
 		if change < step_tol:
@@ -687,19 +687,16 @@ if __name__ == "__main__":
 	import deflation
 	import plots	
 
-
 	jax.config.update("jax_enable_x64", True)
 	dsolver = deflation.DeflationSolver()
 
-
 	# Select the problem and various options
-	problem = StructuralExamples.Multiload
+	problem = StructuralExamples.EdgeCantilever
 	optimizationMethod = Optimizers.PARETO # MMA, OC or PARETO
-	nDOFDesired = 60000
-	desiredVolFraction = 0.2
-	material_model = MaterialModel.SIMPPLUS # Only for MMA, OC. 
-	rel_conv_tol = 1.e-2 # Only for MMA, OC. Typically 1-e4, but use 1e-2 if convergence is slow
-	solver = lin_solv.Solvers.DPCG # Typically PARDISO, but DPCG for DOF > 200,000
+	nDOFDesired = 50000
+	desiredVolFraction = 0.5
+	material_model = MaterialModel.SIMP# Only for MMA, OC. Use SIMPPLUS for problems with body forces
+	solver = lin_solv.Solvers.PARDISO # Typically PARDISO, but DPCG for DOF > 200,000
 
 	# Create the problem
 	mesh, mat_prop, bc,elem_body_force,symmetry = getStructuralProblem(problem,nDOFDesired = nDOFDesired)
@@ -737,8 +734,7 @@ if __name__ == "__main__":
 		print("OptimizationMethod: MMA")
 		u, history = topopt_mma(fe_solver = fe_solver,
 									volfrac = desiredVolFraction,
-									material_model = material_model,
-									rel_conv_tol = rel_conv_tol)
+									material_model = material_model,)
 		timeTaken = time.time() - startTime
 		fig, ax1 = plt.subplots()
 
@@ -770,8 +766,7 @@ if __name__ == "__main__":
 	elif optimizationMethod == Optimizers.OC:
 		print("OptimizationMethod: OC")
 		u, history = topopt_optimality_criteria(fe_solver = fe_solver,
-												volfrac = desiredVolFraction,
-												rel_conv_tol= rel_conv_tol)
+												volfrac = desiredVolFraction)
 		timeTaken = time.time() - startTime
 		title = f"OC: nDOF: {3*fe_solver.mesh.num_nodes}, vol: {history['volume'][-1]:0.2f}, J: {history['compliance'][-1]:.3g}, time: {timeTaken:.0f} s"
 
