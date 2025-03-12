@@ -369,7 +369,7 @@ class DeflationSolver:
 		Kz = K @ z
 		
 		if (pypardiso is None):
-			mu = spy_linalg.cho_solve(WKW,WT @ Kz)
+			mu = spy_linalg.spsolve(WKW,WT @ Kz)
 		else:
 			mu = pypardiso.spsolve(WKW,WT @ Kz)
 		
@@ -399,7 +399,6 @@ class DeflationSolver:
 			if (pypardiso is None):
 				mu = spy_linalg.spsolve(WKW,WT @ Kz)
 			else:
-				
 				mu = pypardiso.spsolve(WKW,WT @ Kz)
 			p = z + beta * p - W @ mu
 			

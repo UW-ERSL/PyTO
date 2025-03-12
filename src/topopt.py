@@ -240,7 +240,7 @@ def topopt_mma(fe_solver: sfea.StructFEA,
 def topopt_optimality_criteria(
 		
 							fe_solver: sfea.StructFEA,
-			  				maxIterations: int = 500,
+			  				maxIterations: int = 250,
 							volfrac: float = 0.5,
 							penal: float = 3,
 							move: float = 0.2,
@@ -419,9 +419,9 @@ def topopt_optimality_criteria(
 def topopt_pareto(fe_solver: sfea.StructFEA,
 							desiredVolFrac: float = 0.5,
 							rel_err: float = 0.025,
-							vol_decr_max: float = 0.025,
+							vol_decr_max: float = 0.05,
 							vol_decr_min: float = 0.0025,
-							min_local_iters: int = 1,
+							min_local_iters: int = 2,
 							max_local_iters: int = 10,
 							rhoVoid: float = 0,
 							imposeXSymmetry: bool = False,
@@ -592,6 +592,7 @@ def topopt_pareto(fe_solver: sfea.StructFEA,
 		JPrev = float('inf')  # Initialize JPrev
 		JPrevPrev = float('inf')  # Initialize JPrev
 		TPrev = T.copy()  # Store previous sensitivity
+		rhoPrev = rho.copy()  # Store previous design
 		innerLoopSuccess = True
 		while True:
 			if (debug):
@@ -599,10 +600,10 @@ def topopt_pareto(fe_solver: sfea.StructFEA,
 			if (localIter >= max_local_iters) or abs(JTemp) > 10 * history['compliance'][-1]:  # Divergence check	
 				innerLoopSuccess = False
 				terminatePareto = True
-				rho = np.ones((fe_solver.mesh.num_elems))
+				rho = rhoPrev.copy()
 				T = TPrev.copy()
+				fe_solver.mesh.setPseudoDensity(rho.flatten())
 				JTemp = JPrev
-				
 				break
 			# Check convergence, and break if converged
 			if localIter >= min_local_iters:
@@ -623,12 +624,10 @@ def topopt_pareto(fe_solver: sfea.StructFEA,
 				rho[list(smallest_component)] = rhoVoid
 				fe_solver.mesh.setPseudoDensity(rho.flatten())
 			
-			#plots.plotMesh(fe_solver.mesh, bc = None, u=u, title = "debug 2")
+		
 			JPrevPrev = JPrev  # Store previous to previous value
 			JPrev = JTemp  # Store previous value
-			
 			u = np.asarray(fe_solver.solve(rho))
-
 			JTemp = float(fe_solver.total_force.T @ u)
 			
 			# Update sensitivity
@@ -671,7 +670,6 @@ def topopt_pareto(fe_solver: sfea.StructFEA,
 			history['volume'].append(volfrac)
 			scale = history['compliance'][-1] / history['compliance'][0]
 			vol_decr = max(vol_decr_min,vol_decr_max/scale**2) # Adjust volume decrease factor for steep increase in compliance
-			
 			print(f"J={history['compliance'][-1]:.3g}, vf={history['volume'][-1]:.3f},  #FEA={totalIter:2d}")
 			
 			fe_solver.mesh.setPseudoDensity(rho.flatten())
@@ -691,10 +689,10 @@ if __name__ == "__main__":
 	dsolver = deflation.DeflationSolver()
 
 	# Select the problem and various options
-	problem = StructuralExamples.EdgeCantilever
+	problem = StructuralExamples.Multiload
 	optimizationMethod = Optimizers.PARETO # MMA, OC or PARETO
 	nDOFDesired = 50000
-	desiredVolFraction = 0.1
+	desiredVolFraction = 0.25
 	material_model = MaterialModel.SIMP# Only for MMA, OC. Use SIMPPLUS for problems with body forces
 	solver = lin_solv.Solvers.PARDISO # Typically PARDISO, but DPCG for DOF > 200,000
 
