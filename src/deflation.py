@@ -331,7 +331,7 @@ class DeflationSolver:
 									W: _Array,
 									M: _Array,
 									rtol=1e-8,
-									maxIters=1500,
+									maxIters=500,
 									verbose=False):
 		"""Deflated Preconditioned Conjugate Gradient."""
 

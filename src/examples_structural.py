@@ -597,8 +597,8 @@ def createGravityBarProblem(nDOFDesired: int = 10000, youngs_modulus = 2.1e11, p
   # ----------------------------------------
   
 def createGravityPlateProblem(nDOFDesired: int = 10000, L: float = [1.0, 0.5, 0.01],
-                               youngs_modulus = 6.687e11, poissons_ratio = 0.3,material_density = 2100,
-                               verticalForce = 100):
+                               youngs_modulus = 2e11, poissons_ratio = 0.3,material_density = 7700,
+                               verticalForce = 0):
   nVoxelsDesired = nDOFDesired/3    
   # Let the number of voxels be proportional to the length in each direction
   alpha = (nVoxelsDesired/(L[0]*L[1]*L[2]))**(1/3)
@@ -838,10 +838,10 @@ def createFilletedBeamProblem(nDOFDesired=50000, youngs_modulus = 2.1e5, poisson
   symmetry = [False,False,False,0] # X symmetry,Y Symmetry,Z symmetry,Angular symmetry about Z axis
   return mesh, mat_prop, bc, elem_body_force,symmetry
 
-def createCentrifugalPlateProblem(nDOFDesired: int = 10000, youngs_modulus = 2.1e11, 
+def createCentrifugalPlateProblem(nDOFDesired: int = 10000, youngs_modulus = 2e11, 
                                poissons_ratio = 0.28, material_density = 7700,
-                               rpm = 0,radialForce =10000,
-																	   downwardForce = 10000):
+                               rpm = 10000,radialForce =  0,
+																	   downwardForce = 0):
  
   # Read the STL model, create a mesh of desired size, and a structural problem is posed on it.
   stl_file = os.path.join(script_dir, '../Models/CircularPlateHole/CircularPlateHole.STL')
@@ -873,6 +873,7 @@ def createCentrifugalPlateProblem(nDOFDesired: int = 10000, youngs_modulus = 2.1
     center = mesh.elem_centers[e]
     elem_body_force[3*e:3*e+2] = (material_density*np.prod(mesh.elem_size)) * omega**2 *  center[:2]
 
+  print("Norm of centrifugal force ",np.linalg.norm(elem_body_force))
   # Apply centrifugal force on each node on the circumference
   # this is in addition to the body force
   outerRadius = 0.05
@@ -961,7 +962,7 @@ def createBliskQuarterProblem(nDOFDesired: int = 10000, youngs_modulus = 2.1e11,
   mat_prop = mat_lib.StructuralMaterial(youngs_modulus=youngs_modulus,
                       poissons_ratio=poissons_ratio)
   
-  symmetry = [True,False,False,0] # X symmetry,Y Symmetry,Z symmetry,Angular symmetry about Z axis
+  symmetry = [False,False,False,0] # X symmetry,Y Symmetry,Z symmetry,Angular symmetry about Z axis
   return mesh, mat_prop, bc, elem_body_force,symmetry
 
 

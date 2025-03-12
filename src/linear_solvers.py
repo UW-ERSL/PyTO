@@ -112,6 +112,7 @@ def solve(A: spy_sprs.coo_matrix,
                                 shape=A0.shape)
     A, b = bound_cond.impose_dirichlet_bc(A_sp.tocsr(), b0, bc)
 
+
     if solver == Solvers.SPSOLVE:
       x = spy_linalg.spsolve(A, b)
 
