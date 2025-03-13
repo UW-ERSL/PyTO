@@ -342,6 +342,72 @@ class Mesher:
 		print(f"Voxelized Mesh Volume: {voxel_volume:.2e}")
 		print(f"Meshing Volume Error: {volume_error:.2f}%")
 
+	def createMeshFromSTLFileAssembly(self, stlFileName: str,nElemsDesired: int):
+		print("Creating mesh from STL file...")
+		startTime = time.time()
+		self.stlMesh = pv.read(stlFileName)
+
+		# Extract connected components
+		components = self.stlMesh.connectivity(label=True)
+
+		# Get the number of components
+		num_components = components["RegionId"].max() + 1
+		print(f"Number of connected components: {num_components}")
+		# Define voxel spacing (adjust as needed)
+		bounds = self.stlMesh.bounds
+		Lx = bounds[1] - bounds[0]
+		Ly = bounds[3] - bounds[2]
+		Lz = bounds[5] - bounds[4]
+		stlVolume = self.stlMesh.volume
+		bBoxVolume = Lx*Ly*Lz
+		# More voxels are needed inside the bounding box than the desired number of elements
+		# Factor of 0.9 is arbitrary
+		nElemsDesiredInsideBox = 0.9*nElemsDesired*(bBoxVolume/stlVolume)
+		# assume nx = alpha*Lx, ny = alpha*Ly, nz = alpha*Lz
+		alpha = (nElemsDesiredInsideBox/(Lx*Ly*Lz))**(1/3)
+		nx = max(round(alpha*Lx), self.minVoxelsPerAxis)
+		ny = max(round(alpha*Ly), self.minVoxelsPerAxis)
+		nz = max(round(alpha*Lz), self.minVoxelsPerAxis)
+		self.grid = [nx, ny, nz]
+		self.elem_size= [Lx/nx, Ly/ny, Lz/nz]
+		print(f"Mesher: Grid size: {nx} x {ny} x {nz}")
+		print(f"Mesher: Element size: {self.elem_size[0]:.2e} x {self.elem_size[1]:.2e} x {self.elem_size[2]:.2e}")
+
+		# Store voxelized components
+		voxelized_list = []
+		region_ids = []
+		
+		bounds = components.bounds  # Get overall bounds
+		grid = pv.ImageData(dimensions=(100, 100, 100))  # Define a regular grid
+		grid.origin = (bounds[0], bounds[2], bounds[4])
+		grid.spacing = (1, 1, 1)  # Adjust spacing as needed
+		voxelized = grid.sample(components)  # Sample components onto voxel grid
+		for i in range(num_components):
+			# Extract individual component
+			comp = components.threshold(i, scalars="RegionId")
+			
+			# Voxelize component
+			voxelized = pv.voxelize(comp,density=self.elem_size, check_surface=False)
+			
+			# Assign Region ID to voxels
+			num_voxels = voxelized.n_cells
+			print(f"Component {i}: {num_voxels} voxels")
+			voxelized["RegionId"] = np.full(num_voxels, i)  # Assign component index
+			
+			# Store results
+			voxelized_list.append(voxelized)
+
+		# Combine all voxelized components
+		voxelized_mesh = pv.MultiBlock(voxelized_list)
+
+			# Visualize with different colors per component
+		plotter = pv.Plotter()
+		plotter.add_mesh(voxelized_mesh, scalars="RegionId", show_edges=True,opacity=1)
+		# for vox in voxelized_list:
+		# 	plotter.add_mesh(vox, scalars="RegionId", show_edges=True)
+		plotter.show()
+
+
 	def get_nodes_within_radius(self, pt: np.ndarray, r: float) -> np.ndarray:
 		"""Find nodes within a given radius from a point.
 		
@@ -621,5 +687,9 @@ if __name__ == "__main__":
     script_dir = os.path.dirname(os.path.abspath(__file__))
     stlFileName = os.path.join(script_dir, '../Models/Knuckle/Knuckle.STL')
     mesh = Mesher()
-    mesh.createMeshFromSTLFile(stlFileName,nElemsDesired=100000)
-    plots.plotMesh(mesh,  title=f'Knuckle; nElems = {mesh.num_nodes}')
+    #mesh.createMeshFromSTLFile(stlFileName,nElemsDesired=10000)
+    #plots.plotMesh(mesh,  title=f'Knuckle; nElems = {mesh.num_nodes}')
+
+    stlFileName = os.path.join(script_dir, '../Models/KnuckleAssembly/KnuckleAssembly.STL')
+    stlFileName = os.path.join(script_dir, '../Models/CNCMultiBody/CNCMultiBody.STL')
+    mesh.createMeshFromSTLFileAssembly(stlFileName, nElemsDesired=100000)

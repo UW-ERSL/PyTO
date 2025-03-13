@@ -753,10 +753,10 @@ if __name__ == "__main__":
 	dsolver = deflation.DeflationSolver()
 
 	# Select the problem and various options
-	problem = StructuralExamples.MBB
-	optimizationMethod = Optimizers.MMA # MMA, OC or PARETO
+	problem = StructuralExamples.EdgeCantilever
+	optimizationMethod = Optimizers.PARETO # MMA, OC or PARETO
 	nDOFDesired = 50000
-	desiredVolFraction = 0.25
+	desiredVolFraction = 0.5
 	material_model = MaterialModel.SIMP# Relevant only for MMA, OC. Use SIMPPLUS for problems with body forces
 	solver = lin_solv.Solvers.PARDISO # Typically PARDISO, but DPCG for DOF > 200,000
 	removeHangingElems = False # for Pareto, during optimization, remove hanging elements

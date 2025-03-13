@@ -18,7 +18,6 @@ def plotMesh(mesh: mesher.Mesher,
              background_color='white',
              edge_color='black',
 	           title='Mesh Visualization',
-             interactive = False,
              save_path=None,
 
              fontsize=10):
@@ -225,7 +224,7 @@ def plotMesh(mesh: mesher.Mesher,
     plotter.screenshot(save_path)
     plotter.close()
   else:
-    plotter.show(interactive= interactive) 
+    plotter.show() 
   
   return plotter
 
