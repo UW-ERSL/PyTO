@@ -496,6 +496,7 @@ if __name__ == "__main__":
     stl_file =  os.path.join(script_dir, '../Models/CompliantMechanism/CompliantMechanism.STL')
     stl_file =  os.path.join(script_dir, '../Models/CircularPlateHole/CircularPlateHole.STL')
     stl_file =  os.path.join(script_dir, '../Models/BliskModel/BliskQuarter.STL')
+    stl_file =  os.path.join(script_dir, '../Models/KnuckleAssembly/KnuckleAssembly.STL')
     stl_geom = STLGeom(stl_file)
 
     [area, volume, cg, inertia] = stl_geom.compute_mass_properties()

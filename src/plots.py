@@ -18,6 +18,7 @@ def plotMesh(mesh: mesher.Mesher,
              background_color='white',
              edge_color='black',
 	           title='Mesh Visualization',
+             interactive = False,
              save_path=None,
 
              fontsize=10):
@@ -49,12 +50,12 @@ def plotMesh(mesh: mesher.Mesher,
   face_densities = []
   
   for e in range(mesh.num_elems):
-    if mesh.elemPseudoDensity[e] < 0.3:
+    if mesh.elemPseudoDensity[e] < 0.5:
       continue
-    elif (mesh.elemPseudoDensity[e] > 0.3 and 
+    elif (mesh.elemPseudoDensity[e] > 0.5 and 
           np.all(mesh.elemNeighborsArray[e] > 0) and 
           np.all(mesh.elemPseudoDensity[[int(elem) for elem in 
-                                    mesh.elemNeighborsArray[e]]] > 0.3)):
+                                    mesh.elemNeighborsArray[e]]] > 0.5)):
       continue
 
     # Add all faces for this element
@@ -224,7 +225,7 @@ def plotMesh(mesh: mesher.Mesher,
     plotter.screenshot(save_path)
     plotter.close()
   else:
-    plotter.show()
+    plotter.show(interactive= interactive) 
   
   return plotter
 
@@ -330,13 +331,16 @@ def plotElementField(mesh: mesher.Mesher,
 
 def plotIsocontour(mesh: mesher.Mesher,
                    u=None,
+                   Binarization = False,
                    isovalue=0.5,
                    show_edges=True,
+                   resolution=1,
                    window_size=(716, 538),
                    background_color='white',
                    edge_color='black',
                    title='Isocontour Visualization',
                    save_path=None,
+                   interactive=False,
                    fontsize=10):
   """Plot isocontour surface based on element pseudo-density.
 
@@ -375,8 +379,11 @@ def plotIsocontour(mesh: mesher.Mesher,
   # Create PyVista mesh
   pv_mesh = pv.UnstructuredGrid({12: cells[:, 1:]}, vertices)  # 12 is VTK_HEXAHEDRON
 
+  elemPseudoDensity = mesh.elemPseudoDensity
+  if (Binarization):
+    elemPseudoDensity = np.where(elemPseudoDensity > 0.5, 1, 0)
   # Add element densities to cell data
-  pv_mesh.cell_data['density'] = mesh.elemPseudoDensity
+  pv_mesh.cell_data['density'] = elemPseudoDensity
 
   # Add displacement values to point data if provided
   if values is not None:
@@ -389,10 +396,10 @@ def plotIsocontour(mesh: mesher.Mesher,
   bounds = pv_mesh.bounds
   padding = max([bounds[1]-bounds[0],
                  bounds[3]-bounds[2],
-                 bounds[5]-bounds[4]]) * 0.2
+                 bounds[5]-bounds[4]]) * 0.1
 
-  # Create a finer grid for better isosurface
-  dimensions = (59, 50, 50)
+  # Optionally, create a finer grid for better isosurface
+  dimensions = (resolution*mesh.grid[0], resolution*mesh.grid[1], resolution*mesh.grid[2])
   spacing = (
             (bounds[1] - bounds[0] + 2*padding) / (dimensions[0] - 1),
             (bounds[3] - bounds[2] + 2*padding) / (dimensions[1] - 1),
@@ -408,9 +415,10 @@ def plotIsocontour(mesh: mesher.Mesher,
                     )
   
   # Interpolate data onto grid
-  grid_with_data = grid.interpolate(mesh_with_point_data, radius=padding/2)
-  
-  # Set values outside the mesh to 0 to close the isosurface
+  grid_with_data = grid.interpolate(mesh_with_point_data, radius=padding/4, null_value=-25)
+
+  # Set values outside the mesh to a large -ve value
+  # to ensure they are not included in the isocontour
   grid_mask = (~grid_with_data.point_data['density'].mask 
                 if hasattr(grid_with_data.point_data['density'], 'mask')
                 else None)
@@ -473,7 +481,7 @@ def plotIsocontour(mesh: mesher.Mesher,
   if save_path:
     plotter.show(save_path  = save_path)
   else:
-    plotter.show()
+    plotter.show(interactive= interactive)
   
   return plotter
 

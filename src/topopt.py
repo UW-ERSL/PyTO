@@ -104,11 +104,12 @@ def _compliance_objective(x: jnp.ndarray,
 
 def topopt_mma(fe_solver: sfea.StructFEA,
 			   			 maxMMAIterations: int = 250, 
+							timeLimit: float =3600, #1 hour
 			   			 volfrac: float = 0.5,
 						   penal: float = 3.0,
 							 move_limit: float = 0.2,
 							 kkt_tol: float = 1.e-6,
-							 step_tol: float = 0.025,
+							 move_tol: float = 0.025,
 							 continuationScheme: bool = False,
 							 imposeXSymmetry: bool = False,
 							 imposeYSymmetry: bool = False,
@@ -132,6 +133,8 @@ def topopt_mma(fe_solver: sfea.StructFEA,
 
 	Returns: The displacement field of the optimized structure.
 	"""
+
+	tStart = time.time()
 	num_elems= fe_solver.mesh.num_elems
 	history = {'compliance': [], 'volume': [], 'change': []}
 	if material_model == MaterialModel.SIMP:
@@ -163,7 +166,7 @@ def topopt_mma(fe_solver: sfea.StructFEA,
 
 	mma_params = mma.MMAParams(max_iter=maxMMAIterations,
 														kkt_tol = kkt_tol,
-														step_tol = step_tol,
+														step_tol = move_tol,
 														move_limit = move_limit,
 														num_design_var = num_elems,
 														num_cons = 1,
@@ -187,9 +190,9 @@ def topopt_mma(fe_solver: sfea.StructFEA,
 	if (continuationScheme):
 		penal = 1.2
 	
+	
 	while not mma_state.is_converged:
 		x = mma_state.x.reshape(-1)
-	
 
 		timeFEAStart = time.time()
 		obj,u = _compliance_objective(x, fe_solver, material_model_dict)
@@ -253,7 +256,10 @@ def topopt_mma(fe_solver: sfea.StructFEA,
 		history['compliance'].append(obj[0])
 		history['volume'].append(np.mean(x))
 		history['change'].append(change)
+		
 		if (len(history['compliance'])) >= 2:
+			if (change < move_tol):
+				break
 			dJ = (history['compliance'][-1] - history['compliance'][-2]) / history['compliance'][-2]
 			if (debug):
 				print(f"dJ: {abs(dJ):.7g}, cons: {abs(cons):.7g}")
@@ -262,6 +268,8 @@ def topopt_mma(fe_solver: sfea.StructFEA,
 		if (continuationScheme):
 			penal *= 1.1
 			penal = min(penal, 3.0)
+		if time.time() - tStart > timeLimit:
+			break
 
 	fe_solver.mesh.setPseudoDensity(x)
 	print(f"Time FEA: {timeFEA:.2f} s, Time MMA: {timeMMA:.2f} s")
@@ -274,7 +282,7 @@ def topopt_optimality_criteria(
 							volfrac: float = 0.5,
 							penal: float = 3,
 							move: float = 0.2,
-							step_tol: float = 0.025,
+							move_tol: float = 0.025,
 							rel_conv_tol: float = 1.e-4,
 							verbose: bool = True,
 							keepFixedElems: bool = False,
@@ -445,7 +453,7 @@ def topopt_optimality_criteria(
 			print(f"it.: {iter+1:d}, obj.: {obj:.5g}, "
 				  	f"vol.: {np.mean(xPhys):.3g}, ch.: {change:.3f}")
 		
-		if change < step_tol:
+		if (change < move_tol):
 			break
 		if (len(history['compliance'])) >= 2:
 			dJ = (history['compliance'][-1] - history['compliance'][-2]) / history['compliance'][-2]
@@ -739,12 +747,13 @@ if __name__ == "__main__":
 	import matplotlib.pyplot as plt
 	import deflation
 	import plots	
+	
 
 	jax.config.update("jax_enable_x64", True)
 	dsolver = deflation.DeflationSolver()
 
 	# Select the problem and various options
-	problem = StructuralExamples.LBracket
+	problem = StructuralExamples.MBB
 	optimizationMethod = Optimizers.MMA # MMA, OC or PARETO
 	nDOFDesired = 50000
 	desiredVolFraction = 0.25
@@ -759,8 +768,10 @@ if __name__ == "__main__":
 	if (optimizationMethod == Optimizers.MMA) or (optimizationMethod == Optimizers.OC):
 		if elem_body_force is not None and (np.linalg.norm(elem_body_force) > 0) and (material_model == MaterialModel.SIMP):
 			print("********For body forces, use material model SIMPPLUS********")
+			input("Press Enter to continue...")
 		if elem_body_force is not None and (np.linalg.norm(elem_body_force) == 0) and (material_model == MaterialModel.SIMPPLUS):
 			print("********For no body forces, use material model SIMP ********")
+			input("Press Enter to continue...")
 
 	if (optimizationMethod == Optimizers.PARETO):
 		if elem_body_force and (np.linalg.norm(elem_body_force) > 0):
@@ -826,7 +837,7 @@ if __name__ == "__main__":
 		ax1.legend(lines1 + lines2, labels1 + labels2)
 
 		plt.grid(True)
-		plt.show()
+		plt.show(block=False)
 
 		title = f"MMA: nDOF: {3*fe_solver.mesh.num_nodes}, vol: {history['volume'][-1]:0.2f}, J: {history['compliance'][-1]:.3g}, time: {timeTaken:.0f} s"
 
@@ -863,7 +874,7 @@ if __name__ == "__main__":
 		ax1.legend(lines1 + lines2, labels1 + labels2)
 
 		plt.grid(True)
-		plt.show()
+		plt.show(block=False)
 	
 	elif optimizationMethod == Optimizers.PARETO:
 		print("OptimizationMethod: Pareto")
@@ -872,7 +883,7 @@ if __name__ == "__main__":
 										imposeYSymmetry=imposeYSymmetry,imposeZSymmetry=imposeZSymmetry,
 										removeHangingElems=removeHangingElems,
 										keepFixedElems=keepFixedElems,
-										debug = True)
+										debug = False)
 		
 		timeTaken = time.time() - startTime
 		title = f"Pareto: nDOF: {3*fe_solver.mesh.num_nodes}, vol: {history['volume'][-1]:0.2f}, J: {history['compliance'][-1]:.3g}, time: {timeTaken:.0f} s"
@@ -884,7 +895,12 @@ if __name__ == "__main__":
 		plt.ylabel('Compliance')
 		plt.title('Pareto: Volume vs Compliance History')
 		plt.grid(True)
-		plt.show()
+		plt.show(block=False)
 
 	print(f"Time taken: {timeTaken:.0f} s")
-	plots.plotMesh(fe_solver.mesh, bc = None, u=None, title = title)
+	
+	plots.plotMesh(fe_solver.mesh, bc = None, u=None, title = title,interactive = True)
+	plots.plotIsocontour(fe_solver.mesh, title = title,Binarization = True,interactive = True)
+	
+	
+

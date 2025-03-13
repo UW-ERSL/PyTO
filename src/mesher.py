@@ -243,6 +243,12 @@ class Mesher:
 		startTime = time.time()
 		self.stlMesh = pv.read(stlFileName)
 
+		# Extract connected components
+		components = self.stlMesh.connectivity(label=True)
+
+		# Get the number of components
+		num_components = components["RegionId"].max() + 1
+		print(f"Number of connected components: {num_components}")
 		bounds = self.stlMesh.bounds
 		Lx = bounds[1] - bounds[0]
 		Ly = bounds[3] - bounds[2]
@@ -617,4 +623,3 @@ if __name__ == "__main__":
     mesh = Mesher()
     mesh.createMeshFromSTLFile(stlFileName,nElemsDesired=100000)
     plots.plotMesh(mesh,  title=f'Knuckle; nElems = {mesh.num_nodes}')
-  
