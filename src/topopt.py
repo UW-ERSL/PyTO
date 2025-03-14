@@ -284,6 +284,7 @@ def topopt_optimality_criteria(
 							move: float = 0.2,
 							move_tol: float = 0.025,
 							rel_conv_tol: float = 1.e-4,
+							directLagrangeMethod: bool = True,
 							verbose: bool = True,
 							keepFixedElems: bool = False,
 							imposeXSymmetry: bool = False,
@@ -391,12 +392,9 @@ def topopt_optimality_criteria(
 			grad_obj[elemsWithFixedDOF] = min(grad_obj)
 
 		cons = _volume_constraint(x, volfrac)
-		grad_cons = np.ones(num_elems)/volfrac/num_elems
 		# Optimality criteria update
 		xold = x.copy()
-
-		bisectionMethod = True
-		if  bisectionMethod:
+		if  not directLagrangeMethod: # bisection method
 			# Calculate Lagrange multiplier bounds
 			l1 = 0
 			l2 = _LARGE_NUMBER
@@ -417,32 +415,29 @@ def topopt_optimality_criteria(
 			xPhys = x
 		else: # direct method
 			#Reference: https://link.springer.com/article/10.1007/s00158-020-02740-y
+			setChange = True
 			eta = 0.5
-			SP = set()
-			SA = set(range(num_elems))
-			Delta_SP = 1
-			while Delta_SP:
-				# Compute Lambda
-				Re = grad_obj/grad_cons
-				temp = np.sum([x[i] for i in SP])
-				Lambda = (np.sum([x[i] * (-Re[i])**eta for i in SA]) / (num_elems*volfrac -temp))**(1/eta)
-				xnew = x*(-Re/Lambda)**eta
-				
-				# Set SP and identify Delta_SP
-				SP_new = {i for i in range(num_elems) if xnew[i] < xmin or xnew[i] > xmax}
-				xnew  = np.maximum(xmin, np.minimum(xmax, xnew))
-				Delta_SP = len(SP_new - SP) + len(SP - SP_new)
-				SP = SP_new
-				SA = set(range(num_elems)) - SP
-				x = xnew.copy()
-
-			xPhys = x.copy()
+			varIn = np.ones(num_elems, dtype = bool)
+			xMax = np.minimum(x+move, 1.0)
+			xMin = np.maximum(x-move,0.001)
+			volToDistribute = volfrac*num_elems
+			varTimesGrad = x*(-grad_obj)**eta
+			while setChange:
+				xnew = varTimesGrad/ (np.sum(varTimesGrad[varIn]) /volToDistribute)
+				volToDistribute = volfrac*num_elems -np.sum(xMax[xnew>=xMax]) -np.sum(xMin[xnew<=xMin])
+				setChange = np.sum(xnew) - volfrac * num_elems > 0
+				setChange = not np.array_equal((xnew<xMax) & (xnew>xMin), varIn)
+				varIn = (xnew < xMax) & (xnew > xMin)
+			
+			xnew[xnew>xMax] = xMax[xnew>xMax]
+			xnew[xnew<xMin] = xMin[xnew<xMin]
+			x = xnew
+			xPhys = xnew.copy()
 
 		# Calculate change and update densities
 		#change = jnp.linalg.norm(x - xold, np.inf)
 		change = jnp.max(jnp.abs(x - xold))
 
-		
 		fe_solver.mesh.setPseudoDensity(np.asarray(xPhys))
 	
 		history['compliance'].append(obj)
@@ -754,9 +749,9 @@ if __name__ == "__main__":
 
 	# Select the problem and various options
 	problem = StructuralExamples.EdgeCantilever
-	optimizationMethod = Optimizers.PARETO # MMA, OC or PARETO
+	optimizationMethod = Optimizers.OC # MMA, OC or PARETO
 	nDOFDesired = 50000
-	desiredVolFraction = 0.5
+	desiredVolFraction = 0.1
 	material_model = MaterialModel.SIMP# Relevant only for MMA, OC. Use SIMPPLUS for problems with body forces
 	solver = lin_solv.Solvers.PARDISO # Typically PARDISO, but DPCG for DOF > 200,000
 	removeHangingElems = False # for Pareto, during optimization, remove hanging elements
@@ -899,8 +894,8 @@ if __name__ == "__main__":
 
 	print(f"Time taken: {timeTaken:.0f} s")
 	
-	plots.plotMesh(fe_solver.mesh, bc = None, u=None, title = title,interactive = True)
-	plots.plotIsocontour(fe_solver.mesh, title = title,Binarization = True,interactive = True)
+	plots.plotMesh(fe_solver.mesh, bc = None, u=None, title = title)
+	plots.plotIsocontour(fe_solver.mesh, title = title,Binarization = True)
 	
 	
 
