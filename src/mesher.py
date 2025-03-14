@@ -629,7 +629,7 @@ class Mesher:
 				self.hash_grid[cell_indices] = []
 			self.hash_grid[cell_indices].append(elem_idx)
 
-	def get_element_near_point_fast(self, point: np.ndarray) -> int:
+	def get_element_near_point(self, point: np.ndarray) -> int:
 		"""Find element closest to point using spatial hash grid.
 		
 		Args:

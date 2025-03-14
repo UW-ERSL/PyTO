@@ -465,8 +465,6 @@ def createMultiloadProblem(nDOFDesired: int = 10000, L: float = [0.4, 0.2, 0.1],
   mesh.node_indices[load_node1, 3] = 2
   mesh.node_indices[load_node2, 3] = 2 # for plotting
 
-
-
   bc = bound_cond.BC(force = force,
             fixed_dofs = fixed_dofs,
             dirichlet_values = dirichlet_values) 

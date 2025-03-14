@@ -593,6 +593,8 @@ def topopt_pareto(fe_solver: sfea.StructFEA,
 
 	if (keepFixedElems):
 		elemsWithFixedDOF = find_elements_with_fixedDOF(fe_solver)
+
+	print("Initial FEA...")
 	u = np.asarray(fe_solver.solve(rho))
 
 	# Store initial compliance
@@ -601,7 +603,6 @@ def topopt_pareto(fe_solver: sfea.StructFEA,
 
 	# Compute initial topological sensitivity
 	T = computeTopologicalSensitivity(fe_solver.mesh, fe_solver.mat_prop, u, rho)
-	
 
 	# Add contribution from body force to topological sensitivity if present
 	if (nodal_body_force is not None):
@@ -746,14 +747,14 @@ if __name__ == "__main__":
 	dsolver = deflation.DeflationSolver()
 
 	# Select the problem and various options
-	problem = StructuralExamples.MBB
+	problem = StructuralExamples.BliskQuarter
 	optimizationMethod = Optimizers.PARETO # MMA, OC or PARETO
-	nDOFDesired = 50000
+	nDOFDesired = 1000000
 	desiredVolFraction = 0.2
 	material_model = MaterialModel.SIMP# Relevant only for MMA, OC. Use SIMPPLUS for problems with body forces
-	solver = lin_solv.Solvers.PARDISO # Typically PARDISO, but DPCG for DOF > 200,000
-	removeHangingElems = False # for Pareto, during optimization, remove hanging elements
-	keepFixedElems = False # for MMA, OC, Pareto, keep elements with fixed DOF
+	solver = lin_solv.Solvers.DPCG # Typically PARDISO, but DPCG for DOF > 200,000
+	removeHangingElems = True # for Pareto, during optimization, remove hanging elements
+	keepFixedElems = True # for MMA, OC, Pareto, keep elements with fixed DOF
 	
 	# Create the problem
 	mesh, mat_prop, bc,elem_body_force,symmetry = getStructuralProblem(problem,nDOFDesired = nDOFDesired)
@@ -767,7 +768,7 @@ if __name__ == "__main__":
 			input("Press Enter to continue...")
 
 	if (optimizationMethod == Optimizers.PARETO):
-		if elem_body_force and (np.linalg.norm(elem_body_force) > 0):
+		if elem_body_force is not None and (np.linalg.norm(elem_body_force) > 0) and not removeHangingElems:
 			print("********For body forces, must remove hanging elements in Pareto ********")
 			removeHangingElems = True
 

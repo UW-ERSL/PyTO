@@ -52,9 +52,9 @@ def createXSymmetryFilter(mesh: mesher.Mesher) -> tuple[coo_matrix, np.ndarray]:
 	for i in range(num_elems):
 		elemCenter = mesh.elem_centers[i, :]
 		mirror_x = 2 * x_mid - elemCenter[0]
-		otherElemCenter = [mirror_x, elemCenter[1], elemCenter[2]]
-		distances = np.linalg.norm(mesh.elem_centers - otherElemCenter, axis=1)
-		mirror_idx = np.argmin(distances)
+		otherElemCenter = np.array([mirror_x, elemCenter[1], elemCenter[2]])
+		mirror_idx = mesh.get_element_near_point(otherElemCenter)
+		# Check if the closest element is the same as the current element
 		if (mirror_idx == i):
 			rows.append(i)
 			cols.append(i)
@@ -90,9 +90,8 @@ def createYSymmetryFilter(mesh: mesher.Mesher) -> tuple[coo_matrix, np.ndarray]:
 	for i in range(num_elems):
 		elemCenter = mesh.elem_centers[i, :]
 		mirror_y = 2 * y_mid - elemCenter[1]
-		otherElemCenter = [elemCenter[0], mirror_y, elemCenter[2]]
-		distances = np.linalg.norm(mesh.elem_centers - otherElemCenter, axis=1)
-		mirror_idy = np.argmin(distances)
+		otherElemCenter = np.array([elemCenter[0], mirror_y, elemCenter[2]])
+		mirror_idy = mesh.get_element_near_point(otherElemCenter)
 		if (mirror_idy == i):
 			rows.append(i)
 			cols.append(i)
@@ -130,9 +129,8 @@ def createZSymmetryFilter(mesh: mesher.Mesher) -> tuple[coo_matrix, np.ndarray]:
 	for i in range(num_elems):
 		elemCenter = mesh.elem_centers[i, :]
 		mirror_z = 2 * z_mid - elemCenter[2]
-		otherElemCenter = [elemCenter[0], elemCenter[1], mirror_z]
-		distances = np.linalg.norm(mesh.elem_centers - otherElemCenter, axis=1)
-		mirror_idz = np.argmin(distances)
+		otherElemCenter = np.array([elemCenter[0], elemCenter[1], mirror_z])
+		mirror_idz = mesh.get_element_near_point(otherElemCenter)
 		if (mirror_idz == i):
 			rows.append(i)
 			cols.append(i)
