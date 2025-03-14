@@ -604,6 +604,70 @@ class Mesher:
 			)
 		return 
 	
+	def create_spatial_hash_grid(self):
+		"""Create a spatial hash grid for fast element lookups.
+		The grid divides space into cells of size max(elem_size)."""
+		
+		# Use maximum element size for grid cell size
+		self.grid_cell_size = np.max(self.elem_size)
+		
+		# Calculate grid dimensions
+		bbox_min = [self.bbox.x.min, self.bbox.y.min, self.bbox.z.min]
+		bbox_max = [self.bbox.x.max, self.bbox.y.max, self.bbox.z.max]
+		grid_dims = np.ceil((np.array(bbox_max) - np.array(bbox_min)) / self.grid_cell_size).astype(int)
+		
+		# Initialize hash grid dictionary
+		self.hash_grid = {}
+		
+		# Add each element center to grid
+		for elem_idx in range(self.num_elems):
+			# Get grid cell indices for this element
+			cell_indices = tuple(np.floor((self.elem_centers[elem_idx] - bbox_min) / self.grid_cell_size).astype(int))
+			
+			# Add element to grid cell
+			if cell_indices not in self.hash_grid:
+				self.hash_grid[cell_indices] = []
+			self.hash_grid[cell_indices].append(elem_idx)
+
+	def get_element_near_point_fast(self, point: np.ndarray) -> int:
+		"""Find element closest to point using spatial hash grid.
+		
+		Args:
+			point: Array of shape (3,) containing x,y,z coordinates
+			
+		Returns:
+			int: Index of closest element, or -1 if no element found
+		"""
+		# Ensure hash grid exists
+		if not hasattr(self, 'hash_grid'):
+			self.create_spatial_hash_grid()
+			
+		# Get grid cell containing point
+		bbox_min = [self.bbox.x.min, self.bbox.y.min, self.bbox.z.min]
+		cell_indices = tuple(np.floor((point - bbox_min) / self.grid_cell_size).astype(int))
+		
+		# Search cell and immediate neighbors
+		min_dist = float('inf')
+		closest_elem = -1
+		
+		# Check neighboring cells in a 3x3x3 region
+		for dx in [-1, 0, 1]:
+			for dy in [-1, 0, 1]:
+				for dz in [-1, 0, 1]:
+					neighbor_cell = (cell_indices[0] + dx, 
+								   cell_indices[1] + dy,
+								   cell_indices[2] + dz)
+					
+					if neighbor_cell in self.hash_grid:
+						# Check elements in this cell
+						for elem_idx in self.hash_grid[neighbor_cell]:
+							dist = np.sum((self.elem_centers[elem_idx] - point)**2)
+							if dist < min_dist:
+								min_dist = dist
+								closest_elem = elem_idx
+								
+		return closest_elem
+
 	def find_connected_components(self, threshold: float = 0.01) -> list[np.ndarray]:
 		"""Find connected components of the mesh based on elemPseudoDensity.
 		
@@ -658,6 +722,77 @@ class Mesher:
 				components.append(np.array(current_component))
 		
 		return components
+	
+	def get_boundary_elements(self) -> np.ndarray:
+		"""Find elements that lie on the boundary of the mesh.
+		
+		Returns:
+			np.ndarray: Array of element indices that are on the boundary
+		"""
+		# An element is on the boundary if it has less than 6 neighbors
+		# (count valid neighbors in elemNeighborsArray)
+		valid_neighbors = (self.elemNeighborsArray != -1).sum(axis=1)
+		boundary_elements = np.where(valid_neighbors < 26)[0]
+		
+		# Alternative: element is on boundary if any of its nodes are boundary nodes
+		boundary_nodes = self.get_boundary_nodes()
+		boundary_elements_2 = np.unique(np.where(np.isin(self.elemArray, boundary_nodes))[0])
+		
+		# Combine both criteria to be conservative
+		boundary_elements = np.unique(np.concatenate([boundary_elements, boundary_elements_2]))
+		
+		return boundary_elements
+	
+	def get_boundary_surface_quads(self) -> tuple[np.ndarray, np.ndarray]:
+		"""Find quadrilateral faces on the boundary surface of the mesh.
+		
+		Returns:
+			tuple[np.ndarray, np.ndarray]: 
+				- Array of shape (N,4) containing node indices for each quad
+				- Array of shape (N) containing element indices that each quad belongs to
+		"""
+		# Get boundary elements
+		boundary_elems = self.get_boundary_elements()
+		
+		# For hex8 elements, faces are defined by these node patterns
+		face_patterns = [
+			[0,3,2,1],  # -z face
+			[4,5,6,7],  # +z face 
+			[0,1,5,4],  # -y face
+			[3,7,6,2],  # +y face
+			[0,4,7,3],  # -x face
+			[1,2,6,5]   # +x face
+		]
+		
+		quads = []
+		quad_elem_indices = []
+		
+		# For each boundary element
+		for elem_idx in boundary_elems:
+			# Get global node indices for this element
+			elem_nodes = self.elemArray[elem_idx]
+			
+			# Check each face
+			for face_nodes in face_patterns:
+				# Get nodes for this face
+				quad = elem_nodes[face_nodes]
+				
+				# Check if this is a boundary face by looking for another element
+				# that shares these nodes
+				is_boundary = True
+				for other_elem in self.elemNeighborsArray[elem_idx]:
+					if other_elem != -1:
+						other_nodes = set(self.elemArray[other_elem])
+						if all(node in other_nodes for node in quad):
+							is_boundary = False
+							break
+				
+				if is_boundary:
+					quads.append(quad)
+					quad_elem_indices.append(elem_idx)
+		
+		return np.array(quads), np.array(quad_elem_indices)
+	
 	def get_boundary_nodes(self) -> np.ndarray:
 		"""Find nodes that lie on the boundary of the mesh.
 		

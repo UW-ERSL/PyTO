@@ -285,7 +285,6 @@ def topopt_optimality_criteria(
 							move_tol: float = 0.025,
 							rel_conv_tol: float = 1.e-4,
 							directLagrangeMethod: bool = True,
-							verbose: bool = True,
 							keepFixedElems: bool = False,
 							imposeXSymmetry: bool = False,
 							imposeYSymmetry: bool = False,
@@ -444,8 +443,7 @@ def topopt_optimality_criteria(
 		history['volume'].append(np.mean(xPhys))
 		history['change'].append(change)
 
-		if verbose:
-			print(f"it.: {iter+1:d}, obj.: {obj:.5g}, "
+		print(f"it.: {iter+1:d}, obj.: {obj:.5g}, "
 				  	f"vol.: {np.mean(xPhys):.3g}, ch.: {change:.3f}")
 		
 		if (change < move_tol):
@@ -461,10 +459,10 @@ def topopt_optimality_criteria(
 
 def topopt_pareto(fe_solver: sfea.StructFEA,
 							desiredVolFrac: float = 0.5,
-							rel_err: float = 0.025,
-							vol_decr_max: float = 0.05,
+							rel_err: float = 0.05,
+							vol_decr_max: float = 0.025,
 							vol_decr_min: float = 0.001,
-							min_local_iters: int = 2,
+							min_local_iters: int = 1,
 							max_local_iters: int = 10,
 							rhoVoid: float = 0,
 							removeHangingElems: bool = False,
@@ -556,7 +554,7 @@ def topopt_pareto(fe_solver: sfea.StructFEA,
 		trace_strain = np.trace(strain_tensor, axis1=1, axis2=2)
 		T = (4 / (1 + nu) * np.sum(stress_tensor * strain_tensor, axis=(1, 2)) -
 			(1 - 3 * nu) / (1 - nu**2) * trace_stress * trace_strain)
-		
+
 		return T
 
 	totalIter = 1
@@ -647,7 +645,7 @@ def topopt_pareto(fe_solver: sfea.StructFEA,
 		while True:
 			if (debug):
 				print(f"Local Iteration: {localIter}/{max_local_iters}, JTemp: {JTemp:.3g}")
-			if (localIter >= max_local_iters) or abs(JTemp) > 10 * history['compliance'][-1]:  # Divergence check	
+			if (localIter >= max_local_iters) or abs(JTemp) > 10 * history['compliance'][-1]:  # large change in compliance	
 				innerLoopSuccess = False
 				rho = rhoPrev.copy()
 				T = TPrev.copy()
@@ -748,10 +746,10 @@ if __name__ == "__main__":
 	dsolver = deflation.DeflationSolver()
 
 	# Select the problem and various options
-	problem = StructuralExamples.EdgeCantilever
-	optimizationMethod = Optimizers.OC # MMA, OC or PARETO
+	problem = StructuralExamples.MBB
+	optimizationMethod = Optimizers.PARETO # MMA, OC or PARETO
 	nDOFDesired = 50000
-	desiredVolFraction = 0.1
+	desiredVolFraction = 0.2
 	material_model = MaterialModel.SIMP# Relevant only for MMA, OC. Use SIMPPLUS for problems with body forces
 	solver = lin_solv.Solvers.PARDISO # Typically PARDISO, but DPCG for DOF > 200,000
 	removeHangingElems = False # for Pareto, during optimization, remove hanging elements
@@ -770,6 +768,7 @@ if __name__ == "__main__":
 
 	if (optimizationMethod == Optimizers.PARETO):
 		if elem_body_force and (np.linalg.norm(elem_body_force) > 0):
+			print("********For body forces, must remove hanging elements in Pareto ********")
 			removeHangingElems = True
 
 	imposeXSymmetry = symmetry[0]
@@ -841,8 +840,7 @@ if __name__ == "__main__":
 		u, history = topopt_optimality_criteria(fe_solver = fe_solver,
 												volfrac = desiredVolFraction,
 												material_model = material_model,
-												keepFixedElems = keepFixedElems,
-												verbose = True)
+												keepFixedElems = keepFixedElems)
 		timeTaken = time.time() - startTime
 		title = f"OC: nDOF: {3*fe_solver.mesh.num_nodes}, vol: {history['volume'][-1]:0.2f}, J: {history['compliance'][-1]:.3g}, time: {timeTaken:.0f} s"
 
@@ -878,7 +876,7 @@ if __name__ == "__main__":
 										imposeYSymmetry=imposeYSymmetry,imposeZSymmetry=imposeZSymmetry,
 										removeHangingElems=removeHangingElems,
 										keepFixedElems=keepFixedElems,
-										debug = False)
+										debug = True)
 		
 		timeTaken = time.time() - startTime
 		title = f"Pareto: nDOF: {3*fe_solver.mesh.num_nodes}, vol: {history['volume'][-1]:0.2f}, J: {history['compliance'][-1]:.3g}, time: {timeTaken:.0f} s"
