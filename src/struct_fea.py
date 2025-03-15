@@ -175,9 +175,9 @@ if __name__ == "__main__":
 
   from examples_structural import *
 
-  problem = StructuralExamples.BliskQuarter
+  problem = StructuralExamples.TorquePlate
   nDOFDesired = 50000
-  mesh, mat_prop, bc,elem_body_force,symmetry = getStructuralProblem(problem,nDOFDesired = nDOFDesired)
+  mesh, mat_prop, bc,elem_body_force = getStructuralProblem(problem,nDOFDesired = nDOFDesired)
   solver = lin_solv.Solvers.DPCG # typically DPCG or PARDISO
   
   dsolver = deflation.DeflationSolver()

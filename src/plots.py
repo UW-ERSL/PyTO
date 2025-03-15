@@ -480,7 +480,7 @@ def plotIsocontour(mesh: mesher.Mesher,
   if save_path:
     plotter.show(save_path  = save_path)
   else:
-    plotter.show(interactive= interactive)
+    plotter.show()
   
   return plotter
 

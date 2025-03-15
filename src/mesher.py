@@ -6,6 +6,7 @@ import numpy as np
 import pyvista as pv # pip install pyvista
 from scipy.sparse import coo_matrix
 import time
+import random
 
 @dataclasses.dataclass
 class Extent:
@@ -150,7 +151,7 @@ class Mesher:
 		voxel_volume = self.num_elems * np.prod(self.elem_size)
 		box_volume = self.bbox.lx * self.bbox.ly * self.bbox.lz
 		volume_error = np.abs(voxel_volume - box_volume) / box_volume * 100
-		endTime = time.time()
+
 		print(f"Time taken to create mesh: {endTime - startTime:.2f} seconds")
 		print(f"STL Volume: {box_volume:.2e}")
 		print(f"Voxelized Mesh Volume: {voxel_volume:.2e}")
@@ -239,7 +240,7 @@ class Mesher:
 
 
 
-	def createMeshFromSTLFile(self, stlFileName: str,nElemsDesired: int):
+	def createMeshFromSTLFileOld(self, stlFileName: str,nElemsDesired: int):
 		startTime = time.time()
 		self.stlMesh = pv.read(stlFileName)
 
@@ -342,7 +343,7 @@ class Mesher:
 		print(f"Voxelized Mesh Volume: {voxel_volume:.2e}")
 		print(f"Meshing Volume Error: {volume_error:.2f}%")
 
-	def createMeshFromSTLFileAssembly(self, stlFileName: str,nElemsDesired: int):
+	def createMeshFromSTLFile(self, stlFileName: str,nElemsDesired: int):
 		print("Creating mesh from STL file...")
 		startTime = time.time()
 		self.stlMesh = pv.read(stlFileName)
@@ -353,6 +354,7 @@ class Mesher:
 		# Get the number of components
 		num_components = components["RegionId"].max() + 1
 		print(f"Number of connected components: {num_components}")
+		
 		# Define voxel spacing (adjust as needed)
 		bounds = self.stlMesh.bounds
 		Lx = bounds[1] - bounds[0]
@@ -373,39 +375,132 @@ class Mesher:
 		print(f"Mesher: Grid size: {nx} x {ny} x {nz}")
 		print(f"Mesher: Element size: {self.elem_size[0]:.2e} x {self.elem_size[1]:.2e} x {self.elem_size[2]:.2e}")
 
-		# Store voxelized components
-		voxelized_list = []
-		region_ids = []
+
+		n_open_edges = self.stlMesh.n_open_edges
+		if n_open_edges > 0:
+			print("Model has open edges.")
+		# Create a single voxelized mesh for the entire assembly
+	
+		voxel_mesh = pv.voxelize(self.stlMesh, density=self.elem_size, check_surface=False)
+		component_ids = np.zeros(voxel_mesh.n_cells, dtype=np.int32)
 		
-		bounds = components.bounds  # Get overall bounds
-		grid = pv.ImageData(dimensions=(100, 100, 100))  # Define a regular grid
-		grid.origin = (bounds[0], bounds[2], bounds[4])
-		grid.spacing = (1, 1, 1)  # Adjust spacing as needed
-		voxelized = grid.sample(components)  # Sample components onto voxel grid
+		# Get cell centers of the voxelized mesh
+		cell_centers = voxel_mesh.cell_centers().points
+		# Create a PolyData object from the cell centers for easier processing
+		centers_polydata = pv.PolyData(cell_centers)
+
 		for i in range(num_components):
 			# Extract individual component
-			comp = components.threshold(i, scalars="RegionId")
-			
-			# Voxelize component
-			voxelized = pv.voxelize(comp,density=self.elem_size, check_surface=False)
-			
-			# Assign Region ID to voxels
-			num_voxels = voxelized.n_cells
-			print(f"Component {i}: {num_voxels} voxels")
-			voxelized["RegionId"] = np.full(num_voxels, i)  # Assign component index
-			
-			# Store results
-			voxelized_list.append(voxelized)
+			component = components.threshold([i, i], scalars="RegionId")
+			#component_polydata = pv.PolyData(component.points, component.cells) #can use either this or the next line
+			component_polydata = component.extract_surface()
 
-		# Combine all voxelized components
-		voxelized_mesh = pv.MultiBlock(voxelized_list)
+            # use select_enclosed_points to find cells inside the component
+			try:
+				selection = centers_polydata.select_enclosed_points(component_polydata, tolerance=0.0, check_surface=True)
+			except Exception as e:
+				print(f"Surface is not closed")
+				selection = centers_polydata.select_enclosed_points(component_polydata, tolerance=0.0, check_surface=False)
+            
+			#selection.plot(show_edges=True)
+            # Get the mask of points that are inside the component
+			if 'SelectedPoints' in selection.point_data:
+				mask = selection.point_data['SelectedPoints'].astype(bool)
+			else:
+			# Alternatively try the InsidePoints array
+				mask = selection.point_data.get('InsidePoints', np.zeros(len(cell_centers))).astype(bool)
+			
+			# Assign component ID to the cells that are inside this component
+			# Only assign if not already assigned (priority to lower component IDs)
+			empty_cells = component_ids == 0
+			component_ids[np.logical_and(mask, empty_cells)] = i + 1
+			#print(f"  Added {np.sum(np.logical_and(mask, empty_cells))} cells for component {i+1} using select_enclosed_points")
 
-			# Visualize with different colors per component
-		plotter = pv.Plotter()
-		plotter.add_mesh(voxelized_mesh, scalars="RegionId", show_edges=True,opacity=1)
-		# for vox in voxelized_list:
-		# 	plotter.add_mesh(vox, scalars="RegionId", show_edges=True)
-		plotter.show()
+		# Add component IDs to the voxel mesh
+		voxel_mesh.cell_data["component_id"] = component_ids
+		
+		# Extract only cells that belong to a component (non-zero component_id)
+		voxel_mesh_components = voxel_mesh.threshold(0.5, scalars="component_id")
+		self.voxels = voxel_mesh_components
+
+		#extract the data
+		self.num_elems = self.voxels.n_cells
+		self.num_nodes = self.voxels.n_points 
+		self.origin = [self.voxels.bounds[0], self.voxels.bounds[2], self.voxels.bounds[4]]
+
+		self.node_indices = np.zeros((self.num_nodes, 4), dtype = np.int32)
+
+		# Node array is the index of the node, and the label of the node
+		# Convert voxel points to integer indices by dividing by elem_size and rounding
+		self.node_indices[:, :3] = np.round((self.voxels.points - np.array(self.origin)) / np.array(self.elem_size))
+		self.node_indices[:, 3] = 0
+		self.node_xyz = np.zeros((self.num_nodes, 3))
+		for i in range(3):
+			self.node_xyz[:,i] = self.origin[i] + self.elem_size[i]*self.node_indices[:,i]
+		self.elemArray = self.voxels.cell_connectivity
+		self.elemArray = self.elemArray.reshape((self.num_elems, 8))
+		
+		self.elemPartIndex = np.zeros(self.num_elems)
+		self.elem_centers = np.zeros((self.num_elems, 3))
+
+
+		for elem in range(self.num_elems):
+			self.elem_centers[elem, :] = np.array(np.sum(self.node_xyz[self.elemArray[elem]],
+																						axis = 0)/8)
+
+		self.elemPseudoDensity = np.ones(self.num_elems)
+		# the elemNeighborsArray is needed for creating the filter
+		self.elemNeighborsArray = np.zeros((self.num_elems, 27), dtype = np.int32)
+		# Build a dictionary mapping each node to its associated elements
+		node_to_elems = {}
+		for elem_idx in range(self.num_elems):
+			for node_idx in self.elemArray[elem_idx]:
+				if node_idx not in node_to_elems:
+					node_to_elems[node_idx] = []
+				node_to_elems[node_idx].append(elem_idx)
+
+		# For each element, find all neighboring elements by looking at shared nodes
+
+		for elem in range(self.num_elems):
+			neighbors = set()
+			# Get all nodes of this element
+			for node in self.elemArray[elem]:
+				# Add all elements connected to this node
+				neighbors.update(node_to_elems[node])
+			# Convert to list 
+			neighbor_list = list(neighbors)
+			# Take first 27 neighbors (or pad with -1 if fewer exist)
+			self.elemNeighborsArray[elem] = (neighbor_list[:27] + [-1] * 27)[:27]
+
+		self.bbox = BoundingBox(
+						x=Extent(bounds[0], bounds[1]),	
+						y=Extent(bounds[2], bounds[3]),	
+						z=Extent(bounds[4], bounds[5]))
+		voxel_volume = self.num_elems * np.prod(self.elem_size)
+		volume_error = np.abs(voxel_volume - stlVolume) / stlVolume * 100
+		self.createElementToNodeFieldMapping()
+		endTime = time.time()
+		print(f"Time taken to create mesh: {endTime - startTime:.2f} seconds")
+		print(f"STL Volume: {stlVolume:.2e}")
+		print(f"Voxelized Mesh Volume: {voxel_volume:.2e}")
+		print(f"Meshing Volume Error: {volume_error:.2f}%")
+		# plotter = pv.Plotter()
+		# # Add voxelized mesh with component colors
+		# for i in range(num_components):
+		# 	# Generate a random bright color (avoiding very dark colors)
+		# 	r = random.uniform(0.3, 1.0)
+		# 	g = random.uniform(0.3, 1.0)
+		# 	b = random.uniform(0.3, 1.0)
+		# 	color = (r, g, b)
+		# 	# Filter cells belonging to this component. Ensures that only cells with component_id = i + 1 are selected, excluding any other components.
+		# 	component_cells = voxel_mesh_components.threshold(i + 1, scalars="component_id")
+		# 	if component_cells.n_cells > 0:
+		# 		plotter.add_mesh(component_cells, color=color, label=f'Component {i+1}', show_edges=True)
+
+		# plotter.add_legend()
+		# #plotter.add_axes()
+		# #plotter.show_grid()
+		# plotter.show()
 
 
 	def get_nodes_within_radius(self, pt: np.ndarray, r: float) -> np.ndarray:
@@ -823,8 +918,7 @@ if __name__ == "__main__":
     stlFileName = os.path.join(script_dir, '../Models/Knuckle/Knuckle.STL')
     mesh = Mesher()
     #mesh.createMeshFromSTLFile(stlFileName,nElemsDesired=10000)
-    #plots.plotMesh(mesh,  title=f'Knuckle; nElems = {mesh.num_nodes}')
-
-    stlFileName = os.path.join(script_dir, '../Models/KnuckleAssembly/KnuckleAssembly.STL')
-    stlFileName = os.path.join(script_dir, '../Models/CNCMultiBody/CNCMultiBody.STL')
-    mesh.createMeshFromSTLFileAssembly(stlFileName, nElemsDesired=100000)
+    #stlFileName = os.path.join(script_dir, '../Models/KnuckleAssembly/KnuckleAssembly.STL')
+    #stlFileName = os.path.join(script_dir, '../Models/SwingArmAssembly/SwingArmAssembly.STL') #working fine
+    mesh.createMeshFromSTLFile(stlFileName, nElemsDesired=100000)
+    plots.plotMesh(mesh,  title=f' nElems = {mesh.num_elems}')
