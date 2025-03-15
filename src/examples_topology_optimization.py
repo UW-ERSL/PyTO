@@ -3,6 +3,7 @@ from examples_structural import *
 
 class StructuralTOExamples(enum.Enum):
 	EdgeCantilever = enum.auto()
+	ThreeHoleBracket = enum.auto()
 	MBB = enum.auto()
 	DistributedLoad = enum.auto()
 	Multiload = enum.auto()
@@ -41,6 +42,10 @@ def getStructuralTOProblem(to_problem: StructuralTOExamples, **kwargs):
     if to_problem == StructuralTOExamples.EdgeCantilever:
         structural_problem = StructuralExamples.EdgeCantilever
         to_constraints.YSymmetry = True
+    elif to_problem == StructuralTOExamples.ThreeHoleBracket:
+        structural_problem = StructuralExamples.ThreeHoleBracket
+        to_constraints.ZSymmetry = True
+        to_constraints.KeepFixedElems = True
     elif to_problem == StructuralTOExamples.MBB:
         structural_problem = StructuralExamples.MBB
         to_constraints.XSymmetry = True

@@ -47,7 +47,7 @@ linearSolvers = ['spsolve','pyamg','pycg','pypardiso','pydpcg']
 # Set the DOF for the problems to run through
 dofs = [1000,5000,10000,25000,50000,100000,250000,500000,1e6,1.5e6,2e6,3e6]
 # Set the time limit for each solver
-timeLimit = 60 # seconds
+timeLimit = 20 # seconds
 dofList = []
 solverTime = dict(zip(linearSolvers, [None]*len(linearSolvers)))
 for linearSolver in linearSolvers:
@@ -61,7 +61,7 @@ for dofDesired in dofs:
 		break
 	print('-----------------------------')
 	print("dofDesired: ", dofDesired)
-	mesh, mat_prop, bc,elem_body_force,symmetry = getStructuralProblem(problem,nDOFDesired = dofDesired)
+	mesh, mat_prop, bc,elem_body_force = getStructuralProblem(problem,nDOFDesired = dofDesired)
 	dofActual = 3 * mesh.num_nodes
 	print("dofActual: ",dofActual)
 	dofList.append(dofActual)

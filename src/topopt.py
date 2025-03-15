@@ -780,8 +780,8 @@ if __name__ == "__main__":
 	dsolver = deflation.DeflationSolver()
 
 	# Choose the TO problem
-	to_problem = StructuralTOExamples.EdgeCantilever
-	optimizationMethod = Optimizers.MMA # MMA, OC or PARETO
+	to_problem = StructuralTOExamples.TorquePlate 
+	optimizationMethod = Optimizers.PARETO # MMA, OC or PARETO
 	nDOFDesired = 50000
 	desiredVolFraction = 0.5
 	material_model = MaterialModel.SIMP# Relevant only for MMA, OC. Use SIMPPLUS for problems with body forces

@@ -240,7 +240,7 @@ class Mesher:
 
 
 
-	def createMeshFromSTLFileOld(self, stlFileName: str,nElemsDesired: int):
+	def createMeshFromSTLFile(self, stlFileName: str,nElemsDesired: int):
 		startTime = time.time()
 		self.stlMesh = pv.read(stlFileName)
 
@@ -343,7 +343,7 @@ class Mesher:
 		print(f"Voxelized Mesh Volume: {voxel_volume:.2e}")
 		print(f"Meshing Volume Error: {volume_error:.2f}%")
 
-	def createMeshFromSTLFile(self, stlFileName: str,nElemsDesired: int):
+	def createMeshFromSTLFileNew(self, stlFileName: str,nElemsDesired: int):
 		print("Creating mesh from STL file...")
 		startTime = time.time()
 		self.stlMesh = pv.read(stlFileName)

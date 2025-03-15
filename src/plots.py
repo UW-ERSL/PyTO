@@ -414,7 +414,7 @@ def plotIsocontour(mesh: mesher.Mesher,
                     )
   
   # Interpolate data onto grid
-  grid_with_data = grid.interpolate(mesh_with_point_data, radius=padding/4, null_value=-25)
+  grid_with_data = grid.interpolate(mesh_with_point_data, radius=padding/2, null_value=-10)
 
   # Set values outside the mesh to a large -ve value
   # to ensure they are not included in the isocontour

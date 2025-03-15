@@ -12,6 +12,7 @@ class StructuralExamples(enum.Enum):
 	TensileBar = enum.auto()
 	BeamBending = enum.auto()
 	EdgeCantilever = enum.auto()
+	ThreeHoleBracket = enum.auto()
 	MBB = enum.auto()
 	DistributedLoad = enum.auto()
 	Multiload = enum.auto()
@@ -48,6 +49,8 @@ def getStructuralProblem(problem: StructuralExamples, **kwargs):
     return createBeamBendingProblem(**kwargs)
   elif problem == StructuralExamples.EdgeCantilever:
     return createEdgeCantileverProblem(**kwargs)
+  elif problem == StructuralExamples.ThreeHoleBracket:
+    return createThreeHoleBracketProblem(**kwargs)
   elif problem == StructuralExamples.MBB:
     return createMBBProblem(**kwargs)
   elif problem == StructuralExamples.DistributedLoad:
@@ -946,6 +949,64 @@ def createTorquePlateProblem(nDOFDesired: int = 10000, youngs_modulus = 2e11,
                       poissons_ratio=poissons_ratio)
   
   return mesh, mat_prop, bc, elem_body_force
+
+# ----------------------------------------
+
+def createThreeHoleBracketProblem(nDOFDesired: int = 10000, youngs_modulus = 2e11, 
+                               poissons_ratio = 0.28, totalLoad =  10000):
+ 
+  # Read the STL model, create a mesh of desired size, and a structural problem is posed on it.
+  stl_file = os.path.join(script_dir, '../Models/ThreeHoleBracket/ThreeHoleBracket.STL')
+
+  nElemsDesired = nDOFDesired/3    # estimate
+  mesh = mesher.Mesher()
+  
+  mesh.createMeshFromSTLFile(stl_file, nElemsDesired=nElemsDesired)
+  mesh.createEdofMatStructural()
+
+  # fix top hole
+  centerPt = [0.015,0.065,0.020]
+  axis = [0,0,1]
+  radius = 0.005
+  fixed_nodes_1 = mesh.get_nodes_within_annular_region(centerPt,axis,radius-mesh.elem_size[0]*0.707,
+                                                     radius+mesh.elem_size[0]*0.707)  
+  
+  # fix bottom hole
+  centerPt = [0.015,0.015,0.020]
+  axis = [0,0,1]
+  radius = 0.005
+  fixed_nodes_2 = mesh.get_nodes_within_annular_region(centerPt,axis,radius-mesh.elem_size[0]*0.707,
+                                                     radius+mesh.elem_size[0]*0.707)  
+  
+  fixed_nodes = np.union1d(fixed_nodes_1,fixed_nodes_2)
+  fixed_dofs = np.array([3 * fixed_nodes,
+              3 * fixed_nodes + 1,
+              3 * fixed_nodes + 2]).flatten().astype(int)
+  dirichlet_values = 0*np.ones_like(fixed_dofs, dtype = float)
+  mesh.node_indices[fixed_nodes, 3] = 1 # for plotting
+
+  elem_body_force = None
+  
+  # load on right hole
+  centerPt = [0.065,0.015,0.020]
+  axis = [0,0,1]
+  radius = 0.005
+  load_nodes = mesh.get_nodes_within_annular_region(centerPt,axis,radius-mesh.elem_size[0]*0.707,
+                                                     radius+mesh.elem_size[0]*0.707)     
+  
+  mesh.node_indices[load_nodes, 3] = 2 # for plotting
+  load_dofs = 3 * load_nodes + 1  # y direction
+
+  load_per_dof = -totalLoad/len(load_nodes)
+  force = np.zeros(3*mesh.num_nodes)
+  force[load_dofs] = load_per_dof
+  bc = bound_cond.BC(force = force,fixed_dofs = fixed_dofs,dirichlet_values = dirichlet_values) 
+
+  mat_prop = mat_lib.StructuralMaterial(youngs_modulus=youngs_modulus,
+                      poissons_ratio=poissons_ratio)
+  
+  return mesh, mat_prop, bc, elem_body_force
+
 
 # ----------------------------------------
 
