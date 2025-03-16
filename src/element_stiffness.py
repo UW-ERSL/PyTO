@@ -355,6 +355,50 @@ def hex8_specific_heat_matrix(
   
   return ce
 
+def tet4_stiffness_matrix_thermal(
+        mat_prop: mat_lib.ThermalMaterial,
+        xyz_nodes: np.ndarray,
+      ) -> np.ndarray:
+  """Computes the element stiffness matrix of a tetrahedral element in 3D.
+  The stiffness matrix for linear thermal is derived as:
+
+        K = sum_gauss(B'D B |J| w )
+    Where,
+
+      B is the strain displacement matrix.
+      D is the constitutive matrix.
+      J is the Jacobian.
+      w is the gauss weight.
+  Args:
+  mat_prop: The thermal material properties of the element.
+  xyz_nodes: Array of (4, 3) containing the x, y, z coordinates of the nodes.
+
+  Returns: The element stiffness matrix of size (4, 4)
+  """
+  K = mat_prop.thermal_conductivity
+  # Initialize the element stiffness matrix.
+  ke = np.zeros((4, 4))
+
+  # Define the shape function gradients in the reference element
+  dN_dxi = np.array([[-1, 1, 0, 0],
+           [-1, 0, 1, 0],
+           [-1, 0, 0, 1]])
+
+  # Compute the Jacobian matrix
+  jac = dN_dxi @ xyz_nodes
+  det_jac = np.linalg.det(jac)
+  inv_jac = np.linalg.inv(jac)
+
+  # Compute the shape function gradients in the physical element
+  dN_dxyz = inv_jac @ dN_dxi
+
+  # Compute the element stiffness matrix
+  for i in range(4):
+    for j in range(4):
+      ke[i, j] = K * (dN_dxyz[:, i] @ dN_dxyz[:, j]) * det_jac / 6.0
+
+  return ke
+
 if __name__ == "__main__":
   # Define the material properties
   mat_prop = mat_lib.StructuralMaterial(youngs_modulus=1e6,

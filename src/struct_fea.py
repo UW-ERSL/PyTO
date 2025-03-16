@@ -47,7 +47,7 @@ class StructFEA:
     """Solve the structural finite element problem.
 
     Args:
-      elem_material_scaling: Array of (num_elems,) of the material scaling.
+      x: Array of (num_elems,) of the material scaling.
       This is used in SIMP topology optimization
 
     Returns: Array of (num_dofs,) of the solution to the finite element problem.

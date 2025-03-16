@@ -1,5 +1,4 @@
-import dataclasses
-from typing import Optional
+
 import numpy as np
 import pyvista as pv # pip install pyvista
 from scipy.sparse import coo_matrix
