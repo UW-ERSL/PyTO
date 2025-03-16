@@ -15,7 +15,7 @@ import os
 script_dir = os.path.dirname(os.path.abspath(__file__))
 
 class ThermalFEA:
-  """Linear Thermal Finite Element Analysis."""
+  """Linear Thermal Finite Element Analysis using Hex8 elements."""
 
   def __init__(self,
 							 mesh,
