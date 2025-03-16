@@ -4,6 +4,8 @@
 *.SLDPRT
 *.sldprt
 *.png
+*.face
+*.node
 /TOExamples
 /Models
 /PyTOSlides

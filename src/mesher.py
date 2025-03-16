@@ -6,7 +6,7 @@ import numpy as np
 import pyvista as pv # pip install pyvista
 from scipy.sparse import coo_matrix
 import time
-import random
+
 
 @dataclasses.dataclass
 class Extent:
@@ -74,7 +74,7 @@ class Mesher:
 		self.bbox = BoundingBox(x=Extent(0.0, nelx*elem_size[0]),
 														y=Extent(0.0, nely*elem_size[1]),
 														z=Extent(0.0, nelz*elem_size[2]))
-
+		self.num_components = 1
 		self.num_elems = nelx * nely * nelz
 		self.num_nodes = (nelx + 1) * (nely + 1) * (nelz + 1)
 		self.grid = [nelx, nely, nelz]
@@ -240,7 +240,7 @@ class Mesher:
 
 
 
-	def createMeshFromSTLFile(self, stlFileName: str,nElemsDesired: int):
+	def createMeshFromSTLFileSingleComponent(self, stlFileName: str,nElemsDesired: int):
 		startTime = time.time()
 		self.stlMesh = pv.read(stlFileName)
 
@@ -250,6 +250,7 @@ class Mesher:
 		# Get the number of components
 		num_components = components["RegionId"].max() + 1
 		print(f"Number of connected components: {num_components}")
+		self.num_components = num_components
 		bounds = self.stlMesh.bounds
 		Lx = bounds[1] - bounds[0]
 		Ly = bounds[3] - bounds[2]
@@ -343,7 +344,7 @@ class Mesher:
 		print(f"Voxelized Mesh Volume: {voxel_volume:.2e}")
 		print(f"Meshing Volume Error: {volume_error:.2f}%")
 
-	def createMeshFromSTLFileNew(self, stlFileName: str,nElemsDesired: int):
+	def createMeshFromSTLFile(self, stlFileName: str,nElemsDesired: int):
 		print("Creating mesh from STL file...")
 		startTime = time.time()
 		self.stlMesh = pv.read(stlFileName)
@@ -354,7 +355,7 @@ class Mesher:
 		# Get the number of components
 		num_components = components["RegionId"].max() + 1
 		print(f"Number of connected components: {num_components}")
-		
+		self.num_components = num_components
 		# Define voxel spacing (adjust as needed)
 		bounds = self.stlMesh.bounds
 		Lx = bounds[1] - bounds[0]
@@ -378,7 +379,8 @@ class Mesher:
 
 		n_open_edges = self.stlMesh.n_open_edges
 		if n_open_edges > 0:
-			print("Model has open edges.")
+			print("Model has open edges. Please fix and retry.")
+			return
 		# Create a single voxelized mesh for the entire assembly
 	
 		voxel_mesh = pv.voxelize(self.stlMesh, density=self.elem_size, check_surface=False)
@@ -484,23 +486,7 @@ class Mesher:
 		print(f"STL Volume: {stlVolume:.2e}")
 		print(f"Voxelized Mesh Volume: {voxel_volume:.2e}")
 		print(f"Meshing Volume Error: {volume_error:.2f}%")
-		# plotter = pv.Plotter()
-		# # Add voxelized mesh with component colors
-		# for i in range(num_components):
-		# 	# Generate a random bright color (avoiding very dark colors)
-		# 	r = random.uniform(0.3, 1.0)
-		# 	g = random.uniform(0.3, 1.0)
-		# 	b = random.uniform(0.3, 1.0)
-		# 	color = (r, g, b)
-		# 	# Filter cells belonging to this component. Ensures that only cells with component_id = i + 1 are selected, excluding any other components.
-		# 	component_cells = voxel_mesh_components.threshold(i + 1, scalars="component_id")
-		# 	if component_cells.n_cells > 0:
-		# 		plotter.add_mesh(component_cells, color=color, label=f'Component {i+1}', show_edges=True)
 
-		# plotter.add_legend()
-		# #plotter.add_axes()
-		# #plotter.show_grid()
-		# plotter.show()
 
 
 	def get_nodes_within_radius(self, pt: np.ndarray, r: float) -> np.ndarray:
@@ -908,17 +894,31 @@ class Mesher:
 	def setPseudoDensity(self, rho):
 		self.elemPseudoDensity = rho.copy()
 
+
+	def plot(self):
+		plotter = pv.Plotter()
+		# Add voxelized mesh with component colors
+		for i in range(self.num_components):
+			# Generate color based on component index
+			color = [i/self.num_components, 1.0, 1 - i/self.num_components]
+			# Filter cells belonging to this component. Ensures that only cells with component_id = i + 1 are selected, excluding any other components.
+			component_cells = self.voxels.threshold(i + 1, scalars="component_id")
+			if component_cells.n_cells > 0:
+				plotter.add_mesh(component_cells, color=color, label=f'Component {i}', show_edges=True)
+
+
+		plotter.add_legend()
+		plotter.add_axes()
+		plotter.show_grid()
+		plotter.show()
 if __name__ == "__main__":
     import os
-    import plots
     import time
-
-
-    script_dir = os.path.dirname(os.path.abspath(__file__))
-    stlFileName = os.path.join(script_dir, '../Models/Knuckle/Knuckle.STL')
     mesh = Mesher()
-    #mesh.createMeshFromSTLFile(stlFileName,nElemsDesired=10000)
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    stlFileName = os.path.join(script_dir, '../Models/LBracket/LBracket.STL')
+    stlFileName = os.path.join(script_dir, '../Models/AlcoaGrabCAD/AlcoaGrabCAD.STL')
     #stlFileName = os.path.join(script_dir, '../Models/KnuckleAssembly/KnuckleAssembly.STL')
-    #stlFileName = os.path.join(script_dir, '../Models/SwingArmAssembly/SwingArmAssembly.STL') #working fine
-    mesh.createMeshFromSTLFile(stlFileName, nElemsDesired=100000)
-    plots.plotMesh(mesh,  title=f' nElems = {mesh.num_elems}')
+    #stlFileName = os.path.join(script_dir, '../Models/SwingArmAssembly/SwingArmAssembly.STL')
+    mesh.createMeshFromSTLFile(stlFileName, nElemsDesired=250000)
+    mesh.plot()

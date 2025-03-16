@@ -24,6 +24,7 @@ class TOConstraints:
     ExtrudeZ = False
     KeepFixedElems = False
     RemoveHangingElems = False
+    AMBuildConstraint = False
     
 
 
@@ -42,6 +43,7 @@ def getStructuralTOProblem(to_problem: StructuralTOExamples, **kwargs):
     if to_problem == StructuralTOExamples.EdgeCantilever:
         structural_problem = StructuralExamples.EdgeCantilever
         to_constraints.YSymmetry = True
+        to_constraints.AMBuildConstraint = True
     elif to_problem == StructuralTOExamples.ThreeHoleBracket:
         structural_problem = StructuralExamples.ThreeHoleBracket
         to_constraints.ZSymmetry = True
@@ -54,7 +56,7 @@ def getStructuralTOProblem(to_problem: StructuralTOExamples, **kwargs):
         to_constraints.XSymmetry = True 
     elif to_problem == StructuralTOExamples.Multiload:
         structural_problem = StructuralExamples.Multiload
-        to_constraints.YSymmetry = True
+        to_constraints.ZSymmetry = True
     elif to_problem == StructuralTOExamples.GravityPlate:
         structural_problem = StructuralExamples.GravityPlate
         to_constraints.XSymmetry = True

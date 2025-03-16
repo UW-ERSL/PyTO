@@ -487,16 +487,15 @@ if __name__ == "__main__":
     import os
     import pyvista as pv
     script_dir = os.path.dirname(os.path.abspath(__file__))
-    
-    
-    
+
     stl_file = os.path.join(script_dir, '../Models/CantileverBeam/CantileverBeam.STL')
-    stl_file = os.path.join(script_dir, '../Models/AlcoaGrabCAD/AlcoaGrabCAD.STL')
-    stl_file = os.path.join(script_dir, '../Models/LBracket/LBracket.STL')
     stl_file =  os.path.join(script_dir, '../Models/CompliantMechanism/CompliantMechanism.STL')
     stl_file =  os.path.join(script_dir, '../Models/CircularPlateHole/CircularPlateHole.STL')
     stl_file =  os.path.join(script_dir, '../Models/BliskModel/BliskQuarter.STL')
     stl_file =  os.path.join(script_dir, '../Models/KnuckleAssembly/KnuckleAssembly.STL')
+    stl_file = os.path.join(script_dir, '../Models/LBracket/LBracket.STL')
+    stl_file = os.path.join(script_dir, '../Models/AlcoaGrabCAD/AlcoaGrabCAD.STL')
+    stl_file = os.path.join(script_dir, '../Models/Overhang/Overhang.STL')
     stl_geom = STLGeom(stl_file)
 
     [area, volume, cg, inertia] = stl_geom.compute_mass_properties()
@@ -506,4 +505,4 @@ if __name__ == "__main__":
     print(f"Inertia: {inertia}")
 
 
-    stl_geom.plotGeometry()
+    stl_geom.plotGeometry(show_edges=True, show_axes=True, show_bounding_box=True)

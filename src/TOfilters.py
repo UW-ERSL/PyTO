@@ -327,7 +327,7 @@ def createZExtrudeFilter(mesh: mesher.Mesher):
 	return HZE	
 
 
-def createAMBuildFilter(mesh: mesher.Mesher) -> tuple[coo_matrix, np.ndarray]:
+def createAMBuildFilter(mesh: mesher.Mesher):
 	"""Create a filter matrix to enforce z-direction build constraints for additive manufacturing.
 	
 	Args:
@@ -339,16 +339,14 @@ def createAMBuildFilter(mesh: mesher.Mesher) -> tuple[coo_matrix, np.ndarray]:
 			HZBs: Array of row sums of HZB matrix
 	"""
 	num_elems = mesh.num_elems
-	z_min = mesh.elem_centers[:, 2].min()
-	
+
 	rows = []
 	cols = []
 	data = []
 	
 	for i in range(num_elems):
 		elemCenter = mesh.elem_centers[i, :]
-		elem_height = elemCenter[2] - z_min
-		
+
 		# Find all elements below current element
 		mask = (mesh.elem_centers[:, 0] == elemCenter[0]) & \
 				(mesh.elem_centers[:, 1] == elemCenter[1]) & \
@@ -369,5 +367,5 @@ def createAMBuildFilter(mesh: mesher.Mesher) -> tuple[coo_matrix, np.ndarray]:
 			data.append(1.0)
 
 	HZAM = coo_matrix((data, (rows, cols)), shape=(num_elems, num_elems)).tocsc()
-	HZAMs = np.array(HZAM.sum(1)).squeeze()
-	return HZAM, HZAMs
+	
+	return HZAM

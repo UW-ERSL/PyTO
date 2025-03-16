@@ -155,17 +155,26 @@ def topopt_mma(fe_solver: sfea.StructFEA,
 	# Create  filters
 	print("Computing filters...")
 	H, Hs = createSmoothingFilter(fe_solver.mesh)
+	# Accumulate all other filters
 	if to_constraints.XSymmetry:
 		HX = createXSymmetryFilter(fe_solver.mesh)
+		H = H*HX
 	if to_constraints.YSymmetry:
 		HY = createYSymmetryFilter(fe_solver.mesh)
+		H = H*HY
 	if to_constraints.ZSymmetry:
 		HZ = createZSymmetryFilter(fe_solver.mesh)
+		H = H*HZ
 	if to_constraints.ZAxisAngularSymmetry >	0:
 		HAZ = createAngularSymmetryFilter(fe_solver.mesh, to_constraints.ZAxisAngularSymmetry)
-
+		H = H*HAZ
 	if (to_constraints.ExtrudeZ):
 		HEZ = createZExtrudeFilter(fe_solver.mesh)
+		H = H*HEZ
+
+	if (to_constraints.AMBuildConstraint):
+		HZAM = createAMBuildFilter(fe_solver.mesh)
+		H = H*HZAM
 
 	elemsWithForces = find_elements_with_forces(fe_solver.mesh, fe_solver.bc.force)
 
@@ -230,19 +239,6 @@ def topopt_mma(fe_solver: sfea.StructFEA,
 	
 		grad_obj = (H * grad_obj)/Hs
 
-		if to_constraints.XSymmetry:
-			grad_obj = (HX * grad_obj)	
-		if to_constraints.YSymmetry:
-			grad_obj= (HY * grad_obj)
-		if to_constraints.ZSymmetry:
-			grad_obj= (HZ * grad_obj)
-
-		if to_constraints.ZAxisAngularSymmetry > 0:
-			grad_obj = (HAZ * grad_obj)
-		
-		if (to_constraints.ExtrudeZ):
-			grad_obj = (HEZ * grad_obj)
-			
 
 		if (elemsWithForces.size > 0):
 			grad_obj[elemsWithForces] = min(grad_obj)
@@ -302,6 +298,7 @@ def topopt_optimality_criteria(
 							directLagrangeMethod: bool = True,
 							material_model = MaterialModel.SIMP,
 							to_constraints = None,
+							debug: bool = False,
 							) -> tuple[np.ndarray, dict]:
 	"""Optimality Criteria based topology optimization for minimum compliance.
 
@@ -334,15 +331,23 @@ def topopt_optimality_criteria(
 	H, Hs = createSmoothingFilter(fe_solver.mesh)
 	if to_constraints.XSymmetry:
 		HX = createXSymmetryFilter(fe_solver.mesh)
+		H = H*HX
 	if to_constraints.YSymmetry:
 		HY = createYSymmetryFilter(fe_solver.mesh)
+		H = H*HY
 	if to_constraints.ZSymmetry:
 		HZ = createZSymmetryFilter(fe_solver.mesh)
+		H = H*HZ
 	if to_constraints.ZAxisAngularSymmetry > 0:
 		HAZ = createAngularSymmetryFilter(fe_solver.mesh, to_constraints.ZAxisAngularSymmetry)
-
+		H = H*HAZ
 	if (to_constraints.ExtrudeZ):
 		HEZ = createZExtrudeFilter(fe_solver.mesh)
+		H = H*HEZ
+
+	if (to_constraints.AMBuildConstraint):
+		HZAM = createAMBuildFilter(fe_solver.mesh)
+		H = H*HZAM
 	elemsWithForces = find_elements_with_forces(fe_solver.mesh, fe_solver.bc.force)
 
 	if (to_constraints.KeepFixedElems):
@@ -403,19 +408,6 @@ def topopt_optimality_criteria(
 			
 		grad_obj /= obj0
 		grad_obj = (H * grad_obj)/Hs
-
-		
-		if to_constraints.XSymmetry:
-			grad_obj = (HX * grad_obj)	
-		if to_constraints.YSymmetry:
-			grad_obj= (HY * grad_obj)
-		if to_constraints.ZSymmetry:
-			grad_obj= (HZ * grad_obj)
-		if to_constraints.ZAxisAngularSymmetry > 0:
-			grad_obj = (HAZ * grad_obj)
-
-		if (to_constraints.ExtrudeZ):
-			grad_obj = (HEZ * grad_obj)
 
 		if (elemsWithForces.size > 0):
 			grad_obj[elemsWithForces] = min(grad_obj)
@@ -604,15 +596,22 @@ def topopt_pareto(fe_solver: sfea.StructFEA,
 	H, Hs = createSmoothingFilter(fe_solver.mesh)
 	if to_constraints.XSymmetry:
 		HX = createXSymmetryFilter(fe_solver.mesh)
+		H = H*HX
 	if to_constraints.YSymmetry:
 		HY = createYSymmetryFilter(fe_solver.mesh)
+		H = H*HY
 	if to_constraints.ZSymmetry:
 		HZ = createZSymmetryFilter(fe_solver.mesh)
+		H = H*HZ
 	if to_constraints.ZAxisAngularSymmetry >	0:
 		HAZ = createAngularSymmetryFilter(fe_solver.mesh, to_constraints.ZAxisAngularSymmetry)
-	
+		H = H*HAZ
 	if (to_constraints.ExtrudeZ):
 		HEZ = createZExtrudeFilter(fe_solver.mesh)
+		H = H*HEZ
+	if (to_constraints.AMBuildConstraint):
+		HZAM = createAMBuildFilter(fe_solver.mesh)
+		H = H*HZAM
 
 	print("Computing element with forces ...")
 	elemsWithForces = find_elements_with_forces(fe_solver.mesh, fe_solver.bc.force)
@@ -729,17 +728,7 @@ def topopt_pareto(fe_solver: sfea.StructFEA,
 
 			T = (H * T) / Hs
 			T = ((1-wtDamping)*T + wtDamping*TPrev)  # Damping
-			if to_constraints.XSymmetry:
-				T = (HX * T)	
-			if to_constraints.YSymmetry:
-				T = (HY * T)
-			if to_constraints.ZSymmetry:
-				T = (HZ * T)	
-			if to_constraints.ZAxisAngularSymmetry > 0:
-				T = (HAZ * T)
-			if (to_constraints.ExtrudeZ):
-				T = (HEZ * T)
-			
+
 			if (elemsWithForces.size > 0):
 				T[elemsWithForces] = np.max(T)
 
@@ -780,17 +769,18 @@ if __name__ == "__main__":
 	dsolver = deflation.DeflationSolver()
 
 	# Choose the TO problem
-	to_problem = StructuralTOExamples.TorquePlate 
+	to_problem = StructuralTOExamples.LBracket 
 	optimizationMethod = Optimizers.PARETO # MMA, OC or PARETO
 	nDOFDesired = 50000
-	desiredVolFraction = 0.5
+	desiredVolFraction = 0.25
 	material_model = MaterialModel.SIMP# Relevant only for MMA, OC. Use SIMPPLUS for problems with body forces
 	solver = lin_solv.Solvers.PARDISO # Typically PARDISO, but DPCG for DOF > 200,000
+	debug = True
 
 	# Get the structural problem
 	mesh, mat_prop, bc,elem_body_force, to_constraints = getStructuralTOProblem(to_problem,nDOFDesired = nDOFDesired)
 
-
+	
 	# initialize the fe solver 
 	if (solver == lin_solv.Solvers.DPCG):
 		nGroups =  min(dsolver.maxGroups,max(dsolver.minGroups,round(3*mesh.num_nodes/dsolver.dofPerGroup)))
@@ -821,7 +811,8 @@ if __name__ == "__main__":
 		u, history = topopt_mma(fe_solver = fe_solver,
 									volfrac = desiredVolFraction,
 									material_model = material_model,
-									to_constraints = to_constraints,)
+									to_constraints = to_constraints,
+									debug = debug)
 		timeTaken = time.time() - startTime
 		fig, ax1 = plt.subplots()
 
@@ -855,7 +846,8 @@ if __name__ == "__main__":
 		u, history = topopt_optimality_criteria(fe_solver = fe_solver,
 												volfrac = desiredVolFraction,
 												material_model = material_model,
-												to_constraints = to_constraints)
+												to_constraints = to_constraints,
+												debug = debug)
 		timeTaken = time.time() - startTime
 		title = f"OC: nDOF: {3*fe_solver.mesh.num_nodes}, vol: {history['volume'][-1]:0.2f}, J: {history['compliance'][-1]:.3g}, time: {timeTaken:.0f} s"
 
@@ -889,7 +881,7 @@ if __name__ == "__main__":
 		u, history = topopt_pareto(fe_solver = fe_solver,
 										desiredVolFrac =  desiredVolFraction,
 										to_constraints = to_constraints,
-										debug = True)
+										debug = debug)
 		
 		timeTaken = time.time() - startTime
 		title = f"Pareto: nDOF: {3*fe_solver.mesh.num_nodes}, vol: {history['volume'][-1]:0.2f}, J: {history['compliance'][-1]:.3g}, time: {timeTaken:.0f} s"
