@@ -69,20 +69,40 @@ if __name__ == "__main__":
     from examples_thermal import *
     jax.config.update("jax_enable_x64", True)
 
-    problem = ThermalExamples.Moran
-    nDOFDesired = 50000
-    mesh, mat_prop, bc = getThermalProblem(problem,nDOFDesired = nDOFDesired)
-    solver = lin_solv.Solvers.PARDISO # typically DPCG or PARDISO
-  
-    fe_solver = fea.ThermalFEA(mesh = mesh,
-                          mat_prop = mat_prop,
-                          bc = bc,
-                          solver = solver)
-
-    startTime = time.time()
-    u = np.asarray(fe_solver.solve())
+    problem = ThermalExamples.AnnularPlate
+    # Create arrays to store results
+    dof_sizes = [100, 200, 400, 800, 1600, 5000,10000,20000,50000]  # Different DOF sizes to test
+    umax_values = []
     
-    uMax = np.max(np.abs(u))
+    solver = lin_solv.Solvers.PARDISO
+    
+    for nDOFDesired in dof_sizes:
+      mesh, mat_prop, bc = getThermalProblem(problem, nDOFDesired=nDOFDesired)
+      
+      fe_solver = fea.ThermalFEA(mesh=mesh,
+                    mat_prop=mat_prop,
+                    bc=bc,
+                    solver=solver)
+      
+      startTime = time.time()
+      u = np.asarray(fe_solver.solve())
+      uMax = np.max(np.abs(u))
+      umax_values.append(uMax)
+      
+      print(f'DOF: {fe_solver.mesh.num_nodes}, Max u: {uMax:.3e}')
+    
+    # Plot DOF vs uMax
+    import matplotlib.pyplot as plt
+    plt.figure()
+    plt.plot(dof_sizes, umax_values, 'bo-', markerfacecolor='none')
+  
+    plt.xlabel('Degrees of Freedom')
+    plt.ylabel('Maximum Displacement')
+    plt.xscale('log')
+    plt.grid(True)
+    plt.title('Convergence Study: Hexmesh')
+    plt.gca().xaxis.set_major_formatter(plt.ScalarFormatter())
+    plt.show()
     nDOF = fe_solver.mesh.num_nodes
    
     print('-----------------------------')
@@ -92,4 +112,4 @@ if __name__ == "__main__":
     print('Max u: ', uMax)
     print('-----------------------------')
 	
-    plots.plotMesh(fe_solver.mesh, None, u,title=f'Dof = {nDOF}, max u: {uMax:.3e}',show_edges=False,)
+    plots.plotMesh(fe_solver.mesh, None, u,title=f'Dof = {nDOF}, max u: {uMax:.3e}',show_edges=True,)

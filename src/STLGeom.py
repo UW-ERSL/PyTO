@@ -274,6 +274,20 @@ class STLGeom:
 
         return cumulative_area
     
+    def get_triangle_data(self, index):
+        """Get full triangle data for a given index"""
+        if not 0 <= index < self.stl_n_triangles:
+            return None
+        # Create triangle data structure similar to store_selected_triangles
+        triangle_data = {
+            'index': index,
+            'vertices': self.mesh.vectors[index],
+            'normal': self.tri_normals[index],
+            'area': self.tri_areas[index],
+            'center': self.get_triangle_center(index)
+        }
+        return triangle_data
+    
     def plotGeometry(self, show_edges=False, show_axes=True, show_bounding_box=True):
          # Create a PyVista mesh from the STL data
         vertices = self.mesh.vectors.reshape(-1, 3)
@@ -496,6 +510,7 @@ if __name__ == "__main__":
     stl_file = os.path.join(script_dir, '../Models/LBracket/LBracket.STL')
     stl_file = os.path.join(script_dir, '../Models/AlcoaGrabCAD/AlcoaGrabCAD.STL')
     stl_file = os.path.join(script_dir, '../Models/Overhang/Overhang.STL')
+    stl_file = os.path.join(script_dir, '../Models/ThickPlate/ThickPlate.STL')
     stl_geom = STLGeom(stl_file)
 
     [area, volume, cg, inertia] = stl_geom.compute_mass_properties()

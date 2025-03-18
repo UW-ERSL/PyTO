@@ -356,11 +356,15 @@ class Mesher:
 		num_components = components["RegionId"].max() + 1
 		print(f"Number of connected components: {num_components}")
 		self.num_components = num_components
+		if (num_components == 1):
+			self.createMeshFromSTLFileSingleComponent(stlFileName, nElemsDesired)
+			return 
 		# Define voxel spacing (adjust as needed)
 		bounds = self.stlMesh.bounds
 		Lx = bounds[1] - bounds[0]
 		Ly = bounds[3] - bounds[2]
 		Lz = bounds[5] - bounds[4]
+	
 		stlVolume = self.stlMesh.volume
 		bBoxVolume = Lx*Ly*Lz
 		# More voxels are needed inside the bounding box than the desired number of elements
@@ -486,8 +490,6 @@ class Mesher:
 		print(f"STL Volume: {stlVolume:.2e}")
 		print(f"Voxelized Mesh Volume: {voxel_volume:.2e}")
 		print(f"Meshing Volume Error: {volume_error:.2f}%")
-
-
 
 	def get_nodes_within_radius(self, pt: np.ndarray, r: float) -> np.ndarray:
 		"""Find nodes within a given radius from a point.
