@@ -40,7 +40,7 @@ def getThermalProblem(problem: ThermalExamples, **kwargs):
     raise ValueError("Invalid structural example name.")
 
 
-def createThickPlateThermalProblem(nDOFDesired: int = 10000,thermal_conductivity = 45, heat_load = 1000):
+def createThickPlateThermalProblem(nDOFDesired: int = 10000,thermal_conductivity = 50, heat_load = 1000):
     """Creates a thermal problem setup for an L-bracket topology optimization.
     This function sets up a finite element mesh and boundary conditions for an L-bracket
     thermal problem from an STL file. The mesh is created with approximately the desired
@@ -151,7 +151,7 @@ def createAnnularPlateThermalProblem(nDOFDesired: int = 10000,thermal_conductivi
     return mesh, mat_prop, bc
 
 
-def createLBracketThermalProblem(nDOFDesired: int = 10000,thermal_conductivity = 45, heat_load = 1000):
+def createLBracketThermalProblem(nDOFDesired: int = 10000,thermal_conductivity = 50, heat_load = 10):
     """Creates a thermal problem setup for an L-bracket topology optimization.
     This function sets up a finite element mesh and boundary conditions for an L-bracket
     thermal problem from an STL file. The mesh is created with approximately the desired

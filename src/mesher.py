@@ -70,6 +70,7 @@ class Mesher:
 		"""
 		startTime = time.time()
 		print(f"Mesher: Grid size: {num_elems[0]} x {num_elems[1]} x {num_elems[2]}")
+		print(f"Mesher: Element size: {elem_size[0]:.2e} x {elem_size[1]:.2e} x {elem_size[2]:.2e}")
 		nelx, nely, nelz = num_elems
 		self.bbox = BoundingBox(x=Extent(0.0, nelx*elem_size[0]),
 														y=Extent(0.0, nely*elem_size[1]),
@@ -267,6 +268,7 @@ class Mesher:
 		nz = max(round(alpha*Lz), self.minVoxelsPerAxis)
 		self.grid = [nx, ny, nz]
 		self.elem_size= [Lx/nx, Ly/ny, Lz/nz]
+		
 		print(f"Mesher: Grid size: {nx} x {ny} x {nz}")
 		print(f"Mesher: Element size: {self.elem_size[0]:.2e} x {self.elem_size[1]:.2e} x {self.elem_size[2]:.2e}")	
 		# Voxels near the boundary are being removed. So scale the stl geometry slightly
@@ -283,6 +285,8 @@ class Mesher:
 		#extract the data
 		self.num_elems = self.voxels.n_cells
 		self.num_nodes = self.voxels.n_points 
+		print(f"Mesher: #Elements: {self.num_elems}")
+		print(f"Mesher: #Nodes: {self.num_nodes}")
 		self.origin = [self.voxels.bounds[0], self.voxels.bounds[2], self.voxels.bounds[4]]
 
 		self.node_indices = np.zeros((self.num_nodes, 4), dtype = np.int32)

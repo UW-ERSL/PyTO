@@ -5,7 +5,7 @@ import mat_lib
 import bound_cond
 script_dir = os.path.dirname(os.path.abspath(__file__))
 
-def createThickPlateThermalProblemTet(nDOFDesired: int = 10000,thermal_conductivity = 45, heat_load = 1000):
+def createThickPlateThermalProblemTet(nDOFDesired: int = 10000,thermal_conductivity = 50, heat_load = 1000):
     """Creates a thermal problem setup for an L-bracket topology optimization.
     This function sets up a finite element mesh and boundary conditions for an L-bracket
     thermal problem from an STL file. The mesh is created with approximately the desired
@@ -40,16 +40,12 @@ def createThickPlateThermalProblemTet(nDOFDesired: int = 10000,thermal_conductiv
     fixed_nodes = np.where(tetmesh.nodes[:, 0] == np.min(tetmesh.nodes[:, 0]) )[0] # x = xMin plane
     fixed_dofs = np.array([fixed_nodes]).flatten().astype(int)
     dirichlet_values = 0*np.ones_like(fixed_dofs, dtype = float)
-  
-
     load_nodes = np.where(tetmesh.nodes[:, 0] == np.max(tetmesh.nodes[:, 0]) )[0] # x = xMax plane
-    load_dofs = load_nodes
+    tri_surface_indices = tetmesh.get_surface_triangles_with_all_nodes_in_node_set(load_nodes)
+    #tri_surface_indices =  tetmesh.get_surface_triangles_on_bounding_box(axis_dir = 0,min_plane = False)
+ 
+    force = tetmesh.integrate_surface_force(heat_load, tri_surface_indices)
    
-    totalHeat= heat_load
-
-    force = np.zeros(tetmesh.num_nodes)
-    force[load_dofs] = totalHeat/len(load_nodes)
-
     bc = bound_cond.BC(force = force,fixed_dofs = fixed_dofs,dirichlet_values = dirichlet_values) 
 
     mat_prop = mat_lib.ThermalMaterial(thermal_conductivity=thermal_conductivity)
@@ -96,27 +92,19 @@ def createAnnularPlateThermalProblemTet(nDOFDesired: int = 10000,thermal_conduct
   
 
     outerRadius = 0.05
-    tri_surface_indices =  tetmesh.get_surface_triangles_within_annular_region(centerPt,axis,outerRadius-tetmesh.elem_size*0.1,
-                                                    outerRadius+tetmesh.elem_size*0.1)
+    load_nodes = tetmesh.get_nodes_within_annular_region(centerPt,axis,outerRadius-tetmesh.elem_size*0.1,
+                                                    outerRadius+tetmesh.elem_size*0.1)  
+    tri_surface_indices = tetmesh.get_surface_triangles_with_all_nodes_in_node_set(load_nodes)
+    # tri_surface_indices =  tetmesh.get_surface_triangles_within_annular_region(centerPt,axis,outerRadius-tetmesh.elem_size*0.1,
+    #                                                 outerRadius+tetmesh.elem_size*0.1)
    
     force = tetmesh.integrate_surface_force(heat_load, tri_surface_indices)
-
-    # load_nodes = tetmesh.get_nodes_within_annular_region(centerPt,axis,outerRadius-tetmesh.elem_size*0.01,
-    #                                                 outerRadius+tetmesh.elem_size*0.01)    
-    # load_dofs = load_nodes
-    # load_dofs = load_nodes
-   
-    # totalHeat= heat_load
-
-    # force = np.zeros(tetmesh.num_nodes)
-    # force[load_dofs] = totalHeat/len(load_nodes)
-
     bc = bound_cond.BC(force = force,fixed_dofs = fixed_dofs,dirichlet_values = dirichlet_values) 
 
     mat_prop = mat_lib.ThermalMaterial(thermal_conductivity=thermal_conductivity)
     return tetmesh, mat_prop, bc
 
-def createLBracketThermalProblemTet(nDOFDesired = 10000,thermal_conductivity = 45, heat_load = 1000):
+def createLBracketThermalProblemTet(nDOFDesired = 10000,thermal_conductivity = 50, heat_load = 10):
     """Creates a thermal problem setup for an L-bracket topology optimization.
     This function sets up a finite element mesh and boundary conditions for an L-bracket
     thermal problem from an STL file. The mesh is created with approximately the desired
@@ -155,11 +143,9 @@ def createLBracketThermalProblemTet(nDOFDesired = 10000,thermal_conductivity = 4
 
 
     load_nodes = np.where((tetmesh.nodes[:, 1] > 0.039) & (tetmesh.nodes[:, 0] > 0.09))[0] # hard coded	
-    load_dofs = load_nodes
-    totalHeat= heat_load
+    tri_surface_indices = tetmesh.get_surface_triangles_with_all_nodes_in_node_set(load_nodes)
 
-    force = np.zeros(tetmesh.num_nodes)
-    force[load_dofs] = totalHeat/len(load_nodes)
+    force = tetmesh.integrate_surface_force(heat_load, tri_surface_indices)
 
     bc = bound_cond.BC(force = force,fixed_dofs = fixed_dofs,dirichlet_values = dirichlet_values) 
 

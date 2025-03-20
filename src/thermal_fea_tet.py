@@ -110,9 +110,9 @@ if __name__ == "__main__":
     from examples_thermal_tet import *
     jax.config.update("jax_enable_x64", True)
 
-    example = 2
+    example = 3
     # Create lists to store DOFs and corresponding uMax values
-    dof_range = [100,500, 1000, 2000, 4000, 8000]  # Range of desired DOFs
+    dof_range = [100,500, 1000,2000]  # Range of desired DOFs
     dofs = []
     u_maxs = []
 
@@ -137,25 +137,27 @@ if __name__ == "__main__":
       uMax = np.max(np.abs(u))
       
       # Store results
-      dofs.append(fe_solver.mesh.num_nodes)
+      nDOF = fe_solver.mesh.num_nodes
+      dofs.append(nDOF)
       u_maxs.append(uMax)
-
+      print('-----------------------------')
+      print("nDof: ", nDOF)
+      print('Solver: ', fe_solver.solver.name)
+      print("FEA time: ", time.time() - startTime)
+      print('Max u: ', uMax)
+      print('-----------------------------')
+    
     # Plot DOF vs uMax
     import matplotlib.pyplot as plt
     plt.figure(figsize=(8, 6))
-    plt.plot(dofs, u_maxs, 'bo-')
+    plt.plot(dofs, np.array(u_maxs), 'bo-')
     plt.xlabel('Number of DOFs')
     plt.ylabel('Maximum Temperature')
     plt.grid(True)
-    plt.title(f'Convergence Study - Annular Plate Example TetMesh')
+    plt.title(f'Convergence Study - TetMesh')
     plt.show()
-    nDOF = fe_solver.mesh.num_nodes
+    
    
-    print('-----------------------------')
-    print("nDof: ", nDOF)
-    print('Solver: ', fe_solver.solver.name)
-    print("FEA time: ", time.time() - startTime)
-    print('Max u: ', uMax)
-    print('-----------------------------')
+   
 	
     tetmesh.plotField(u,show_edges=True) # plot the solution field

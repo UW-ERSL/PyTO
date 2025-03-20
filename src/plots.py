@@ -398,7 +398,10 @@ def plotIsocontour(mesh: mesher.Mesher,
                  bounds[5]-bounds[4]]) * 0.1
 
   # Optionally, create a finer grid for better isosurface
+  
   dimensions = (resolution*mesh.grid[0], resolution*mesh.grid[1], resolution*mesh.grid[2])
+  if (min(dimensions) < 2):
+    resolution = 3
   spacing = (
             (bounds[1] - bounds[0] + 2*padding) / (dimensions[0] - 1),
             (bounds[3] - bounds[2] + 2*padding) / (dimensions[1] - 1),

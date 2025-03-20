@@ -11,22 +11,34 @@ import mat_lib
 from PyQt5 import QtWidgets
 from PyQt5 import QtCore
 from vtkmodules.qt.QVTKRenderWindowInteractor import QVTKRenderWindowInteractor
-from PyQt5.QtWidgets import QPushButton, QVBoxLayout, QFrame
 from PyQt5.QtGui import QIcon
 from PyQt5.QtCore import QSize, Qt
 from queue import Queue
-from PyQt5.QtWidgets import QPushButton, QVBoxLayout, QFrame
 from PyQt5.QtGui import QIcon
 from PyQt5.QtCore import QSize, Qt
 from STLGeom import STLGeom
 from mesher import Mesher
-
+import struct_fea as fea
+import linear_solvers as lin_solv
+import jax
+            
+# Enable double precision
+jax.config.update("jax_enable_x64", True)
+            
 from examples_structural import *
 
 '''
 pyTOGUI To do:
-
-
+1. Under Analysis, when we switch from Coarse to Medium etc, the number of elements should change
+2. Under Display, when transparent geometry is selected, can you show the original geometry in transparent 
+3. Can you increase the fonts in sub GUIs
+4. Why extra space in Geometry window
+5. Can you implement Thermal Load?
+6. Can you implement Thermal Analysis?
+7. Also save Thermal loads in project?
+8. Increase the size of axis and fonts on the bottom left by 50%
+9. In Analysis, provide solver options as Pardiso, ... see solver types
+10. Save topopt constraints in project
 '''
 #---------------------------------------------------------------------------------
 class MainWindow(QtWidgets.QMainWindow):
@@ -351,7 +363,7 @@ class MainWindow(QtWidgets.QMainWindow):
         
 
     def get_icon(self, icon_type):
-        import os
+
         base_path = os.path.dirname(__file__)
         icon_file = ""
         if icon_type == "arrow":
@@ -2670,13 +2682,7 @@ class AnalysisWindow(QtWidgets.QDialog):
                     return
 
             # Continue with structural analysis
-            import struct_fea as fea
-            import linear_solvers as lin_solv
-            import jax
-            
-            # Enable double precision
-            jax.config.update("jax_enable_x64", True)
-            
+
             # Create FE solver using the data from generate_analysis_mesh
             fe_solver = fea.StructFEA(
                 mesh=self.parent.analysis_mesher,
@@ -2685,12 +2691,10 @@ class AnalysisWindow(QtWidgets.QDialog):
                 solver=lin_solv.Solvers.PARDISO
             )
 
-            youngs_modulus = np.ones((fe_solver.mesh.num_elems,))
-
             # Run analysis
             self.parent.message_text.append("\nRunning structural analysis...")
             startTime = time.time()
-            u = np.asarray(fe_solver.solve(elem_youngs_modulus=youngs_modulus))
+            u = np.asarray(fe_solver.solve())
             
             # Calculate displacements
             delta = np.sqrt(u[0::3]**2 + u[1::3]**2 + u[2::3]**2)
@@ -2833,7 +2837,6 @@ class AnalysisWindow(QtWidgets.QDialog):
             
             # Add results summary
             max_disp = np.max(delta)
-            self.parent.message_text.append(f"\nVisualization updated:")
             self.parent.message_text.append(f"Maximum displacement: {max_disp:.6f} m")
             self.parent.message_text.append(f"Scale factor: {scale_factor:.2f}")
             
@@ -3532,8 +3535,6 @@ class ProjectsWindow(QtWidgets.QDialog):
         
         if file_path:
             try:
-                import json
-                import os
                 
                 with open(file_path, 'r') as f:
                     data = json.load(f)

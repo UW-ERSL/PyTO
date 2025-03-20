@@ -485,7 +485,7 @@ def topopt_optimality_criteria(
 def topopt_pareto(fe_solver: sfea.StructFEA,
 							desiredVolFrac: float = 0.5,
 							rel_err: float = 0.025,
-							vol_decr_max: float = 0.025,
+							vol_decr_max: float = 0.05,
 							vol_decr_min: float = 0.001,
 							min_local_iters: int = 2,
 							max_local_iters: int = 10,
@@ -755,6 +755,49 @@ def topopt_pareto(fe_solver: sfea.StructFEA,
 			
 	return u, history
 
+def runTOTests(optimizationMethod = Optimizers.MMA):
+	for to_problem in StructuralTOExamples:
+		print(f"Running {to_problem.name}...")
+
+		mesh, mat_prop, bc,elem_body_force, to_constraints, to_params = getStructuralTOProblem(to_problem)
+
+		solver = lin_solv.Solvers.PARDISO # Typically PARDISO, but DPCG for DOF > 200,000
+		material_model = MaterialModel.SIMP # Relevant only for MMA, OC. Use SIMPPLUS for problems with body forces
+		fe_solver = fea.StructFEA(mesh = mesh,
+					mat_prop = mat_prop,
+					bc = bc,
+					solver = solver,
+					rtol = 1e-8,
+					elem_body_force = elem_body_force)
+		startTime = time.time()
+		if optimizationMethod == Optimizers.MMA:
+			u, history = topopt_mma(fe_solver = fe_solver,
+											volfrac = to_params.desiredVolFraction,
+											material_model = material_model,
+											to_constraints = to_constraints)
+		elif optimizationMethod == Optimizers.OC:
+			u, history = topopt_optimality_criteria(fe_solver = fe_solver,
+													volfrac = to_params.desiredVolFraction,
+													material_model = material_model,
+													to_constraints = to_constraints)
+		elif optimizationMethod == Optimizers.PARETO:
+			u, history = topopt_pareto(fe_solver = fe_solver,
+													desiredVolFrac = to_params.desiredVolFraction,
+													to_constraints = to_constraints)
+		timeTaken = time.time() - startTime
+
+		# Create the directory if it does not exist
+		output_dir = f"./Results/{optimizationMethod.name}"
+		if not os.path.exists(output_dir):
+			os.makedirs(output_dir)
+
+		image_path = f"{output_dir}/{to_problem.name}.png"
+		title = f"MMA: nDOF: {3*fe_solver.mesh.num_nodes}, vol: {history['volume'][-1]:0.2f}, J: {history['compliance'][-1]:.3g}, time: {timeTaken:.0f} s"
+		plots.plotMesh(fe_solver.mesh, bc = None, u=None, save_path = image_path, title = title)
+		# Save the plot as an image
+		
+	
+
 if __name__ == "__main__":    
 	from examples_topology_optimization import *
 	import struct_fea as fea
@@ -762,23 +805,24 @@ if __name__ == "__main__":
 	import time
 	import matplotlib.pyplot as plt
 	import deflation
+	import os
 	import plots	
 	
 
 	jax.config.update("jax_enable_x64", True)
+	optimizationMethod = Optimizers.PARETO # MMA, OC or PARETO
+	#runTOTests(optimizationMethod); exit()
+
 	dsolver = deflation.DeflationSolver()
 
 	# Choose the TO problem
-	to_problem = StructuralTOExamples.LBracket 
-	optimizationMethod = Optimizers.PARETO # MMA, OC or PARETO
-	nDOFDesired = 50000
-	desiredVolFraction = 0.25
+	to_problem = StructuralTOExamples.GravityPlate 
 	material_model = MaterialModel.SIMP# Relevant only for MMA, OC. Use SIMPPLUS for problems with body forces
 	solver = lin_solv.Solvers.PARDISO # Typically PARDISO, but DPCG for DOF > 200,000
 	debug = True
 
 	# Get the structural problem
-	mesh, mat_prop, bc,elem_body_force, to_constraints = getStructuralTOProblem(to_problem,nDOFDesired = nDOFDesired)
+	mesh, mat_prop, bc,elem_body_force, to_constraints, to_params = getStructuralTOProblem(to_problem)
 
 	
 	# initialize the fe solver 
@@ -809,7 +853,7 @@ if __name__ == "__main__":
 	if optimizationMethod == Optimizers.MMA:
 		print("OptimizationMethod: MMA")
 		u, history = topopt_mma(fe_solver = fe_solver,
-									volfrac = desiredVolFraction,
+									volfrac = to_params.desiredVolFraction,
 									material_model = material_model,
 									to_constraints = to_constraints,
 									debug = debug)
@@ -844,7 +888,7 @@ if __name__ == "__main__":
 	elif optimizationMethod == Optimizers.OC:
 		print("OptimizationMethod: OC")
 		u, history = topopt_optimality_criteria(fe_solver = fe_solver,
-												volfrac = desiredVolFraction,
+												volfrac = to_params.desiredVolFraction,
 												material_model = material_model,
 												to_constraints = to_constraints,
 												debug = debug)
@@ -879,7 +923,7 @@ if __name__ == "__main__":
 	elif optimizationMethod == Optimizers.PARETO:
 		print("OptimizationMethod: Pareto")
 		u, history = topopt_pareto(fe_solver = fe_solver,
-										desiredVolFrac =  desiredVolFraction,
+										desiredVolFrac =  to_params.desiredVolFraction,
 										to_constraints = to_constraints,
 										debug = debug)
 		

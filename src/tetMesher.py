@@ -111,6 +111,30 @@ class TetMesher:
                 surface_tri_indices.append(i)
         
         return surface_tri_indices
+    
+    def get_surface_triangles_on_bounding_box(self,  axis_dir = 0, min_plane = True):
+        # Get the surface triangles within the annular region defined by the center point, axis, and radii
+        nodes = self.nodes
+        
+        if (min_plane):
+            ref_val = np.min(nodes[:,axis_dir])
+        else:
+            ref_val = np.max(nodes[:,axis_dir])
+        # Find surface triangles where all three nodes are within the annular region
+        surface_tri_indices = []
+        for i, tri in enumerate(self.surface_triangles):
+            if all(abs(nodes[node,axis_dir]-ref_val)<1e-10 for node in tri):
+                surface_tri_indices.append(i)
+        return surface_tri_indices
+    
+    def get_surface_triangles_with_all_nodes_in_node_set(self, node_set):
+        # Find surface triangles where all three nodes are in given node_set
+        surface_tri_indices = []
+        for i, tri in enumerate(self.surface_triangles):
+            if all(node in node_set for node in tri):
+                surface_tri_indices.append(i)
+        return surface_tri_indices
+
     def plot(self, title = 'Tet Mesh'):
         plotter = pv.UnstructuredGrid({pv.CellType.TETRA: self.elems}, self.nodes)
         plotter.plot(show_edges=True, show_scalar_bar=False, show_grid=True)
@@ -136,5 +160,5 @@ if __name__ == "__main__":
     tetmesh = TetMesher()
     script_dir = os.path.dirname(os.path.abspath(__file__))
     stlFileName = os.path.join(script_dir, '../Models/LBracket/LBracket.STL')
-    tetmesh.createTetMeshFromSTLFile(stlFileName, nElemsDesired=50000)
+    tetmesh.createTetMeshFromSTLFile(stlFileName, nElemsDesired=1000)
     tetmesh.plot()

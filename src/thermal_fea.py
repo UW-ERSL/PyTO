@@ -69,9 +69,9 @@ if __name__ == "__main__":
     from examples_thermal import *
     jax.config.update("jax_enable_x64", True)
 
-    problem = ThermalExamples.AnnularPlate
+    problem = ThermalExamples.LBracket
     # Create arrays to store results
-    dof_sizes = [100, 200, 400, 800, 1600, 5000,10000,20000,50000]  # Different DOF sizes to test
+    dof_sizes = [100, 200, 400, 800, 1600, 5000,10000]  # Different DOF sizes to test
     umax_values = []
     
     solver = lin_solv.Solvers.PARDISO
@@ -97,7 +97,7 @@ if __name__ == "__main__":
     plt.plot(dof_sizes, umax_values, 'bo-', markerfacecolor='none')
   
     plt.xlabel('Degrees of Freedom')
-    plt.ylabel('Maximum Displacement')
+    plt.ylabel('Maximum Temperature')
     plt.xscale('log')
     plt.grid(True)
     plt.title('Convergence Study: Hexmesh')
