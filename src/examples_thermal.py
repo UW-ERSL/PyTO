@@ -192,7 +192,7 @@ def createLBracketThermalProblem(nDOFDesired: int = 10000,thermal_conductivity =
   
     mesh.node_indices[fixed_nodes, 3] = 1 # for plotting
 
-    load_nodes = np.where((node_pts[:, 1] > 0.039) & (node_pts[:, 0] > 0.09))[0] # hard coded	
+    load_nodes = np.where(node_pts[:, 0] == np.max(node_pts[:, 0]) )[0] # x = xMax plane
     load_dofs = load_nodes
     mesh.node_indices[load_nodes, 3] = 2 # for plotting
     totalHeat= heat_load

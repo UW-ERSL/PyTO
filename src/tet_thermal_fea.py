@@ -107,23 +107,24 @@ class ThermalFEATet:
 if __name__ == "__main__":
     import jax # import jax to enable 64 bit precision
     import time	
-    from examples_thermal_tet import *
+    from tet_examples_thermal import *
     jax.config.update("jax_enable_x64", True)
 
-    example = 3
+    
     # Create lists to store DOFs and corresponding uMax values
     dof_range = [100,500, 1000,2000]  # Range of desired DOFs
     dofs = []
     u_maxs = []
-
+    timing = []
+    example = 2
     for nDOFDesired in dof_range:
       if example == 1:
         tetmesh, mat_prop, bc = createThickPlateThermalProblemTet(nDOFDesired=nDOFDesired)
       elif example == 2:
-        tetmesh, mat_prop, bc = createAnnularPlateThermalProblemTet(nDOFDesired=nDOFDesired)
-      elif example == 3:
         tetmesh, mat_prop, bc = createLBracketThermalProblemTet(nDOFDesired=nDOFDesired)
-
+      elif example == 3:
+        tetmesh, mat_prop, bc = createAnnularPlateThermalProblemTet(nDOFDesired=nDOFDesired)
+    
       solver = lin_sol.Solvers.PARDISO
       
       fe_solver = ThermalFEATet(mesh=tetmesh,
@@ -140,6 +141,7 @@ if __name__ == "__main__":
       nDOF = fe_solver.mesh.num_nodes
       dofs.append(nDOF)
       u_maxs.append(uMax)
+      timing.append(time.time() - startTime)
       print('-----------------------------')
       print("nDof: ", nDOF)
       print('Solver: ', fe_solver.solver.name)
@@ -153,10 +155,18 @@ if __name__ == "__main__":
     plt.plot(dofs, np.array(u_maxs), 'bo-')
     plt.xlabel('Number of DOFs')
     plt.ylabel('Maximum Temperature')
+    plt.ylim(0.9*min(u_maxs), 1.1*max(u_maxs))
     plt.grid(True)
     plt.title(f'Convergence Study - TetMesh')
     plt.show()
     
+    plt.figure(figsize=(8, 6))
+    plt.plot(dofs, np.array(timing), 'bo-')
+    plt.xlabel('Number of DOFs')
+    plt.ylabel('Timing (secs)')
+    plt.grid(True)
+    plt.title(f'Timing - TetMesh')
+    plt.show()
    
    
 	

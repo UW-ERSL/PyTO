@@ -11,6 +11,27 @@ class TetMesher:
         self.num_elems = 0
     
     def createTetMeshFromSTLFile(self, stlFileName: str, nElemsDesired: int = 10000):
+        """
+        Create a tetrahedral mesh from an STL file.
+        This function reads an STL file, cleans and repairs the surface, and generates a tetrahedral mesh
+        with a target number of elements. It also calculates and stores the nodes, elements, and surface triangles.
+        Parameters:
+        stlFileName (str): The path to the STL file.
+        nElemsDesired (int, optional): The desired number of tetrahedral elements. Default is 10000.
+        Attributes:
+        self.stlMesh (pyvista.PolyData): The cleaned and repaired STL surface mesh.
+        self.nodes (numpy.ndarray): The array of node coordinates.
+        self.elems (numpy.ndarray): The array of tetrahedral elements.
+        self.num_nodes (int): The number of nodes in the mesh.
+        self.num_elems (int): The number of elements in the mesh.
+        self.surface_triangles (numpy.ndarray): The array of surface triangles.
+        self.elem_size (float): The average size of the elements.
+        Prints:
+        Total volume of the surface mesh.
+        Number of nodes, elements, and surface triangles.
+        Average element size.
+        """
+
         self.stlMesh = pv.read(stlFileName)
         # Clean and repair the STL surface
         surf = self.stlMesh.clean()
@@ -58,7 +79,29 @@ class TetMesher:
         print(f"Element size: {self.elem_size}")
 
 
-    def integrate_surface_force(self, q, tri_surface_indices):
+    def integrate_over_surface_triangles(self, q, tri_surface_indices):
+        """
+        Integrates a given quantity over specified surface triangles and distributes the resulting force 
+        over the nodes of the triangles.
+        Parameters:
+        -----------
+        q : float
+            The quantity to be integrated over the surface triangles.
+        tri_surface_indices : array-like
+            Indices of the surface triangles over which the integration is to be performed.
+        Returns:
+        --------
+        force_vector : numpy.ndarray
+            The force vector distributed over the nodes, normalized by the total area of the triangles.
+        Notes:
+        ------
+        - The method assumes that `self.surface_triangles` is an array where each row represents a triangle 
+          by storing the indices of its three nodes.
+        - The method assumes that `self.nodes` is an array where each row represents the coordinates of a node.
+        - The force is distributed equally among the three nodes of each triangle.
+        - The total area of the triangles is printed for debugging purposes.
+        """
+
         # Initialize force vector
         force_vector = np.zeros(self.num_nodes)
         surf_triangles = self.surface_triangles[tri_surface_indices, :]
@@ -73,6 +116,47 @@ class TetMesher:
             tri_area = 0.5 * np.linalg.norm(np.cross(vec1, vec2))
             total_area += tri_area
             # Distribute the force over the triangle nodes
+            for node in tri:
+                force_vector[node] += q * tri_area / 3.0
+        print(f"Total area of triangles: {total_area}")
+        return force_vector/total_area
+    
+    def integrate_function_over_surface_triangles(self, func, tri_surface_indices):
+        """
+        Integrates a given function over specified surface triangles and distributes the result as a force vector.
+        Parameters:
+        -----------
+        func : callable
+            A function that takes a coordinate (numpy array) as input and returns a scalar value.
+        tri_surface_indices : arsray-like
+            Indices of the surface triangles over which the function is to be integrated.
+        Returns:
+        --------
+        force_vector : numpy array
+            The force vector distributed over the nodes, normalized by the total area of the triangles.
+        Notes:
+        ------
+        - The method calculates the area of each triangle and evaluates the function at the centroid of the triangle.
+        - The force is distributed equally among the nodes of each triangle.
+        - The total area of the triangles is printed for reference.
+        """
+
+        # Initialize force vector
+        force_vector = np.zeros(self.num_nodes)
+        surf_triangles = self.surface_triangles[tri_surface_indices, :]
+        # Loop over each surface triangle
+        total_area = 0.0
+        for tri in surf_triangles:
+            # Get the nodes of the triangle
+            node_coords = self.nodes[tri, :]
+            # Calculate the area of the triangle
+            vec1 = node_coords[1] - node_coords[0]
+            vec2 = node_coords[2] - node_coords[0]
+            tri_area = 0.5 * np.linalg.norm(np.cross(vec1, vec2))
+            total_area += tri_area
+            # Distribute the force over the triangle nodes
+            center = np.mean(node_coords, axis=0)
+            q = func(center)
             for node in tri:
                 force_vector[node] += q * tri_area / 3.0
         print(f"Total area of triangles: {total_area}")
@@ -159,6 +243,6 @@ if __name__ == "__main__":
     import os
     tetmesh = TetMesher()
     script_dir = os.path.dirname(os.path.abspath(__file__))
-    stlFileName = os.path.join(script_dir, '../Models/LBracket/LBracket.STL')
-    tetmesh.createTetMeshFromSTLFile(stlFileName, nElemsDesired=1000)
+    stlFileName = os.path.join(script_dir, '../Models/GEGrabCAD/GEGrabCAD.STL')
+    tetmesh.createTetMeshFromSTLFile(stlFileName, nElemsDesired=20000)
     tetmesh.plot()

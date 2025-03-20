@@ -73,7 +73,7 @@ if __name__ == "__main__":
     # Create arrays to store results
     dof_sizes = [100, 200, 400, 800, 1600, 5000,10000]  # Different DOF sizes to test
     umax_values = []
-    
+    timing = []
     solver = lin_solv.Solvers.PARDISO
     
     for nDOFDesired in dof_sizes:
@@ -88,21 +88,29 @@ if __name__ == "__main__":
       u = np.asarray(fe_solver.solve())
       uMax = np.max(np.abs(u))
       umax_values.append(uMax)
-      
+      timing.append(time.time() - startTime )
       print(f'DOF: {fe_solver.mesh.num_nodes}, Max u: {uMax:.3e}')
     
     # Plot DOF vs uMax
     import matplotlib.pyplot as plt
     plt.figure()
     plt.plot(dof_sizes, umax_values, 'bo-', markerfacecolor='none')
-  
     plt.xlabel('Degrees of Freedom')
     plt.ylabel('Maximum Temperature')
-    plt.xscale('log')
     plt.grid(True)
     plt.title('Convergence Study: Hexmesh')
     plt.gca().xaxis.set_major_formatter(plt.ScalarFormatter())
     plt.show()
+
+    plt.figure()
+    plt.plot(dof_sizes, timing, 'bo-', markerfacecolor='none')
+    plt.xlabel('Degrees of Freedom')
+    plt.ylabel('Timing (secs)')
+    plt.grid(True)
+    plt.title('Timing Study: Hexmesh')
+    plt.gca().xaxis.set_major_formatter(plt.ScalarFormatter())
+    plt.show()
+
     nDOF = fe_solver.mesh.num_nodes
    
     print('-----------------------------')
