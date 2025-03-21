@@ -46,12 +46,24 @@ class TetMesher:
 
         # Generate tetrahedral mesh with target number of cells and quality constraints
         tet = tetgen.TetGen(surf)
+
         nodes, elements = tet.tetrahedralize(switches=f"pq1.5a{max_tet_volume}Q")
         self.nodes = nodes
         self.elems = elements
         self.num_nodes = len(self.nodes)
         self.num_elems = len(self.elems)
-        
+        print(f"Tetmesh: Number of nodes: {self.num_nodes}, Number of elements: {self.num_elems}")
+
+        self.createSurfaceMesh()
+    
+    def createSurfaceMesh(self):
+        """
+        Create a surface mesh from the tetrahedral mesh.
+        This function extracts the surface triangles from the tetrahedral mesh and calculates their properties.
+        Attributes:
+        self.surface_triangles (numpy.ndarray): The array of surface triangles.
+        self.elem_size (float): The average size of the elements.
+        """
         # Get all faces from tetrahedra
         faces = np.vstack([
             self.elems[:, [0, 1, 2]],
@@ -69,7 +81,7 @@ class TetMesher:
         # Surface triangles are faces that appear only once
         self.surface_triangles = faces[idx[counts == 1]]
         
-        print(f"Number of nodes: {self.num_nodes}, Number of elements: {self.num_elems}")
+       
         print(f"Number of surface triangles: {len(self.surface_triangles)}")
 
         element_sizes = np.zeros(self.num_elems)
@@ -78,6 +90,40 @@ class TetMesher:
         self.elem_size = np.mean(element_sizes)
         print(f"Element size: {self.elem_size}")
 
+
+    def readAbaqusInputFile(self, abaqusFileName: str):
+        """
+        Read an Abaqus input file and extract nodes and elements.
+        The files are generated via SolidWorks.
+        Parameters:
+        abaqusFileName (str): The path to the Abaqus input file.
+        Attributes:
+        self.nodes (numpy.ndarray): The array of node coordinates.
+        self.elems (numpy.ndarray): The array of tetrahedral elements.
+        self.num_nodes (int): The number of nodes in the mesh.
+        self.num_elems (int): The number of elements in the mesh.
+        """
+        with open(abaqusFileName, 'r') as f:
+            lines = f.readlines()
+        print(f"Reading Abaqus input file: {abaqusFileName}")
+        print(f"Number of lines: {len(lines)}")
+
+        # Extract nodes
+        node_start = next(i for i, line in enumerate(lines) if '*NODE' in line.upper()) + 1
+        node_end = next(i for i, line in enumerate(lines[node_start:], node_start) 
+                       if '*ELEMENT' in line.upper())
+        node_lines = lines[node_start:node_end]
+        nodes = np.array([list(map(float, line.split(','))) for line in node_lines])
+        self.nodes = nodes[:, 1:4]
+        self.num_nodes = len(self.nodes)
+        element_start = next(i for i, line in enumerate(lines[node_end:], node_end) if '*ELEMENT' in line.upper()) + 1
+        element_end = next(i for i, line in enumerate(lines[element_start:], element_start) if '*SOLID' in line.upper())
+        element_lines = lines[element_start:element_end]
+        elements = np.array([list(map(int, line.split(','))) for line in element_lines])
+        self.elems = elements[:, 1:5]-1  # Convert to zero-based indexing
+        self.num_elems = len(self.elems)
+        print(f"Tetmesh: Number of nodes: {self.num_nodes}, Number of elements: {self.num_elems}")
+        self.createSurfaceMesh()
 
     def integrate_over_surface_triangles(self, q, tri_surface_indices):
         """
@@ -222,7 +268,6 @@ class TetMesher:
     def plot(self, title = 'Tet Mesh'):
         plotter = pv.UnstructuredGrid({pv.CellType.TETRA: self.elems}, self.nodes)
         plotter.plot(show_edges=True, show_scalar_bar=False, show_grid=True)
-        
         print(f"Number of nodes: {self.num_nodes}, Number of elements: {self.num_elems}")   
 
     def plotField(self, field, show_edges =  True, show_scalar_bar = True, show_grid = False):
@@ -243,6 +288,15 @@ if __name__ == "__main__":
     import os
     tetmesh = TetMesher()
     script_dir = os.path.dirname(os.path.abspath(__file__))
-    stlFileName = os.path.join(script_dir, '../Models/GEGrabCAD/GEGrabCAD.STL')
+    stlFileName = os.path.join(script_dir, '../Models/EdgeCantilever/EdgeCantilever.STL')
     tetmesh.createTetMeshFromSTLFile(stlFileName, nElemsDesired=20000)
     tetmesh.plot()
+    stlFileName = os.path.join(script_dir, '../Models/BicycleCrank/BicycleCrank.STL')
+    tetmesh.createTetMeshFromSTLFile(stlFileName, nElemsDesired=20000)
+    tetmesh.plot()
+    tetmesh.readAbaqusInputFile(os.path.join(script_dir, '../Models/ThreeHoleBracket/ThreeHoleBracketLinearTetMesh.inp'))
+    tetmesh.plot()
+    tetmesh.readAbaqusInputFile(os.path.join(script_dir, '../Models/GEGrabCAD/GEGrabCADLinearTetMesh.inp'))
+    tetmesh.plot()
+
+

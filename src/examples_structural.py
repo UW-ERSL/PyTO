@@ -26,7 +26,7 @@ class StructuralExamples(enum.Enum):
 	CentrifugalPlate = enum.auto()
 	TorquePlate = enum.auto()
 	BliskQuarter = enum.auto()
-	BliskFull =  enum.auto()
+	BliskWithBlade =  enum.auto()
 
 def getStructuralProblem(problem: StructuralExamples, **kwargs):
   """Returns a structural problem based on the given problem name.
@@ -75,6 +75,8 @@ def getStructuralProblem(problem: StructuralExamples, **kwargs):
     return createTorquePlateProblem(**kwargs)
   elif problem == StructuralExamples.BliskQuarter:
     return createBliskQuarterProblem(**kwargs)
+  elif problem == StructuralExamples.BliskWithBlade:
+    return createBliskSectionWithBlade(**kwargs)
   elif problem == StructuralExamples.ArrowHead:
     return createArrowHeadProblem(**kwargs)
   else:
@@ -1036,8 +1038,6 @@ def createBliskQuarterProblem(nDOFDesired: int = 10000, youngs_modulus = 2.1e11,
   dirichlet_values = 0*np.ones_like(fixed_dofs, dtype = float)
   mesh.node_indices[fixed_nodes, 3] = 1 # for plotting
 
-
-   # Apply centrifugal on all elements .. not working correctly
   elem_body_force = np.zeros(3*mesh.num_elems)
   omega = 2*np.pi*rpm/60
   for e in range(mesh.num_elems):
@@ -1075,12 +1075,11 @@ def createBliskQuarterProblem(nDOFDesired: int = 10000, youngs_modulus = 2.1e11,
 
 # ----------------------------------------
 
-def createBliskFullModelProblem(nDOFDesired: int = 10000, youngs_modulus = 2.1e11, 
-                               poissons_ratio = 0.28, material_density = 7700,rpm = 0,radialForce =0,
-																	   downwardForce = 100):
+def createBliskSectionWithBlade(nDOFDesired: int = 10000, youngs_modulus = 2.1e11, 
+                               poissons_ratio = 0.28, material_density = 7700,rpm = 10000,radialForce =0):
  
   # Read the STL model, create a mesh of desired size, and a structural problem is posed on it.
-  stl_file = os.path.join(script_dir, '../Models/BliskModel/BliskFull.STL')
+  stl_file = os.path.join(script_dir, '../Models/BliskModel/BliskSectionWithBlade.STL')
 
 
   nElemsDesired = nDOFDesired/3    # estimate
@@ -1102,16 +1101,15 @@ def createBliskFullModelProblem(nDOFDesired: int = 10000, youngs_modulus = 2.1e1
   mesh.node_indices[fixed_nodes, 3] = 1 # for plotting
 
 
-   # Apply centrifugal on all elements .. not working correctly
   elem_body_force = np.zeros(3*mesh.num_elems)
   omega = 2*np.pi*rpm/60
   for e in range(mesh.num_elems):
     center = mesh.elem_centers[e]
+    # Add centrifugal force to each element in xy plane
     elem_body_force[3*e:3*e+2] = (material_density*np.prod(mesh.elem_size)) * omega**2 *  center[:2]
 
-  # Apply centrifugal force on each node on the circumference
-  # this is in addition to the body force
-  outerRadius = 0.0565
+  print("total body force ",np.linalg.norm(elem_body_force))
+  outerRadius = 0.0558
   load_nodes = mesh.get_nodes_within_annular_region(centerPt,axis,outerRadius-mesh.elem_size[0]*0.707,
                                                     outerRadius+mesh.elem_size[0]*0.707)    
   
@@ -1128,7 +1126,7 @@ def createBliskFullModelProblem(nDOFDesired: int = 10000, youngs_modulus = 2.1e1
       # Add x and y dofs with force components
       boundaryForce[3*node] = radialForce/len(load_nodes) * radial_dir[0]  
       boundaryForce[3*node + 1] = radialForce/len(load_nodes) * radial_dir[1]
-      boundaryForce[3*node + 2] = -downwardForce/len(load_nodes) 
+  
   bc = bound_cond.BC(force = boundaryForce,fixed_dofs = fixed_dofs,dirichlet_values = dirichlet_values) 
 
   mat_prop = mat_lib.StructuralMaterial(youngs_modulus=youngs_modulus,

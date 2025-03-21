@@ -26,26 +26,7 @@ class MaterialModel(enum.Enum):
 	SIMPPLUS = enum.auto()
 
 
-def find_elements_with_fixedDOF(fe_solver: sfea.StructFEA,) -> np.ndarray:
-	"""Find all elements that have nodes with fixed degrees of freedom.
-	
-	Args:
-		mesh: The mesh object.
-		bc: The boundary conditions object.
-	
-	Returns:
-		Array of element indices that have nodes with fixed degrees of freedom.
-	"""
-	fixed_dofs = fe_solver.bc.fixed_dofs
-	fixed_nodes = set(fixed_dofs // 3)  # Convert DOFs to node indices
-	elements_with_fixed_dofs = []
 
-	for elem in range(fe_solver.mesh.num_elems):
-		nodes = fe_solver.mesh.elemArray[elem]
-		if any(node in fixed_nodes for node in nodes):
-			elements_with_fixed_dofs.append(elem)
-
-	return np.array(elements_with_fixed_dofs)
 
 
 def find_elements_with_forces(mesh: mesher.Mesher, force) -> np.ndarray:
@@ -178,9 +159,6 @@ def topopt_mma(fe_solver: sfea.StructFEA,
 
 	elemsWithForces = find_elements_with_forces(fe_solver.mesh, fe_solver.bc.force)
 
-	if (to_constraints.KeepFixedElems):
-		elemsWithFixedDOF = find_elements_with_fixedDOF(fe_solver)
-
 	mma_params = mma.MMAParams(max_iter=maxMMAIterations,
 														kkt_tol = kkt_tol,
 														step_tol = move_tol,
@@ -243,8 +221,8 @@ def topopt_mma(fe_solver: sfea.StructFEA,
 		if (elemsWithForces.size > 0):
 			grad_obj[elemsWithForces] = min(grad_obj)
 
-		if (to_constraints.KeepFixedElems):
-			grad_obj[elemsWithFixedDOF] = min(grad_obj)
+		if (to_constraints.ElemsToKeep is not None):
+			grad_obj[to_constraints.ElemsToKeep] = min(grad_obj)
 
 		vf = np.mean(x)
 		cons = _volume_constraint(x, volfrac)
@@ -350,8 +328,6 @@ def topopt_optimality_criteria(
 		H = H*HZAM
 	elemsWithForces = find_elements_with_forces(fe_solver.mesh, fe_solver.bc.force)
 
-	if (to_constraints.KeepFixedElems):
-		elemsWithFixedDOF = find_elements_with_fixedDOF(fe_solver)
 	# Initialize design variables
 	x = volfrac * np.ones(num_elems, dtype = float)
 	xPhys = x.copy()
@@ -412,8 +388,8 @@ def topopt_optimality_criteria(
 		if (elemsWithForces.size > 0):
 			grad_obj[elemsWithForces] = min(grad_obj)
 
-		if (to_constraints.KeepFixedElems):
-			grad_obj[elemsWithFixedDOF] = min(grad_obj)
+		if (to_constraints.ElemsToKeep is not None):
+			grad_obj[to_constraints.ElemsToKeep] = min(grad_obj)
 
 		cons = _volume_constraint(x, volfrac)
 		# Optimality criteria update
@@ -626,9 +602,6 @@ def topopt_pareto(fe_solver: sfea.StructFEA,
 	else:
 		nodal_body_force = None
 
-	if (to_constraints.KeepFixedElems):
-		elemsWithFixedDOF = find_elements_with_fixedDOF(fe_solver)
-
 	print("Initial FEA...")
 	u = np.asarray(fe_solver.solve(rho))
 
@@ -649,8 +622,8 @@ def topopt_pareto(fe_solver: sfea.StructFEA,
 
 	if (elemsWithForces.size > 0): #For pure body forces, this may be empty
 		T[elemsWithForces] = np.max(T)
-	if (to_constraints.KeepFixedElems):
-		T[elemsWithFixedDOF] = np.max(T)
+	if (to_constraints.ElemsToKeep is not None):
+		T[to_constraints.ElemsToKeep] = np.max(T)
 	T = (H * T) / Hs
 
 
@@ -733,7 +706,7 @@ def topopt_pareto(fe_solver: sfea.StructFEA,
 				T[elemsWithForces] = np.max(T)
 
 			if (to_constraints.KeepFixedElems):
-				T[elemsWithFixedDOF] = np.max(T)
+				T[to_constraints.ElemsToKeep] = np.max(T)
 			localIter += 1
 			totalIter += 1
 
@@ -755,7 +728,8 @@ def topopt_pareto(fe_solver: sfea.StructFEA,
 			
 	return u, history
 
-def runTOTests(optimizationMethod = Optimizers.MMA):
+def runTOTests():
+	optimizationMethod = Optimizers.PARETO # MMA, OC or PARETO
 	for to_problem in StructuralTOExamples:
 		print(f"Running {to_problem.name}...")
 
@@ -810,21 +784,19 @@ if __name__ == "__main__":
 	
 
 	jax.config.update("jax_enable_x64", True)
-	optimizationMethod = Optimizers.PARETO # MMA, OC or PARETO
-	#runTOTests(optimizationMethod); exit()
 
-	dsolver = deflation.DeflationSolver()
 
+	optimizationMethod = Optimizers.MMA # MMA, OC or PARETO
 	# Choose the TO problem
-	to_problem = StructuralTOExamples.GravityPlate 
-	material_model = MaterialModel.SIMP# Relevant only for MMA, OC. Use SIMPPLUS for problems with body forces
-	solver = lin_solv.Solvers.PARDISO # Typically PARDISO, but DPCG for DOF > 200,000
-	debug = True
+	to_problem = StructuralTOExamples.BliskWithBlade 
+	material_model = MaterialModel.SIMPPLUS# Relevant only for MMA, OC. Use SIMPPLUS for problems with body forces
+	solver = lin_solv.Solvers.DPCG # Typically PARDISO, but DPCG for DOF > 200,000
+	debug = False
 
 	# Get the structural problem
 	mesh, mat_prop, bc,elem_body_force, to_constraints, to_params = getStructuralTOProblem(to_problem)
 
-	
+	dsolver = deflation.DeflationSolver()
 	# initialize the fe solver 
 	if (solver == lin_solv.Solvers.DPCG):
 		nGroups =  min(dsolver.maxGroups,max(dsolver.minGroups,round(3*mesh.num_nodes/dsolver.dofPerGroup)))

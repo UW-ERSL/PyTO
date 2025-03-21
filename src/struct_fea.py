@@ -175,10 +175,10 @@ if __name__ == "__main__":
 
   from examples_structural import *
 
-  problem = StructuralExamples.ThreeHoleBracket
-  nDOFDesired = 50000
+  problem = StructuralExamples.BliskWithBlade
+  nDOFDesired = 500000
   mesh, mat_prop, bc,elem_body_force = getStructuralProblem(problem,nDOFDesired = nDOFDesired)
-  solver = lin_solv.Solvers.PARDISO # typically DPCG or PARDISO
+  solver = lin_solv.Solvers.DPCG # typically DPCG or PARDISO
   
   dsolver = deflation.DeflationSolver()
   startTime = time.time()

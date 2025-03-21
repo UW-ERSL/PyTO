@@ -12,6 +12,7 @@ class ThermalExamples(enum.Enum):
     AnnularPlate = enum.auto()
     LBracket = enum.auto()
     Moran = enum.auto()
+    BliskWithBlade = enum.auto()
 
 def getThermalProblem(problem: ThermalExamples, **kwargs):
   """Returns a thermal problem based on the given problem name.
@@ -36,6 +37,8 @@ def getThermalProblem(problem: ThermalExamples, **kwargs):
     return createAnnularPlateThermalProblem(**kwargs)
   elif problem == ThermalExamples.Moran:
     return createMoranBenchMark(**kwargs)
+  elif problem == ThermalExamples.BliskWithBlade:
+    return createBliskWithBladeProblem(**kwargs)
   else:
     raise ValueError("Invalid structural example name.")
 
@@ -180,10 +183,10 @@ def createLBracketThermalProblem(nDOFDesired: int = 10000,thermal_conductivity =
     mesh = mesher.Mesher()
 	
     mesh.createMeshFromSTLFile(stl_file, nElemsDesired=nElemsDesired)
-    
+
     mesh.createEdofMatThermal()
 
-    node_pts = mesh.node_indices[:, :3]*mesh.elem_size +mesh.origin
+    node_pts = mesh.node_xyz
 	
     fixed_nodes = np.where(node_pts[:, 1] == np.max(node_pts[:, 1]) )[0] # y = yMax plane
     fixed_dofs = np.array([fixed_nodes]).flatten().astype(int)
@@ -205,6 +208,37 @@ def createLBracketThermalProblem(nDOFDesired: int = 10000,thermal_conductivity =
     mat_prop = mat_lib.ThermalMaterial(thermal_conductivity=thermal_conductivity)
     return mesh, mat_prop, bc
 
+def createBliskWithBladeProblem(nDOFDesired: int = 10000,thermal_conductivity = 50, heat_load = 10):
+   # Read the STL model, create a mesh of desired size, and a structural problem is posed on it.
+  stl_file = os.path.join(script_dir, '../Models/BliskModel/BliskSectionWithBlade.STL')
+
+  nElemsDesired = nDOFDesired    # estimate
+  mesh = mesher.Mesher()
+
+  mesh.createMeshFromSTLFile(stl_file, nElemsDesired=nElemsDesired)
+  mesh.createEdofMatThermal()
+  # fix inner radius
+  centerPt = [0,0,0]
+  axis = [0,0,1]
+  innerRadius = 0.01085
+  fixed_nodes = mesh.get_nodes_within_annular_region(centerPt,axis,innerRadius-mesh.elem_size[0]*0.707,
+                                                     innerRadius+mesh.elem_size[0]*0.707)  
+  fixed_dofs = np.array([fixed_nodes]).flatten().astype(int)
+  dirichlet_values = 0*np.ones_like(fixed_dofs, dtype = float)
+
+  tipRadius = 0.07
+  load_nodes = mesh.get_nodes_within_annular_region(centerPt,axis,tipRadius-mesh.elem_size[0]*2,
+                                                     tipRadius+mesh.elem_size[0]*2)  
+  load_dofs = load_nodes
+
+  totalHeat= heat_load
+
+  force = np.zeros(mesh.num_nodes)
+  force[load_dofs] = totalHeat/len(load_nodes)
+  bc = bound_cond.BC(force = force,fixed_dofs = fixed_dofs,dirichlet_values = dirichlet_values) 
+
+  mat_prop = mat_lib.ThermalMaterial(thermal_conductivity=thermal_conductivity)
+  return mesh, mat_prop, bc
 
 def createMoranBenchMark(nDOFDesired: int = 10000,):
 	# See Paper: "Utility of superposition-based finite element ..."  by Moran, at. al., Additive Manuf, 2018

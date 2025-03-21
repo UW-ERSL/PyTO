@@ -1,6 +1,6 @@
 import enum
 from examples_structural import *
-
+import struct_fea as sfea
 
 class StructuralTOExamples(enum.Enum):
 	EdgeCantilever = enum.auto()
@@ -12,7 +12,7 @@ class StructuralTOExamples(enum.Enum):
 	LBracket = enum.auto()
 	CentrifugalPlate = enum.auto()
 	TorquePlate = enum.auto()
-	#BliskQuarter = enum.auto()
+	BliskWithBlade = enum.auto()
 
 class TOParams:
     nDOFDesired = 20000,
@@ -29,7 +29,28 @@ class TOConstraints:
     KeepFixedElems = False
     RemoveHangingElems = False
     AMBuildConstraint = False
+    ElemsToKeep = None
     
+def find_elements_with_fixedDOF(mesh, bc) -> np.ndarray:
+	"""Find all elements that have nodes with fixed degrees of freedom.
+	
+	Args:
+		mesh: The mesh object.
+		bc: The boundary conditions object.
+	
+	Returns:
+		Array of element indices that have nodes with fixed degrees of freedom.
+	"""
+	fixed_dofs = bc.fixed_dofs
+	fixed_nodes = set(fixed_dofs // 3)  # Convert DOFs to node indices
+	elements_with_fixed_dofs = []
+
+	for elem in range(mesh.num_elems):
+		nodes =mesh.elemArray[elem]
+		if any(node in fixed_nodes for node in nodes):
+			elements_with_fixed_dofs.append(elem)
+
+	return np.array(elements_with_fixed_dofs)
 
 def getStructuralTOProblem(to_problem: StructuralTOExamples, **kwargs):
     """Get the structural topology optimization problem based on the specified example.
@@ -100,14 +121,30 @@ def getStructuralTOProblem(to_problem: StructuralTOExamples, **kwargs):
         to_params.nDOFDesired = 50000
         to_params.desiredVolFraction = 0.5
 
-    elif to_problem == StructuralTOExamples.BliskQuarter:
-        structural_problem = StructuralExamples.BliskQuarter
-        to_constraints.XSymmetry = True
-        to_params.nDOFDesired = 500000
-        to_params.desiredVolFraction = 0.25  
+    elif to_problem == StructuralTOExamples.BliskWithBlade:
+        structural_problem = StructuralExamples.BliskWithBlade
+        to_constraints.KeepFixedElems = True
+        to_constraints.RemoveHangingElems = True
+        to_params.nDOFDesired = 100000
+        to_params.desiredVolFraction = 0.25
 
     else:
         raise ValueError(f"Unknown problem: {to_problem}")
     
     mesh, mat_prop, bc, elem_body_force = getStructuralProblem(structural_problem,nDOFDesired = to_params.nDOFDesired, **kwargs)
+
+    # Add  elements to keep
+    to_constraints.ElemsToKeep  = None # default value
+
+    if (to_constraints.KeepFixedElems):
+        to_constraints.ElemsToKeep = find_elements_with_fixedDOF(mesh, bc)
+
+    if to_problem == StructuralTOExamples.BliskWithBlade:
+        centerPt = [0,0,0]
+        axis = [0,0,1]
+        outerRadius1 = 0.0558
+        outerRadius2 = 0.1
+        bladeElements = mesh.get_elems_within_annular_region(centerPt,axis,outerRadius1,outerRadius2)
+        to_constraints.ElemsToKeep = np.union1d(to_constraints.ElemsToKeep, bladeElements)
+
     return mesh, mat_prop, bc, elem_body_force, to_constraints, to_params
