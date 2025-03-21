@@ -13,6 +13,7 @@ class StructuralTOExamples(enum.Enum):
 	CentrifugalPlate = enum.auto()
 	TorquePlate = enum.auto()
 	BliskWithBlade = enum.auto()
+	KnuckleAssembly = enum.auto()
 
 class TOParams:
     nDOFDesired = 20000,
@@ -68,7 +69,6 @@ def getStructuralTOProblem(to_problem: StructuralTOExamples, **kwargs):
     if to_problem == StructuralTOExamples.EdgeCantilever:
         structural_problem = StructuralExamples.EdgeCantilever
         to_constraints.YSymmetry = True
-        to_constraints.AMBuildConstraint = True
         to_params.nDOFDesired = 50000
         to_params.desiredVolFraction = 0.5
     
@@ -81,7 +81,6 @@ def getStructuralTOProblem(to_problem: StructuralTOExamples, **kwargs):
   
     elif to_problem == StructuralTOExamples.MBB:
         structural_problem = StructuralExamples.MBB
-        to_constraints.XSymmetry = True
         to_params.nDOFDesired = 50000
         to_params.desiredVolFraction = 0.25
 
@@ -111,8 +110,9 @@ def getStructuralTOProblem(to_problem: StructuralTOExamples, **kwargs):
     elif to_problem == StructuralTOExamples.CentrifugalPlate:
         structural_problem = StructuralExamples.CentrifugalPlate
         to_constraints.ZAxisAngularSymmetry = 4
+        to_constraints.ExtrudeZ = True
         to_params.nDOFDesired = 50000
-        to_params.desiredVolFraction = 0.5
+        to_params.desiredVolFraction = 0.35
 
     elif to_problem == StructuralTOExamples.TorquePlate:
         structural_problem = StructuralExamples.TorquePlate
@@ -128,6 +128,12 @@ def getStructuralTOProblem(to_problem: StructuralTOExamples, **kwargs):
         to_params.nDOFDesired = 100000
         to_params.desiredVolFraction = 0.25
 
+    elif to_problem == StructuralTOExamples.KnuckleAssembly:
+        structural_problem = StructuralExamples.KnuckleAssembly
+        to_constraints.KeepFixedElems = True
+        to_constraints.RemoveHangingElems = True
+        to_params.nDOFDesired = 100000
+        to_params.desiredVolFraction = 0.25
     else:
         raise ValueError(f"Unknown problem: {to_problem}")
     
@@ -147,4 +153,7 @@ def getStructuralTOProblem(to_problem: StructuralTOExamples, **kwargs):
         bladeElements = mesh.get_elems_within_annular_region(centerPt,axis,outerRadius1,outerRadius2)
         to_constraints.ElemsToKeep = np.union1d(to_constraints.ElemsToKeep, bladeElements)
 
+    if to_problem == StructuralTOExamples.KnuckleAssembly:
+         to_constraints.ElemsToKeep = np.where(mesh.elemComponentId == 2)[0]
+         print("Elems to keep: ", to_constraints.ElemsToKeep.shape)
     return mesh, mat_prop, bc, elem_body_force, to_constraints, to_params

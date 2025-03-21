@@ -8,6 +8,7 @@ import deflation
 import mesher
 
 
+
 def plotMesh(mesh: mesher.Mesher,
              bc = None,
              u = None,
@@ -19,7 +20,6 @@ def plotMesh(mesh: mesher.Mesher,
              edge_color='black',
 	           title='Mesh Visualization',
              save_path=None,
-
              fontsize=10):
   # Create vertices array
   vertices = mesh.node_xyz

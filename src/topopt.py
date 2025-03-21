@@ -9,9 +9,11 @@ import mesher
 import struct_fea as sfea
 import mma
 import deflation
-from TOfilters import *
+from to_filters import *
 import time
-
+from mpl_toolkits.mplot3d import Axes3D
+import matplotlib.pyplot as plt
+import matplotlib.animation as animation
 _LARGE_NUMBER = 1.e9
 
 
@@ -24,9 +26,6 @@ class MaterialModel(enum.Enum):
 	SIMP = enum.auto()
 	RAMP = enum.auto()
 	SIMPPLUS = enum.auto()
-
-
-
 
 
 def find_elements_with_forces(mesh: mesher.Mesher, force) -> np.ndarray:
@@ -296,11 +295,9 @@ def topopt_optimality_criteria(
 	if elem_body_force is not None and (np.linalg.norm(elem_body_force) > 0) and (material_model == MaterialModel.SIMP):
 		print("********For body forces, using material model SIMPPLUS********")
 		material_model == MaterialModel.SIMPPLUS
-		input("Press Enter to continue...")
 	if elem_body_force is not None and (np.linalg.norm(elem_body_force) == 0) and (material_model == MaterialModel.SIMPPLUS):
 		print("********For no body forces, using material model SIMP ********")
 		material_model == MaterialModel.SIMP
-		input("Press Enter to continue...")
 
 
 
@@ -347,7 +344,6 @@ def topopt_optimality_criteria(
 	xmin = 0.001  # Minimum density
 	xmax = 1.0    # Maximum density
 	KE = elem_stiff.hex8_stiffness_matrix_structural( fe_solver.mat_prop,fe_solver.mesh.elem_size)
-	obj0,u = _compliance_objective(x, fe_solver)
 	
 	if material_model == MaterialModel.SIMP:
 		material_model_dict = {'name': 'SIMP', 'penal': 3.0} # Default SIMP model
@@ -359,9 +355,7 @@ def topopt_optimality_criteria(
 
 	for iter in range(maxIterations):
 		x = np.array(x)
-		
 		obj,u = _compliance_objective(x, fe_solver,material_model_dict)
-	
 		ce = (np.dot(u[fe_solver.mesh.edofMat].reshape(num_elems, 24), KE) * u[fe_solver.mesh.edofMat].reshape(num_elems, 24)).sum(1)
 		if material_model == MaterialModel.SIMP:
 			# For SIMP material model: x**penal
@@ -378,11 +372,12 @@ def topopt_optimality_criteria(
 			penal = material_model_dict['penal']
 			d_elem_material_scaling_dx = (alpha - 1) / alpha * penal * x ** (penal - 1) + 1 / alpha
 			grad_obj = -d_elem_material_scaling_dx * ce
+
 		if (nodal_body_force is not None):
 			ce_body_force = (u[fe_solver.mesh.edofMat].reshape(num_elems, 24) * nodal_body_force[fe_solver.mesh.edofMat].reshape(num_elems, 24)).sum(1)
 			grad_obj +=  2*ce_body_force
 			
-		grad_obj /= obj0
+		
 		grad_obj = (H * grad_obj)/Hs
 
 		if (elemsWithForces.size > 0):
@@ -421,7 +416,7 @@ def topopt_optimality_criteria(
 			xMax = np.minimum(x+move, 1.0)
 			xMin = np.maximum(x-move,0.001)
 			volToDistribute = volfrac*num_elems
-			varTimesGrad = x*(-grad_obj)**eta
+			varTimesGrad = x*(abs(grad_obj))**eta
 			while setChange:
 				xnew = varTimesGrad/ (np.sum(varTimesGrad[varIn]) /volToDistribute)
 				volToDistribute = volfrac*num_elems -np.sum(xMax[xnew>=xMax]) -np.sum(xMin[xnew<=xMin])
@@ -443,10 +438,11 @@ def topopt_optimality_criteria(
 		history['compliance'].append(obj)
 		history['volume'].append(np.mean(xPhys))
 		history['change'].append(change)
-
+		
 		print(f"it.: {iter+1:d}, obj.: {obj:.5g}, "
 				  	f"vol.: {np.mean(xPhys):.3g}, ch.: {change:.3f}")
-		
+		if np.isnan(obj):
+			break
 		if (change < move_tol):
 			break
 		if (len(history['compliance'])) >= 2:
@@ -729,9 +725,13 @@ def topopt_pareto(fe_solver: sfea.StructFEA,
 	return u, history
 
 def runTOTests():
-	optimizationMethod = Optimizers.PARETO # MMA, OC or PARETO
+	optimizationMethod = Optimizers.OC # MMA, OC or PARETO
+	# Create a list to store results
+	results_list = []
 	for to_problem in StructuralTOExamples:
+		print("-" * 50)
 		print(f"Running {to_problem.name}...")
+		print("-" * 50)
 
 		mesh, mat_prop, bc,elem_body_force, to_constraints, to_params = getStructuralTOProblem(to_problem)
 
@@ -761,17 +761,28 @@ def runTOTests():
 		timeTaken = time.time() - startTime
 
 		# Create the directory if it does not exist
-		output_dir = f"./Results/{optimizationMethod.name}"
+		output_dir = f"./Results_{time.strftime('%Y-%m-%d')}/{optimizationMethod.name}"
 		if not os.path.exists(output_dir):
 			os.makedirs(output_dir)
 
 		image_path = f"{output_dir}/{to_problem.name}.png"
-		title = f"MMA: nDOF: {3*fe_solver.mesh.num_nodes}, vol: {history['volume'][-1]:0.2f}, J: {history['compliance'][-1]:.3g}, time: {timeTaken:.0f} s"
-		plots.plotMesh(fe_solver.mesh, bc = None, u=None, save_path = image_path, title = title)
-		# Save the plot as an image
-		
-	
+		title = f"{optimizationMethod.name}: nDOF: {3*fe_solver.mesh.num_nodes}, vol: {history['volume'][-1]:0.2f}, J: {history['compliance'][-1]:.3g}, time: {timeTaken:.0f} s"
 
+		plots.plotMesh(fe_solver.mesh, bc = None, u=None, save_path = image_path, title = title)
+		
+		
+		results_list.append({
+			'name': to_problem.name,
+			'ndof': 3*fe_solver.mesh.num_nodes,
+			'nelem': fe_solver.mesh.num_elems, 
+			'volume': history['volume'][-1],
+			'compliance': history['compliance'][-1],
+			'time': timeTaken
+		})
+
+	print(results_list)
+	
+	
 if __name__ == "__main__":    
 	from examples_topology_optimization import *
 	import struct_fea as fea
@@ -780,17 +791,18 @@ if __name__ == "__main__":
 	import matplotlib.pyplot as plt
 	import deflation
 	import os
+
 	import plots	
 	
 
 	jax.config.update("jax_enable_x64", True)
 
-
-	optimizationMethod = Optimizers.MMA # MMA, OC or PARETO
+	#runTOTests(); exit(0)
+	optimizationMethod = Optimizers.PARETO # MMA, OC or PARETO
 	# Choose the TO problem
-	to_problem = StructuralTOExamples.BliskWithBlade 
+	to_problem = StructuralTOExamples.KnuckleAssembly 
 	material_model = MaterialModel.SIMPPLUS# Relevant only for MMA, OC. Use SIMPPLUS for problems with body forces
-	solver = lin_solv.Solvers.DPCG # Typically PARDISO, but DPCG for DOF > 200,000
+	solver = lin_solv.Solvers.PARDISO # Typically PARDISO, but DPCG for DOF > 200,000
 	debug = False
 
 	# Get the structural problem

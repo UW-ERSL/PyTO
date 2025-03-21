@@ -427,14 +427,17 @@ class Mesher:
 
 		# Add component IDs to the voxel mesh
 		voxel_mesh.cell_data["component_id"] = component_ids
+		# Create an array to store component IDs for each element
 		
 		# Extract only cells that belong to a component (non-zero component_id)
 		voxel_mesh_components = voxel_mesh.threshold(0.5, scalars="component_id")
-		self.voxels = voxel_mesh_components
-
 		#extract the data
+		self.voxels = voxel_mesh_components
 		self.num_elems = self.voxels.n_cells
 		self.num_nodes = self.voxels.n_points 
+		
+		print(f"Mesher: #Elements: {self.num_elems}")
+		print(f"Mesher: #Nodes: {self.num_nodes}")
 		self.origin = [self.voxels.bounds[0], self.voxels.bounds[2], self.voxels.bounds[4]]
 
 		self.node_indices = np.zeros((self.num_nodes, 4), dtype = np.int32)
@@ -449,6 +452,17 @@ class Mesher:
 		self.elemArray = self.voxels.cell_connectivity
 		self.elemArray = self.elemArray.reshape((self.num_elems, 8))
 		
+			# Create an array to store component IDs for each element
+		self.elemComponentId = np.zeros(self.num_elems, dtype=np.int32)
+		for elem_idx in range(self.num_elems):
+			self.elemComponentId[elem_idx] = component_ids[elem_idx]
+
+		# Count the number of elements for each component
+		component_counts = np.bincount(self.elemComponentId)
+		for component_id, count in enumerate(component_counts):
+			print(f"Component {component_id}: {count} elements")
+		# Create a mapping from component ID to part index
+
 		self.elemPartIndex = np.zeros(self.num_elems)
 		self.elem_centers = np.zeros((self.num_elems, 3))
 
@@ -960,7 +974,7 @@ if __name__ == "__main__":
     script_dir = os.path.dirname(os.path.abspath(__file__))
     stlFileName = os.path.join(script_dir, '../Models/LBracket/LBracket.STL')
     stlFileName = os.path.join(script_dir, '../Models/AlcoaGrabCAD/AlcoaGrabCAD.STL')
-    #stlFileName = os.path.join(script_dir, '../Models/KnuckleAssembly/KnuckleAssembly.STL')
+    stlFileName = os.path.join(script_dir, '../Models/KnuckleAssembly/KnuckleAssembly.STL')
     #stlFileName = os.path.join(script_dir, '../Models/SwingArmAssembly/SwingArmAssembly.STL')
     mesh.createMeshFromSTLFile(stlFileName, nElemsDesired=250000)
     mesh.plot()
