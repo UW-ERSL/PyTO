@@ -603,7 +603,7 @@ def createGravityBarProblem(nDOFDesired: int = 10000, youngs_modulus = 2.1e11, p
   # ----------------------------------------
   
 def createGravityPlateProblem(nDOFDesired: int = 10000, L: float = [1.0, 0.5, 0.01],
-                               youngs_modulus = 1000, poissons_ratio = 0.3,material_density = 1,
+                               youngs_modulus = 1, poissons_ratio = 0.3,material_density = 1,
                                verticalForce = 0):
   nVoxelsDesired = nDOFDesired/3    
   # Let the number of voxels be proportional to the length in each direction
@@ -844,8 +844,7 @@ def createFilletedBeamProblem(nDOFDesired=50000, youngs_modulus = 2.1e5, poisson
   
 def createCentrifugalPlateProblem(nDOFDesired: int = 10000, youngs_modulus = 2e11, 
                                poissons_ratio = 0.28, material_density = 7700,
-                               rpm = 10000,radialForce =  100,
-																	   downwardForce = 100):
+                               rpm = 20000,radialForce =  1):
  
   # Read the STL model, create a mesh of desired size, and a structural problem is posed on it.
   stl_file = os.path.join(script_dir, '../Models/CircularPlateHole/CircularPlateHole.STL')
@@ -897,7 +896,7 @@ def createCentrifugalPlateProblem(nDOFDesired: int = 10000, youngs_modulus = 2e1
       # Add x and y dofs with force components
       boundaryForce[3*node] = radialForce/len(load_nodes) * radial_dir[0]  
       boundaryForce[3*node + 1] = radialForce/len(load_nodes) * radial_dir[1]
-      boundaryForce[3*node + 2] = downwardForce/len(load_nodes) 
+      boundaryForce[3*node + 2] = 0  # No force in z direction for centrifugal effect
   bc = bound_cond.BC(force = boundaryForce,fixed_dofs = fixed_dofs,dirichlet_values = dirichlet_values) 
 
   mat_prop = mat_lib.StructuralMaterial(youngs_modulus=youngs_modulus,
@@ -1144,7 +1143,7 @@ def createBliskSectionWithBlade(nDOFDesired: int = 10000, youngs_modulus = 2.1e1
   # ----------------------------------------
 
 def createKnuckleAssemblyProblem(nDOFDesired: int = 10000, youngs_modulus = 2e11, 
-                               poissons_ratio = 0.28, totalLoad =  100):
+                               poissons_ratio = 0.28, totalLoad =  10000):
  
   # Read the STL model, create a mesh of desired size, and a structural problem is posed on it.
   stl_file = os.path.join(script_dir, '../Models/KnuckleAssembly/KnuckleAssembly.STL')

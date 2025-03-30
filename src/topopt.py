@@ -184,6 +184,7 @@ def topopt_mma(fe_solver: sfea.StructFEA,
 	if (continuationScheme):
 		penal = 1.2
 	
+	success = True
 	
 	while not mma_state.is_converged:
 		x = mma_state.x.reshape(-1)
@@ -250,12 +251,18 @@ def topopt_mma(fe_solver: sfea.StructFEA,
 			penal *= 1.1
 			penal = min(penal, 3.0)
 		if time.time() - tStart > timeLimit:
+			success = False
+			print("MMA optimization terminated due to time limit.")
 			break
 
+	if mma_state.epoch >= maxMMAIterations:
+		print("MMA optimization did not converge.")
+		success = False
+		
 	fe_solver.mesh.setPseudoDensity(x)
 	print(f"Time FEA: {timeFEA:.2f} s, Time MMA: {timeMMA:.2f} s")
 	print(f"Total Time: {timeFEA+timeMMA:.2f} s")
-	return np.asarray(u), history
+	return np.asarray(u), history,success
 
 
 def topopt_optimality_criteria(
@@ -317,6 +324,7 @@ def topopt_optimality_criteria(
 	xmax = 1.0    # Maximum density
 	KE = elem_stiff.hex8_stiffness_matrix_structural( fe_solver.mat_prop,fe_solver.mesh.elem_size)
 	
+	success = True
 	for iter in range(maxIterations):
 		x = np.array(x)
 		obj,u = _compliance_objective(x, fe_solver,material_model_dict)
@@ -402,6 +410,8 @@ def topopt_optimality_criteria(
 		print(f"it.: {iter+1:d}, obj.: {obj:.5g}, "
 				  	f"vol.: {np.mean(xPhys):.3g}, ch.: {change:.3f}")
 		if np.isnan(obj):
+			print("Objective function became NaN. Exiting optimization.")
+			success = False
 			break
 		if (change < move_tol):
 			break
@@ -410,8 +420,11 @@ def topopt_optimality_criteria(
 			if (abs(dJ) < rel_conv_tol and abs(cons) < rel_conv_tol):
 				break
 
+	if iter == maxIterations - 1:
+		print("Maximum iterations reached without convergence.")
+		success = False
 
-	return np.asarray(u), history
+	return np.asarray(u), history, success
 
 
 def topopt_pareto(fe_solver: sfea.StructFEA,
@@ -565,6 +578,7 @@ def topopt_pareto(fe_solver: sfea.StructFEA,
 	vol_decr = vol_decr_max
 	wtDamping = 0.5 # 0 means full wt to current T values, else previous T values are damped in
 
+	success = True
 	terminatePareto = False
 	while volfrac > to_params.DesiredVolFraction:
 		# Move to next volume fraction
@@ -646,6 +660,7 @@ def topopt_pareto(fe_solver: sfea.StructFEA,
 			totalIter += 1
 
 		if terminatePareto:
+			success = False
 			print("-" * 50)
 			print("Pareto: Failed to reach volume fraction.")
 			print("Recommendations:")	
@@ -661,7 +676,7 @@ def topopt_pareto(fe_solver: sfea.StructFEA,
 			print(f"vf={history['volume'][-1]:.3f}, J={history['compliance'][-1]:.3g},   #FEA={totalIter:2d}")
 			fe_solver.mesh.setPseudoDensity(rho.flatten())
 			
-	return u, history
+	return u, history, success
 
 def topopt_levelset(fe_solver: sfea.StructFEA,
 					 to_params,
@@ -717,6 +732,7 @@ def topopt_levelset(fe_solver: sfea.StructFEA,
 		# Element stiffness matrix
 		KE = elem_stiff.hex8_stiffness_matrix_structural(fe_solver.mat_prop, fe_solver.mesh.elem_size)
 		[H,Hs] = createFilters(fe_solver, to_params)
+		success = True
 		for iter in range(maxIterations):
 			# Compute velocity field and objective
 			velocity, obj = compute_velocity_field(fe_solver, phi, material_model_dict)
@@ -746,13 +762,16 @@ def topopt_levelset(fe_solver: sfea.StructFEA,
 			if iter > 1 and change < rel_conv_tol:
 				break
 
+		if iter == maxIterations - 1:
+			print("Maximum iterations reached without convergence.")
+			success = False
 		# Solve for final displacement field
 		u = np.asarray(fe_solver.solve(density))
-		return u, history
+		return u, history, success
 
 
 def runTOTests():
-	optimizationMethod = TO_METHODS.DENSITYMMA # DENSITYMMA, DENSITYOC, PARETO or LEVELSET
+
 	# Create a list to store results
 	results_list = []
 	dsolver = deflation.DeflationSolver()
@@ -786,16 +805,16 @@ def runTOTests():
 					elem_body_force = elem_body_force)
 		startTime = time.time()
 		if optimizationMethod == TO_METHODS.DENSITYMMA:
-			u, history = topopt_mma(fe_solver = fe_solver,
-						   			to_params = to_params)
+			u, history,success = topopt_mma(fe_solver = fe_solver,
+									to_params = to_params)
 		elif optimizationMethod == TO_METHODS.DENSITYOC:
-			u, history = topopt_optimality_criteria(fe_solver = fe_solver,
-										   to_params = to_params)
+			u, history, success = topopt_optimality_criteria(fe_solver = fe_solver,
+											to_params = to_params)
 		elif optimizationMethod == TO_METHODS.PARETO:
-			u, history = topopt_pareto(fe_solver = fe_solver,
+			u, history, success = topopt_pareto(fe_solver = fe_solver,
 													to_params = to_params)
 		elif optimizationMethod == TO_METHODS.LEVELSET:
-			u, history = topopt_levelset(fe_solver = fe_solver,
+			u, history, success = topopt_levelset(fe_solver = fe_solver,
 													to_params = to_params)
 		timeTaken = time.time() - startTime
 
@@ -812,11 +831,12 @@ def runTOTests():
 		
 		results_list.append({
 			'name': to_problem.name,
+			'comment': to_params.Comment,  
 			'ndof': 3*fe_solver.mesh.num_nodes,
-			'nelem': fe_solver.mesh.num_elems, 
 			'volume': history['volume'][-1],
 			'compliance': history['compliance'][-1],
-			'time': timeTaken
+			'time (s)': timeTaken,
+			'success': success
 		})
 	
 
@@ -860,11 +880,12 @@ if __name__ == "__main__":
 	import plots	
 	
 	jax.config.update("jax_enable_x64", True)
+	optimizationMethod = TO_METHODS.DENSITYMMA # DENSITYMMA, DENSITYOC, PARETO, LEVELSET
 
-	runTOTests(); exit(0)
-	optimizationMethod = TO_METHODS.PARETO # DENSITYMMA, DENSITYOC, PARETO, LEVELSET
+	#runTOTests(); exit(0) # Run all tests for each example in the StructuralTOExamples enum
+	
 	# Choose the TO problem
-	to_problem = StructuralTOExamples.LBracket 
+	to_problem = StructuralTOExamples.CentrifugalPlate 
 	solver = lin_solv.Solvers.PARDISO # Typically PARDISO, but DPCG for DOF > 200,000
 	debug = False
 
@@ -899,7 +920,7 @@ if __name__ == "__main__":
 	startTime = time.time()
 	if optimizationMethod == TO_METHODS.DENSITYMMA:
 		print("OptimizationMethod: MMA")
-		u, history = topopt_mma(fe_solver = fe_solver,
+		u, history,success = topopt_mma(fe_solver = fe_solver,
 						  			to_params = to_params,
 									debug = debug)
 		timeTaken = time.time() - startTime
@@ -932,7 +953,7 @@ if __name__ == "__main__":
 
 	elif optimizationMethod == TO_METHODS.DENSITYOC:
 		print("OptimizationMethod: OC")
-		u, history = topopt_optimality_criteria(fe_solver = fe_solver,
+		u, history, success = topopt_optimality_criteria(fe_solver = fe_solver,
 										  		to_params = to_params,
 												debug = debug)
 		timeTaken = time.time() - startTime
@@ -965,7 +986,7 @@ if __name__ == "__main__":
 	
 	elif optimizationMethod == TO_METHODS.PARETO:
 		print("OptimizationMethod: Pareto")
-		u, history = topopt_pareto(fe_solver = fe_solver,
+		u, history, success = topopt_pareto(fe_solver = fe_solver,
 										to_params = to_params,
 										debug = debug)
 		
@@ -982,7 +1003,7 @@ if __name__ == "__main__":
 		plt.show(block=False)
 	elif optimizationMethod == TO_METHODS.LEVELSET:
 		print("OptimizationMethod: Level Set")
-		u, history = topopt_levelset(fe_solver = fe_solver,
+		u, history, success = topopt_levelset(fe_solver = fe_solver,
 										to_params = to_params,
 										maxIterations = 100,
 										time_step = 0.1,

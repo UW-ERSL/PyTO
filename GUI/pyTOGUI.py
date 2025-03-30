@@ -2240,7 +2240,7 @@ class MaterialWindow(QtWidgets.QDialog):
         super().__init__(parent)
         self.setWindowTitle("Material")
         self.parent = parent
-        self.setFixedSize(300, 400)  # Fixed size window
+        self.setFixedSize(400, 400)  # Fixed size window
         
         layout = QtWidgets.QVBoxLayout(self)
         layout.setSpacing(10)
