@@ -3,15 +3,16 @@ from examples_structural import *
 import struct_fea as sfea
 
 class StructuralTOExamples(enum.Enum):
+	MidCantilever = enum.auto()
 	EdgeCantilever = enum.auto()
 	MBB = enum.auto()
 	LBracket = enum.auto()
 	DistributedLoad = enum.auto()
 	Multiload = enum.auto()
-	GravityPlate = enum.auto()
 	ThreeHoleBracket = enum.auto()
 	TorquePlate = enum.auto()
 	CentrifugalPlate = enum.auto()
+	GravityPlate = enum.auto()
 	KnuckleAssembly = enum.auto()
 	Table = enum.auto()
 	BliskWithBlade = enum.auto()
@@ -73,7 +74,12 @@ def getStructuralTOProblem(to_problem: StructuralTOExamples, **kwargs):
         to_params.YSymmetry = True
         to_params.nDOFDesired = 50000
         to_params.DesiredVolFraction = 0.5
-
+    elif to_problem == StructuralTOExamples.MidCantilever:
+        structural_problem = StructuralExamples.MidCantilever
+        to_params.Comment  = "Classic TO Problem"
+        to_params.YSymmetry = True  # Symmetry about the Y-axis
+        to_params.nDOFDesired = 30000
+        to_params.DesiredVolFraction = 0.5
     elif to_problem == StructuralTOExamples.ThreeHoleBracket:
         structural_problem = StructuralExamples.ThreeHoleBracket
         to_params.Comment  = "Retain Material Around Holes"

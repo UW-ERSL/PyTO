@@ -152,8 +152,6 @@ def topopt_mma(fe_solver: sfea.StructFEA,
 	num_elems= fe_solver.mesh.num_elems
 	history = {'compliance': [], 'volume': [], 'change': []}
 	
-		
-
 	[H,Hs] = createFilters(fe_solver, to_params)
 
 	elemsWithForces = find_elements_with_forces(fe_solver.mesh, fe_solver.bc.force)
@@ -253,6 +251,10 @@ def topopt_mma(fe_solver: sfea.StructFEA,
 		if time.time() - tStart > timeLimit:
 			success = False
 			print("MMA optimization terminated due to time limit.")
+			break
+		if (history['compliance'][-1] > 100*history['compliance'][0]):
+			print("Optimization terminated due to large compliance increase.")
+			success = False
 			break
 
 	if mma_state.epoch >= maxMMAIterations:
@@ -825,7 +827,7 @@ def runTOTests():
 
 		image_path = f"{output_dir}/{to_problem.name}.png"
 		title = f"{optimizationMethod.name}: nDOF: {3*fe_solver.mesh.num_nodes}, vol: {history['volume'][-1]:0.2f}, J: {history['compliance'][-1]:.3g}, time: {timeTaken:.0f} s"
-
+	
 		plots.plotMesh(fe_solver.mesh, bc = None, u=None, save_path = image_path, title = title)
 		
 		
@@ -846,7 +848,7 @@ def runTOTests():
 	# Format
 	results_df['volume'] = results_df['volume'].map(lambda x: f"{x:.3g}")
 	results_df['compliance'] = results_df['compliance'].map(lambda x: f"{x:.3g}")
-	results_df['time'] = results_df['time'].map(lambda x: f"{x:.3g}")
+	results_df['time (s)'] = results_df['time (s)'].map(lambda x: f"{x:.3g}")
 
 	# Plot the results as a table
 	fig, ax = plt.subplots(figsize=(10, len(results_list) * 0.5))
@@ -865,8 +867,7 @@ def runTOTests():
 	# Save the table as an image
 	results_path = f"{output_dir}/{optimizationMethod.name}_summary.png"
 	plt.savefig(results_path, bbox_inches='tight')
-	plt.show()
-	
+
 	
 if __name__ == "__main__":    
 	from examples_topology_optimization import *
@@ -885,7 +886,7 @@ if __name__ == "__main__":
 	#runTOTests(); exit(0) # Run all tests for each example in the StructuralTOExamples enum
 	
 	# Choose the TO problem
-	to_problem = StructuralTOExamples.CentrifugalPlate 
+	to_problem = StructuralTOExamples.MidCantilever
 	solver = lin_solv.Solvers.PARDISO # Typically PARDISO, but DPCG for DOF > 200,000
 	debug = False
 

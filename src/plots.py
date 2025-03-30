@@ -67,7 +67,8 @@ def plotMesh(mesh: mesher.Mesher,
   face_densities = np.array(face_densities)
   
   if len(faces) == 0:
-    raise ValueError("No faces to plot after filtering")
+    print("No faces to plot after filtering")
+    return None
 
   # Create cells array for PyVista
   n_faces = len(faces)

@@ -18,6 +18,7 @@ import scipy
 import scipy.linalg
 import scipy.sparse
 
+
 _SUBSOLV_EPSI_FACTOR = 0.9
 _SUBSOLV_MAX_INNER_ITER = 200
 _SUBSOLV_RESIDUE_NORM_FACTOR = 2

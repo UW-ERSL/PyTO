@@ -2240,7 +2240,7 @@ class MaterialWindow(QtWidgets.QDialog):
         super().__init__(parent)
         self.setWindowTitle("Material")
         self.parent = parent
-        self.setFixedSize(400, 400)  # Fixed size window
+        self.setFixedSize(300, 400)  # Fixed size window
         
         layout = QtWidgets.QVBoxLayout(self)
         layout.setSpacing(10)
@@ -2610,8 +2610,101 @@ class StructuralLoadsWindow(QtWidgets.QDialog):
                 display_faces = [selected_faces[i] for i in display_indices]
             else:
                 display_faces = selected_faces
+                    
+            # Get bounding box for scaling
+            points = np.array(self.parent.stl_geom.mesh.points)
+            bbox = [points[:,0].min(), points[:,0].max(),
+                    points[:,1].min(), points[:,1].max(),
+                    points[:,2].min(), points[:,2].max()]
+            geom_size = max(bbox[1]-bbox[0], bbox[3]-bbox[2], bbox[5]-bbox[4])
+            scale_factor = 0.10 * geom_size
+            
+            # Normalize direction for text placement
+            dx, dy, dz = force_x/magnitude, force_y/magnitude, force_z/magnitude
                 
-            for triangle in display_faces:
+            # Create a single text actor to display the force value
+            # Calculate a good position for the text (near the first arrow, but offset)
+            if display_faces:
+                first_triangle = display_faces[0]
+                
+                # Create arrow for visualization
+                arrow = vtk.vtkArrowSource()
+                arrow.SetTipLength(0.3)
+                arrow.SetTipRadius(0.1)
+                arrow.SetShaftRadius(0.03)
+                
+                # Set up transform
+                transform = vtk.vtkTransform()
+                transform.Translate(first_triangle['center'])
+                
+                # Calculate rotation angles for direction
+                if abs(dx) > 0 or abs(dy) > 0:
+                    angle_z = math.degrees(math.atan2(dy, dx))
+                else:
+                    angle_z = 0
+                    
+                angle_y = -math.degrees(math.asin(dz))
+                
+                transform.RotateZ(angle_z)
+                transform.RotateY(angle_y)
+                transform.Scale(scale_factor, scale_factor, scale_factor)
+                
+                # Create mapper and actor
+                mapper = vtk.vtkPolyDataMapper()
+                mapper.SetInputConnection(arrow.GetOutputPort())
+                
+                arrow_actor = vtk.vtkActor()
+                arrow_actor.SetMapper(mapper)
+                arrow_actor.SetUserTransform(transform)
+                arrow_actor.GetProperty().SetColor(1, 0, 0)  # Red for force
+                
+                # Add to renderer and store
+                self.parent.renderer.AddActor(arrow_actor)
+                self.parent.force_actors.append(arrow_actor)
+                
+                # Calculate position for text label - place it near the arrow
+                text_offset = 0.12 * geom_size  # Offset from the center
+                
+                # Calculate the text position to be offset perpendicular to the force direction
+                # This ensures the text doesn't overlap with the arrow
+                text_pos = [
+                    first_triangle['center'][0] + text_offset * (-dy),  # Perpendicular to direction
+                    first_triangle['center'][1] + text_offset * (dx),   # Perpendicular to direction
+                    first_triangle['center'][2] + text_offset * 0.2    # Small Z offset
+                ]
+                
+                # Create a vtkCaptionActor2D for the force value text
+                caption_actor = vtk.vtkCaptionActor2D()
+                
+                # Format the force components and magnitude
+                force_text = f"{magnitude:.1f} N"
+                # if abs(force_x) > 0.01 or abs(force_y) > 0.01 or abs(force_z) > 0.01:
+                #     force_text += f"\n({force_x:.1f}, {force_y:.1f}, {force_z:.1f}) N"
+                
+                caption_actor.SetCaption(force_text)
+                caption_actor.SetAttachmentPoint(text_pos)
+                
+                # Customize text appearance
+                caption_actor.BorderOff()
+                caption_actor.LeaderOff()  # No leader line
+                
+                # Set text properties
+                text_prop = caption_actor.GetCaptionTextProperty()
+                text_prop.SetColor(1.0, 0.0, 0.0)  # Red text to match force arrows
+                text_prop.SetFontSize(5)
+                
+                # Scale the text appropriately
+                caption_actor.SetWidth(0.15)
+                caption_actor.SetHeight(0.05)
+                text_prop.SetBold(True)
+                text_prop.SetShadow(True)
+                
+                # Add to renderer and store
+                self.parent.renderer.AddActor(caption_actor)
+                self.parent.force_actors.append(caption_actor)
+                
+            # Add remaining arrows without text
+            for triangle in display_faces[1:]:
                 # Create arrow for visualization
                 arrow = vtk.vtkArrowSource()
                 arrow.SetTipLength(0.3)
@@ -2623,9 +2716,6 @@ class StructuralLoadsWindow(QtWidgets.QDialog):
                 transform.Translate(triangle['center'])
                 
                 # Calculate direction angles
-                dx, dy, dz = force_x/magnitude, force_y/magnitude, force_z/magnitude
-                
-                # Calculate rotations
                 if abs(dx) > 0 or abs(dy) > 0:
                     angle_z = math.degrees(math.atan2(dy, dx))
                 else:
@@ -2635,18 +2725,8 @@ class StructuralLoadsWindow(QtWidgets.QDialog):
                 
                 transform.RotateZ(angle_z)
                 transform.RotateY(angle_y)
-                
-                # Dynamic scaling based on geometry bounding size
-                points = np.array(self.parent.stl_geom.mesh.points)
-                bbox = [points[:,0].min(), points[:,0].max(),
-                        points[:,1].min(), points[:,1].max(),
-                        points[:,2].min(), points[:,2].max()]
-                geom_size = max(bbox[1]-bbox[0], bbox[3]-bbox[2], bbox[5]-bbox[4])
-                scale_factor = 0.10 * geom_size
                 transform.Scale(scale_factor, scale_factor, scale_factor)
                 
-                # transform.Translate(-scale_factor/2, 0, 0)
-
                 # Create mapper and actor
                 mapper = vtk.vtkPolyDataMapper()
                 mapper.SetInputConnection(arrow.GetOutputPort())
@@ -2656,6 +2736,7 @@ class StructuralLoadsWindow(QtWidgets.QDialog):
                 arrow_actor.SetUserTransform(transform)
                 arrow_actor.GetProperty().SetColor(1, 0, 0)  # Red for force
                 
+                # Add to renderer and store
                 self.parent.renderer.AddActor(arrow_actor)
                 self.parent.force_actors.append(arrow_actor)
                 
@@ -2668,7 +2749,7 @@ class StructuralLoadsWindow(QtWidgets.QDialog):
             self.parent.vtkWidget.GetRenderWindow().Render()
             self.parent.message_text.append(f"Applied force of {magnitude:.2f}N to {len(selected_faces)} triangles")
             self.parent.update_button_icon("Structural Loads", "check")
-             # Update LivVar state
+            # Update LivVar state
             self.parent.update_LivVar('structural_loads.forces_applied', True)
             self.parent.update_LivVar('structural_loads.applied', True)
             self.close()
@@ -3816,9 +3897,36 @@ class AnalysisWindow(QtWidgets.QDialog):
             scalar_bar.SetPosition(0.85, 0.05)
             scalar_bar.SetWidth(0.1)
             scalar_bar.SetHeight(0.8)
-            scalar_bar.GetLabelTextProperty().SetColor(0, 0, 0)
-            scalar_bar.GetTitleTextProperty().SetColor(0, 0, 0)
+
+            # UNCONSTRAIN FONT SIZES
+            scalar_bar.UnconstrainedFontSizeOn()  # This is CRUCIAL
+            # scalar_bar.GetLabelTextProperty().SetColor(0, 0, 0)
+            # scalar_bar.GetTitleTextProperty().SetColor(0, 0, 0)
+
+            # Create title text property
+            title_text_prop = vtk.vtkTextProperty()
+            title_text_prop.SetFontFamilyToArial()
+            title_text_prop.SetFontSize(22)  # Much larger
+            title_text_prop.SetBold(True)
+            title_text_prop.SetColor(0, 0, 0)
+
+            # Create label text property
+            label_text_prop = vtk.vtkTextProperty()
+            label_text_prop.SetFontFamilyToArial()
+            label_text_prop.SetFontSize(18)  # Smaller than title
+            label_text_prop.SetBold(False)
+            label_text_prop.SetColor(0, 0, 0)
+
+            # Apply the text properties
+            scalar_bar.SetTitleTextProperty(title_text_prop)
+            scalar_bar.SetLabelTextProperty(label_text_prop)
+
+            # Save and add actor
             self.parent.scalar_bar = scalar_bar
+            self.parent.renderer.AddActor(scalar_bar)
+
+
+            # self.parent.scalar_bar = scalar_bar
             
             # Hide original mesh
             if hasattr(self.parent, 'mesh_actor'):

@@ -12,6 +12,7 @@ class StructuralExamples(enum.Enum):
 	TensileBar = enum.auto()
 	BeamBending = enum.auto()
 	EdgeCantilever = enum.auto()
+	MidCantilever = enum.auto()
 	ThreeHoleBracket = enum.auto()
 	MBB = enum.auto()
 	DistributedLoad = enum.auto()
@@ -52,6 +53,8 @@ def getStructuralProblem(problem: StructuralExamples, **kwargs):
     return createBeamBendingProblem(**kwargs)
   elif problem == StructuralExamples.EdgeCantilever:
     return createEdgeCantileverProblem(**kwargs)
+  elif problem == StructuralExamples.MidCantilever:
+    return createMidCantileverProblem(**kwargs)
   elif problem == StructuralExamples.ThreeHoleBracket:
     return createThreeHoleBracketProblem(**kwargs)
   elif problem == StructuralExamples.MBB:
@@ -292,7 +295,8 @@ def createBeamBendingProblem(nDOFDesired: int = 10000, L: float = [10, 1, 1],you
 
   # ----------------------------------------
 
-def createEdgeCantileverProblem(nDOFDesired: int = 10000, L: float = [0.4, 0.2, 0.1],youngs_modulus = 2e11, poissons_ratio = 0.3):
+def createEdgeCantileverProblem(nDOFDesired: int = 10000, L: float = [0.4, 0.2, 0.1],
+                                youngs_modulus = 2e11, poissons_ratio = 0.3,totalLoad = 10000):
   """Creates a edge loaded cantilever beam problem with approximate desired DOFs.
 
   Parameters:
@@ -337,7 +341,78 @@ def createEdgeCantileverProblem(nDOFDesired: int = 10000, L: float = [0.4, 0.2, 
   load_dofs = 3 * load_nodes + 2  # z direction
 
   mesh.node_indices[load_nodes, 3] = 2
-  load_per_dof = -10000/len(load_nodes)
+  load_per_dof = -totalLoad/len(load_nodes)
+
+  force = np.zeros(3*mesh.num_nodes)
+  force[load_dofs] = load_per_dof
+
+  bc = bound_cond.BC(force = force,
+            fixed_dofs = fixed_dofs,
+            dirichlet_values = dirichlet_values) 
+
+  mat_prop = mat_lib.StructuralMaterial(youngs_modulus=youngs_modulus,
+                      poissons_ratio=poissons_ratio)
+  elem_body_force = None
+  return mesh, mat_prop, bc, elem_body_force
+
+  # ----------------------------------------
+
+
+def createMidCantileverProblem(nDOFDesired: int = 10000, L: float = [0.4, 0.2, 0.025],
+                               youngs_modulus = 2e11, poissons_ratio = 0.3,totalLoad = 10000):
+  """Creates a edge loaded cantilever beam problem with approximate desired DOFs.
+
+  Parameters:
+  ----------
+  nDOFDesired : int
+    Desired number of degrees of freedom (default 10000)
+  L : list of float
+    Dimensions [Lx, Ly, Lz] of domain (default [0.1, 0.1, 0.1])
+  youngs_modulus : float
+    Young's modulus of material (default 2e11)
+  poissons_ratio : float 
+    Poisson's ratio of material (default 0.3)
+
+  Returns:
+  -------
+  tuple
+    (mesh, mat_prop, bc) containing:
+    - mesh: Mesher object with grid discretization
+    - mat_prop: Material properties object
+    - bc: Boundary conditions with fixed left face and load on right face
+  """
+  nVoxelsDesired = nDOFDesired/3    
+  # Let the number of voxels be proportional to the length in each direction
+  alpha = (nVoxelsDesired/(L[0]*L[1]*L[2]))**(1/3)
+  nelx = round(alpha*L[0])
+  nely = round(alpha*L[1])
+  nelz = round(alpha*L[2])
+  mesh = mesher.Mesher()
+  mesh.grid_mesh(num_elems = (nelx, nely, nelz),
+                  elem_size = (L[0]/nelx, L[1]/nely, L[2]/nelz))
+  mesh.createEdofMatStructural()
+
+  fixed_nodes = mesh.getNodesOnBoundingBoxPlane(0,True) # x = 0 plane
+  fixed_dofs = np.array([3 * fixed_nodes,
+              3 * fixed_nodes + 1,
+              3 * fixed_nodes + 2]).flatten().astype(int)
+  dirichlet_values = 0*np.ones_like(fixed_dofs, dtype = float)
+
+  mesh.node_indices[fixed_nodes, 3] = 1
+  # line defined by x = xMax, and y = yMax/2,
+  # Get nodes on plane x = xMax
+  max_x_nodes = mesh.getNodesOnBoundingBoxPlane(0,False)
+  # Get nodes with y coordinate near yMax/2
+  node_pts = mesh.node_xyz
+  y_mid = (np.max(node_pts[:,1]) + np.min(node_pts[:,1]))/2
+  y_mid_nodes = np.where(abs(node_pts[:,1] - y_mid) < 1.5*mesh.elem_size[1])[0]
+  # Intersect the two sets to get nodes on the line
+
+  load_nodes = np.intersect1d(max_x_nodes, y_mid_nodes)
+  load_dofs = 3 * load_nodes + 1  # y direction
+
+  mesh.node_indices[load_nodes, 3] = 2
+  load_per_dof = -totalLoad/len(load_nodes)
 
   force = np.zeros(3*mesh.num_nodes)
   force[load_dofs] = load_per_dof
@@ -353,6 +428,7 @@ def createEdgeCantileverProblem(nDOFDesired: int = 10000, L: float = [0.4, 0.2, 
 
   # ----------------------------------------
   
+
 def createMBBProblem(nDOFDesired: int = 10000, L: float = [0.5, 0.167, 0.01],youngs_modulus = 2e11, poissons_ratio = 0.3):
   nVoxelsDesired = nDOFDesired/3    
   # Let the number of voxels be proportional to the length in each direction
