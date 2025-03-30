@@ -43,7 +43,7 @@ def getThermalProblem(problem: ThermalExamples, **kwargs):
     raise ValueError("Invalid structural example name.")
 
 
-def createThickPlateThermalProblem(nDOFDesired: int = 10000,thermal_conductivity = 50, heat_load = 1000):
+def createThickPlateThermalProblem(nDOFDesired: int = 10000,thermal_conductivity = 50, heat_load = 1000, T0 = 23):
     """Creates a thermal problem setup for an L-bracket topology optimization.
     This function sets up a finite element mesh and boundary conditions for an L-bracket
     thermal problem from an STL file. The mesh is created with approximately the desired
@@ -79,7 +79,7 @@ def createThickPlateThermalProblem(nDOFDesired: int = 10000,thermal_conductivity
 	
     fixed_nodes = np.where(node_pts[:, 0] == np.min(node_pts[:, 0]) )[0] # x = xMin plane
     fixed_dofs = np.array([fixed_nodes]).flatten().astype(int)
-    dirichlet_values = 0*np.ones_like(fixed_dofs, dtype = float)
+    dirichlet_values = T0*np.ones_like(fixed_dofs, dtype = float)
   
     mesh.node_indices[fixed_nodes, 3] = 1 # for plotting
 
@@ -97,7 +97,7 @@ def createThickPlateThermalProblem(nDOFDesired: int = 10000,thermal_conductivity
     return mesh, mat_prop, bc
 
 
-def createAnnularPlateThermalProblem(nDOFDesired: int = 10000,thermal_conductivity = 50, heat_load = 100):
+def createAnnularPlateThermalProblem(nDOFDesired: int = 10000,thermal_conductivity = 50, heat_load = 100, T0 = 23):
     """Creates a thermal problem setup for an L-bracket topology optimization.
     This function sets up a finite element mesh and boundary conditions for an L-bracket
     thermal problem from an STL file. The mesh is created with approximately the desired
@@ -135,7 +135,7 @@ def createAnnularPlateThermalProblem(nDOFDesired: int = 10000,thermal_conductivi
                                                      innerRadius+mesh.elem_size[0]*0.707) 
 	
     fixed_dofs = np.array([fixed_nodes]).flatten().astype(int)
-    dirichlet_values = 0*np.ones_like(fixed_dofs, dtype = float)
+    dirichlet_values = T0*np.ones_like(fixed_dofs, dtype = float)
   
  
 
@@ -154,7 +154,7 @@ def createAnnularPlateThermalProblem(nDOFDesired: int = 10000,thermal_conductivi
     return mesh, mat_prop, bc
 
 
-def createLBracketThermalProblem(nDOFDesired: int = 10000,thermal_conductivity = 50, heat_load = 10):
+def createLBracketThermalProblem(nDOFDesired: int = 10000,thermal_conductivity = 50, heat_load = 10, T0 = 23):
     """Creates a thermal problem setup for an L-bracket topology optimization.
     This function sets up a finite element mesh and boundary conditions for an L-bracket
     thermal problem from an STL file. The mesh is created with approximately the desired
@@ -191,7 +191,7 @@ def createLBracketThermalProblem(nDOFDesired: int = 10000,thermal_conductivity =
     fixed_nodes = np.where(node_pts[:, 1] == np.max(node_pts[:, 1]) )[0] # y = yMax plane
     fixed_dofs = np.array([fixed_nodes]).flatten().astype(int)
     
-    dirichlet_values = 0*np.ones_like(fixed_dofs, dtype = float)
+    dirichlet_values = T0*np.ones_like(fixed_dofs, dtype = float)
   
     mesh.node_indices[fixed_nodes, 3] = 1 # for plotting
 
@@ -208,7 +208,7 @@ def createLBracketThermalProblem(nDOFDesired: int = 10000,thermal_conductivity =
     mat_prop = mat_lib.ThermalMaterial(thermal_conductivity=thermal_conductivity)
     return mesh, mat_prop, bc
 
-def createBliskWithBladeProblem(nDOFDesired: int = 10000,thermal_conductivity = 50, heat_load = 10):
+def createBliskWithBladeProblem(nDOFDesired: int = 10000,thermal_conductivity = 50, heat_load = 10, T0 = 23):
    # Read the STL model, create a mesh of desired size, and a structural problem is posed on it.
   stl_file = os.path.join(script_dir, '../Models/BliskModel/BliskSectionWithBlade.STL')
 
@@ -224,7 +224,7 @@ def createBliskWithBladeProblem(nDOFDesired: int = 10000,thermal_conductivity = 
   fixed_nodes = mesh.get_nodes_within_annular_region(centerPt,axis,innerRadius-mesh.elem_size[0]*0.707,
                                                      innerRadius+mesh.elem_size[0]*0.707)  
   fixed_dofs = np.array([fixed_nodes]).flatten().astype(int)
-  dirichlet_values = 0*np.ones_like(fixed_dofs, dtype = float)
+  dirichlet_values = T0*np.ones_like(fixed_dofs, dtype = float)
 
   tipRadius = 0.07
   load_nodes = mesh.get_nodes_within_annular_region(centerPt,axis,tipRadius-mesh.elem_size[0]*2,
@@ -240,7 +240,7 @@ def createBliskWithBladeProblem(nDOFDesired: int = 10000,thermal_conductivity = 
   mat_prop = mat_lib.ThermalMaterial(thermal_conductivity=thermal_conductivity)
   return mesh, mat_prop, bc
 
-def createMoranBenchMark(nDOFDesired: int = 10000,):
+def createMoranBenchMark(nDOFDesired: int = 10000,T0 = 23):
 	# See Paper: "Utility of superposition-based finite element ..."  by Moran, at. al., Additive Manuf, 2018
     # We have modeled this as a static problem here. For transient see the transient_thermal.py file
    
@@ -267,7 +267,7 @@ def createMoranBenchMark(nDOFDesired: int = 10000,):
 	#fixed_nodes = np.union1d(x0_nodes,  np.union1d(y0_nodes,np.union1d(ymax_nodes, zmax_nodes)))
 	   
 	fixed_dofs = np.array([fixed_nodes]).flatten().astype(int)
-	dirichlet_values = 0*np.ones_like(fixed_dofs, dtype = float)
+	dirichlet_values = T0*np.ones_like(fixed_dofs, dtype = float)
 	mesh.node_indices[fixed_nodes, 3] = 1
 	# see Fig 2 in Paper for the heat load
 	

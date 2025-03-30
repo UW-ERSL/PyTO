@@ -61,9 +61,6 @@ class StructFEA:
     elif elasticity_material_model['name'] == 'SIMP':
       penal = elasticity_material_model['penal']
       elem_material_scaling = x**penal
-    elif elasticity_material_model['name'] == 'RAMP': 
-      penal = elasticity_material_model['penal']
-      elem_material_scaling = x/(1+penal*(1-x))
     elif elasticity_material_model['name'] == 'SIMPPLUS':
       #  model from the paper here: https://doi.org/10.1002/nme.2499 
       alpha = elasticity_material_model['alpha']
@@ -175,7 +172,7 @@ if __name__ == "__main__":
 
   from examples_structural import *
 
-  problem = StructuralExamples.KnuckleAssembly
+  problem = StructuralExamples.Table
   nDOFDesired = 150000
   mesh, mat_prop, bc,elem_body_force = getStructuralProblem(problem,nDOFDesired = nDOFDesired)
   solver = lin_solv.Solvers.PARDISO # typically DPCG or PARDISO

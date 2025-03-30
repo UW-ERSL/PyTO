@@ -60,18 +60,12 @@ class ThermalFEA:
                       **self.kwargs)
     return u
 
-if __name__ == "__main__":
-    import plots
-    import thermal_fea as fea
-    import linear_solvers as lin_solv
-    import jax # import jax to enable 64 bit precision
-    import time	
-    from examples_thermal import *
-    jax.config.update("jax_enable_x64", True)
-
-    problem = ThermalExamples.LBracket
+def runDOFTest():
+   
+    problem = ThermalExamples.ThickPlate
     # Create arrays to store results
     dof_sizes = [100, 200, 400, 800, 1600, 5000,10000]  # Different DOF sizes to test
+    dof_sizes = [2000]
     umax_values = []
     timing = []
     solver = lin_solv.Solvers.PARDISO
@@ -117,7 +111,45 @@ if __name__ == "__main__":
     print("nDof: ", nDOF)
     print('Solver: ', fe_solver.solver.name)
     print("FEA time: ", time.time() - startTime)
+    print('-----------------------------')
+if __name__ == "__main__":
+    import plots
+    import thermal_fea as fea
+    import linear_solvers as lin_solv
+    import jax # import jax to enable 64 bit precision
+    import time	
+    from examples_thermal import *
+    jax.config.update("jax_enable_x64", True)
+
+    problem = ThermalExamples.ThickPlate
+    nDOFDesired = 10000
+    umax_values = []
+    timing = []
+    solver = lin_solv.Solvers.PARDISO
+    
+    mesh, mat_prop, bc = getThermalProblem(problem, nDOFDesired=nDOFDesired)
+    
+    fe_solver = fea.ThermalFEA(mesh=mesh,
+                  mat_prop=mat_prop,
+                  bc=bc,
+                  solver=solver)
+    
+    startTime = time.time()
+    u = np.asarray(fe_solver.solve())
+    uMax = np.max(np.abs(u))
+    umax_values.append(uMax)
+    timing.append(time.time() - startTime )
+    print(f'DOF: {fe_solver.mesh.num_nodes}, Max u: {uMax:.3e}')
+    
+    
+
+    nDOF = fe_solver.mesh.num_nodes
+   
+    print('-----------------------------')
+    print("nDof: ", nDOF)
+    print('Solver: ', fe_solver.solver.name)
+    print("FEA time: ", time.time() - startTime)
     print('Max u: ', uMax)
     print('-----------------------------')
 	
-    plots.plotMesh(fe_solver.mesh, None, u,title=f'Dof = {nDOF}, max u: {uMax:.3e}',show_edges=True,)
+    plots.plotMesh(fe_solver.mesh, None, u,title=f'Dof = {nDOF}, Tmax: {uMax:.3g}',show_edges=True,)

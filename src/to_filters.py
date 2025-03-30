@@ -5,7 +5,38 @@ from scipy.sparse import coo_matrix
 import mesher
 
 
-def createSmoothingFilter(mesh: mesher.Mesher):
+def createSmoothingFilter(mesh: mesher.Mesher, rel_filter_radius: float = 1.5):
+	"""Create a smoothing filter using the provided formula.
+
+	Args:
+		mesh: The mesh object.
+		rel_filter_radius: The relative minimum radius for the filter; the radius is scaled by elem size.
+
+	Returns:
+		tuple containing:
+			H: Sparse matrix representing the smoothing filter.
+			Hs: Array of row sums of H matrix.
+	"""
+	num_elems = mesh.num_elems
+	iH = []
+	jH = []
+	sH = []
+	r_min = rel_filter_radius * mesh.elem_size[0]
+	for e in range(num_elems):
+		elemCenter = mesh.elem_centers[e, :]
+		elems_within_radius = mesh.get_elems_within_radius(elemCenter, r_min)
+		for i in elems_within_radius:
+			dist = np.linalg.norm(mesh.elem_centers[e, :] - mesh.elem_centers[i, :])
+			weight = np.exp(-1*dist**2)
+			iH.append(e)
+			jH.append(i)
+			sH.append(weight)
+
+	H = coo_matrix((sH, (iH, jH)), shape=(num_elems, num_elems)).tocsc()
+	Hs = np.array(H.sum(1)).squeeze()
+	return H, Hs
+
+def createSmoothingFilterOld(mesh: mesher.Mesher, rel_filter_radius: float = 1.1):
 	## Prepare filter
 	nfilter = int(27 * mesh.num_elems)
 	iH = np.zeros(nfilter)

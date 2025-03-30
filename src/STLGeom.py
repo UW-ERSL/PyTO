@@ -22,6 +22,21 @@ class STLGeom:
         self.selected_triangles = set()
         self.file_path = file_path
 
+    def get_bounding_box(self):
+        """
+        Compute the bounding box (min/max coordinates) of the STL geometry.
+        Returns:
+            tuple: (xmin, xmax, ymin, ymax, zmin, zmax) coordinates of the bounding box
+        """
+        if not hasattr(self, 'mesh') or self.mesh is None:
+            return (0, 0, 0, 0, 0, 0)
+        # Get all vertices as a single array
+        vertices = self.mesh.vectors.reshape(-1, 3)
+        # Calculate min and max for each coordinate
+        xmin, ymin, zmin = np.min(vertices, axis=0)
+        xmax, ymax, zmax = np.max(vertices, axis=0)
+        return (xmin, xmax, ymin, ymax, zmin, zmax)
+
     def compute_areas_vectorized(self):
         """Compute all triangle areas using vectorized operations"""
         vectors = self.mesh.vectors
@@ -512,6 +527,7 @@ if __name__ == "__main__":
     stl_file = os.path.join(script_dir, '../Models/Overhang/Overhang.STL')
     stl_file = os.path.join(script_dir, '../Models/ThickPlate/ThickPlate.STL')
     stl_file =  os.path.join(script_dir, '../Models/KnuckleAssembly/KnuckleAssembly.STL')
+    stl_file =  os.path.join(script_dir, '../Models/Table/Table.STL')
     stl_geom = STLGeom(stl_file)
 
     [area, volume, cg, inertia] = stl_geom.compute_mass_properties()

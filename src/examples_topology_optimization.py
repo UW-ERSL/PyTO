@@ -12,14 +12,14 @@ class StructuralTOExamples(enum.Enum):
 	LBracket = enum.auto()
 	CentrifugalPlate = enum.auto()
 	TorquePlate = enum.auto()
-	BliskWithBlade = enum.auto()
 	KnuckleAssembly = enum.auto()
-
+	Table = enum.auto()
+	BliskWithBlade = enum.auto()
+     
 class TOParams:
-    nDOFDesired = 20000,
-    desiredVolFraction = 0.5
- 
-class TOConstraints:
+    nDOFDesired = 20000 # Desired number of degrees of freedom in the finite element problem
+    DesiredVolFraction = 0.5
+    RelativeFilterRadius = 1.5 #relative to the element size
     XSymmetry = False
     YSymmetry = False
     ZSymmetry = False
@@ -31,6 +31,7 @@ class TOConstraints:
     RemoveHangingElems = False
     AMBuildConstraint = False
     ElemsToKeep = None
+
     
 def find_elements_with_fixedDOF(mesh, bc) -> np.ndarray:
 	"""Find all elements that have nodes with fixed degrees of freedom.
@@ -64,86 +65,92 @@ def getStructuralTOProblem(to_problem: StructuralTOExamples, **kwargs):
         StructuralTOProblem: The structural topology optimization problem.
     """
     
-    to_constraints = TOConstraints()
     to_params = TOParams()
     if to_problem == StructuralTOExamples.EdgeCantilever:
         structural_problem = StructuralExamples.EdgeCantilever
-        to_constraints.YSymmetry = True
+        to_params.YSymmetry = True
         to_params.nDOFDesired = 50000
-        to_params.desiredVolFraction = 0.5
+        to_params.DesiredVolFraction = 0.5
     
     elif to_problem == StructuralTOExamples.ThreeHoleBracket:
         structural_problem = StructuralExamples.ThreeHoleBracket
-        to_constraints.ZSymmetry = True
-        to_constraints.KeepFixedElems = True
+        to_params.ZSymmetry = True
+        to_params.KeepFixedElems = True
         to_params.nDOFDesired = 40000
-        to_params.desiredVolFraction = 0.35
+        to_params.DesiredVolFraction = 0.35
   
     elif to_problem == StructuralTOExamples.MBB:
         structural_problem = StructuralExamples.MBB
         to_params.nDOFDesired = 50000
-        to_params.desiredVolFraction = 0.25
+        to_params.DesiredVolFraction = 0.25
 
     elif to_problem == StructuralTOExamples.DistributedLoad:
         structural_problem = StructuralExamples.DistributedLoad
-        to_constraints.XSymmetry = True 
+        to_params.XSymmetry = True 
         to_params.nDOFDesired = 50000
-        to_params.desiredVolFraction = 0.25
+        to_params.DesiredVolFraction = 0.25
 
     elif to_problem == StructuralTOExamples.Multiload:
         structural_problem = StructuralExamples.Multiload
-        to_constraints.ZSymmetry = True
+        to_params.ZSymmetry = True
         to_params.nDOFDesired = 50000
-        to_params.desiredVolFraction = 0.25
+        to_params.DesiredVolFraction = 0.25
 
     elif to_problem == StructuralTOExamples.GravityPlate:
         structural_problem = StructuralExamples.GravityPlate
-        to_constraints.XSymmetry = True
+        to_params.XSymmetry = True
         to_params.nDOFDesired = 50000
-        to_params.desiredVolFraction = 0.2
+        to_params.DesiredVolFraction = 0.1
  
     elif to_problem == StructuralTOExamples.LBracket:
         structural_problem = StructuralExamples.LBracket
+        to_params.ExtrudeZ = True
         to_params.nDOFDesired = 50000
-        to_params.desiredVolFraction = 0.25
+        to_params.DesiredVolFraction = 0.25
 
     elif to_problem == StructuralTOExamples.CentrifugalPlate:
         structural_problem = StructuralExamples.CentrifugalPlate
-        to_constraints.ZAxisAngularSymmetry = 4
-        to_constraints.ExtrudeZ = True
+        to_params.ZAxisAngularSymmetry = 4
+        to_params.ExtrudeZ = True
         to_params.nDOFDesired = 50000
-        to_params.desiredVolFraction = 0.35
+        to_params.DesiredVolFraction = 0.35
 
     elif to_problem == StructuralTOExamples.TorquePlate:
         structural_problem = StructuralExamples.TorquePlate
-        to_constraints.ZAxisAngularSymmetry = 6
-        to_constraints.ExtrudeZ = True
+        to_params.ZAxisAngularSymmetry = 6
+        to_params.ExtrudeZ = True
         to_params.nDOFDesired = 50000
-        to_params.desiredVolFraction = 0.5
+        to_params.DesiredVolFraction = 0.5
 
     elif to_problem == StructuralTOExamples.BliskWithBlade:
         structural_problem = StructuralExamples.BliskWithBlade
-        to_constraints.KeepFixedElems = True
-        to_constraints.RemoveHangingElems = True
+        to_params.KeepFixedElems = True
+        to_params.RemoveHangingElems = True
         to_params.nDOFDesired = 100000
-        to_params.desiredVolFraction = 0.25
+        to_params.DesiredVolFraction = 0.25
 
     elif to_problem == StructuralTOExamples.KnuckleAssembly:
         structural_problem = StructuralExamples.KnuckleAssembly
-        to_constraints.XSymmetry = True
-        to_constraints.ZSymmetry = True
+        to_params.XSymmetry = True
+        to_params.ZSymmetry = True
         to_params.nDOFDesired = 100000
-        to_params.desiredVolFraction = 0.5
+        to_params.DesiredVolFraction = 0.5
+    elif to_problem == StructuralTOExamples.Table:
+        structural_problem = StructuralExamples.Table
+        to_params.XSymmetry = True
+        to_params.ZSymmetry = True
+        to_params.nDOFDesired = 500000
+        to_params.DesiredVolFraction = 0.1
     else:
         raise ValueError(f"Unknown problem: {to_problem}")
     
     mesh, mat_prop, bc, elem_body_force = getStructuralProblem(structural_problem,nDOFDesired = to_params.nDOFDesired, **kwargs)
 
     # Add  elements to keep
-    to_constraints.ElemsToKeep  = None # default value
+    to_params.ElemsToKeep  = None # default value
 
-    if (to_constraints.KeepFixedElems):
-        to_constraints.ElemsToKeep = find_elements_with_fixedDOF(mesh, bc)
+    if (to_params.KeepFixedElems):
+        to_params.ElemsToKeep = find_elements_with_fixedDOF(mesh, bc)
 
     if to_problem == StructuralTOExamples.BliskWithBlade:
         centerPt = [0,0,0]
@@ -151,9 +158,9 @@ def getStructuralTOProblem(to_problem: StructuralTOExamples, **kwargs):
         outerRadius1 = 0.0558
         outerRadius2 = 0.1
         bladeElements = mesh.get_elems_within_annular_region(centerPt,axis,outerRadius1,outerRadius2)
-        to_constraints.ElemsToKeep = np.union1d(to_constraints.ElemsToKeep, bladeElements)
+        to_params.ElemsToKeep = np.union1d(to_params.ElemsToKeep, bladeElements)
 
     if to_problem == StructuralTOExamples.KnuckleAssembly:
-         to_constraints.ElemsToKeep = np.where(mesh.elemComponentId == 2)[0]
-         #print("Elems to keep", to_constraints.ElemsToKeep.shape)
-    return mesh, mat_prop, bc, elem_body_force, to_constraints, to_params
+         to_params.ElemsToKeep = np.where(mesh.elemComponentId == 2)[0]
+         #print("Elems to keep", to_params.ElemsToKeep.shape)
+    return mesh, mat_prop, bc, elem_body_force, to_params

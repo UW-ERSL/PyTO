@@ -31,11 +31,11 @@ from examples_structural import *
 
 '''
 pyTOGUI To do:
-1. Main buttons state (blue, green, red)  (implemented)
-2. Hide/show mesh option under Display  (implemented) (will carefully look at this option because others are getting messed up sometimes)
-3. Show thermal heat arrows and dirichlet BC (similar to structural) (implemented)
-4. Add Total Heat option (in addition to Heat Flux) (implemented)
-5. Remove bottom left text in GUI window. Instead, can you show that next to arrows in the scene? (removed)
+1. Main buttons state (blue, green, red) update
+2. Hide/show mesh option under Display
+3. Show thermal heat arrows and dirichlet BC (similar to structural)
+4. Add Total Heat option (in addition to Heat Flux)
+5. Remove bottom left text in GUI window. Instead, can you show that next to arrows in the scene?
 6. Save topopt constraints in project (remaining)
 '''
 #---------------------------------------------------------------------------------
@@ -56,13 +56,6 @@ class MainWindow(QtWidgets.QMainWindow):
         self.results_actor = None
         self.scalar_bar = None
         self.analysis_results = None
-        self.fixed_temp_actors = []
-        self.heat_flux_actors = []
-        self.heat_source_actors = []
-        self.total_heat_flux_actors = []
-        self.convection_actors = []
-        self.radiation_actors = []
-        self.internal_heat_actors = []
         self.initialize_display_settings()
 
         # LivVar - Live Variable to track UI state
@@ -105,11 +98,9 @@ class MainWindow(QtWidgets.QMainWindow):
         
         # Initialize thermal loads
         self.thermal_loads = {
-            "fixed_temps": [],      # List of (node_ids, temperature)
-            "heat_sources": [],     # List of (node_ids, heat_value)
-            "convection": [],       # List of (node_ids, h_coeff, ambient_temp)
-            "radiation": [],        # List of (node_ids, emissivity, ambient_temp)
-            "internal_heat": []     # List of (node_ids, heat_generation)
+            "fixed_temps": [],
+            "heat_sources": [],
+            "convection": []
         }
 
         # Modify h_layout to use proper stretch factors
@@ -157,15 +148,13 @@ class MainWindow(QtWidgets.QMainWindow):
             'eigen_number': 1,
             'show_bounding_box': False,
             'show_mesh': True,
-            'show_results': True,
-            'show_geometry': True,
             'show_triangles': False,
             'show_text': True,
             'scale_deformation': True,
             'show_transparent': False,
             'show_axis': True,
             'show_structural_loads': True,
-            'show_thermal_loads': True,
+            'show_thermal_loads': False,
             'show_topopt_constraints': True,
             'show_non_design': True
         }
@@ -205,49 +194,30 @@ class MainWindow(QtWidgets.QMainWindow):
         # Update current workflow step based on the change
         if key == 'geometry_loaded' and value:
             self.LivVar['current_step'] = 'geometry_loaded'
-            # Update availability of next steps
-            self.update_button_icon("Material", "arrow")
-            self.update_button_icon("Structural Loads", "arrow")
-            self.update_button_icon("Thermal Loads", "arrow")
         elif key == 'material_defined' and value:
             self.LivVar['current_step'] = 'material_defined'
-            # Material is complete, loads can be defined
-            self.update_button_icon("Material", "check")
         elif key == 'structural_loads.applied' and value:
             self.LivVar['current_step'] = 'loads_applied'
-            self.update_button_icon("Structural Loads", "check")
-            self.update_button_icon("Analysis", "arrow")
-        elif key == 'thermal_loads.applied' and value:
-            self.LivVar['current_step'] = 'loads_applied'
-            self.update_button_icon("Thermal Loads", "check")
-            self.update_button_icon("Analysis", "arrow")
         elif key == 'mesh_generated' and value:
             self.LivVar['current_step'] = 'mesh_generated'
         elif key == 'analysis.performed' and value:
             self.LivVar['current_step'] = 'analysis_performed'
-            self.update_button_icon("Analysis", "check")
-            self.update_button_icon("TopOpt Constraints", "arrow")
         elif key == 'topopt.constraints_defined' and value:
             self.LivVar['current_step'] = 'topopt_ready'
-            self.update_button_icon("TopOpt Constraints", "check")
-            self.update_button_icon("Structural TopOpt", "arrow")
-            self.update_button_icon("Thermal TopOpt", "arrow")
-        elif key == 'topopt.structural_performed' and value:
-            self.update_button_icon("Structural TopOpt", "check")
-        elif key == 'topopt.thermal_performed' and value:
-            self.update_button_icon("Thermal TopOpt", "check")
+        elif key == 'topopt.structural_performed' or key == 'topopt.thermal_performed':
+            self.LivVar['current_step'] = 'optimization_completed'
         
         # Map state keys to button names for UI updates
         button_map = {
-            'geometry_loaded': "Geometry",
-            'material_defined': "Material",
-            'structural_loads.applied': "Structural Loads",
-            'thermal_loads.applied': "Thermal Loads",
-            'mesh_generated': "Analysis",
-            'analysis.performed': "Analysis",
-            'topopt.constraints_defined': "TopOpt Constraints",
-            'topopt.structural_performed': "Structural TopOpt",
-            'topopt.thermal_performed': "Thermal TopOpt"
+            'geometry_loaded': 'Geometry',
+            'material_defined': 'Material',
+            'structural_loads.applied': 'Structural Loads',
+            'thermal_loads.applied': 'Thermal Loads',
+            'mesh_generated': 'Analysis',
+            'analysis.performed': 'Analysis',
+            'topopt.constraints_defined': 'TopOpt Constraints',
+            'topopt.structural_performed': 'Structural TopOpt',
+            'topopt.thermal_performed': 'Thermal TopOpt'
         }
         
         # Update button icon if there's a corresponding button
@@ -315,22 +285,22 @@ class MainWindow(QtWidgets.QMainWindow):
         # Store buttons for dynamic updates
         self.sidebar_buttons = {}
 
-        # Define buttons with initial icons based on workflow state
+        # Define buttons with default icons
         buttons = [
-            ("Units", "arrow"),  # Always available
-            ("Geometry", "arrow"),  # Always available to start
-            ("Material", "cross"),  # Not available until geometry is loaded
-            ("Structural Loads", "cross"),  # Not available until material is defined
-            ("Thermal Loads", "cross"),  # Not available until material is defined
-            ("Body force", "cross"),  # Not available initially
-            ("Display Options", "arrow"),  # Always available
-            ("Analysis", "cross"),  # Not available until loads are applied
-            ("TopOpt Constraints", "cross"),  # Not available until analysis is done
-            ("Structural TopOpt", "cross"),  # Not available until constraints defined
-            ("Thermal TopOpt", "cross"),  # Not available until constraints defined
-            ("TopOpt Results", "cross"),  # Not available until optimization is done
-            ("Projects", "arrow"),  # Always available
-            ("Help", "arrow")  # Always available
+            ("Units", "arrow"),
+            ("Geometry", "arrow"),
+            ("Material", "cross"),
+            ("Structural Loads", "cross"),
+            ("Thermal Loads", "cross"),
+            ("Body force", "cross"),
+            ("Display Options", "arrow"),
+            ("Analysis", "cross"),
+            ("TopOpt Constraints", "cross"),
+            ("Structural TopOpt", "cross"),
+            ("Thermal TopOpt", "cross"),
+            ("TopOpt Results", "cross"),
+            ("Projects", "arrow"),
+            ("Help", "arrow")
         ]
 
         # Add buttons to the sidebar
@@ -367,13 +337,6 @@ class MainWindow(QtWidgets.QMainWindow):
         sidebar_main_layout.addWidget(scroll)
 
     def sidebar_button_clicked(self, name):
-        # Check if this button should be available based on workflow state
-        ready, message = self.check_workflow_readiness_for_button(name)
-        
-        if not ready:
-            QtWidgets.QMessageBox.warning(self, "Workflow Error", message)
-            return
-            
         # Route the button action based on its name
         if name == "Units":
             self.open_units_window()
@@ -390,7 +353,7 @@ class MainWindow(QtWidgets.QMainWindow):
         elif name == "Analysis":
             self.open_analysis_window()
         elif name == "TopOpt Constraints":
-            self.open_topopt_constraints_window()
+            self.open_topopt_constraints_window()  # Fixed method name to match definition
         elif name == "Structural TopOpt":
             self.open_structural_topopt_window()
         elif name == "Thermal TopOpt":
@@ -399,37 +362,6 @@ class MainWindow(QtWidgets.QMainWindow):
             dialog = ProjectsWindow(self)
             dialog.exec_()
         
-    def check_workflow_readiness_for_button(self, button_name):
-        """
-        Check if the workflow is ready for a specific button to be used
-        
-        Parameters:
-        -----------
-        button_name : str
-            The button name to check readiness for
-                
-        Returns:
-        --------
-        bool, str
-            Whether the button can be used, and a message explaining why if not
-        """
-        # Map buttons to their workflow step requirements
-        step_map = {
-            "Material": "material",
-            "Structural Loads": "loads",
-            "Thermal Loads": "loads", 
-            "Analysis": "analysis",
-            "TopOpt Constraints": "topopt_constraints",
-            "Structural TopOpt": "topopt",
-            "Thermal TopOpt": "topopt"
-        }
-        
-        # Always available buttons
-        if button_name not in step_map:
-            return True, "Ready"
-            
-        # Check readiness for the mapped step
-        return self.check_workflow_readiness(step_map[button_name])
 
     def get_icon(self, icon_type):
 
@@ -445,20 +377,13 @@ class MainWindow(QtWidgets.QMainWindow):
             print(f"Icon file not found: {icon_file}")
         return QIcon(icon_file)
 
-    def update_button_icon(self, button_name, icon_type):
+    def update_button_icon(self, button_name, new_icon):
         """
         Dynamically update the icon of a specific sidebar button.
-        
-        Parameters:
-        -----------
-        button_name : str
-            Name of the button to update
-        icon_type : str
-            Type of icon to apply: "arrow" (blue), "check" (green), or "cross" (red)
         """
         if button_name in self.sidebar_buttons:
             button = self.sidebar_buttons[button_name]
-            button.setIcon(self.get_icon(icon_type))
+            button.setIcon(self.get_icon(new_icon))
 
     def setup_message_frame(self):
         self.message_frame = QtWidgets.QFrame()
@@ -505,10 +430,9 @@ class MainWindow(QtWidgets.QMainWindow):
         # Change the icon for the "Geometry" button to a green checkmark
         self.update_button_icon("Geometry", "check")
         
-        # Update icons for next steps to show they're available
-        self.update_button_icon("Material", "arrow")
-        self.update_button_icon("Structural Loads", "arrow")
-        self.update_button_icon("Thermal Loads", "arrow")
+        # Enable other buttons if needed
+        self.sidebar_buttons["Material"].setEnabled(True)
+        self.sidebar_buttons["Structural Loads"].setEnabled(True)
 
     def setup_vtk(self):
         """Modified setup_vtk to handle multiple rendering layers"""
@@ -829,16 +753,6 @@ class UnitsWindow(QtWidgets.QDialog):
             self.temperature_unit.currentText(),
             self.angle_unit.currentText()
         )
-        
-        # Update the Units button icon to show a green checkmark
-        if hasattr(self.parent(), 'update_button_icon'):
-            self.parent().update_button_icon("Units", "check")
-        
-        # Add a message to the parent's message text
-        if hasattr(self.parent(), 'message_text'):
-            self.parent().message_text.append(f"Units updated: {self.unit_system.currentText()}, " + 
-                                        f"{self.temperature_unit.currentText()}, {self.angle_unit.currentText()}")
-        
         self.accept()
 #---------------------------------------------------------------------------------   
 class Settings:
@@ -1173,22 +1087,6 @@ class DisplayOptionsWindow(QtWidgets.QDialog):
         self.show_mesh = QtWidgets.QCheckBox("Show mesh")
         self.show_mesh.setChecked(True)
         layout.addWidget(self.show_mesh)
-
-        # Add Show/Hide Geometry checkbox
-        self.show_geometry = QtWidgets.QCheckBox("Show geometry")
-        self.show_geometry.setChecked(True)
-        layout.addWidget(self.show_geometry)
-        
-        # Connect the geometry checkbox to toggle_feature
-        self.show_geometry.stateChanged.connect(lambda: self.toggle_feature('geometry'))
-
-        # Add Results Visibility checkbox after other checkboxes
-        self.show_results = QtWidgets.QCheckBox("Show Analysis Results")
-        self.show_results.setChecked(True)
-        layout.addWidget(self.show_results)
-        
-        # Connect the new checkbox to toggle_feature
-        self.show_results.stateChanged.connect(lambda: self.toggle_feature('results'))
         
         # Action buttons
         self.animate_button = QtWidgets.QPushButton("Animate for 3 cycles")
@@ -1214,8 +1112,8 @@ class DisplayOptionsWindow(QtWidgets.QDialog):
         # Connect controls to handlers
         self.connect_controls()
         
-        # Load current settings without applying them
-        self.load_current_settings(apply_immediately=False)
+        # Load current settings
+        self.load_current_settings()
 
     def connect_controls(self):
         """Connect controls to update handlers"""
@@ -1242,18 +1140,9 @@ class DisplayOptionsWindow(QtWidgets.QDialog):
         self.show_thermal_loads.stateChanged.connect(lambda: self.toggle_feature('thermal_loads'))
         self.show_topopt_constraints.stateChanged.connect(lambda: self.toggle_feature('topopt_constraints'))
         self.show_non_design.stateChanged.connect(lambda: self.toggle_feature('non_design'))
-        self.show_geometry.stateChanged.connect(lambda: self.toggle_feature('geometry'))
-        self.show_results.stateChanged.connect(lambda: self.toggle_feature('results'))
     
-    def load_current_settings(self, apply_immediately=False):
-        """
-        Load current display settings from parent without immediately applying changes
-        
-        Parameters:
-        -----------
-        apply_immediately : bool
-            Whether to apply the settings to the visualization immediately
-        """
+    def load_current_settings(self):
+        """Load current display settings from parent"""
         # Initialize default settings if not present in parent
         if not hasattr(self.parent, 'display_settings'):
             self.parent.display_settings = {
@@ -1266,17 +1155,15 @@ class DisplayOptionsWindow(QtWidgets.QDialog):
                 'eigen_number': 1,
                 'show_bounding_box': False,
                 'show_mesh': True,
-                'show_results': True,
                 'show_triangles': False,
                 'show_text': True,
                 'scale_deformation': True,
                 'show_transparent': False,
                 'show_axis': True,
                 'show_structural_loads': True,
-                'show_thermal_loads': True,
+                'show_thermal_loads': False,
                 'show_topopt_constraints': True,
-                'show_non_design': True,
-                'show_geometry': True
+                'show_non_design': True
             }
             
         settings = self.parent.display_settings
@@ -1306,19 +1193,6 @@ class DisplayOptionsWindow(QtWidgets.QDialog):
             self.z_cutting_spin.setValue(settings['z_cutting'])
         if 'eigen_number' in settings:
             self.eigen_spin.setValue(settings['eigen_number'])
-
-        self.x_cutting_spin.blockSignals(False)
-        self.y_cutting_spin.blockSignals(False)
-        self.z_cutting_spin.blockSignals(False)
-        self.eigen_spin.blockSignals(False)
-        
-        # Set checkboxes (without triggering updates)
-        # Block signals temporarily to prevent auto-application
-        for checkbox in [self.show_bounding_box, self.show_mesh, self.show_triangles, self.show_text, 
-                         self.show_geometry, self.scale_deformation, self.show_transparent, 
-                         self.show_axis, self.show_structural_loads, self.show_thermal_loads,
-                         self.show_topopt_constraints, self.show_non_design, self.show_results]:
-            checkbox.blockSignals(True)
         
         # Set checkboxes
         if 'show_bounding_box' in settings:
@@ -1332,8 +1206,6 @@ class DisplayOptionsWindow(QtWidgets.QDialog):
             self.show_triangles.setChecked(settings['show_triangles'])
         if 'show_text' in settings:
             self.show_text.setChecked(settings['show_text'])
-        if 'show_geometry' in settings:
-            self.show_geometry.setChecked(settings['show_geometry'])
         if 'scale_deformation' in settings:
             self.scale_deformation.setChecked(settings['scale_deformation'])
         if 'show_transparent' in settings:
@@ -1348,19 +1220,6 @@ class DisplayOptionsWindow(QtWidgets.QDialog):
             self.show_topopt_constraints.setChecked(settings['show_topopt_constraints'])
         if 'show_non_design' in settings:
             self.show_non_design.setChecked(settings['show_non_design'])
-        if 'show_results' in settings:
-            self.show_results.setChecked(settings['show_results'])
-
-        # Restore signals
-        for checkbox in [self.show_bounding_box, self.show_mesh, self.show_triangles, self.show_text, 
-                         self.show_geometry, self.scale_deformation, self.show_transparent, 
-                         self.show_axis, self.show_structural_loads, self.show_thermal_loads,
-                         self.show_topopt_constraints, self.show_non_design, self.show_results]:
-            checkbox.blockSignals(False)
-
-        # Only apply changes if requested
-        if apply_immediately:
-            self.update_visualization()
 
     def update_display(self):
         """Update the display based on current settings"""
@@ -1375,10 +1234,8 @@ class DisplayOptionsWindow(QtWidgets.QDialog):
             'eigen_number': self.eigen_spin.value(),
             'show_bounding_box': self.show_bounding_box.isChecked(),
             'show_mesh': self.show_mesh.isChecked(),
-            'show_results': self.show_results.isChecked(),
             'show_triangles': self.show_triangles.isChecked(),
             'show_text': self.show_text.isChecked(),
-            'show_geometry': self.show_geometry.isChecked(),
             'scale_deformation': self.scale_deformation.isChecked(),
             'show_transparent': self.show_transparent.isChecked(),
             'show_axis': self.show_axis.isChecked(),
@@ -1525,14 +1382,7 @@ class DisplayOptionsWindow(QtWidgets.QDialog):
                     is_checked = self.show_triangles.isChecked()
                     self.parent.display_settings[setting_key] = is_checked
                     self.toggle_triangles(is_checked)
-                elif feature_name == 'results':
-                    is_checked = self.show_results.isChecked()
-                    self.parent.display_settings[setting_key] = is_checked
-                    self.toggle_results_visibility(is_checked)
-                elif feature_name == 'geometry':
-                    is_checked = self.show_geometry.isChecked()
-                    self.parent.display_settings[setting_key] = is_checked
-                    self.toggle_geometry_visibility(is_checked)
+                # Handle other features similarly
                 else:
                     # Generic handling for other features
                     checkbox = getattr(self, f'show_{feature_name}', None)
@@ -1568,6 +1418,10 @@ class DisplayOptionsWindow(QtWidgets.QDialog):
                     self.parent.stl_actor.SetVisibility(True)
                     self.parent.stl_actor.GetProperty().SetOpacity(0.6)
                     self.parent.stl_actor.GetProperty().SetColor(0.78, 0.86, 1.0)
+                    # # Enable edge visibility
+                    # self.parent.stl_actor.GetProperty().EdgeVisibilityOn()
+                    # self.parent.stl_actor.GetProperty().SetEdgeColor(0, 0, 0)  # Black edges
+                    # self.parent.stl_actor.GetProperty().SetLineWidth(1.5)      # Thicker lines
                     
                     # If results are visible, adjust their opacity too
                     if hasattr(self.parent, 'results_actor') and self.parent.results_actor and self.parent.results_actor.GetVisibility():
@@ -1600,34 +1454,11 @@ class DisplayOptionsWindow(QtWidgets.QDialog):
                 for actor in self.parent.topopt_constraint_actors:
                     actor.SetVisibility(self.show_topopt_constraints.isChecked())
                     
-        elif feature_name == 'thermal_loads':        
-            # Handle all types of thermal load visualization actors        
-            is_checked = self.show_thermal_loads.isChecked()        
-            self.parent.display_settings['show_thermal_loads'] = is_checked        
-            
-            # Create a comprehensive list of all thermal load actor lists to check        
-            thermal_actor_lists = [            
-                'fixed_temp_actors',            
-                'heat_flux_actors',            
-                'total_heat_flux_actors',            
-                'heat_source_actors',            
-                'convection_actors',            
-                'radiation_actors',            
-                'internal_heat_actors'        
-                ]        
-            
-            # Loop through each thermal actor list and update visibility        
-            for actor_list_name in thermal_actor_lists:            
-                if hasattr(self.parent, actor_list_name):                
-                    actors = getattr(self.parent, actor_list_name)                
-                    if actors and isinstance(actors, list):                    
-                        for actor in actors:                        
-                            if actor:  # Make sure it's not None                            
-                                actor.SetVisibility(is_checked)        
-                                    
-            # Add message to log        
-            if hasattr(self.parent, 'message_text'):            
-                self.parent.message_text.append(f"{'Showing' if is_checked else 'Hiding'} thermal loads")
+        elif feature_name == 'thermal_loads':
+            # Implement logic to show/hide thermal loads
+            if hasattr(self.parent, 'thermal_load_actors'):
+                for actor in self.parent.thermal_load_actors:
+                    actor.SetVisibility(self.show_thermal_loads.isChecked())
                     
         elif feature_name == 'non_design':
             # Implement logic to show/hide non-design parts
@@ -1641,21 +1472,22 @@ class DisplayOptionsWindow(QtWidgets.QDialog):
     def toggle_mesh(self, show):
         """Toggle mesh visibility"""
         if hasattr(self.parent, 'mesh_actor'):
-            # Set mesh visibility based on checkbox
-            self.parent.mesh_actor.SetVisibility(show)
+            is_visible = show
+            self.parent.mesh_actor.SetVisibility(is_visible)
             
-            # Update display settings
-            if hasattr(self.parent, 'display_settings'):
-                self.parent.display_settings['show_mesh'] = show
-            
-            # Manage visibility relationships - don't automatically show/hide geometry
-            # Let the geometry toggle handle geometry visibility independently
+            # When hiding mesh, show the original geometry
+            if hasattr(self.parent, 'stl_actor'):
+                if not is_visible:
+                    # Show original geometry when mesh is hidden
+                    self.parent.stl_actor.SetVisibility(True)
+                else:
+                    # When showing mesh, hide original geometry
+                    # unless transparency is enabled
+                    if not self.show_transparent.isChecked():
+                        self.parent.stl_actor.SetVisibility(False)
             
             # Update checkbox state to match actual visibility
-            self.show_mesh.setChecked(show)
-            
-            # Add message to log
-            self.parent.message_text.append(f"{'Showing' if show else 'Hiding'} mesh")
+            self.show_mesh.setChecked(is_visible)
             
             # Render to show changes immediately
             self.parent.vtkWidget.GetRenderWindow().Render()
@@ -1670,52 +1502,6 @@ class DisplayOptionsWindow(QtWidgets.QDialog):
                 
             # Render to show changes immediately
             self.parent.vtkWidget.GetRenderWindow().Render()
-
-    def toggle_results_visibility(self, show):
-        """Toggle visibility of analysis results"""
-        if hasattr(self.parent, 'results_actor') and self.parent.results_actor:
-            self.parent.results_actor.SetVisibility(show)
-            
-            # Also toggle scalar bar visibility
-            if hasattr(self.parent, 'scalar_bar') and self.parent.scalar_bar:
-                self.parent.scalar_bar.SetVisibility(show)
-            
-            # Update display settings
-            if hasattr(self.parent, 'display_settings'):
-                self.parent.display_settings['show_results'] = show
-            
-            # Don't automatically show/hide geometry or mesh
-            # Let their own toggles handle their visibility independently
-            
-            # Add message to log
-            self.parent.message_text.append(f"{'Showing' if show else 'Hiding'} analysis results")
-            
-            # Render to show changes immediately
-            self.parent.vtkWidget.GetRenderWindow().Render()
-    
-    def toggle_geometry_visibility(self, show):
-        """Toggle geometry visibility"""
-        if hasattr(self.parent, 'stl_actor'):
-            self.parent.stl_actor.SetVisibility(show)
-            
-            # Update display settings
-            if hasattr(self.parent, 'display_settings'):
-                self.parent.display_settings['show_geometry'] = show
-            
-            # If transparency is enabled and both geometry and results are visible,
-            # apply transparency to the geometry
-            if show and self.show_transparent.isChecked() and hasattr(self.parent, 'results_actor') and \
-               self.parent.results_actor and self.parent.results_actor.GetVisibility():
-                self.parent.stl_actor.GetProperty().SetOpacity(0.5)
-            else:
-                # Otherwise use full opacity
-                self.parent.stl_actor.GetProperty().SetOpacity(1.0)
-            
-            # Render to show changes immediately
-            self.parent.vtkWidget.GetRenderWindow().Render()
-            
-            # Add message to log
-            self.parent.message_text.append(f"{'Showing' if show else 'Hiding'} geometry")
     
     def toggle_bounding_box(self, show):
         """Toggle bounding box visibility"""
@@ -3021,6 +2807,29 @@ class AnalysisWindow(QtWidgets.QDialog):
         self.structural_button = QtWidgets.QPushButton("Structural Analysis")
         self.structural_button.clicked.connect(self.run_structural_analysis)
         layout.addWidget(self.structural_button)
+        # self.toggle_results_button = QtWidgets.QPushButton("Toggle Results View")
+        # self.toggle_results_button.clicked.connect(self.toggle_results_view)
+        # layout.addWidget(self.toggle_results_button)
+
+        # def toggle_results_view(self):
+        #     """Toggle between original and deformed mesh"""
+        #     if hasattr(self.parent, 'results_actor'):
+        #         if self.parent.results_actor:
+        #             visible = self.parent.results_actor.GetVisibility()
+        #             self.parent.results_actor.SetVisibility(not visible)
+        #             self.parent.scalar_bar.SetVisibility(not visible)
+        #             if hasattr(self.parent, 'mesh_actor'):
+        #                 self.parent.mesh_actor.SetVisibility(visible)
+        #             self.parent.vtkWidget.GetRenderWindow().Render()
+        # # Number of Modes
+        # modes_layout = QtWidgets.QHBoxLayout()
+        # modes_label = QtWidgets.QLabel("#Modes")
+        # self.modes_spin = QtWidgets.QSpinBox()
+        # self.modes_spin.setRange(1, 100)
+        # self.modes_spin.setValue(1)
+        # modes_layout.addWidget(modes_label)
+        # modes_layout.addWidget(self.modes_spin)
+        # layout.addLayout(modes_layout)
 
     def update_elements_count(self, index):
         """Update the number of elements based on mesh quality selection"""
@@ -3572,46 +3381,20 @@ class AnalysisWindow(QtWidgets.QDialog):
             self.parent.results_actor.GetProperty().SetEdgeColor(0.1, 0.1, 0.1)
             self.parent.results_actor.GetProperty().SetLineWidth(1)
             
-            # Remove any existing scalar bar
+            # Create scalar bar (color legend)
             if hasattr(self.parent, 'scalar_bar'):
                 self.parent.renderer.RemoveActor(self.parent.scalar_bar)
 
-            # Create a new scalar bar
             scalar_bar = vtk.vtkScalarBarActor()
             scalar_bar.SetLookupTable(mapper.GetLookupTable())
             scalar_bar.SetTitle(f"Temperature ({unit_symbol})")
             scalar_bar.SetNumberOfLabels(5)
-            scalar_bar.SetLabelFormat("%.1f")  # 1 decimal place
-
-            # Set position and dimensions
             scalar_bar.SetPosition(0.85, 0.05)
             scalar_bar.SetWidth(0.1)
             scalar_bar.SetHeight(0.8)
-
-            # UNCONSTRAIN FONT SIZES
-            scalar_bar.UnconstrainedFontSizeOn()  # This is CRUCIAL
-
-            # Create title text property
-            title_text_prop = vtk.vtkTextProperty()
-            title_text_prop.SetFontFamilyToArial()
-            title_text_prop.SetFontSize(22)  # Much larger
-            title_text_prop.SetBold(True)
-            title_text_prop.SetColor(0, 0, 0)
-
-            # Create label text property
-            label_text_prop = vtk.vtkTextProperty()
-            label_text_prop.SetFontFamilyToArial()
-            label_text_prop.SetFontSize(18)  # Smaller than title
-            label_text_prop.SetBold(False)
-            label_text_prop.SetColor(0, 0, 0)
-
-            # Apply the text properties
-            scalar_bar.SetTitleTextProperty(title_text_prop)
-            scalar_bar.SetLabelTextProperty(label_text_prop)
-
-            # Save and add actor
+            scalar_bar.GetLabelTextProperty().SetColor(0, 0, 0)
+            scalar_bar.GetTitleTextProperty().SetColor(0, 0, 0)
             self.parent.scalar_bar = scalar_bar
-            self.parent.renderer.AddActor(scalar_bar)
             
             # Hide original mesh
             if hasattr(self.parent, 'mesh_actor'):
@@ -4241,18 +4024,11 @@ class ThermalLoadsWindow(QtWidgets.QDialog):
             "radiation": [],        # List of (node_ids, emissivity, ambient_temp)
             "internal_heat": []     # List of (node_ids, heat_generation)
         }
-        
-        # Make sure parent has actor lists (don't create local ones)
-        if not hasattr(self.parent, 'heat_source_actors'):
-            self.parent.heat_source_actors = []
-        if not hasattr(self.parent, 'fixed_temp_actors'):
-            self.parent.fixed_temp_actors = []
-        if not hasattr(self.parent, 'convection_actors'):
-            self.parent.convection_actors = []
-        if not hasattr(self.parent, 'radiation_actors'):
-            self.parent.radiation_actors = []
-        if not hasattr(self.parent, 'internal_heat_actors'):
-            self.parent.internal_heat_actors = []
+        self.heat_source_actors = []
+        self.fixed_temp_actors = []
+        self.convection_actors = []
+        self.radiation_actors = []
+        self.internal_heat_actors = []
         
         self.setup_ui()
         self.load_existing_thermal_loads()
@@ -4274,7 +4050,7 @@ class ThermalLoadsWindow(QtWidgets.QDialog):
         thermal_type_layout = QtWidgets.QHBoxLayout()
         thermal_type_label = QtWidgets.QLabel("Thermal Type")
         self.thermal_type = QtWidgets.QComboBox()
-        self.thermal_type.addItems(["Temperature", "Heat Flux", "Total Heat", "Convection", "Radiation", "Internal Heat"])
+        self.thermal_type.addItems(["Temperature", "Heat Flux", "Convection", "Radiation", "Internal Heat"])
         thermal_type_layout.addWidget(thermal_type_label)
         thermal_type_layout.addWidget(self.thermal_type)
         layout.addLayout(thermal_type_layout)
@@ -4329,23 +4105,6 @@ class ThermalLoadsWindow(QtWidgets.QDialog):
         internal_heat_layout.addLayout(internal_heat_value_layout)
         
         layout.addWidget(self.internal_heat_group)
-
-        # Total Heat UI 
-        self.total_heat_group = QtWidgets.QGroupBox()
-        total_heat_layout = QtWidgets.QVBoxLayout(self.total_heat_group)
-        
-        # Total heat value
-        total_heat_value_layout = QtWidgets.QHBoxLayout()
-        total_heat_value_label = QtWidgets.QLabel("Total Heat (W)")
-        self.total_heat_value_spin = QtWidgets.QDoubleSpinBox()
-        self.total_heat_value_spin.setRange(-1e6, 1e6)
-        self.total_heat_value_spin.setDecimals(1)
-        self.total_heat_value_spin.setValue(100)
-        total_heat_value_layout.addWidget(total_heat_value_label)
-        total_heat_value_layout.addWidget(self.total_heat_value_spin)
-        total_heat_layout.addLayout(total_heat_value_layout)
-        
-        layout.addWidget(self.total_heat_group)
         
         # Convection input group
         self.convection_group = QtWidgets.QGroupBox()
@@ -4409,7 +4168,6 @@ class ThermalLoadsWindow(QtWidgets.QDialog):
         self.convection_group.setVisible(False)
         self.radiation_group.setVisible(False)
         self.internal_heat_group.setVisible(False)
-        self.total_heat_group.setVisible(False)
         
         # Buttons
         button_layout = QtWidgets.QHBoxLayout()
@@ -4421,7 +4179,6 @@ class ThermalLoadsWindow(QtWidgets.QDialog):
         button_layout.addWidget(close_button)
         layout.addLayout(button_layout)
         
-        
         # Connect thermal type change
         self.thermal_type.currentTextChanged.connect(self.on_thermal_type_changed)
     
@@ -4429,7 +4186,6 @@ class ThermalLoadsWindow(QtWidgets.QDialog):
         # Show/hide input groups based on thermal type
         self.temp_group.setVisible(thermal_type == "Temperature")
         self.heat_flux_group.setVisible(thermal_type == "Heat Flux")
-        self.total_heat_group.setVisible(thermal_type == "Total Heat")
         self.convection_group.setVisible(thermal_type == "Convection")
         self.radiation_group.setVisible(thermal_type == "Radiation")
         self.internal_heat_group.setVisible(thermal_type == "Internal Heat")
@@ -4448,8 +4204,6 @@ class ThermalLoadsWindow(QtWidgets.QDialog):
             self.apply_temperature()
         elif thermal_type == "Heat Flux":
             self.apply_heat_flux()
-        elif thermal_type == "Total Heat":
-            self.apply_total_heat()
         elif thermal_type == "Convection":
             self.apply_convection()
         elif thermal_type == "Radiation":
@@ -4548,60 +4302,6 @@ class ThermalLoadsWindow(QtWidgets.QDialog):
         # Show confirmation message
         self.parent.message_text.append(f"Applied heat flux of {heat_flux}W/m² to {len(nodes)} triangles")
     
-    def apply_total_heat(self):
-        """Apply total heat to selected nodes"""
-        if not hasattr(self.parent, 'stl_geom') or self.parent.stl_geom is None:
-            QtWidgets.QMessageBox.warning(self, "Error", "No geometry loaded")
-            return
-            
-        selected_triangles = [i for i, highlight in enumerate(self.parent.stl_geom.tri_highlight) if highlight]
-        if not selected_triangles:
-            QtWidgets.QMessageBox.warning(self, "Error", "No surface selected")
-            return
-        
-        # Get nodes for the selected triangles
-        nodes = selected_triangles  # This will be processed to actual nodes during meshing
-        total_heat = self.total_heat_value_spin.value()
-        
-        # Calculate total area of the selected triangles
-        total_area = 0
-        for idx in selected_triangles:
-            if idx < len(self.parent.stl_geom.mesh.vectors):
-                # Get triangle vertices
-                triangle = self.parent.stl_geom.get_triangle_data(idx)
-                total_area += triangle['area']
-        
-        # Calculate heat flux by dividing total heat by area
-        if total_area <= 0:
-            QtWidgets.QMessageBox.warning(self, "Error", "Total area of selected triangles is zero or negative")
-            return
-            
-        heat_flux = total_heat / total_area
-        
-        # Add to thermal loads as a heat flux
-        self.thermal_loads["heat_sources"].append((nodes, heat_flux))
-        
-        # Update the parent's thermal loads
-        self.parent.thermal_loads = self.thermal_loads
-        
-        # Create visualization
-        self.visualize_heat_source(nodes, heat_flux, is_total_heat=True, total_heat_value=total_heat)
-        
-        # Clear selection after applying
-        self.parent.stl_geom.tri_highlight = [False] * self.parent.stl_geom.stl_n_triangles
-        self.parent.update_highlights()
-        
-        # Update parent's LivVar and UI
-        self.parent.update_LivVar("thermal_loads.applied", True)
-        self.parent.update_LivVar("thermal_loads.heat_sources", True)
-        self.parent.update_button_icon("Thermal Loads", "check")
-        
-        # Show confirmation message
-        self.parent.message_text.append(
-            f"Applied total heat of {total_heat} W to {len(nodes)} triangles"
-        )
-
-
     def apply_convection(self):
         """Apply convection to selected nodes"""
         if not hasattr(self.parent, 'stl_geom') or self.parent.stl_geom is None:
@@ -4842,9 +4542,9 @@ class ThermalLoadsWindow(QtWidgets.QDialog):
         
         # Update rendering
         self.parent.vtkWidget.GetRenderWindow().Render()
-
+    
     def visualize_fixed_temp(self, nodes, temperature):
-        """Visualize fixed temperature on the model with arrows"""
+        """Visualize fixed temperature on the model"""
         if not hasattr(self.parent, 'stl_geom') or self.parent.stl_geom is None:
             return
                 
@@ -4880,7 +4580,7 @@ class ThermalLoadsWindow(QtWidgets.QDialog):
         
         # Add actor to renderer
         self.parent.renderer.AddActor(actor)
-        self.parent.fixed_temp_actors.append(actor)
+        self.fixed_temp_actors.append(actor)
         
         # Convert from internal Kelvin to display unit
         if self.parent.settings.temperature_unit == "Celsius":
@@ -4893,200 +4593,27 @@ class ThermalLoadsWindow(QtWidgets.QDialog):
             display_temp = temperature
             unit = "K"
         
-        # Get bounding box for scaling
-        if hasattr(self.parent.stl_geom, 'get_bounding_box'):
-            bbox = self.parent.stl_geom.get_bounding_box()
-        else:
-            # Calculate bounding box from mesh
-            vertices = self.parent.stl_geom.mesh.vectors.reshape(-1, 3)
-            xmin, ymin, zmin = np.min(vertices, axis=0)
-            xmax, ymax, zmax = np.max(vertices, axis=0)
-            bbox = (xmin, xmax, ymin, ymax, zmin, zmax)
+        # Add text label with temperature
+        text_actor = vtk.vtkTextActor()
+        text_actor.SetInput(f"T = {display_temp:.1f}{unit}")
+        text_actor.SetPosition(10, 10)
+        text_actor.GetTextProperty().SetColor(0, 0, 1)  # Blue text
+        text_actor.GetTextProperty().SetFontSize(14)
+        self.parent.renderer.AddActor2D(text_actor)
+        self.fixed_temp_actors.append(text_actor)
         
-        # Calculate model size for arrow scaling
-        geom_size = max(bbox[1]-bbox[0], bbox[3]-bbox[2], bbox[5]-bbox[4])
-        scale_factor = 0.08 * geom_size  # Scale arrows based on model size
-        
-        # Determine how many arrows to show
-        MAX_MARKERS = 5
-        THRESHOLD = 25
-        
-        if len(nodes) > THRESHOLD:
-            step = len(nodes) // MAX_MARKERS
-            display_indices = range(0, len(nodes), step)[:MAX_MARKERS]
-            display_nodes = [nodes[i] for i in display_indices]
-        else:
-            display_nodes = nodes
-        
-        # Flag to indicate if we've added text display for one arrow
-        text_label_added = False
-        
-        # Add arrows directly instead of in a separate function to ensure they're created
-        for idx in display_nodes:
-            if idx < len(self.parent.stl_geom.mesh.vectors):
-                # Get triangle data
-                triangle = None
-                if hasattr(self.parent.stl_geom, 'get_triangle_data'):
-                    triangle = self.parent.stl_geom.get_triangle_data(idx)
-                else:
-                    #Will remove this once functionality added for Bounding Box to test if it works no need to calculate evrytime even if its in else condition
-                    # Manually calculate triangle data
-                    vertices = self.parent.stl_geom.mesh.vectors[idx]
-                    # Calculate center
-                    center = [
-                        (vertices[0][0] + vertices[1][0] + vertices[2][0]) / 3,
-                        (vertices[0][1] + vertices[1][1] + vertices[2][1]) / 3,
-                        (vertices[0][2] + vertices[1][2] + vertices[2][2]) / 3
-                    ]
-                    
-                    # Calculate normal using cross product
-                    v1 = [vertices[1][0] - vertices[0][0], vertices[1][1] - vertices[0][1], vertices[1][2] - vertices[0][2]]
-                    v2 = [vertices[2][0] - vertices[0][0], vertices[2][1] - vertices[0][1], vertices[2][2] - vertices[0][2]]
-                    
-                    # Cross product
-                    normal = [
-                        v1[1]*v2[2] - v1[2]*v2[1],
-                        v1[2]*v2[0] - v1[0]*v2[2],
-                        v1[0]*v2[1] - v1[1]*v2[0]
-                    ]
-                    
-                    # Normalize
-                    length = sum(n*n for n in normal) ** 0.5
-                    if length > 0:
-                        normal = [n/length for n in normal]
-                    else:
-                        normal = [0, 0, 1]  # Default if calculation fails
-                        
-                    triangle = {'center': center, 'normal': normal, 'index': idx}
-                
-                if triangle:
-                    # Create arrow for visualization
-                    arrow = vtk.vtkArrowSource()
-                    arrow.SetTipLength(0.3)
-                    arrow.SetTipRadius(0.1)
-                    arrow.SetShaftRadius(0.03)
-                    
-                    # For temperature, we want arrows pointing inward (same as heat flux)
-                    normal = [-n for n in triangle['normal']]
-                    
-                    # Calculate arrow start position - move back along the inverted normal
-                    # This positions the arrow behind the surface with its tip at the surface
-                    arrow_length = scale_factor
-                    
-                    # Calculate start position (move back from center so tip is at the center)
-                    start_pos = [
-                        triangle['center'][0] - normal[0] * arrow_length,
-                        triangle['center'][1] - normal[1] * arrow_length,
-                        triangle['center'][2] - normal[2] * arrow_length
-                    ]
-                    
-                    # Create transform
-                    transform = vtk.vtkTransform()
-                    
-                    # Position transform at the starting position
-                    transform.Translate(start_pos)
-                    
-                    # Handle special cases first for better numerical stability
-                    if abs(normal[0]) > 0.999:  # Almost parallel to X axis
-                        if normal[0] < 0:
-                            transform.RotateY(180)
-                    elif abs(normal[1]) > 0.999:  # Almost parallel to Y axis
-                        # Rotate 90 deg around Z
-                        if normal[1] > 0:
-                            transform.RotateZ(90)
-                        else:
-                            transform.RotateZ(-90)
-                    elif abs(normal[2]) > 0.999:  # Almost parallel to Z axis
-                        # Rotate around Y to point along Z
-                        if normal[2] > 0:
-                            transform.RotateY(-90)
-                        else:
-                            transform.RotateY(90)
-                    else:
-                        # General case - first rotate in XY plane (Z rotation)
-                        angle_z = math.degrees(math.atan2(normal[1], normal[0]))
-                        transform.RotateZ(angle_z)
-                        
-                        # Then rotate to correct elevation (Y rotation)
-                        # Project normal onto XY plane after Z rotation
-                        length_xy = math.sqrt(normal[0]**2 + normal[1]**2)
-                        angle_y = math.degrees(math.atan2(normal[2], length_xy))
-                        transform.RotateY(angle_y)
-                    
-                    # Apply scaling
-                    transform.Scale(scale_factor, scale_factor, scale_factor)
-                    
-                    # Create mapper and actor
-                    mapper = vtk.vtkPolyDataMapper()
-                    mapper.SetInputConnection(arrow.GetOutputPort())
-                    
-                    arrow_actor = vtk.vtkActor()
-                    arrow_actor.SetMapper(mapper)
-                    arrow_actor.SetUserTransform(transform)
-                    
-                    # Make arrows distinct - use different blue for better visibility
-                    arrow_actor.GetProperty().SetColor(0.2, 0.2, 1.0)  # Bright blue for temperature arrows
-                    # Ensure the arrow is not transparent
-                    arrow_actor.GetProperty().SetOpacity(1.0)
-                    
-                    # Add to renderer and store
-                    self.parent.renderer.AddActor(arrow_actor)
-                    self.parent.fixed_temp_actors.append(arrow_actor) #(look at this afterwards)
-                    
-                    # Add text display next to one of the arrows (first arrow only)
-                    if not text_label_added:
-                        # Calculate position for text - offset from the arrow but closer
-                        text_offset = 0.08 * geom_size  # Reduced offset to bring text closer
-                        
-                        # Place text near the arrow, offset in a good direction for visibility
-                        text_pos = [
-                            triangle['center'][0] + text_offset * (-0.5 if normal[0] < 0 else 0.5),
-                            triangle['center'][1] + text_offset * (-0.5 if normal[1] < 0 else 0.5),
-                            triangle['center'][2] + text_offset * (0.2 if normal[2] < 0 else -0.2)
-                        ]
-                        
-                        # Create a vtkCaptionActor2D for 3D text
-                        caption_actor = vtk.vtkCaptionActor2D()
-                        
-                        # Set text content
-                        caption_text = f"T = {display_temp:.1f}{unit}"
-                        
-                        caption_actor.SetCaption(caption_text)
-                        caption_actor.SetAttachmentPoint(text_pos)
-                        
-                        # Customize text appearance
-                        caption_actor.BorderOff()
-                        caption_actor.LeaderOff() 
-                        
-                        # Set text properties
-                        text_prop = caption_actor.GetCaptionTextProperty()
-                        text_prop.SetColor(0.2, 0.2, 1.0) 
-                        text_prop.SetFontSize(5)
-
-                        # And add these text scaling properties
-                        caption_actor.SetWidth(0.15)
-                        caption_actor.SetHeight(0.05)
-                        text_prop.SetBold(True)
-                        text_prop.SetShadow(True)
-                        
-                        # ... and similar for caption_actor ...
-                        self.parent.renderer.AddActor(caption_actor)
-                        self.parent.fixed_temp_actors.append(caption_actor)  # Use parent's list
-                        
-                        text_label_added = True
-        
-        # Force rendering update
+        # Update rendering
         self.parent.vtkWidget.GetRenderWindow().Render()
     
-    def visualize_heat_source(self, nodes, heat_value, is_total_heat=False, total_heat_value=None):
+    def visualize_heat_source(self, nodes, heat_value):
         """Visualize heat source on the model"""
         if not hasattr(self.parent, 'stl_geom') or self.parent.stl_geom is None:
             return
-        
+            
         # Create points and cells for visualization
         points = vtk.vtkPoints()
         cells = vtk.vtkCellArray()
-    
+        
         # Use selected triangles for visualization
         for idx in nodes:
             if idx < len(self.parent.stl_geom.mesh.vectors):
@@ -5098,241 +4625,36 @@ class ThermalLoadsWindow(QtWidgets.QDialog):
                 for i in range(3):
                     tri.GetPointIds().SetId(i, point_ids[i])
                 cells.InsertNextCell(tri)
-    
+        
         # Create polydata
         poly_data = vtk.vtkPolyData()
         poly_data.SetPoints(points)
         poly_data.SetPolys(cells)
-    
+        
         # Create mapper and actor
         mapper = vtk.vtkPolyDataMapper()
         mapper.SetInputData(poly_data)
-    
+        
         actor = vtk.vtkActor()
         actor.SetMapper(mapper)
-    
-        # Use slightly different color for total heat vs. heat flux
-        if is_total_heat:
-            actor.GetProperty().SetColor(1.0, 0.5, 0.0)  # Orange for total heat
-        else:
-            actor.GetProperty().SetColor(1.0, 0.0, 0.0)  # Red for heat flux
-        
+        actor.GetProperty().SetColor(1, 0, 0)  # Red for heat source
         actor.GetProperty().SetOpacity(0.7)
-    
-        # Add actor to renderer
-        # self.parent.renderer.AddActor(actor)
-        # self.heat_source_actors.append(actor)
-
+        
         # Add actor to renderer
         self.parent.renderer.AddActor(actor)
-        if is_total_heat:
-            self.parent.total_heat_flux_actors.append(actor)  # Use parent's list
-        else:
-            self.parent.heat_source_actors.append(actor)  # Use parent's list
-    
-        # Add heat direction visualization - pass the values
-        self.visualize_heat_arrows(nodes, is_total_heat, heat_value, total_heat_value)
-    
+        self.heat_source_actors.append(actor)
+        
+        # Add text label with heat value
+        text_actor = vtk.vtkTextActor()
+        text_actor.SetInput(f"Q = {heat_value}W/m²")
+        text_actor.SetPosition(10, 30)
+        text_actor.GetTextProperty().SetColor(1, 0, 0)  # Red text
+        text_actor.GetTextProperty().SetFontSize(14)
+        self.parent.renderer.AddActor2D(text_actor)
+        self.heat_source_actors.append(text_actor)
+        
         # Update rendering
         self.parent.vtkWidget.GetRenderWindow().Render()
-
-    def visualize_heat_arrows(self, nodes, is_total_heat=False, heat_value=None, total_heat_value=None):
-        """Visualize arrows starting behind the surface with tips at the triangle surface"""
-        if not hasattr(self.parent, 'stl_geom') or self.parent.stl_geom is None:
-            return
-    
-        # Determine how many arrows to show
-        MAX_MARKERS = 5
-        THRESHOLD = 25
-    
-        if len(nodes) > THRESHOLD:
-            step = len(nodes) // MAX_MARKERS
-            display_indices = range(0, len(nodes), step)[:MAX_MARKERS]
-            display_nodes = [nodes[i] for i in display_indices]
-        else:
-            display_nodes = nodes
-    
-        # Get bounding box for scaling
-        if hasattr(self.parent.stl_geom, 'get_bounding_box'):
-            bbox = self.parent.stl_geom.get_bounding_box()
-        else:
-            # Calculate bounding box from mesh
-            vertices = self.parent.stl_geom.mesh.vectors.reshape(-1, 3)
-            xmin, ymin, zmin = np.min(vertices, axis=0)
-            xmax, ymax, zmax = np.max(vertices, axis=0)
-            bbox = (xmin, xmax, ymin, ymax, zmin, zmax)
-    
-        # Calculate model size for arrow scaling
-        geom_size = max(bbox[1]-bbox[0], bbox[3]-bbox[2], bbox[5]-bbox[4])
-        scale_factor = 0.08 * geom_size  # Scale arrows based on model size
-        
-        # Flag to indicate if we've added text display for one arrow
-        text_label_added = False
-    
-        for idx in display_nodes:
-            if idx < len(self.parent.stl_geom.mesh.vectors):
-                # Get triangle data
-                triangle = None
-                if hasattr(self.parent.stl_geom, 'get_triangle_data'):
-                    triangle = self.parent.stl_geom.get_triangle_data(idx)
-                else:
-                    # Manually calculate if get_triangle_data doesn't exist
-                    vertices = self.parent.stl_geom.mesh.vectors[idx]
-                    # Calculate center
-                    center = [
-                        (vertices[0][0] + vertices[1][0] + vertices[2][0]) / 3,
-                        (vertices[0][1] + vertices[1][1] + vertices[2][1]) / 3,
-                        (vertices[0][2] + vertices[1][2] + vertices[2][2]) / 3
-                    ]
-                
-                    # Calculate normal using cross product
-                    v1 = [vertices[1][0] - vertices[0][0], vertices[1][1] - vertices[0][1], vertices[1][2] - vertices[0][2]]
-                    v2 = [vertices[2][0] - vertices[0][0], vertices[2][1] - vertices[0][1], vertices[2][2] - vertices[0][2]]
-                
-                    # Cross product
-                    normal = [
-                        v1[1]*v2[2] - v1[2]*v2[1],
-                        v1[2]*v2[0] - v1[0]*v2[2],
-                        v1[0]*v2[1] - v1[1]*v2[0]
-                    ]
-                
-                    # Normalize
-                    length = sum(n*n for n in normal) ** 0.5
-                    if length > 0:
-                        normal = [n/length for n in normal]
-                    else:
-                        normal = [0, 0, 1]  # Default if calculation fails
-                    
-                    triangle = {'center': center, 'normal': normal, 'index': idx}
-            
-                if triangle:
-                    # Create arrow for visualization
-                    arrow = vtk.vtkArrowSource()
-                    arrow.SetTipLength(0.3)
-                    arrow.SetTipRadius(0.1)
-                    arrow.SetShaftRadius(0.03)
-                
-                    # Get the normal - invert it since we want arrows pointing inward
-                    normal = [-n for n in triangle['normal']]
-                
-                    # Calculate arrow start position - move back along the inverted normal
-                    # This positions the arrow behind the surface with its tip at the surface
-                    arrow_length = scale_factor
-                
-                    # Calculate start position (move back from center so tip is at the center)
-                    start_pos = [
-                        triangle['center'][0] - normal[0] * arrow_length,
-                        triangle['center'][1] - normal[1] * arrow_length,
-                        triangle['center'][2] - normal[2] * arrow_length
-                    ]
-                
-                    # Create transform
-                    transform = vtk.vtkTransform()
-                
-                    # Position transform at the starting position
-                    transform.Translate(start_pos)
-                
-                    # Handle special cases first for better numerical stability
-                    if abs(normal[0]) > 0.999:  # Almost parallel to X axis
-                        if normal[0] < 0:
-                            transform.RotateY(180)
-                    elif abs(normal[1]) > 0.999:  # Almost parallel to Y axis
-                        # Rotate 90 deg around Z then maybe 180 around X
-                        if normal[1] > 0:
-                            transform.RotateZ(90)
-                        else:
-                            transform.RotateZ(-90)
-                    elif abs(normal[2]) > 0.999:  # Almost parallel to Z axis
-                        # Rotate around Y to point along Z
-                        if normal[2] > 0:
-                            transform.RotateY(-90)
-                        else:
-                            transform.RotateY(90)
-                    else:
-                        # General case - first rotate in XY plane (Z rotation)
-                        angle_z = math.degrees(math.atan2(normal[1], normal[0]))
-                        transform.RotateZ(angle_z)
-                    
-                        # Then rotate to correct elevation (Y rotation)
-                        # Project normal onto XY plane after Z rotation
-                        length_xy = math.sqrt(normal[0]**2 + normal[1]**2)
-                        angle_y = math.degrees(math.atan2(normal[2], length_xy))
-                        transform.RotateY(angle_y)
-                
-                    # Apply scaling
-                    transform.Scale(scale_factor, scale_factor, scale_factor)
-                
-                    # Create mapper and actor
-                    mapper = vtk.vtkPolyDataMapper()
-                    mapper.SetInputConnection(arrow.GetOutputPort())
-                
-                    actor = vtk.vtkActor()
-                    actor.SetMapper(mapper)
-                    actor.SetUserTransform(transform)
-                
-                    # Set color based on heat type
-                    if is_total_heat:
-                        actor.GetProperty().SetColor(1.0, 0.5, 0.0)  # Orange for total heat
-                    else:
-                        actor.GetProperty().SetColor(1.0, 0.0, 0.0)  # Red for heat flux
-                
-                   # Add to renderer and store in parent's lists
-                    self.parent.renderer.AddActor(actor)
-                    if is_total_heat:
-                        self.parent.total_heat_flux_actors.append(actor)  # Use parent's list
-                    else:
-                        self.parent.heat_source_actors.append(actor)  # Use parent's list
-                    
-                    # Add text display next to one of the arrows (first arrow only)
-                    if not text_label_added and heat_value is not None:
-                        # Calculate position for text - offset from the arrow but closer
-                        text_offset = 0.08 * geom_size  # Reduced offset to bring text closer
-                        
-                        # Place text near the arrow, offset in a good direction for visibility
-                        text_pos = [
-                            triangle['center'][0] + text_offset * (-0.5 if normal[0] < 0 else 0.5),
-                            triangle['center'][1] + text_offset * (-0.5 if normal[1] < 0 else 0.5),
-                            triangle['center'][2] + text_offset * (0.2 if normal[2] < 0 else -0.2)
-                        ]
-                        
-                        # Create a vtkCaptionActor2D for 3D text
-                        caption_actor = vtk.vtkCaptionActor2D()
-                        
-                        # Set text content
-                        if is_total_heat:
-                            caption_text = f"{total_heat_value} W"
-                        else:
-                            caption_text = f"{heat_value} W/m²"
-                        
-                        caption_actor.SetCaption(caption_text)
-                        caption_actor.SetAttachmentPoint(text_pos)
-                        
-                        # Customize text appearance
-                        caption_actor.BorderOff()
-                        caption_actor.LeaderOff() 
-                        
-                        # Set text properties
-                        text_prop = caption_actor.GetCaptionTextProperty()
-                        if is_total_heat:
-                            text_prop.SetColor(1.0, 0.5, 0.0)  # Orange text for total heat
-                        else:
-                            text_prop.SetColor(1.0, 0.0, 0.0)  # Red text for heat flux
-                        text_prop.SetFontSize(5)
-                        # And add these text scaling properties
-                        caption_actor.SetWidth(0.15)
-                        caption_actor.SetHeight(0.05)
-                        text_prop.SetBold(True)
-                        text_prop.SetShadow(True)
-                        
-                        #for caption_actor ...
-                        self.parent.renderer.AddActor(caption_actor)
-                        if is_total_heat:
-                            self.parent.total_heat_flux_actors.append(caption_actor)  
-                        else:
-                            self.parent.heat_source_actors.append(caption_actor)  
-                        
-                        text_label_added = True
-                        
     
     def visualize_convection(self, nodes, h_coeff, ambient_temp):
         """Visualize convection on the model"""
@@ -6140,17 +5462,17 @@ class ProjectsWindow(QtWidgets.QDialog):
                 
             self.parent.update_button_icon("Thermal Loads", "check")
 
-    def visualize_fixed_temp(self, nodes, temperature):
+    def visualize_fixed_temp(self, triangles, temperature):
         """Visualize fixed temperature on the model"""
         if not hasattr(self.parent, 'stl_geom') or self.parent.stl_geom is None:
             return
-                
+            
         # Create points and cells for visualization
         points = vtk.vtkPoints()
         cells = vtk.vtkCellArray()
         
         # Use selected triangles for visualization
-        for idx in nodes:
+        for idx in triangles:
             if idx < len(self.parent.stl_geom.mesh.vectors):
                 vertices = self.parent.stl_geom.mesh.vectors[idx]
                 point_ids = []
@@ -6177,27 +5499,16 @@ class ProjectsWindow(QtWidgets.QDialog):
         
         # Add actor to renderer
         self.parent.renderer.AddActor(actor)
-        self.fixed_temp_actors.append(actor)
-        
-        # Convert from internal Kelvin to display unit
-        if self.parent.settings.temperature_unit == "Celsius":
-            display_temp = temperature - 273.15
-            unit = "°C"
-        elif self.parent.settings.temperature_unit == "Fahrenheit":
-            display_temp = (temperature - 273.15) * 9/5 + 32
-            unit = "°F"
-        else:  # Kelvin
-            display_temp = temperature
-            unit = "K"
+        self.parent.fixed_temp_actors.append(actor)
         
         # Add text label with temperature
         text_actor = vtk.vtkTextActor()
-        text_actor.SetInput(f"T = {display_temp:.1f}{unit}")
+        text_actor.SetInput(f"T = {temperature}°C")
         text_actor.SetPosition(10, 10)
         text_actor.GetTextProperty().SetColor(0, 0, 1)  # Blue text
         text_actor.GetTextProperty().SetFontSize(14)
         self.parent.renderer.AddActor2D(text_actor)
-        self.fixed_temp_actors.append(text_actor)
+        self.parent.fixed_temp_actors.append(text_actor)
         
         # Update rendering
         self.parent.vtkWidget.GetRenderWindow().Render()

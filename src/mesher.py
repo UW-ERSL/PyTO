@@ -154,8 +154,6 @@ class Mesher:
 		volume_error = np.abs(voxel_volume - box_volume) / box_volume * 100
 
 		print(f"Time taken to create mesh: {endTime - startTime:.2f} seconds")
-		print(f"STL Volume: {box_volume:.2e}")
-		print(f"Voxelized Mesh Volume: {voxel_volume:.2e}")
 		print(f"Meshing Volume Error: {volume_error:.2f}%")
 	
 	def translate(self, dx: float, dy: float, dz: float):
@@ -343,8 +341,6 @@ class Mesher:
 		volume_error = np.abs(voxel_volume - stlVolume) / stlVolume * 100
 		endTime = time.time()
 		print(f"Time taken to create mesh: {endTime - startTime:.2f} seconds")
-		print(f"STL Volume: {stlVolume:.2e}")
-		print(f"Voxelized Mesh Volume: {voxel_volume:.2e}")
 		print(f"Meshing Volume Error: {volume_error:.2f}%")
 
 	def createMeshFromSTLFile(self, stlFileName: str,nElemsDesired: int):
@@ -767,6 +763,45 @@ class Mesher:
 				self.hash_grid[cell_indices] = []
 			self.hash_grid[cell_indices].append(elem_idx)
 
+	def get_elems_within_radius(self, pt: np.ndarray, r: float) -> np.ndarray:
+		"""Find elements within a given radius from a point using spatial hash grid.
+		
+		Args:
+			pt: Array of shape (3,) containing x, y, z coordinates of the point
+			r: Radius within which to find elements
+			
+		Returns:
+			np.ndarray: Indices of elements within the given radius
+		"""
+		# Ensure hash grid exists
+		if not hasattr(self, 'hash_grid'):
+			self.create_spatial_hash_grid()
+		
+		# Get grid cell containing the point
+		bbox_min = [self.bbox.x.min, self.bbox.y.min, self.bbox.z.min]
+		cell_indices = tuple(np.floor((pt - bbox_min) / self.grid_cell_size).astype(int))
+		
+		# Determine the range of cells to search based on the radius
+		cell_radius = int(np.ceil(r / self.grid_cell_size))
+	
+		
+		# Collect potential elements from neighboring cells
+		potential_elems = set()
+		for dx in range(-cell_radius, cell_radius + 1):
+			for dy in range(-cell_radius, cell_radius + 1):
+				for dz in range(-cell_radius, cell_radius + 1):
+					neighbor_cell = (cell_indices[0] + dx, 
+									 cell_indices[1] + dy, 
+									 cell_indices[2] + dz)
+					if neighbor_cell in self.hash_grid:
+						potential_elems.update(self.hash_grid[neighbor_cell])
+		
+		# Filter elements within the radius
+		potential_elems = list(potential_elems)
+		distances_sq = np.sum((self.elem_centers[potential_elems] - pt)**2, axis=1)
+		elems_within_radius = np.array(potential_elems)[distances_sq <= r**2]
+		
+		return elems_within_radius
 	def get_element_near_point(self, point: np.ndarray) -> int:
 		"""Find element closest to point using spatial hash grid.
 		
