@@ -130,10 +130,10 @@ def getStructuralTOProblem(to_problem: StructuralTOExamples, **kwargs):
 
     elif to_problem == StructuralTOExamples.KnuckleAssembly:
         structural_problem = StructuralExamples.KnuckleAssembly
-        to_constraints.KeepFixedElems = True
-        to_constraints.RemoveHangingElems = True
+        to_constraints.XSymmetry = True
+        to_constraints.ZSymmetry = True
         to_params.nDOFDesired = 100000
-        to_params.desiredVolFraction = 0.25
+        to_params.desiredVolFraction = 0.5
     else:
         raise ValueError(f"Unknown problem: {to_problem}")
     
@@ -155,5 +155,5 @@ def getStructuralTOProblem(to_problem: StructuralTOExamples, **kwargs):
 
     if to_problem == StructuralTOExamples.KnuckleAssembly:
          to_constraints.ElemsToKeep = np.where(mesh.elemComponentId == 2)[0]
-         print("Elems to keep: ", to_constraints.ElemsToKeep.shape)
+         #print("Elems to keep", to_constraints.ElemsToKeep.shape)
     return mesh, mat_prop, bc, elem_body_force, to_constraints, to_params

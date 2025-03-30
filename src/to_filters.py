@@ -94,6 +94,8 @@ def createYSymmetryFilter(mesh: mesher.Mesher) -> tuple[coo_matrix, np.ndarray]:
 		mirror_y = 2 * y_mid - elemCenter[1]
 		otherElemCenter = np.array([elemCenter[0], mirror_y, elemCenter[2]])
 		mirror_idy = mesh.get_element_near_point(otherElemCenter)
+		if (mirror_idy == -1):
+			continue
 		if (mirror_idy == i):
 			rows.append(i)
 			cols.append(i)
@@ -133,6 +135,8 @@ def createZSymmetryFilter(mesh: mesher.Mesher) -> tuple[coo_matrix, np.ndarray]:
 		mirror_z = 2 * z_mid - elemCenter[2]
 		otherElemCenter = np.array([elemCenter[0], elemCenter[1], mirror_z])
 		mirror_idz = mesh.get_element_near_point(otherElemCenter)
+		if (mirror_idz == -1):
+			continue
 		if (mirror_idz == i):
 			rows.append(i)
 			cols.append(i)

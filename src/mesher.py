@@ -431,6 +431,7 @@ class Mesher:
 		
 		# Extract only cells that belong to a component (non-zero component_id)
 		voxel_mesh_components = voxel_mesh.threshold(0.5, scalars="component_id")
+		
 		#extract the data
 		self.voxels = voxel_mesh_components
 		self.num_elems = self.voxels.n_cells
@@ -455,7 +456,7 @@ class Mesher:
 			# Create an array to store component IDs for each element
 		self.elemComponentId = np.zeros(self.num_elems, dtype=np.int32)
 		for elem_idx in range(self.num_elems):
-			self.elemComponentId[elem_idx] = component_ids[elem_idx]
+			self.elemComponentId[elem_idx] = self.voxels.cell_data["component_id"][elem_idx]
 
 		# Count the number of elements for each component
 		component_counts = np.bincount(self.elemComponentId)
@@ -976,5 +977,5 @@ if __name__ == "__main__":
     stlFileName = os.path.join(script_dir, '../Models/AlcoaGrabCAD/AlcoaGrabCAD.STL')
     stlFileName = os.path.join(script_dir, '../Models/KnuckleAssembly/KnuckleAssembly.STL')
     #stlFileName = os.path.join(script_dir, '../Models/SwingArmAssembly/SwingArmAssembly.STL')
-    mesh.createMeshFromSTLFile(stlFileName, nElemsDesired=250000)
+    mesh.createMeshFromSTLFile(stlFileName, nElemsDesired=28358)
     mesh.plot()

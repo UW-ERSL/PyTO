@@ -21,6 +21,7 @@ class Optimizers(enum.Enum):
 	MMA = enum.auto()
 	OC = enum.auto()
 	PARETO = enum.auto()
+	LEVELSET = enum.auto()
 
 class MaterialModel(enum.Enum):
 	SIMP = enum.auto()
@@ -84,6 +85,7 @@ def _compliance_objective(x: jnp.ndarray,
 
 
 def topopt_mma(fe_solver: sfea.StructFEA,
+			   			minMMAIterations: int = 5,
 			   			 maxMMAIterations: int = 250, 
 							timeLimit: float =3600, #1 hour
 			   			 volfrac: float = 0.5,
@@ -151,7 +153,6 @@ def topopt_mma(fe_solver: sfea.StructFEA,
 	if (to_constraints.ExtrudeZ):
 		HEZ = createZExtrudeFilter(fe_solver.mesh)
 		H = H*HEZ
-
 	if (to_constraints.AMBuildConstraint):
 		HZAM = createAMBuildFilter(fe_solver.mesh)
 		H = H*HZAM
@@ -221,7 +222,8 @@ def topopt_mma(fe_solver: sfea.StructFEA,
 			grad_obj[elemsWithForces] = min(grad_obj)
 
 		if (to_constraints.ElemsToKeep is not None):
-			grad_obj[to_constraints.ElemsToKeep] = min(grad_obj)
+			#grad_obj[to_constraints.ElemsToKeep] = min(grad_obj)
+			x[to_constraints.ElemsToKeep] = 1.0
 
 		vf = np.mean(x)
 		cons = _volume_constraint(x, volfrac)
@@ -245,7 +247,7 @@ def topopt_mma(fe_solver: sfea.StructFEA,
 		history['volume'].append(np.mean(x))
 		history['change'].append(change)
 		
-		if (len(history['compliance'])) >= 2:
+		if (len(history['compliance'])) >= minMMAIterations:
 			if (change < move_tol):
 				break
 			dJ = (history['compliance'][-1] - history['compliance'][-2]) / history['compliance'][-2]
@@ -701,8 +703,9 @@ def topopt_pareto(fe_solver: sfea.StructFEA,
 			if (elemsWithForces.size > 0):
 				T[elemsWithForces] = np.max(T)
 
-			if (to_constraints.KeepFixedElems):
+			if (to_constraints.ElemsToKeep is not None):
 				T[to_constraints.ElemsToKeep] = np.max(T)
+
 			localIter += 1
 			totalIter += 1
 
@@ -723,6 +726,93 @@ def topopt_pareto(fe_solver: sfea.StructFEA,
 			fe_solver.mesh.setPseudoDensity(rho.flatten())
 			
 	return u, history
+
+def level_set_topopt(fe_solver: sfea.StructFEA,
+						 maxIterations: int = 250,
+						 volfrac: float = 0.5,
+						 time_step: float = 0.1,
+						 epsilon: float = 1.0,
+						 rel_conv_tol: float = 1e-4,
+						 to_constraints=None,
+						 debug: bool = False) -> tuple[np.ndarray, dict]:
+		"""Level Set Method for Topology Optimization using Hamilton-Jacobi equation.
+
+		Args:
+			fe_solver: The structural FEA solver object.
+			maxIterations: Maximum number of iterations.
+			volfrac: The target volume fraction.
+			time_step: Time step for the Hamilton-Jacobi update.
+			epsilon: Regularization parameter for the Heaviside function.
+			rel_conv_tol: Relative convergence tolerance.
+			to_constraints: Topology optimization constraints.
+			debug: If True, prints debug information.
+
+		Returns:
+			A tuple containing the displacement field of the optimized structure
+			and a dictionary containing the optimization history.
+		"""
+		def heaviside(phi, epsilon):
+			"""Smooth Heaviside function."""
+			return 0.5 * (1 + (2 / np.pi) * np.arctan(phi / epsilon))
+
+		def heaviside_derivative(phi, epsilon):
+			"""Derivative of the smooth Heaviside function."""
+			return (1 / (np.pi * epsilon)) * (1 / (1 + (phi / epsilon) ** 2))
+
+		def compute_velocity_field(fe_solver, phi, material_model_dict):
+			"""Compute the velocity field for the level set update."""
+			density = heaviside(phi, epsilon)
+			obj, u = _compliance_objective(density, fe_solver, material_model_dict)
+			ce = (np.dot(u[fe_solver.mesh.edofMat].reshape(num_elems, 24), KE) * u[fe_solver.mesh.edofMat].reshape(num_elems, 24)).sum(1)
+			velocity = -ce * heaviside_derivative(phi, epsilon)
+			return velocity, obj
+
+		# Initialize level set field (phi)
+		num_elems = fe_solver.mesh.num_elems
+		phi = np.ones(num_elems)
+
+		# History for compliance and volume
+		history = {'compliance': [], 'volume': [], 'change': []}
+
+		# Material model dictionary
+		material_model_dict = {'name': 'SIMP', 'penal': 3.0}
+
+		# Element stiffness matrix
+		KE = elem_stiff.hex8_stiffness_matrix_structural(fe_solver.mat_prop, fe_solver.mesh.elem_size)
+
+		for iter in range(maxIterations):
+			# Compute velocity field and objective
+			velocity, obj = compute_velocity_field(fe_solver, phi, material_model_dict)
+
+			# Update level set field using Hamilton-Jacobi equation
+			phi_old = phi.copy()
+			phi += time_step * velocity
+
+			# Apply volume constraint
+			density = heaviside(phi, epsilon)
+			current_volfrac = np.mean(density)
+			if current_volfrac > volfrac:
+				phi -= time_step * (current_volfrac - volfrac)
+
+			# Update pseudo-density in the mesh
+			fe_solver.mesh.setPseudoDensity(density)
+
+			# Compute change and update history
+			change = np.max(np.abs(phi - phi_old))
+			history['compliance'].append(obj)
+			history['volume'].append(np.mean(density))
+			history['change'].append(change)
+
+			print(f"it.: {iter + 1}, obj.: {obj:.6g}, vol.: {np.mean(density):.3f}, ch.: {change:.3g}")
+
+			# Check for convergence
+			if iter > 1 and change < rel_conv_tol:
+				break
+
+		# Solve for final displacement field
+		u = np.asarray(fe_solver.solve(density))
+		return u, history
+
 
 def runTOTests():
 	optimizationMethod = Optimizers.OC # MMA, OC or PARETO
@@ -798,9 +888,9 @@ if __name__ == "__main__":
 	jax.config.update("jax_enable_x64", True)
 
 	#runTOTests(); exit(0)
-	optimizationMethod = Optimizers.PARETO # MMA, OC or PARETO
+	optimizationMethod = Optimizers.LEVELSET # MMA, OC or PARETO
 	# Choose the TO problem
-	to_problem = StructuralTOExamples.KnuckleAssembly 
+	to_problem = StructuralTOExamples.EdgeCantilever 
 	material_model = MaterialModel.SIMPPLUS# Relevant only for MMA, OC. Use SIMPPLUS for problems with body forces
 	solver = lin_solv.Solvers.PARDISO # Typically PARDISO, but DPCG for DOF > 200,000
 	debug = False
@@ -922,6 +1012,18 @@ if __name__ == "__main__":
 		plt.title('Pareto: Volume vs Compliance History')
 		plt.grid(True)
 		plt.show(block=False)
+	elif optimizationMethod == Optimizers.LEVELSET:
+		print("OptimizationMethod: Level Set")
+		u, history = level_set_topopt(fe_solver = fe_solver,
+										maxIterations = 100,
+										volfrac = to_params.desiredVolFraction,
+										time_step = 0.1,
+										epsilon = 1.0,
+										rel_conv_tol = 1e-4,
+										to_constraints = to_constraints,
+										debug = debug)
+		timeTaken = time.time() - startTime
+		title = f"Level Set: nDOF: {3*fe_solver.mesh.num_nodes}, vol: {history['volume'][-1]:0.2f}, J: {history['compliance'][-1]:.3g}, time: {timeTaken:.0f} s"	
 
 	print(f"Time taken: {timeTaken:.0f} s")
 	
