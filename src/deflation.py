@@ -342,6 +342,8 @@ class DeflationSolver:
 		KW = K @ W
 		WKW = (WT @ KW).toarray()
 		WKW = csr_matrix((WKW + WKW.T) / 2)
+		# Add small value to diagonal for numerical stability
+		WKW += scipy.sparse.eye(WKW.shape[0]) * 1e-10
 		#L = spy_linalg.cho_factor(WKW, lower=True)
 
 		# Pre-allocate vectors
@@ -365,8 +367,9 @@ class DeflationSolver:
 
 		# Initial search direction
 		Kz = K @ z
+		
 		if (pypardiso is None):
-			mu = spy_linalg.cho_solve(WKW,WT @ Kz)
+			mu = spy_linalg.spsolve(WKW,WT @ Kz)
 		else:
 			mu = pypardiso.spsolve(WKW,WT @ Kz)
 		
@@ -400,6 +403,7 @@ class DeflationSolver:
 			p = z + beta * p - W @ mu
 			
 			rz = rz_new
+		#print("Deflated PCG iterations:", iter_num + 1)
 		if (iter_num == maxIters - 1):
 			print("Warning: Maximum iterations reached in DPCG")
 		return x

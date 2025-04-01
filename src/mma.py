@@ -17,12 +17,13 @@ import numpy as np
 import scipy
 import scipy.linalg
 import scipy.sparse
+from numba import njit
 
 _SUBSOLV_EPSI_FACTOR = 0.9
 _SUBSOLV_MAX_INNER_ITER = 200
 _SUBSOLV_RESIDUE_NORM_FACTOR = 2
 _SUBSOLV_MAX_OUTER_ITER = 50
-_SUBSOLV_EPSI_FACTOR = 0.1
+
 
 _MMASUB_EPSIMIN = 0.0000001
 _MMASUB_RAA0 = 0.00001
@@ -508,8 +509,11 @@ def _subsolv(m: int, n: int, epsimin: float, low: np.ndarray, upp: np.ndarray,
       qlam = q0 + np.dot(q_value.T, lam)
 
       gvec = np.dot(p_value, uxinv1) + np.dot(q_value, xlinv1)
+     
       gg_value = (scipy.sparse.diags(uxinv2.flatten(), 0).dot(p_value.T)).T - (
           scipy.sparse.diags(xlinv2.flatten(), 0).dot(q_value.T)).T
+     
+     
       dpsidx = plam / ux2 - qlam / xl2
       delx = dpsidx - epsvecn / (x - alfa) + epsvecn / (beta - x)
       dely = c + d * y - lam - epsvecm / y
@@ -527,10 +531,12 @@ def _subsolv(m: int, n: int, epsimin: float, low: np.ndarray, upp: np.ndarray,
       if m < n:
         blam = dellam + dely / diagy - np.dot(gg_value, (delx / diagx))
         bb = np.concatenate((blam, delz), axis=0)
+     
         alam_value = np.asarray(
             scipy.sparse.diags(diaglamyi.flatten(), 0) +
             (scipy.sparse.diags(diagxinv.flatten(), 0).dot(gg_value.T).T
             ).dot(gg_value.T))
+
         aar1_value = np.concatenate((alam_value, a), axis=1)
         aar2_value = np.concatenate((a, -zet / z), axis=0).T
         aa_value = np.concatenate((aar1_value, aar2_value), axis=0)
@@ -541,6 +547,7 @@ def _subsolv(m: int, n: int, epsimin: float, low: np.ndarray, upp: np.ndarray,
       else:
         diaglamyiinv = eem / diaglamyi
         dellamyi = dellam + dely / diagy
+
         axx_value = np.asarray(
             scipy.sparse.diags(diagx.flatten(), 0) +
             (scipy.sparse.diags(diaglamyiinv.flatten(), 0).dot(gg_value).T

@@ -4,10 +4,299 @@ import bound_cond
 import mesher
 import mat_lib
 import os
-
+import enum
 script_dir = os.path.dirname(os.path.abspath(__file__))
 
-def createEdgeCantileverProblem(nDOFDesired: int = 10000, L: float = [0.4, 0.2, 0.1],youngs_modulus = 2e11, poissons_ratio = 0.3):
+
+class StructuralExamples(enum.Enum):
+	TensileBar = enum.auto()
+	BeamBending = enum.auto()
+	EdgeCantilever = enum.auto()
+	MidCantilever = enum.auto()
+	ThreeHoleBracket = enum.auto()
+	MBB = enum.auto()
+	DistributedLoad = enum.auto()
+	Multiload = enum.auto()
+	GravityBar = enum.auto() 
+	GravityPlate = enum.auto()
+	LBracket = enum.auto()
+	ArrowHead = enum.auto()
+	CompliantMechanism = enum.auto()
+	FilletedBeam = enum.auto()
+	BeamSurfaceLoad = enum.auto()
+	CentrifugalPlate = enum.auto()
+	TorquePlate = enum.auto()
+	KnuckleAssembly =  enum.auto()
+	Table =  enum.auto()
+	BliskQuarter = enum.auto()
+	BliskWithBlade =  enum.auto()
+
+
+def getStructuralProblem(problem: StructuralExamples, **kwargs):
+  """Returns a structural problem based on the given problem name.
+
+  Parameters:
+  ----------
+  problem : StructuralExamples
+    The name of the problem to return.
+  **kwargs : dict
+    Additional keyword arguments to pass to the problem creation function.
+
+  Returns:
+  -------
+  tuple
+    A tuple containing the mesh, material properties, and boundary conditions for the problem.
+  """
+  if problem == StructuralExamples.TensileBar:
+    return createTensileBarProblem(**kwargs)
+  elif problem == StructuralExamples.BeamBending:
+    return createBeamBendingProblem(**kwargs)
+  elif problem == StructuralExamples.EdgeCantilever:
+    return createEdgeCantileverProblem(**kwargs)
+  elif problem == StructuralExamples.MidCantilever:
+    return createMidCantileverProblem(**kwargs)
+  elif problem == StructuralExamples.ThreeHoleBracket:
+    return createThreeHoleBracketProblem(**kwargs)
+  elif problem == StructuralExamples.MBB:
+    return createMBBProblem(**kwargs)
+  elif problem == StructuralExamples.DistributedLoad:
+    return createDistributedLoadProblem(**kwargs)
+  elif problem == StructuralExamples.Multiload:
+    return createMultiloadProblem(**kwargs)
+  elif problem == StructuralExamples.GravityBar:
+    return createGravityBarProblem(**kwargs)
+  elif problem == StructuralExamples.GravityPlate:
+    return createGravityPlateProblem(**kwargs)
+  elif problem == StructuralExamples.CompliantMechanism:
+    return createCompliantMechanismProblem(**kwargs)
+  elif problem == StructuralExamples.LBracket:
+    return createLBracketProblem(**kwargs)
+  elif problem == StructuralExamples.FilletedBeam:
+    return createFilletedBeamProblem(**kwargs)
+  elif problem == StructuralExamples.BeamSurfaceLoad:
+    return createBeamSurfaceLoadProblem(**kwargs)
+  elif problem == StructuralExamples.CentrifugalPlate:
+    return createCentrifugalPlateProblem(**kwargs)
+  elif problem == StructuralExamples.TorquePlate:
+    return createTorquePlateProblem(**kwargs)
+  elif problem == StructuralExamples.BliskQuarter:
+    return createBliskQuarterProblem(**kwargs)
+  elif problem == StructuralExamples.BliskWithBlade:
+    return createBliskSectionWithBlade(**kwargs)
+  elif problem == StructuralExamples.KnuckleAssembly:
+    return createKnuckleAssemblyProblem(**kwargs)
+  elif problem == StructuralExamples.Table:
+    return createTableProblem(**kwargs)
+  elif problem == StructuralExamples.ArrowHead:
+    return createArrowHeadProblem(**kwargs)
+  else:
+    raise ValueError("Invalid structural example name.")
+  
+
+def createTensileBarProblem(nDOFDesired: int = 10000, L: float = [10, 1, 1],youngs_modulus = 2e11, 
+                            poissons_ratio = 0.3,tensileForce = 10000):
+  """Creates a tensile problem with approximate desired DOFs.
+
+  Parameters:
+  ----------
+  nDOFDesired : int
+    Desired number of degrees of freedom (default 10000)
+  L : list of float
+    Dimensions [Lx, Ly, Lz] of domain (default [1, 0.1, 0.1])
+  youngs_modulus : float
+    Young's modulus of material (default 2e11)
+  poissons_ratio : float 
+    Poisson's ratio of material (default 0.3)
+
+  Returns:
+  -------
+  tuple
+    (mesh, mat_prop, bc) containing:
+    - mesh: Mesher object with grid discretization
+    - mat_prop: Material properties object
+    - bc: Boundary conditions with fixed left face and load on right face
+  """
+  print('-----------------------------')
+  print("Theoretical max displacement: {:.2g}".format(tensileForce*L[0]/(youngs_modulus*L[1]*L[2])))
+  print("Theoretical max stress: {:.2g}".format(tensileForce/(L[1]*L[2])))
+  print('-----------------------------')
+  nVoxelsDesired = nDOFDesired/3    
+  # Let the number of voxels be proportional to the length in each direction
+  alpha = (nVoxelsDesired/(L[0]*L[1]*L[2]))**(1/3)
+  nelx = round(alpha*L[0])
+  nely = round(alpha*L[1])
+  nelz = round(alpha*L[2])
+  mesh = mesher.Mesher()
+  mesh.grid_mesh(num_elems = (nelx, nely, nelz),
+                  elem_size = (L[0]/nelx, L[1]/nely, L[2]/nelz))
+  mesh.createEdofMatStructural()
+
+  fixed_nodes = mesh.getNodesOnBoundingBoxPlane(0,True) # x = 0 plane
+  fixed_dofs = np.array([3 * fixed_nodes]).flatten().astype(int) # fixed in x direction
+  fixed_dofs = np.array([3 * fixed_nodes,
+              3 * fixed_nodes + 1,
+              3 * fixed_nodes + 2]).flatten().astype(int)
+  dirichlet_values = 0*np.ones_like(fixed_dofs, dtype = float)
+  mesh.node_indices[fixed_nodes, 3] = 1
+  
+  # Add forces on x=xMax plane with different magnitudes for edges and corners
+  # that is consistent with numerical integration over the surface
+  load_nodes = mesh.getNodesOnBoundingBoxPlane(0,False) # x = xMax plane
+  # Find edge and corner nodes
+  edge_nodes = []
+  corner_nodes = []
+  face_nodes = [] 
+
+  for node in load_nodes:
+    coords = mesh.node_xyz[node]
+    num_extremes = 0
+    if abs(coords[1] - min(mesh.node_xyz[:,1])) < mesh.elem_size[1]/2 or abs(coords[1] - max(mesh.node_xyz[:,1])) < mesh.elem_size[1]/2:
+      num_extremes += 1
+    if abs(coords[2] - min(mesh.node_xyz[:,2])) < mesh.elem_size[2]/2 or abs(coords[2] - max(mesh.node_xyz[:,2])) < mesh.elem_size[2]/2:
+      num_extremes += 1
+    
+    if num_extremes == 2:
+      corner_nodes.append(node)
+    elif num_extremes == 1:
+      edge_nodes.append(node) 
+    else:
+      face_nodes.append(node)
+  
+  # Split into lists for clarity
+  corner_nodes = np.array(corner_nodes)
+  edge_nodes = np.array(edge_nodes)
+  face_nodes = np.array(face_nodes)
+  # Apply forces according to node type
+  force = np.zeros(3*mesh.num_nodes)
+  force[3*face_nodes] = 4.0  
+  force[3*edge_nodes] = 2.0  
+  force[3*corner_nodes] = 1.0 
+  
+  # Normalize forces to achieve desired total load
+  total_load = np.sum(force[3*load_nodes])
+  force[3*load_nodes] *= tensileForce/total_load
+  print("Total force:", np.sum(force[3*load_nodes]))
+  load_nodes = np.union1d(np.union1d(face_nodes, edge_nodes), corner_nodes)
+  mesh.node_indices[load_nodes, 3] = 2
+  
+  bc = bound_cond.BC(force = force,
+            fixed_dofs = fixed_dofs,
+            dirichlet_values = dirichlet_values) 
+
+  mat_prop = mat_lib.StructuralMaterial(youngs_modulus=youngs_modulus,
+                      poissons_ratio=poissons_ratio)
+  
+  elem_body_force = None
+
+  return mesh, mat_prop, bc, elem_body_force
+
+
+  # ----------------------------------------
+
+def createBeamBendingProblem(nDOFDesired: int = 10000, L: float = [10, 1, 1],youngs_modulus = 2e11, 
+                            poissons_ratio = 0.3,tensileForce = 10000):
+  """Creates a tensile problem with approximate desired DOFs.
+
+  Parameters:
+  ----------
+  nDOFDesired : int
+    Desired number of degrees of freedom (default 10000)
+  L : list of float
+    Dimensions [Lx, Ly, Lz] of domain (default [1, 0.1, 0.1])
+  youngs_modulus : float
+    Young's modulus of material (default 2e11)
+  poissons_ratio : float 
+    Poisson's ratio of material (default 0.3)
+
+  Returns:
+  -------
+  tuple
+    (mesh, mat_prop, bc) containing:
+    - mesh: Mesher object with grid discretization
+    - mat_prop: Material properties object
+    - bc: Boundary conditions with fixed left face and load on right face
+  """
+  print('-----------------------------')
+  # For a beam with rectangular cross-section under end load P
+  # Maximum deflection = PL^3/(3EI) where I = (w*h^3)/12
+  I = (L[1]*L[2]**3)/12
+  print("Theoretical max deflection: {:.2g}".format(tensileForce*L[0]**3/(3*youngs_modulus*I)))
+  # Maximum bending stress = My/I where M = PL and y = h/2
+  print("Theoretical max stress: {:.2g}".format(tensileForce*L[0]*L[2]/(2*I)))
+  print('-----------------------------')
+  nVoxelsDesired = nDOFDesired/3    
+  # Let the number of voxels be proportional to the length in each direction
+  alpha = (nVoxelsDesired/(L[0]*L[1]*L[2]))**(1/3)
+  nelx = round(alpha*L[0])
+  nely = round(alpha*L[1])
+  nelz = round(alpha*L[2])
+  mesh = mesher.Mesher()
+  mesh.grid_mesh(num_elems = (nelx, nely, nelz),
+                  elem_size = (L[0]/nelx, L[1]/nely, L[2]/nelz))
+  mesh.createEdofMatStructural()
+
+  # Fix all DOFs at x=0 plane (cantilever)
+  fixed_nodes = mesh.getNodesOnBoundingBoxPlane(0,True) # x = 0 plane
+  fixed_dofs = np.array([3 * fixed_nodes,
+              3 * fixed_nodes + 1,
+              3 * fixed_nodes + 2]).flatten().astype(int)
+  dirichlet_values = 0*np.ones_like(fixed_dofs, dtype = float)
+  mesh.node_indices[fixed_nodes, 3] = 1
+  
+  # Add downward forces at x=xMax plane
+  load_nodes = mesh.getNodesOnBoundingBoxPlane(0,False) # x = xMax plane
+  # Find edge and corner nodes
+  edge_nodes = []
+  corner_nodes = []
+  face_nodes = [] 
+
+  for node in load_nodes:
+    coords = mesh.node_xyz[node]
+    num_extremes = 0
+    if abs(coords[1] - min(mesh.node_xyz[:,1])) < mesh.elem_size[1]/2 or abs(coords[1] - max(mesh.node_xyz[:,1])) < mesh.elem_size[1]/2:
+      num_extremes += 1
+    if abs(coords[2] - min(mesh.node_xyz[:,2])) < mesh.elem_size[2]/2 or abs(coords[2] - max(mesh.node_xyz[:,2])) < mesh.elem_size[2]/2:
+      num_extremes += 1
+    
+    if num_extremes == 2:
+      corner_nodes.append(node)
+    elif num_extremes == 1:
+      edge_nodes.append(node) 
+    else:
+      face_nodes.append(node)
+  
+  # Split into lists for clarity
+  corner_nodes = np.array(corner_nodes)
+  edge_nodes = np.array(edge_nodes)
+  face_nodes = np.array(face_nodes)
+  
+  # Apply downward forces according to node type
+  force = np.zeros(3*mesh.num_nodes)
+  force[3*face_nodes + 2] = -4.0  # Apply force in z direction (downward)
+  force[3*edge_nodes + 2] = -2.0  
+  force[3*corner_nodes + 2] = -1.0 
+  
+  # Normalize forces to achieve desired total load
+  load_nodes = np.union1d(np.union1d(face_nodes, edge_nodes), corner_nodes)
+  total_load = np.sum(force[3*load_nodes + 2])
+  force[3*load_nodes + 2] *= tensileForce/abs(total_load)
+  print("Total force:", np.sum(force[3*load_nodes + 2]))
+  mesh.node_indices[load_nodes, 3] = 2
+  
+  bc = bound_cond.BC(force = force,
+            fixed_dofs = fixed_dofs,
+            dirichlet_values = dirichlet_values) 
+
+  mat_prop = mat_lib.StructuralMaterial(youngs_modulus=youngs_modulus,
+                      poissons_ratio=poissons_ratio)
+  elem_body_force = None
+ 
+  return mesh, mat_prop, bc, elem_body_force
+
+  # ----------------------------------------
+
+def createEdgeCantileverProblem(nDOFDesired: int = 10000, L: float = [0.4, 0.2, 0.1],
+                                youngs_modulus = 2e11, poissons_ratio = 0.3,totalLoad = 10000):
   """Creates a edge loaded cantilever beam problem with approximate desired DOFs.
 
   Parameters:
@@ -52,7 +341,7 @@ def createEdgeCantileverProblem(nDOFDesired: int = 10000, L: float = [0.4, 0.2, 
   load_dofs = 3 * load_nodes + 2  # z direction
 
   mesh.node_indices[load_nodes, 3] = 2
-  load_per_dof = -10000/len(load_nodes)
+  load_per_dof = -totalLoad/len(load_nodes)
 
   force = np.zeros(3*mesh.num_nodes)
   force[load_dofs] = load_per_dof
@@ -63,10 +352,83 @@ def createEdgeCantileverProblem(nDOFDesired: int = 10000, L: float = [0.4, 0.2, 
 
   mat_prop = mat_lib.StructuralMaterial(youngs_modulus=youngs_modulus,
                       poissons_ratio=poissons_ratio)
-  return mesh, mat_prop, bc
+  elem_body_force = None
+  return mesh, mat_prop, bc, elem_body_force
+
+  # ----------------------------------------
+
+
+def createMidCantileverProblem(nDOFDesired: int = 10000, L: float = [0.4, 0.2, 0.025],
+                               youngs_modulus = 2e11, poissons_ratio = 0.3,totalLoad = 10000):
+  """Creates a edge loaded cantilever beam problem with approximate desired DOFs.
+
+  Parameters:
+  ----------
+  nDOFDesired : int
+    Desired number of degrees of freedom (default 10000)
+  L : list of float
+    Dimensions [Lx, Ly, Lz] of domain (default [0.1, 0.1, 0.1])
+  youngs_modulus : float
+    Young's modulus of material (default 2e11)
+  poissons_ratio : float 
+    Poisson's ratio of material (default 0.3)
+
+  Returns:
+  -------
+  tuple
+    (mesh, mat_prop, bc) containing:
+    - mesh: Mesher object with grid discretization
+    - mat_prop: Material properties object
+    - bc: Boundary conditions with fixed left face and load on right face
+  """
+  nVoxelsDesired = nDOFDesired/3    
+  # Let the number of voxels be proportional to the length in each direction
+  alpha = (nVoxelsDesired/(L[0]*L[1]*L[2]))**(1/3)
+  nelx = round(alpha*L[0])
+  nely = round(alpha*L[1])
+  nelz = round(alpha*L[2])
+  mesh = mesher.Mesher()
+  mesh.grid_mesh(num_elems = (nelx, nely, nelz),
+                  elem_size = (L[0]/nelx, L[1]/nely, L[2]/nelz))
+  mesh.createEdofMatStructural()
+
+  fixed_nodes = mesh.getNodesOnBoundingBoxPlane(0,True) # x = 0 plane
+  fixed_dofs = np.array([3 * fixed_nodes,
+              3 * fixed_nodes + 1,
+              3 * fixed_nodes + 2]).flatten().astype(int)
+  dirichlet_values = 0*np.ones_like(fixed_dofs, dtype = float)
+
+  mesh.node_indices[fixed_nodes, 3] = 1
+  # line defined by x = xMax, and y = yMax/2,
+  # Get nodes on plane x = xMax
+  max_x_nodes = mesh.getNodesOnBoundingBoxPlane(0,False)
+  # Get nodes with y coordinate near yMax/2
+  node_pts = mesh.node_xyz
+  y_mid = (np.max(node_pts[:,1]) + np.min(node_pts[:,1]))/2
+  y_mid_nodes = np.where(abs(node_pts[:,1] - y_mid) < 1.5*mesh.elem_size[1])[0]
+  # Intersect the two sets to get nodes on the line
+
+  load_nodes = np.intersect1d(max_x_nodes, y_mid_nodes)
+  load_dofs = 3 * load_nodes + 1  # y direction
+
+  mesh.node_indices[load_nodes, 3] = 2
+  load_per_dof = -totalLoad/len(load_nodes)
+
+  force = np.zeros(3*mesh.num_nodes)
+  force[load_dofs] = load_per_dof
+
+  bc = bound_cond.BC(force = force,
+            fixed_dofs = fixed_dofs,
+            dirichlet_values = dirichlet_values) 
+
+  mat_prop = mat_lib.StructuralMaterial(youngs_modulus=youngs_modulus,
+                      poissons_ratio=poissons_ratio)
+  elem_body_force = None
+  return mesh, mat_prop, bc, elem_body_force
 
   # ----------------------------------------
   
+
 def createMBBProblem(nDOFDesired: int = 10000, L: float = [0.5, 0.167, 0.01],youngs_modulus = 2e11, poissons_ratio = 0.3):
   nVoxelsDesired = nDOFDesired/3    
   # Let the number of voxels be proportional to the length in each direction
@@ -106,7 +468,9 @@ def createMBBProblem(nDOFDesired: int = 10000, L: float = [0.5, 0.167, 0.01],you
 
   mat_prop = mat_lib.StructuralMaterial(youngs_modulus=youngs_modulus,
                       poissons_ratio=poissons_ratio)
-  return mesh, mat_prop, bc
+  elem_body_force = None
+
+  return mesh, mat_prop, bc, elem_body_force
 
   # ----------------------------------------
   
@@ -149,7 +513,9 @@ def createDistributedLoadProblem(nDOFDesired: int = 10000, L: float = [1.0, 0.5,
 
   mat_prop = mat_lib.StructuralMaterial(youngs_modulus=youngs_modulus,
                       poissons_ratio=poissons_ratio)
-  return mesh, mat_prop, bc
+  elem_body_force = None
+
+  return mesh, mat_prop, bc, elem_body_force
 
   # ----------------------------------------
   
@@ -185,15 +551,15 @@ def createMultiloadProblem(nDOFDesired: int = 10000, L: float = [0.4, 0.2, 0.1],
   mesh.node_indices[load_node1, 3] = 2
   mesh.node_indices[load_node2, 3] = 2 # for plotting
 
-
-
   bc = bound_cond.BC(force = force,
             fixed_dofs = fixed_dofs,
             dirichlet_values = dirichlet_values) 
 
   mat_prop = mat_lib.StructuralMaterial(youngs_modulus=youngs_modulus,
                       poissons_ratio=poissons_ratio)
-  return mesh, mat_prop, bc
+  elem_body_force = None
+
+  return mesh, mat_prop, bc, elem_body_force
 
   # ----------------------------------------
   
@@ -212,14 +578,14 @@ def createLBracketProblem(nDOFDesired: int = 10000, youngs_modulus = 2.1e11, poi
       - mat_prop (StructuralMaterial): Material properties object with structural parameters
       - bc (BC): Boundary conditions object with forces and constraints
   Notes:
-    - The mesh is created from an STL file located at '../TOExamples/LBracket/LBracket.STL'
+    - The mesh is created from an STL file located at '../Models/LBracket/LBracket.STL'
     - Fixed boundary conditions are applied at y = yMax
     - Load is applied in the -y direction on nodes where y > 0.039 and x > 0.09
     - Total applied load is 1000 units distributed equally among loaded nodes
     - Material properties are set to E = 2.1e5 and ν = 0.3
   """
   # Read the STL model, create a mesh of desired size, and a structural problem is posed on it.
-  stl_file = os.path.join(script_dir, '../TOExamples/LBracket/LBracket.STL')
+  stl_file = os.path.join(script_dir, '../Models/LBracket/LBracket.STL')
   nElemsDesired = nDOFDesired/3    # estimate
   mesh = mesher.Mesher()
   
@@ -234,7 +600,7 @@ def createLBracketProblem(nDOFDesired: int = 10000, youngs_modulus = 2.1e11, poi
   mesh.node_indices[fixed_nodes, 3] = 1 # for plotting
 
   node_pts = mesh.node_xyz
-  load_nodes = np.where((node_pts[:, 1] > 0.039) & (node_pts[:, 0] > 0.09))[0] # hard coded    
+  load_nodes = np.where((node_pts[:, 1] > 0.039) & (node_pts[:, 0] > 0.095))[0] # hard coded    
   load_dofs = 3 * load_nodes + 1  # z direction
   mesh.node_indices[load_nodes, 3] = 2 # for plotting
   
@@ -245,70 +611,9 @@ def createLBracketProblem(nDOFDesired: int = 10000, youngs_modulus = 2.1e11, poi
 
   mat_prop = mat_lib.StructuralMaterial(youngs_modulus=youngs_modulus,
                       poissons_ratio=poissons_ratio)
-  return mesh, mat_prop, bc
+  elem_body_force = None
 
-  # ----------------------------------------
-
-def createCentrifugalPlateProblem(nDOFDesired: int = 10000, youngs_modulus = 2.1e11, 
-                               poissons_ratio = 0.28, material_density = 7700):
- 
-  # Read the STL model, create a mesh of desired size, and a structural problem is posed on it.
-  stl_file = os.path.join(script_dir, '../TOExamples/CircularPlateHole/CircularPlateHole.STL')
-
-  nElemsDesired = nDOFDesired/3    # estimate
-  mesh = mesher.Mesher()
-  
-  mesh.createMeshFromSTLFile(stl_file, nElemsDesired=nElemsDesired)
-  mesh.createEdofMatStructural()
-
-
-  centerPt = [0,0,0]
-  axis = [0,0,1]
-  innerRadius = 0.01-mesh.elem_size[0]*0.707
-  outerRadius = 0.01+mesh.elem_size[0]*0.707
-  fixed_nodes = mesh.get_nodes_within_annular_region(centerPt,axis,innerRadius,outerRadius)  
-  fixed_dofs = np.array([3 * fixed_nodes,
-              3 * fixed_nodes + 1,
-              3 * fixed_nodes + 2]).flatten().astype(int)
-  dirichlet_values = 0*np.ones_like(fixed_dofs, dtype = float)
-  mesh.node_indices[fixed_nodes, 3] = 1 # for plotting
-
-
-   # Apply centrifugal on all elements .. not working correctly
-  elem_body_force = np.zeros(3*mesh.num_elems)
-  # omega = 0
-  # for e in range(mesh.num_elems):
-  #   center = mesh.elem_centers[e]
-  #   elem_body_force[3*e:3*e+2] = (material_density*np.prod(mesh.elem_size)) * omega**2 *  center[:2]
-
-  
-  centerPt = [0,0,0]
-  axis = [0,0,1]
-  innerRadius = 0.05-mesh.elem_size[0]*0.707
-  outerRadius = 0.05+mesh.elem_size[0]*0.707
-  load_nodes = mesh.get_nodes_within_annular_region(centerPt,axis,innerRadius,outerRadius)    
-  
- 
-  mesh.node_indices[load_nodes, 3] = 2 # for plotting
-  boundaryForce = np.zeros(3*mesh.num_nodes) 
-  # Apply radial force on each node on the circumference
-  totalLoad = 10000
-  for node in load_nodes:
-    node_pos = mesh.node_xyz[node,:2] # get x,y coordinates
-    r = np.sqrt(np.sum(node_pos**2)) # distance from center
-    if r > 0:
-      # Unit vector in radial direction
-      radial_dir = node_pos/r
-      # Add x and y dofs with force components
-      boundaryForce[3*node] = totalLoad/len(load_nodes) * radial_dir[0]  
-      boundaryForce[3*node + 1] = totalLoad/len(load_nodes) * radial_dir[1]
-
-  bc = bound_cond.BC(force = boundaryForce,fixed_dofs = fixed_dofs,dirichlet_values = dirichlet_values) 
-
-  mat_prop = mat_lib.StructuralMaterial(youngs_modulus=youngs_modulus,
-                      poissons_ratio=poissons_ratio)
   return mesh, mat_prop, bc, elem_body_force
-
 
   # ----------------------------------------
 
@@ -339,14 +644,14 @@ def createGravityBarProblem(nDOFDesired: int = 10000, youngs_modulus = 2.1e11, p
     - elem_body_force: Array of body forces on elements
   Notes
   -----
-  - The STL file must be located at '../TOExamples/VerticalBar/VerticalBar.STL'
+  - The STL file must be located at '../Models/VerticalBar/VerticalBar.STL'
   - The problem fixes all DOFs at the top surface (z = zMax plane)
   - Gravity acts in the negative z direction
   - SolidWorks validation shows maximum displacement of 1.7906e-9 m
   """
 
   # Read the STL model, create a mesh of desired size, and a structural problem is posed on it.
-  stl_file = os.path.join(script_dir, '../TOExamples/VerticalBar/VerticalBar.STL')
+  stl_file = os.path.join(script_dir, '../Models/VerticalBar/VerticalBar.STL')
   print("SolidWorks maximum displacement: 1.7906e-9 m")
   nElemsDesired = nDOFDesired/3    # estimate
   mesh = mesher.Mesher()
@@ -368,12 +673,14 @@ def createGravityBarProblem(nDOFDesired: int = 10000, youngs_modulus = 2.1e11, p
   bc = bound_cond.BC(force = boundaryForce,fixed_dofs = fixed_dofs,dirichlet_values = dirichlet_values) 
   mat_prop = mat_lib.StructuralMaterial(youngs_modulus=youngs_modulus,
                       poissons_ratio=poissons_ratio)
+
   return mesh, mat_prop, bc, elem_body_force
 
   # ----------------------------------------
   
 def createGravityPlateProblem(nDOFDesired: int = 10000, L: float = [1.0, 0.5, 0.01],
-                               youngs_modulus = 2e11, poissons_ratio = 0.3,material_density = 7700):
+                               youngs_modulus = 2e11, poissons_ratio = 0.3,material_density = 7700,
+                               verticalForcePercent = 0):
   nVoxelsDesired = nDOFDesired/3    
   # Let the number of voxels be proportional to the length in each direction
   alpha = (nVoxelsDesired/(L[0]*L[1]*L[2]))**(1/3)
@@ -392,18 +699,19 @@ def createGravityPlateProblem(nDOFDesired: int = 10000, L: float = [1.0, 0.5, 0.
   fixed_dofs = np.array([3 * fixed_nodes,
               3 * fixed_nodes + 1,
               3 * fixed_nodes + 2]).flatten().astype(int)
-  
   dirichlet_values = 0*np.ones_like(fixed_dofs, dtype = float)
   mesh.node_indices[fixed_nodes, 3] = 1
+  elem_body_force = np.zeros(3*mesh.num_elems)
+  elem_body_force[1::3] = -9.81*material_density*np.prod(mesh.elem_size)    # Apply gravity in -y direction to each element
 
-  load_nodes = mesh.get_nodes_from_locations([L[0]/2, L[1], L[2]/2])  
-  load_dofs = 3 * load_nodes + 1  
-
+  verticalForce = verticalForcePercent*np.linalg.norm(elem_body_force)
   boundary_force = np.zeros(3*mesh.num_nodes)
-  totalLoad = 0
-
-  boundary_force[load_dofs] = -totalLoad/len(load_nodes)
-
+  node_pts = mesh.node_xyz
+  # Apply a small force in the middle of the plate
+  load_nodes = np.where((np.abs(node_pts[:, 0]-L[0]/2) < mesh.elem_size[0]/2) & (np.abs(node_pts[:, 1] - L[1]/2) <mesh.elem_size[1]/2))[0] # hard coded    
+  load_dof = 3 * load_nodes + 1  # y direction
+  boundary_force[load_dof] = -verticalForce/len(load_nodes)
+  mesh.node_indices[load_nodes, 3] = 2 # for plotting
   bc = bound_cond.BC(force = boundary_force,
             fixed_dofs = fixed_dofs,
             dirichlet_values = dirichlet_values) 
@@ -411,10 +719,8 @@ def createGravityPlateProblem(nDOFDesired: int = 10000, L: float = [1.0, 0.5, 0.
   mat_prop = mat_lib.StructuralMaterial(youngs_modulus=youngs_modulus,
                       poissons_ratio=poissons_ratio)
   
-  elem_body_force = np.zeros(3*mesh.num_elems)
-  elem_body_force[1::3] = -9.81*material_density*np.prod(mesh.elem_size)    # Apply gravity in -y direction to each element
-
-  return mesh, mat_prop, bc,elem_body_force
+  
+  return mesh, mat_prop, bc, elem_body_force
 
   # ----------------------------------------
   
@@ -448,12 +754,12 @@ def createArrowHeadProblem(nDOFDesired: int = 10000, youngs_modulus = 2.1e11, po
 
   Notes
   -----
-  - The STL file must be located at '../TOExamples/ArrowHead/ArrowHead3x3.STL'
+  - The STL file must be located at '../Models/ArrowHead/ArrowHead3x3.STL'
   - The problem fixes all DOFs at z=0 plane
   - Load is distributed uniformly on the top surface (z=zMax plane)
   """
   # Read the STL model, create a mesh of desired size, and a structural problem is posed on it.
-  stl_file = os.path.join(script_dir, '../TOExamples/ArrowHead/ArrowHead3x3.STL')
+  stl_file = os.path.join(script_dir, '../Models/ArrowHead/ArrowHead3x3.STL')
   nElemsDesired = nDOFDesired/3    # estimate
   mesh = mesher.Mesher()
   
@@ -478,7 +784,9 @@ def createArrowHeadProblem(nDOFDesired: int = 10000, youngs_modulus = 2.1e11, po
 
   mat_prop = mat_lib.StructuralMaterial(youngs_modulus=youngs_modulus,
                       poissons_ratio=poissons_ratio)
-  return mesh, mat_prop, bc
+  elem_body_force = None
+
+  return mesh, mat_prop, bc, elem_body_force
 
   # ----------------------------------------
   
@@ -496,14 +804,14 @@ def createCompliantMechanismProblem(nDOFDesired: int = 10000, youngs_modulus = 2
       - mat_prop (StructuralMaterial): Material properties object with structural parameters
       - bc (BC): Boundary conditions object with forces and constraints
   Notes:
-    - The mesh is created from an STL file located at '../TOExamples/LBracket/LBracket.STL'
+    - The mesh is created from an STL file located at '../Models/LBracket/LBracket.STL'
     - Fixed boundary conditions are applied at y = yMax
     - Load is applied in the -y direction on nodes where y > 0.039 and x > 0.09
     - Total applied load is 1000 units distributed equally among loaded nodes
     - Material properties are set to E = 2.1e5 and ν = 0.3
   """
   # Read the STL model, create a mesh of desired size, and a structural problem is posed on it.
-  stl_file = os.path.join(script_dir, '../TOExamples/CompliantMechanism/CompliantMechanism.STL')
+  stl_file = os.path.join(script_dir, '../Models/CompliantMechanism/CompliantMechanism.STL')
   nElemsDesired = nDOFDesired/3    # estimate
   mesh = mesher.Mesher()
   
@@ -530,37 +838,11 @@ def createCompliantMechanismProblem(nDOFDesired: int = 10000, youngs_modulus = 2
   
   mat_prop = mat_lib.StructuralMaterial(youngs_modulus=youngs_modulus,
                       poissons_ratio=poissons_ratio)
-  return mesh, mat_prop, bc
+  elem_body_force = None
 
-  # ----------------------------------------
-  
-def createAlcoaProblem(youngs_modulus = 2.1e11, poissons_ratio = 0.3):
-  # This is an example where an existing mesh is read, and a structural problem is posed on it.
-  mesh = mesher.Mesher()
-  mesh.read_pareto_mesh("../meshFiles/AlcoaGrabCAD.msh")
-  mesh.createEdofMatStructural()
-  node_indices = mesh.node_indices
+  return mesh, mat_prop, bc, elem_body_force
 
-  fixed_nodes = np.where(node_indices[:, 3] == 1)[0]
-  fixed_dofs = np.array([3 * fixed_nodes,
-              3 * fixed_nodes + 1,
-                3 * fixed_nodes + 2]).flatten().astype(int)
-  dirichlet_values = np.zeros_like(fixed_dofs, dtype = float)
-
-  load_nodes = np.where(node_indices[:, 3] == 2)[0]
-  load_dofs = 3 * load_nodes + 1  # y direction
-  force = np.zeros(3*mesh.num_nodes)
-  force[load_dofs] = -1000.
-
-  bc = bound_cond.BC(force = force,
-            fixed_dofs = fixed_dofs,
-            dirichlet_values = dirichlet_values)
-
-  mat_prop = mat_lib.StructuralMaterial(youngs_modulus=youngs_modulus,
-                      poissons_ratio=poissons_ratio)
-  return mesh, mat_prop, bc
-
-  # ----------------------------------------
+  # ---------------------------------------
   
 def createBeamSurfaceLoadProblem(nDOFDesired: int = 20000, L: float = [0.1, 0.01, 0.01],
                   youngs_modulus = 3e7, poissons_ratio = 0.3,totalLoad = 30000):
@@ -601,13 +883,13 @@ def createBeamSurfaceLoadProblem(nDOFDesired: int = 20000, L: float = [0.1, 0.01
 
   mat_prop = mat_lib.StructuralMaterial(youngs_modulus=youngs_modulus,
                       poissons_ratio=poissons_ratio)
-  return mesh, mat_prop, bc
+  elem_body_force = None
 
-
+  return mesh, mat_prop, bc, elem_body_force
   # ----------------------------------------
   
 def createFilletedBeamProblem(nDOFDesired=50000, youngs_modulus = 2.1e5, poissons_ratio = 0.3,totalLoad = 1000):
-  stl_file = os.path.join(script_dir, '../TOExamples/FilletedBeam/FilletedBeam.STL')
+  stl_file = os.path.join(script_dir, '../Models/FilletedBeam/FilletedBeam.STL')
 
   mesh = mesher.Mesher()
   nElemsDesired = round(nDOFDesired/3)    # estimate
@@ -633,14 +915,18 @@ def createFilletedBeamProblem(nDOFDesired=50000, youngs_modulus = 2.1e5, poisson
 
   mat_prop = mat_lib.StructuralMaterial(youngs_modulus=youngs_modulus,
                       poissons_ratio=poissons_ratio)
-  return mesh, mat_prop, bc
+  elem_body_force = None
 
-def createBliskModelProblem(nDOFDesired: int = 10000, youngs_modulus = 2.1e11, 
-                               poissons_ratio = 0.28, material_density = 7700,omega = 104.72):
+  return mesh, mat_prop, bc, elem_body_force
+
+  # ----------------------------------------
+  
+def createCentrifugalPlateProblem(nDOFDesired: int = 10000, youngs_modulus = 2e11, 
+                               poissons_ratio = 0.28, material_density = 7700,
+                               rpm = 20000,radialForce =  1):
  
   # Read the STL model, create a mesh of desired size, and a structural problem is posed on it.
-  stl_file = os.path.join(script_dir, '../TOExamples/BliskModel/BliskModel.STL')
-
+  stl_file = os.path.join(script_dir, '../Models/CircularPlateHole/CircularPlateHole.STL')
 
   nElemsDesired = nDOFDesired/3    # estimate
   mesh = mesher.Mesher()
@@ -649,45 +935,364 @@ def createBliskModelProblem(nDOFDesired: int = 10000, youngs_modulus = 2.1e11,
   mesh.createEdofMatStructural()
 
 
+  # fix inner radius
   centerPt = [0,0,0]
-  axis = [1,0,0]
-
-  rInner = 0.01085
-  innerRadius = rInner-mesh.elem_size[0]*0.707
-  outerRadius = rInner+mesh.elem_size[0]*0.707
-  fixed_nodes = mesh.get_nodes_within_annular_region(centerPt,axis,innerRadius,outerRadius)  
+  axis = [0,0,1]
+  innerRadius = 0.01
+  fixed_nodes = mesh.get_nodes_within_annular_region(centerPt,axis,innerRadius-mesh.elem_size[0]*0.707,
+                                                     innerRadius+mesh.elem_size[0]*0.707)  
   fixed_dofs = np.array([3 * fixed_nodes,
               3 * fixed_nodes + 1,
               3 * fixed_nodes + 2]).flatten().astype(int)
   dirichlet_values = 0*np.ones_like(fixed_dofs, dtype = float)
   mesh.node_indices[fixed_nodes, 3] = 1 # for plotting
 
-  rOuter = 0.0565
-  innerRadius = rOuter-mesh.elem_size[0]*0.707
-  outerRadius = rOuter+mesh.elem_size[0]*0.707
-  load_nodes = mesh.get_nodes_within_annular_region(centerPt,axis,innerRadius,outerRadius)    
+
+   # Apply centrifugal on all elements .. not working correctly
+  elem_body_force = np.zeros(3*mesh.num_elems)
+  omega = 2*np.pi*rpm/60
+  for e in range(mesh.num_elems):
+    center = mesh.elem_centers[e]
+    elem_body_force[3*e:3*e+2] = (material_density*np.prod(mesh.elem_size)) * omega**2 *  center[:2]
+
+  #print("Norm of centrifugal force ",np.linalg.norm(elem_body_force))
+  # Apply centrifugal force on each node on the circumference
+  # this is in addition to the body force
+  outerRadius = 0.05
+  load_nodes = mesh.get_nodes_within_annular_region(centerPt,axis,outerRadius-mesh.elem_size[0]*0.707,
+                                                    outerRadius+mesh.elem_size[0]*0.707)    
   
- 
   mesh.node_indices[load_nodes, 3] = 2 # for plotting
   boundaryForce = np.zeros(3*mesh.num_nodes) 
-  # Apply radial force on each node on the circumference
-  totalLoad = 10000
+  # Apply radial force on each node on the circumference 
+  
   for node in load_nodes:
-    # Get y,z coordinates since loading is in y-z plane
-    node_pos = mesh.node_xyz[node,1:] # get y,z coordinates
-    r = np.sqrt(np.sum(node_pos**2)) # radial distance from axis
+    node_pos = mesh.node_xyz[node,:2] # get x,y coordinates
+    r = np.sqrt(np.sum(node_pos**2)) # distance from center
     if r > 0:
       # Unit vector in radial direction
       radial_dir = node_pos/r
-      # Add y and z dofs with radial force components 
-      boundaryForce[3*node + 1] = totalLoad/len(load_nodes) * radial_dir[0] # y component
-      boundaryForce[3*node + 2] = totalLoad/len(load_nodes) * radial_dir[1] # z component
-
+      # Add x and y dofs with force components
+      boundaryForce[3*node] = radialForce/len(load_nodes) * radial_dir[0]  
+      boundaryForce[3*node + 1] = radialForce/len(load_nodes) * radial_dir[1]
+      boundaryForce[3*node + 2] = 0  # No force in z direction for centrifugal effect
   bc = bound_cond.BC(force = boundaryForce,fixed_dofs = fixed_dofs,dirichlet_values = dirichlet_values) 
 
   mat_prop = mat_lib.StructuralMaterial(youngs_modulus=youngs_modulus,
                       poissons_ratio=poissons_ratio)
-  return mesh, mat_prop, bc
+  
+  return mesh, mat_prop, bc, elem_body_force
+
+# ----------------------------------------
+
+def createTorquePlateProblem(nDOFDesired: int = 10000, youngs_modulus = 2e11, 
+                               poissons_ratio = 0.28, torque =  100):
+ 
+  # Read the STL model, create a mesh of desired size, and a structural problem is posed on it.
+  stl_file = os.path.join(script_dir, '../Models/CircularPlateHole/CircularPlateHole.STL')
+
+  nElemsDesired = nDOFDesired/3    # estimate
+  mesh = mesher.Mesher()
+  
+  mesh.createMeshFromSTLFile(stl_file, nElemsDesired=nElemsDesired)
+  mesh.createEdofMatStructural()
+
+
+  # fix inner radius
+  centerPt = [0,0,0]
+  axis = [0,0,1]
+  innerRadius = 0.01
+  fixed_nodes = mesh.get_nodes_within_annular_region(centerPt,axis,innerRadius-mesh.elem_size[0]*0.707,
+                                                     innerRadius+mesh.elem_size[0]*0.707)  
+  fixed_dofs = np.array([3 * fixed_nodes,
+              3 * fixed_nodes + 1,
+              3 * fixed_nodes + 2]).flatten().astype(int)
+  dirichlet_values = 0*np.ones_like(fixed_dofs, dtype = float)
+  mesh.node_indices[fixed_nodes, 3] = 1 # for plotting
+
+  elem_body_force = None
+  
+  outerRadius = 0.05
+  load_nodes = mesh.get_nodes_within_annular_region(centerPt,axis,outerRadius-mesh.elem_size[0]*0.707,
+                                                    outerRadius+mesh.elem_size[0]*0.707)    
+  
+  mesh.node_indices[load_nodes, 3] = 2 # for plotting
+  boundaryForce = np.zeros(3*mesh.num_nodes) 
+  # Apply torque force on each node on the circumference 
+  
+  for node in load_nodes:
+    node_pos = mesh.node_xyz[node,:2] # get x,y coordinates 
+    r = np.sqrt(np.sum(node_pos**2)) # distance from center
+    if r > 0:
+      # Unit vector in tangential direction (perpendicular to radial)
+      tangent_dir = np.array([-node_pos[1], node_pos[0]])/r
+      # Apply tangential force to create torque
+      boundaryForce[3*node] = torque/(r*len(load_nodes)) * tangent_dir[0]
+      boundaryForce[3*node + 1] = torque/(r*len(load_nodes)) * tangent_dir[1]
+  bc = bound_cond.BC(force = boundaryForce,fixed_dofs = fixed_dofs,dirichlet_values = dirichlet_values) 
+
+  mat_prop = mat_lib.StructuralMaterial(youngs_modulus=youngs_modulus,
+                      poissons_ratio=poissons_ratio)
+  
+  return mesh, mat_prop, bc, elem_body_force
+
+# ----------------------------------------
+
+def createThreeHoleBracketProblem(nDOFDesired: int = 10000, youngs_modulus = 2e11, 
+                               poissons_ratio = 0.28, totalLoad =  10000):
+ 
+  # Read the STL model, create a mesh of desired size, and a structural problem is posed on it.
+  stl_file = os.path.join(script_dir, '../Models/ThreeHoleBracket/ThreeHoleBracket.STL')
+
+  nElemsDesired = nDOFDesired/3    # estimate
+  mesh = mesher.Mesher()
+  
+  mesh.createMeshFromSTLFile(stl_file, nElemsDesired=nElemsDesired)
+  mesh.createEdofMatStructural()
+
+  # fix top hole
+  centerPt = [0.015,0.065,0.020]
+  axis = [0,0,1]
+  radius = 0.005
+  fixed_nodes_1 = mesh.get_nodes_within_annular_region(centerPt,axis,radius-mesh.elem_size[0]*0.707,
+                                                     radius+mesh.elem_size[0]*0.707)  
+  
+  # fix bottom hole
+  centerPt = [0.015,0.015,0.020]
+  axis = [0,0,1]
+  radius = 0.005
+  fixed_nodes_2 = mesh.get_nodes_within_annular_region(centerPt,axis,radius-mesh.elem_size[0]*0.707,
+                                                     radius+mesh.elem_size[0]*0.707)  
+  
+  fixed_nodes = np.union1d(fixed_nodes_1,fixed_nodes_2)
+  fixed_dofs = np.array([3 * fixed_nodes,
+              3 * fixed_nodes + 1,
+              3 * fixed_nodes + 2]).flatten().astype(int)
+  dirichlet_values = 0*np.ones_like(fixed_dofs, dtype = float)
+  mesh.node_indices[fixed_nodes, 3] = 1 # for plotting
+
+  elem_body_force = None
+  
+  # load on right hole
+  centerPt = [0.065,0.015,0.020]
+  axis = [0,0,1]
+  radius = 0.005
+  load_nodes = mesh.get_nodes_within_annular_region(centerPt,axis,radius-mesh.elem_size[0]*0.707,
+                                                     radius+mesh.elem_size[0]*0.707)     
+  
+  mesh.node_indices[load_nodes, 3] = 2 # for plotting
+  load_dofs = 3 * load_nodes + 1  # y direction
+
+  load_per_dof = -totalLoad/len(load_nodes)
+  force = np.zeros(3*mesh.num_nodes)
+  force[load_dofs] = load_per_dof
+  bc = bound_cond.BC(force = force,fixed_dofs = fixed_dofs,dirichlet_values = dirichlet_values) 
+
+  mat_prop = mat_lib.StructuralMaterial(youngs_modulus=youngs_modulus,
+                      poissons_ratio=poissons_ratio)
+  
+  return mesh, mat_prop, bc, elem_body_force
+
+
+# ----------------------------------------
+
+def createBliskQuarterProblem(nDOFDesired: int = 10000, youngs_modulus = 2.1e11, 
+                               poissons_ratio = 0.28, material_density = 7700,rpm = 10000,radialForce =10000,
+																	   downwardForce = 0):
+ 
+  # Read the STL model, create a mesh of desired size, and a structural problem is posed on it.
+  stl_file = os.path.join(script_dir, '../Models/BliskModel/BliskQuarter.STL')
+
+
+  nElemsDesired = nDOFDesired/3    # estimate
+  mesh = mesher.Mesher()
+
+  mesh.createMeshFromSTLFile(stl_file, nElemsDesired=nElemsDesired)
+  mesh.createEdofMatStructural()
+
+  # fix inner radius
+  centerPt = [0,0,0]
+  axis = [0,0,1]
+  innerRadius = 0.01085
+  fixed_nodes = mesh.get_nodes_within_annular_region(centerPt,axis,innerRadius-mesh.elem_size[0]*0.707,
+                                                     innerRadius+mesh.elem_size[0]*0.707)  
+  fixed_dofs = np.array([3 * fixed_nodes,
+              3 * fixed_nodes + 1,
+              3 * fixed_nodes + 2]).flatten().astype(int)
+  dirichlet_values = 0*np.ones_like(fixed_dofs, dtype = float)
+  mesh.node_indices[fixed_nodes, 3] = 1 # for plotting
+
+  elem_body_force = np.zeros(3*mesh.num_elems)
+  omega = 2*np.pi*rpm/60
+  for e in range(mesh.num_elems):
+    center = mesh.elem_centers[e]
+    elem_body_force[3*e:3*e+2] = (material_density*np.prod(mesh.elem_size)) * omega**2 *  center[:2]
+
+  print("total body force ",np.sum(elem_body_force[3::3]))
+  # Apply centrifugal force on each node on the circumference
+  # this is in addition to the body force
+  outerRadius = 0.0565
+  load_nodes = mesh.get_nodes_within_annular_region(centerPt,axis,outerRadius-mesh.elem_size[0]*0.707,
+                                                    outerRadius+mesh.elem_size[0]*0.707)    
+  
+  mesh.node_indices[load_nodes, 3] = 2 # for plotting
+  boundaryForce = np.zeros(3*mesh.num_nodes) 
+  # Apply radial force on each node on the circumference 
+  
+  for node in load_nodes:
+    node_pos = mesh.node_xyz[node,:2] # get x,y coordinates
+    r = np.sqrt(np.sum(node_pos**2)) # distance from center
+    if r > 0:
+      # Unit vector in radial direction
+      radial_dir = node_pos/r
+      # Add x and y dofs with force components
+      boundaryForce[3*node] = radialForce/len(load_nodes) * radial_dir[0]  
+      boundaryForce[3*node + 1] = radialForce/len(load_nodes) * radial_dir[1]
+      boundaryForce[3*node + 2] = -downwardForce/len(load_nodes) 
+  bc = bound_cond.BC(force = boundaryForce,fixed_dofs = fixed_dofs,dirichlet_values = dirichlet_values) 
+
+  mat_prop = mat_lib.StructuralMaterial(youngs_modulus=youngs_modulus,
+                      poissons_ratio=poissons_ratio)
+  
+  return mesh, mat_prop, bc, elem_body_force
+
+
+# ----------------------------------------
+
+def createBliskSectionWithBlade(nDOFDesired: int = 10000, youngs_modulus = 2.1e11, 
+                               poissons_ratio = 0.28, material_density = 7700,rpm = 10000,radialForce =0):
+ 
+  # Read the STL model, create a mesh of desired size, and a structural problem is posed on it.
+  stl_file = os.path.join(script_dir, '../Models/BliskModel/BliskSectionWithBlade.STL')
+
+
+  nElemsDesired = nDOFDesired/3    # estimate
+  mesh = mesher.Mesher()
+
+  mesh.createMeshFromSTLFile(stl_file, nElemsDesired=nElemsDesired)
+  mesh.createEdofMatStructural()
+
+  # fix inner radius
+  centerPt = [0,0,0]
+  axis = [0,0,1]
+  innerRadius = 0.01085
+  fixed_nodes = mesh.get_nodes_within_annular_region(centerPt,axis,innerRadius-mesh.elem_size[0]*0.707,
+                                                     innerRadius+mesh.elem_size[0]*0.707)  
+  fixed_dofs = np.array([3 * fixed_nodes,
+              3 * fixed_nodes + 1,
+              3 * fixed_nodes + 2]).flatten().astype(int)
+  dirichlet_values = 0*np.ones_like(fixed_dofs, dtype = float)
+  mesh.node_indices[fixed_nodes, 3] = 1 # for plotting
+
+
+  elem_body_force = np.zeros(3*mesh.num_elems)
+  omega = 2*np.pi*rpm/60
+  for e in range(mesh.num_elems):
+    center = mesh.elem_centers[e]
+    # Add centrifugal force to each element in xy plane
+    elem_body_force[3*e:3*e+2] = (material_density*np.prod(mesh.elem_size)) * omega**2 *  center[:2]
+
+  print("total body force ",np.linalg.norm(elem_body_force))
+  outerRadius = 0.0558
+  load_nodes = mesh.get_nodes_within_annular_region(centerPt,axis,outerRadius-mesh.elem_size[0]*0.707,
+                                                    outerRadius+mesh.elem_size[0]*0.707)    
+  
+  mesh.node_indices[load_nodes, 3] = 2 # for plotting
+  boundaryForce = np.zeros(3*mesh.num_nodes) 
+  # Apply radial force on each node on the circumference 
+  
+  for node in load_nodes:
+    node_pos = mesh.node_xyz[node,:2] # get x,y coordinates
+    r = np.sqrt(np.sum(node_pos**2)) # distance from center
+    if r > 0:
+      # Unit vector in radial direction
+      radial_dir = node_pos/r
+      # Add x and y dofs with force components
+      boundaryForce[3*node] = radialForce/len(load_nodes) * radial_dir[0]  
+      boundaryForce[3*node + 1] = radialForce/len(load_nodes) * radial_dir[1]
+  
+  bc = bound_cond.BC(force = boundaryForce,fixed_dofs = fixed_dofs,dirichlet_values = dirichlet_values) 
+
+  mat_prop = mat_lib.StructuralMaterial(youngs_modulus=youngs_modulus,
+                      poissons_ratio=poissons_ratio)
+   
+  return mesh, mat_prop, bc, elem_body_force
 
 
   # ----------------------------------------
+
+def createKnuckleAssemblyProblem(nDOFDesired: int = 10000, youngs_modulus = 2e11, 
+                               poissons_ratio = 0.28, totalLoad =  10000):
+ 
+  # Read the STL model, create a mesh of desired size, and a structural problem is posed on it.
+  stl_file = os.path.join(script_dir, '../Models/KnuckleAssembly/KnuckleAssembly.STL')
+
+  nElemsDesired = nDOFDesired/3    # estimate
+  mesh = mesher.Mesher()
+  
+  mesh.createMeshFromSTLFile(stl_file, nElemsDesired=nElemsDesired)
+  mesh.createEdofMatStructural()
+
+  node_pts = mesh.node_xyz
+  fixed_nodes_1 = np.where(node_pts[:, 0] == np.min(node_pts[:, 0]))[0]
+  fixed_nodes_2 = np.where(node_pts[:, 0] == np.max(node_pts[:, 0]))[0]
+  fixed_nodes = np.union1d(fixed_nodes_1,fixed_nodes_2)
+  fixed_dofs = np.array([3 * fixed_nodes,
+              3 * fixed_nodes + 1,
+              3 * fixed_nodes + 2]).flatten().astype(int)
+  dirichlet_values = 0*np.ones_like(fixed_dofs, dtype = float)
+  mesh.node_indices[fixed_nodes, 3] = 1 # for plotting
+  
+  load_nodes = np.where(node_pts[:, 1] == np.max(node_pts[:, 1]))[0]       
+  
+  mesh.node_indices[load_nodes, 3] = 2 # for plotting
+  load_dofs = 3 * load_nodes + 1  # y direction
+
+  load_per_dof = -totalLoad/len(load_nodes)
+  force = np.zeros(3*mesh.num_nodes)
+  force[load_dofs] = load_per_dof
+  bc = bound_cond.BC(force = force,fixed_dofs = fixed_dofs,dirichlet_values = dirichlet_values) 
+
+  mat_prop = mat_lib.StructuralMaterial(youngs_modulus=youngs_modulus,
+                      poissons_ratio=poissons_ratio)
+  
+  elem_body_force = None
+  return mesh, mat_prop, bc, elem_body_force
+
+
+def createTableProblem(nDOFDesired: int = 10000, youngs_modulus = 1e7, 
+                               poissons_ratio = 0.28, totalLoad =  1000):
+ 
+  # Read the STL model, create a mesh of desired size, and a structural problem is posed on it.
+  stl_file = os.path.join(script_dir, '../Models/Table/Table.STL')
+
+  nElemsDesired = nDOFDesired/3    # estimate
+  mesh = mesher.Mesher()
+  
+  mesh.createMeshFromSTLFile(stl_file, nElemsDesired=nElemsDesired)
+  mesh.createEdofMatStructural()
+
+  node_pts = mesh.node_xyz
+  fixed_nodes = np.where(node_pts[:, 1] == np.min(node_pts[:, 1]))[0]
+
+  fixed_dofs = np.array([3 * fixed_nodes,
+              3 * fixed_nodes + 1,
+              3 * fixed_nodes + 2]).flatten().astype(int)
+  dirichlet_values = 0*np.ones_like(fixed_dofs, dtype = float)
+  mesh.node_indices[fixed_nodes, 3] = 1 # for plotting
+  
+  load_nodes = np.where(node_pts[:, 1] == np.max(node_pts[:, 1]))[0]       
+  
+  mesh.node_indices[load_nodes, 3] = 2 # for plotting
+  load_dofs = 3 * load_nodes + 1  # y direction
+
+  load_per_dof = -totalLoad/len(load_nodes)
+  force = np.zeros(3*mesh.num_nodes)
+  force[load_dofs] = load_per_dof
+  bc = bound_cond.BC(force = force,fixed_dofs = fixed_dofs,dirichlet_values = dirichlet_values) 
+
+  mat_prop = mat_lib.StructuralMaterial(youngs_modulus=youngs_modulus,
+                      poissons_ratio=poissons_ratio)
+  
+  elem_body_force = None
+  return mesh, mat_prop, bc, elem_body_force

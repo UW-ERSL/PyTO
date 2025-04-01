@@ -5,7 +5,38 @@ from scipy.sparse import coo_matrix
 import mesher
 
 
-def createSmoothingFilter(mesh: mesher.Mesher):
+def createSmoothingFilter(mesh: mesher.Mesher, rel_filter_radius: float = 1.5):
+	"""Create a smoothing filter using the provided formula.
+
+	Args:
+		mesh: The mesh object.
+		rel_filter_radius: The relative minimum radius for the filter; the radius is scaled by elem size.
+
+	Returns:
+		tuple containing:
+			H: Sparse matrix representing the smoothing filter.
+			Hs: Array of row sums of H matrix.
+	"""
+	num_elems = mesh.num_elems
+	iH = []
+	jH = []
+	sH = []
+	r_min = rel_filter_radius * mesh.elem_size[0]
+	for e in range(num_elems):
+		elemCenter = mesh.elem_centers[e, :]
+		elems_within_radius = mesh.get_elems_within_radius(elemCenter, r_min)
+		for i in elems_within_radius:
+			dist = np.linalg.norm(mesh.elem_centers[e, :] - mesh.elem_centers[i, :])
+			weight = np.exp(-1*dist**2)
+			iH.append(e)
+			jH.append(i)
+			sH.append(weight)
+
+	H = coo_matrix((sH, (iH, jH)), shape=(num_elems, num_elems)).tocsc()
+	Hs = np.array(H.sum(1)).squeeze()
+	return H, Hs
+
+def createSmoothingFilterOld(mesh: mesher.Mesher, rel_filter_radius: float = 1.1):
 	## Prepare filter
 	nfilter = int(27 * mesh.num_elems)
 	iH = np.zeros(nfilter)
@@ -52,9 +83,11 @@ def createXSymmetryFilter(mesh: mesher.Mesher) -> tuple[coo_matrix, np.ndarray]:
 	for i in range(num_elems):
 		elemCenter = mesh.elem_centers[i, :]
 		mirror_x = 2 * x_mid - elemCenter[0]
-		otherElemCenter = [mirror_x, elemCenter[1], elemCenter[2]]
-		distances = np.linalg.norm(mesh.elem_centers - otherElemCenter, axis=1)
-		mirror_idx = np.argmin(distances)
+		otherElemCenter = np.array([mirror_x, elemCenter[1], elemCenter[2]])
+		mirror_idx = mesh.get_element_near_point(otherElemCenter)
+		if (mirror_idx == -1):
+			continue
+		# Check if the closest element is the same as the current element
 		if (mirror_idx == i):
 			rows.append(i)
 			cols.append(i)
@@ -90,9 +123,10 @@ def createYSymmetryFilter(mesh: mesher.Mesher) -> tuple[coo_matrix, np.ndarray]:
 	for i in range(num_elems):
 		elemCenter = mesh.elem_centers[i, :]
 		mirror_y = 2 * y_mid - elemCenter[1]
-		otherElemCenter = [elemCenter[0], mirror_y, elemCenter[2]]
-		distances = np.linalg.norm(mesh.elem_centers - otherElemCenter, axis=1)
-		mirror_idy = np.argmin(distances)
+		otherElemCenter = np.array([elemCenter[0], mirror_y, elemCenter[2]])
+		mirror_idy = mesh.get_element_near_point(otherElemCenter)
+		if (mirror_idy == -1):
+			continue
 		if (mirror_idy == i):
 			rows.append(i)
 			cols.append(i)
@@ -130,9 +164,10 @@ def createZSymmetryFilter(mesh: mesher.Mesher) -> tuple[coo_matrix, np.ndarray]:
 	for i in range(num_elems):
 		elemCenter = mesh.elem_centers[i, :]
 		mirror_z = 2 * z_mid - elemCenter[2]
-		otherElemCenter = [elemCenter[0], elemCenter[1], mirror_z]
-		distances = np.linalg.norm(mesh.elem_centers - otherElemCenter, axis=1)
-		mirror_idz = np.argmin(distances)
+		otherElemCenter = np.array([elemCenter[0], elemCenter[1], mirror_z])
+		mirror_idz = mesh.get_element_near_point(otherElemCenter)
+		if (mirror_idz == -1):
+			continue
 		if (mirror_idz == i):
 			rows.append(i)
 			cols.append(i)
@@ -188,10 +223,8 @@ def createAngularSymmetryFilter(mesh: mesher.Mesher, n_fold: int) -> tuple[coo_m
 		otherElemCenters = np.column_stack((new_x.flatten(), 
 										   new_y.flatten(), 
 										   np.full_like(new_x.flatten(), elemCenter[2])))
-		
-		# Compute all distances at once
-		distances = np.linalg.norm(mesh.elem_centers[None, :, :] - otherElemCenters[:, None, :], axis=2)
-		sym_indices = np.argmin(distances, axis=1)
+		# Find nearest elements for each symmetric position
+		sym_indices = [mesh.get_element_near_point(center) for center in otherElemCenters]
 		
 		# Append to COO matrix components
 		rows.extend([i] * (n_fold - 1))
@@ -202,7 +235,7 @@ def createAngularSymmetryFilter(mesh: mesher.Mesher, n_fold: int) -> tuple[coo_m
 	return HAZ
 
 
-def createXExtrudeFilter(mesh: mesher.Mesher) -> tuple[coo_matrix, np.ndarray]:
+def createXExtrudeFilter(mesh: mesher.Mesher):	
 	"""Create a filter matrix for extruding elements all the way through in the X direction.
 	
 	Args:
@@ -215,7 +248,7 @@ def createXExtrudeFilter(mesh: mesher.Mesher) -> tuple[coo_matrix, np.ndarray]:
 	"""
 	num_elems = mesh.num_elems
 	x_max = mesh.elem_centers[:, 0].max()
-	
+	x_min = mesh.elem_centers[:, 0].min()
 	# Initialize COO matrix arrays
 	rows = []
 	cols = []
@@ -223,27 +256,113 @@ def createXExtrudeFilter(mesh: mesher.Mesher) -> tuple[coo_matrix, np.ndarray]:
 	
 	for i in range(num_elems):
 		elemCenter = mesh.elem_centers[i, :]
-		extrude_x = x_max + (x_max - elemCenter[0])
-		otherElemCenter = [extrude_x, elemCenter[1], elemCenter[2]]
-		distances = np.linalg.norm(mesh.elem_centers - otherElemCenter, axis=1)
-		extrude_idx = np.argmin(distances)
-		if (extrude_idx == i):
+		# Find all elements along the x-axis for current y,z position
+		# Count unique x positions in mesh
+		num_x_layers = mesh.grid[0]
+		x_positions = np.linspace(x_min, x_max, num_x_layers)
+		matching_elems = []
+		for x in x_positions:
+			test_point = np.array([x, elemCenter[1], elemCenter[2]])
+			elem_id = mesh.get_element_near_point(test_point)
+			if elem_id not in matching_elems:
+				matching_elems.append(elem_id)
+	
+		# Set equal weights for all matching elements
+		weight = 1.0 / len(matching_elems)
+		for matching_elem in matching_elems:
 			rows.append(i)
-			cols.append(i)
-			data.append(1.0)
-		else:
-			rows.append(i)
-			cols.append(i)
-			data.append(0.5)
-			rows.append(i)
-			cols.append(extrude_idx)
-			data.append(0.5)
+			cols.append(matching_elem)
+			data.append(weight)
 
 	HXE = coo_matrix((data, (rows, cols)), shape=(num_elems, num_elems)).tocsc()
-	HXEs = np.array(HXE.sum(1)).squeeze()
-	return HXE, HXEs
+	return HXE
 
-def createZBuildFilter(mesh: mesher.Mesher) -> tuple[coo_matrix, np.ndarray]:
+def createYExtrudeFilter(mesh: mesher.Mesher):
+	"""Create a filter matrix for extruding elements all the way through in the Y direction.
+	
+	Args:
+		mesh: The mesh object.
+	
+	Returns:
+		tuple containing:
+			HYE: Sparse matrix that when multiplied with density vector enforces Y extrusion
+			HYEs: Array of row sums of HYE matrix
+	"""
+	num_elems = mesh.num_elems
+	y_max = mesh.elem_centers[:, 1].max()
+	y_min = mesh.elem_centers[:, 1].min()
+	# Initialize COO matrix arrays
+	rows = []
+	cols = []
+	data = []
+	
+	for i in range(num_elems):
+		elemCenter = mesh.elem_centers[i, :]
+		# Find all elements along the y-axis for current x,z position
+		# Count unique y positions in mesh
+		num_y_layers = mesh.grid[1]
+		y_positions = np.linspace(y_min, y_max, num_y_layers)
+		matching_elems = []
+		for y in y_positions:
+			test_point = np.array([elemCenter[0], y, elemCenter[2]])
+			elem_id = mesh.get_element_near_point(test_point)
+			if elem_id not in matching_elems:
+				matching_elems.append(elem_id)
+	
+		# Set equal weights for all matching elements
+		weight = 1.0 / len(matching_elems)
+		for matching_elem in matching_elems:
+			rows.append(i)
+			cols.append(matching_elem)
+			data.append(weight)
+
+	HYE = coo_matrix((data, (rows, cols)), shape=(num_elems, num_elems)).tocsc()
+	return HYE
+
+def createZExtrudeFilter(mesh: mesher.Mesher):
+	"""Create a filter matrix for extruding elements all the way through in the Z direction.
+	
+	Args:
+		mesh: The mesh object.
+	
+	Returns:
+		tuple containing:
+			HZE: Sparse matrix that when multiplied with density vector enforces Z extrusion
+			HZEs: Array of row sums of HZE matrix
+	"""
+	num_elems = mesh.num_elems
+	z_max = mesh.elem_centers[:, 2].max()
+	z_min = mesh.elem_centers[:, 2].min()
+	# Initialize COO matrix arrays
+	rows = []
+	cols = []
+	data = []
+	
+	for i in range(num_elems):
+		elemCenter = mesh.elem_centers[i, :]
+		# Find all elements along the z-axis for current x,y position
+		# Count unique z positions in mesh
+		num_z_layers = mesh.grid[2]
+		z_positions = np.linspace(z_min, z_max, num_z_layers)
+		matching_elems = []
+		for z in z_positions:
+			test_point = np.array([elemCenter[0], elemCenter[1], z])
+			elem_id = mesh.get_element_near_point(test_point)
+			if elem_id not in matching_elems:
+				matching_elems.append(elem_id)
+	
+		# Set equal weights for all matching elements
+		weight = 1.0 / len(matching_elems)
+		for matching_elem in matching_elems:
+			rows.append(i)
+			cols.append(matching_elem)
+			data.append(weight)
+
+	HZE = coo_matrix((data, (rows, cols)), shape=(num_elems, num_elems)).tocsc()
+	return HZE	
+
+
+def createAMBuildFilter(mesh: mesher.Mesher):
 	"""Create a filter matrix to enforce z-direction build constraints for additive manufacturing.
 	
 	Args:
@@ -255,16 +374,14 @@ def createZBuildFilter(mesh: mesher.Mesher) -> tuple[coo_matrix, np.ndarray]:
 			HZBs: Array of row sums of HZB matrix
 	"""
 	num_elems = mesh.num_elems
-	z_min = mesh.elem_centers[:, 2].min()
-	
+
 	rows = []
 	cols = []
 	data = []
 	
 	for i in range(num_elems):
 		elemCenter = mesh.elem_centers[i, :]
-		elem_height = elemCenter[2] - z_min
-		
+
 		# Find all elements below current element
 		mask = (mesh.elem_centers[:, 0] == elemCenter[0]) & \
 				(mesh.elem_centers[:, 1] == elemCenter[1]) & \
@@ -285,5 +402,5 @@ def createZBuildFilter(mesh: mesher.Mesher) -> tuple[coo_matrix, np.ndarray]:
 			data.append(1.0)
 
 	HZAM = coo_matrix((data, (rows, cols)), shape=(num_elems, num_elems)).tocsc()
-	HZAMs = np.array(HZAM.sum(1)).squeeze()
-	return HZAM, HZAMs
+	
+	return HZAM

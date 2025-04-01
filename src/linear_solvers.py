@@ -112,6 +112,7 @@ def solve(A: spy_sprs.coo_matrix,
                                 shape=A0.shape)
     A, b = bound_cond.impose_dirichlet_bc(A_sp.tocsr(), b0, bc)
 
+
     if solver == Solvers.SPSOLVE:
       x = spy_linalg.spsolve(A, b)
 
@@ -142,6 +143,7 @@ def solve(A: spy_sprs.coo_matrix,
       raise ValueError('Unknown solver type')
 
     u = jnp.zeros(b0.shape)
+    u = u.at[bc.fixed_dofs].set(bc.dirichlet_values)
     u = u.at[bc.free_dofs].set(x)
     return u
   return solver_wrapper(A,b)
