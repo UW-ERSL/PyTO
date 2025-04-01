@@ -4,5 +4,7 @@
 *.SLDPRT
 *.sldprt
 *.png
-/TOExamples
+/Models
+/Results
+/PyTOSlides
 /__pycache__
