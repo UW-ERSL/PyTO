@@ -70,26 +70,26 @@ def getStructuralTOProblem(to_problem: StructuralTOExamples, **kwargs):
     to_params = TOParams()
     if to_problem == StructuralTOExamples.EdgeCantilever:
         structural_problem = StructuralExamples.EdgeCantilever
-        to_params.Comment = "Classic TO Problem"
+        to_params.Comment = "Benchmark TO Problem"
         to_params.YSymmetry = True
         to_params.nDOFDesired = 50000
         to_params.DesiredVolFraction = 0.5
     elif to_problem == StructuralTOExamples.MidCantilever:
         structural_problem = StructuralExamples.MidCantilever
-        to_params.Comment  = "Classic TO Problem"
+        to_params.Comment  = "Benchmark TO Problem"
         to_params.YSymmetry = True  # Symmetry about the Y-axis
         to_params.nDOFDesired = 30000
         to_params.DesiredVolFraction = 0.5
     elif to_problem == StructuralTOExamples.ThreeHoleBracket:
         structural_problem = StructuralExamples.ThreeHoleBracket
-        to_params.Comment  = "Retain Material Around Holes"
+        to_params.Comment  = "Retain Material"
         to_params.ZSymmetry = True
         to_params.KeepFixedElems = True
         to_params.nDOFDesired = 40000
         to_params.DesiredVolFraction = 0.35
     elif to_problem == StructuralTOExamples.MBB:
         structural_problem = StructuralExamples.MBB
-        to_params.Comment  = "Classic TO Poblem"
+        to_params.Comment  = "Benchmark TO Poblem"
         to_params.nDOFDesired = 50000
         to_params.DesiredVolFraction = 0.25
     elif to_problem == StructuralTOExamples.DistributedLoad:
@@ -108,11 +108,11 @@ def getStructuralTOProblem(to_problem: StructuralTOExamples, **kwargs):
         structural_problem = StructuralExamples.GravityPlate
         to_params.Comment  = "Body Force TO"
         to_params.XSymmetry = True
-        to_params.nDOFDesired = 50000
+        to_params.nDOFDesired = 20000
         to_params.DesiredVolFraction = 0.1
     elif to_problem == StructuralTOExamples.LBracket:
         structural_problem = StructuralExamples.LBracket
-        to_params.Comment  = "Classic TO Problem"
+        to_params.Comment  = "Benchmark TO Problem"
         to_params.ExtrudeZ = True
         to_params.nDOFDesired = 50000
         to_params.DesiredVolFraction = 0.25
@@ -130,14 +130,6 @@ def getStructuralTOProblem(to_problem: StructuralTOExamples, **kwargs):
         to_params.ExtrudeZ = True
         to_params.nDOFDesired = 50000
         to_params.DesiredVolFraction = 0.5
-    elif to_problem == StructuralTOExamples.BliskWithBlade:
-        structural_problem = StructuralExamples.BliskWithBlade
-        to_params.Comment  = "Large DOF"
-        to_params.KeepFixedElems = True
-        to_params.RemoveHangingElems = True
-        to_params.nDOFDesired = 100000
-        to_params.DesiredVolFraction = 0.25
-
     elif to_problem == StructuralTOExamples.KnuckleAssembly:
         structural_problem = StructuralExamples.KnuckleAssembly
         to_params.Comment = "Assembly TO"
@@ -152,6 +144,14 @@ def getStructuralTOProblem(to_problem: StructuralTOExamples, **kwargs):
         to_params.ZSymmetry = True
         to_params.nDOFDesired = 500000
         to_params.DesiredVolFraction = 0.1
+    elif to_problem == StructuralTOExamples.BliskWithBlade:
+        structural_problem = StructuralExamples.BliskWithBlade
+        to_params.Comment  = "Large DOF"
+        to_params.KeepFixedElems = True
+        to_params.RemoveHangingElems = True
+        to_params.nDOFDesired = 100000
+        to_params.DesiredVolFraction = 0.5
+
     else:
         raise ValueError(f"Unknown problem: {to_problem}")
     
