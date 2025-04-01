@@ -2240,7 +2240,7 @@ class MaterialWindow(QtWidgets.QDialog):
         super().__init__(parent)
         self.setWindowTitle("Material")
         self.parent = parent
-        self.setFixedSize(300, 400)  # Fixed size window
+        self.setFixedSize(400, 400)  # Fixed size window
         
         layout = QtWidgets.QVBoxLayout(self)
         layout.setSpacing(10)
@@ -2747,7 +2747,7 @@ class StructuralLoadsWindow(QtWidgets.QDialog):
             self.parent.update_highlights()
             
             self.parent.vtkWidget.GetRenderWindow().Render()
-            self.parent.message_text.append(f"Applied force of {magnitude:.2f}N to {len(selected_faces)} triangles")
+            self.parent.message_text.append(f"Applied force of {magnitude:.2f}N")
             self.parent.update_button_icon("Structural Loads", "check")
             # Update LivVar state
             self.parent.update_LivVar('structural_loads.forces_applied', True)
@@ -3133,7 +3133,7 @@ class AnalysisWindow(QtWidgets.QDialog):
             
             # Check for boundary nodes
             boundary_nodes = self.parent.analysis_mesher.get_boundary_nodes()
-            self.parent.message_text.append(f"Found {len(boundary_nodes)} boundary nodes")
+            #self.parent.message_text.append(f"Found {len(boundary_nodes)} boundary nodes")
             
             # Check if we have stored any fixed nodes
             if hasattr(self.parent, 'fixed_nodes') and self.parent.fixed_nodes:

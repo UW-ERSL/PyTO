@@ -119,7 +119,6 @@ def topopt_mma(fe_solver: sfea.StructFEA,
 							 move_limit: float = 0.2,
 							 kkt_tol: float = 1.e-6,
 							 move_tol: float = 0.025,
-							 continuationScheme: bool = False,	 
 							 rel_conv_tol: float = 1.e-4,
 							 debug: bool = False,
 							 ) -> tuple[np.ndarray, dict]:
@@ -143,7 +142,7 @@ def topopt_mma(fe_solver: sfea.StructFEA,
 		material_model_dict = {'name': 'SIMP', 'penal': 3.0} # Default SIMP model
 	else:
 		material_model = MaterialModel.SIMPPLUS #For body forces, using SIMPPLUS material model
-		material_model_dict = {'name': 'SIMPPLUS', 'penal': 3.0, 'alpha': 16} 
+		material_model_dict = {'name': 'SIMPPLUS', 'penal': 3, 'alpha': 16} 
 		#  body-force model from the papers here:
 		#  https://doi.org/10.1002/nme.2499, https://doi.org/10.1016/j.cma.2017.04.021 
 
@@ -156,13 +155,14 @@ def topopt_mma(fe_solver: sfea.StructFEA,
 
 	elemsWithForces = find_elements_with_forces(fe_solver.mesh, fe_solver.bc.force)
 
+	xMin = 1e-10
 	mma_params = mma.MMAParams(max_iter=maxMMAIterations,
 														kkt_tol = kkt_tol,
 														step_tol = move_tol,
 														move_limit = move_limit,
 														num_design_var = num_elems,
 														num_cons = 1,
-														lower_bound = np.zeros((num_elems, 1)),
+														lower_bound = xMin*np.ones((num_elems, 1)),
 														upper_bound = np.ones((num_elems, 1)),
 														)
 	mma_state = mma.init_mma(to_params.DesiredVolFraction * np.ones((num_elems, 1)), mma_params)
@@ -179,14 +179,11 @@ def topopt_mma(fe_solver: sfea.StructFEA,
 		nodal_body_force[2::3] = fe_solver.mesh.elem_to_node_field_mapping @ elem_force[2::3]
 	else:
 		nodal_body_force = None
-	if (continuationScheme):
-		penal = 1.2
-	
+
 	success = True
 	
 	while not mma_state.is_converged:
 		x = mma_state.x.reshape(-1)
-
 		timeFEAStart = time.time()
 		obj,u = _compliance_objective(x, fe_solver, material_model_dict)
 		
@@ -223,6 +220,7 @@ def topopt_mma(fe_solver: sfea.StructFEA,
 		cons = _volume_constraint(x, to_params.DesiredVolFraction)
 		grad_cons = np.ones(num_elems)/to_params.DesiredVolFraction/num_elems
 
+		
 		timeMMAStart = time.time()
 		mma_state = mma.update_mma(mma_state,
 														   mma_params,
@@ -245,17 +243,14 @@ def topopt_mma(fe_solver: sfea.StructFEA,
 			dJ = (history['compliance'][-1] - history['compliance'][-2]) / history['compliance'][-2]
 			if abs(dJ) < rel_conv_tol and (cons) < rel_conv_tol:
 				break
-		if (continuationScheme):
-			penal *= 1.1
-			penal = min(penal, 3.0)
 		if time.time() - tStart > timeLimit:
 			success = False
 			print("MMA optimization terminated due to time limit.")
 			break
-		if (history['compliance'][-1] > 100*history['compliance'][0]):
-			print("Optimization terminated due to large compliance increase.")
-			success = False
-			break
+		# if (history['compliance'][-1] > 100*history['compliance'][0]):
+		# 	print("Optimization terminated due to large compliance increase.")
+		# 	success = False
+		# 	break
 
 	if mma_state.epoch >= maxMMAIterations:
 		print("MMA optimization did not converge.")
@@ -886,7 +881,7 @@ if __name__ == "__main__":
 	#runTOTests(); exit(0) # Run all tests for each example in the StructuralTOExamples enum
 	
 	# Choose the TO problem
-	to_problem = StructuralTOExamples.MidCantilever
+	to_problem = StructuralTOExamples.GravityPlate
 	solver = lin_solv.Solvers.PARDISO # Typically PARDISO, but DPCG for DOF > 200,000
 	debug = False
 

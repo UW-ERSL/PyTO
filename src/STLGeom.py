@@ -522,12 +522,13 @@ if __name__ == "__main__":
     stl_file =  os.path.join(script_dir, '../Models/CircularPlateHole/CircularPlateHole.STL')
     stl_file =  os.path.join(script_dir, '../Models/BliskModel/BliskQuarter.STL')
     
-    stl_file = os.path.join(script_dir, '../Models/LBracket/LBracket.STL')
+    
     stl_file = os.path.join(script_dir, '../Models/AlcoaGrabCAD/AlcoaGrabCAD.STL')
     stl_file = os.path.join(script_dir, '../Models/Overhang/Overhang.STL')
     stl_file = os.path.join(script_dir, '../Models/ThickPlate/ThickPlate.STL')
     stl_file =  os.path.join(script_dir, '../Models/KnuckleAssembly/KnuckleAssembly.STL')
     stl_file =  os.path.join(script_dir, '../Models/Table/Table.STL')
+    stl_file = os.path.join(script_dir, '../Models/LBracket/LBracket.STL')
     stl_geom = STLGeom(stl_file)
 
     [area, volume, cg, inertia] = stl_geom.compute_mass_properties()
