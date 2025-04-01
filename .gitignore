@@ -4,5 +4,10 @@
 *.SLDPRT
 *.sldprt
 *.png
+*.face
+*.node
 /TOExamples
+/Models
+/PyTOSlides
+/Results
 /__pycache__

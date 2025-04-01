@@ -355,6 +355,7 @@ def hex8_specific_heat_matrix(
   
   return ce
 
+
 if __name__ == "__main__":
   # Define the material properties
   mat_prop = mat_lib.StructuralMaterial(youngs_modulus=1e6,

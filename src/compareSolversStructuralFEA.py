@@ -38,7 +38,7 @@ import deflation
 import linear_solvers as lin_solv
 import topopt as topopt
 import os
-from examples_structural import createCantileverProblem, createLBracketProblem, createCompliantMechanismProblem,createFilletedBeamProblem
+from examples_structural import *
 jax.config.update("jax_enable_x64", True)
 
 
@@ -46,9 +46,8 @@ jax.config.update("jax_enable_x64", True)
 linearSolvers = ['spsolve','pyamg','pycg','pypardiso','pydpcg']
 # Set the DOF for the problems to run through
 dofs = [1000,5000,10000,25000,50000,100000,250000,500000,1e6,1.5e6,2e6,3e6]
-
 # Set the time limit for each solver
-timeLimit = 60 # seconds
+timeLimit = 20 # seconds
 dofList = []
 solverTime = dict(zip(linearSolvers, [None]*len(linearSolvers)))
 for linearSolver in linearSolvers:
@@ -56,31 +55,18 @@ for linearSolver in linearSolvers:
 
 continueMeshing = True # set to false to skip to solving the FEA problems
 dsolver = deflation.DeflationSolver()
-example = 2 # 1 = cantilever, 2 = plate, 3 = L-bracket, 4 = compliant mechanism, 5 = filleted beam
+problem = StructuralExamples.EdgeCantilever
 for dofDesired in dofs:
 	if (not continueMeshing):
 		break
 	print('-----------------------------')
 	print("dofDesired: ", dofDesired)
-	if example == 1:
-		mesh, mat_prop, bc = createCantileverProblem(nDOFDesired=dofDesired, L=[0.2, 0.1, 0.11])
-		title = 'Cantilever: Time for single FEA'
-	elif example == 2:
-		mesh, mat_prop, bc = createCantileverProblem(nDOFDesired=dofDesired, L=[20, 20, 1])
-		title = 'Plate: Time for single FEA'
-	elif example == 3:
-		mesh, mat_prop, bc = createLBracketProblem(nDOFDesired=dofDesired)
-		title = 'LBracket: Time for single FEA'
-	elif example == 4:
-		mesh, mat_prop, bc = createCompliantMechanismProblem(nDOFDesired=dofDesired)
-		title = 'Compliant Mechanism: Time for single FEA'
-	else:
-		mesh, mat_prop, bc = createFilletedBeamProblem(nDOFDesired=dofDesired)
-		title = 'FilletedBeam: Time for single FEA'
+	mesh, mat_prop, bc,elem_body_force = getStructuralProblem(problem,nDOFDesired = dofDesired)
 	dofActual = 3 * mesh.num_nodes
 	print("dofActual: ",dofActual)
 	dofList.append(dofActual)
 	continueMeshing = False
+	title = f"{problem.name} - {dofActual} DOF"
 	for linearSolver in linearSolvers:
 		# assuming increasing time with increasing DOF, skip if previous time was too long
 		if len(solverTime[linearSolver]) > 0 and solverTime[linearSolver][-1] > timeLimit: 

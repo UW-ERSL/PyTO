@@ -8,6 +8,7 @@ import deflation
 import mesher
 
 
+
 def plotMesh(mesh: mesher.Mesher,
              bc = None,
              u = None,
@@ -19,7 +20,6 @@ def plotMesh(mesh: mesher.Mesher,
              edge_color='black',
 	           title='Mesh Visualization',
              save_path=None,
-
              fontsize=10):
   # Create vertices array
   vertices = mesh.node_xyz
@@ -49,12 +49,12 @@ def plotMesh(mesh: mesher.Mesher,
   face_densities = []
   
   for e in range(mesh.num_elems):
-    if mesh.elemPseudoDensity[e] < 0.3:
+    if mesh.elemPseudoDensity[e] < 0.5:
       continue
-    elif (mesh.elemPseudoDensity[e] > 0.3 and 
+    elif (mesh.elemPseudoDensity[e] > 0.5 and 
           np.all(mesh.elemNeighborsArray[e] > 0) and 
           np.all(mesh.elemPseudoDensity[[int(elem) for elem in 
-                                    mesh.elemNeighborsArray[e]]] > 0.3)):
+                                    mesh.elemNeighborsArray[e]]] > 0.5)):
       continue
 
     # Add all faces for this element
@@ -67,7 +67,8 @@ def plotMesh(mesh: mesher.Mesher,
   face_densities = np.array(face_densities)
   
   if len(faces) == 0:
-    raise ValueError("No faces to plot after filtering")
+    print("No faces to plot after filtering")
+    return None
 
   # Create cells array for PyVista
   n_faces = len(faces)
@@ -224,20 +225,122 @@ def plotMesh(mesh: mesher.Mesher,
     plotter.screenshot(save_path)
     plotter.close()
   else:
-    plotter.show()
+    plotter.show() 
   
   return plotter
 
+def plotElementField(mesh: mesher.Mesher,
+            field,
+            cmap='jet',
+            show_edges=True,
+            window_size=(716, 538),
+            background_color='white',
+            edge_color='black',
+            title='Element Field Visualization',
+            save_path=None,
+            fontsize=10):
+    """Plot element field on the mesh.
+
+    Args:
+    mesh (mesher.Mesher): The mesh object.
+    field (ndarray): Element field values.
+    cmap (str): Colormap for visualization.
+    show_edges (bool): Whether to show mesh edges.
+    window_size (tuple): Window size for visualization.
+    background_color (str): Background color.
+    edge_color (str): Edge color.
+    title (str): Plot title.
+    save_path (str, optional): Path to save the visualization.
+    fontsize (int): Font size for title.
+    """
+    # Create vertices array
+    vertices = mesh.node_xyz
+
+    # Create cells array for PyVista
+    cells = np.hstack((
+              np.full((mesh.num_elems, 1), 8),  # 8 vertices per hexahedron
+              mesh.elemArray
+            ))
+
+    # Create PyVista mesh
+    pv_mesh = pv.UnstructuredGrid({12: cells[:, 1:]}, vertices)  # 12 is VTK_HEXAHEDRON
+
+    # Add field data to cell data
+    pv_mesh.cell_data['field'] = field
+
+    # Create plotter
+    if save_path is None:
+      plotter = pv.Plotter(window_size=window_size)
+    else:
+      plotter = pv.Plotter(window_size=window_size, off_screen=True)
+      plotter.set_background(background_color)
+
+    # Add mesh to plotter
+    plotter.add_mesh(
+            pv_mesh,
+            scalars='field',
+            cmap=cmap,
+            show_edges=show_edges,
+            edge_color=edge_color,
+            line_width=1,
+            scalar_bar_args={
+              'title': '',
+              'vertical': True,
+              'position_x': 0.8,
+              'position_y': 0.3,
+              'width': 0.1
+            }
+          )
+
+    # Add title
+    if title:
+      plotter.add_title(title, font_size=fontsize)
+
+    # Add coordinate axes widget
+    plotter.add_axes(
+            xlabel='X',
+            ylabel='Y',
+            zlabel='Z',
+            line_width=2,
+            labels_off=False,  # Show axis labels
+            color='black'
+            )
+
+    # Set camera position for left-bottom-forward view
+    view_distance = 2.5 * mesh.bbox.diag_length
+    offset = 0.2 * view_distance  # Offset for object position
+    plotter.camera_position = [
+            (view_distance*0.5, -view_distance*0.3, view_distance),
+            (offset, offset, 0),   # Focus point - right and bottom
+            (0, 0.8, 0.4)]         # Up vector - Y axis up
+
+    # Reset camera and zoom out slightly
+    plotter.camera.zoom(0.8)
+
+    # Enable anti-aliasing for better quality
+    plotter.enable_anti_aliasing()
+
+    # Save image if path is provided
+    if save_path:
+      plotter.screenshot(save_path)
+      plotter.close()
+    else:
+      plotter.show()
+
+    return plotter
 
 def plotIsocontour(mesh: mesher.Mesher,
                    u=None,
+                   Binarization = False,
                    isovalue=0.5,
                    show_edges=True,
+                   resolution=1,
                    window_size=(716, 538),
                    background_color='white',
                    edge_color='black',
                    title='Isocontour Visualization',
                    save_path=None,
+                   interactive=False,
                    fontsize=10):
   """Plot isocontour surface based on element pseudo-density.
 
@@ -276,8 +379,11 @@ def plotIsocontour(mesh: mesher.Mesher,
   # Create PyVista mesh
   pv_mesh = pv.UnstructuredGrid({12: cells[:, 1:]}, vertices)  # 12 is VTK_HEXAHEDRON
 
+  elemPseudoDensity = mesh.elemPseudoDensity
+  if (Binarization):
+    elemPseudoDensity = np.where(elemPseudoDensity > 0.5, 1, 0)
   # Add element densities to cell data
-  pv_mesh.cell_data['density'] = mesh.elemPseudoDensity
+  pv_mesh.cell_data['density'] = elemPseudoDensity
 
   # Add displacement values to point data if provided
   if values is not None:
@@ -290,10 +396,13 @@ def plotIsocontour(mesh: mesher.Mesher,
   bounds = pv_mesh.bounds
   padding = max([bounds[1]-bounds[0],
                  bounds[3]-bounds[2],
-                 bounds[5]-bounds[4]]) * 0.2
+                 bounds[5]-bounds[4]]) * 0.1
 
-  # Create a finer grid for better isosurface
-  dimensions = (59, 50, 50)
+  # Optionally, create a finer grid for better isosurface
+  
+  dimensions = (resolution*mesh.grid[0], resolution*mesh.grid[1], resolution*mesh.grid[2])
+  if (min(dimensions) < 2):
+    resolution = 3
   spacing = (
             (bounds[1] - bounds[0] + 2*padding) / (dimensions[0] - 1),
             (bounds[3] - bounds[2] + 2*padding) / (dimensions[1] - 1),
@@ -309,9 +418,10 @@ def plotIsocontour(mesh: mesher.Mesher,
                     )
   
   # Interpolate data onto grid
-  grid_with_data = grid.interpolate(mesh_with_point_data, radius=padding/2)
-  
-  # Set values outside the mesh to 0 to close the isosurface
+  grid_with_data = grid.interpolate(mesh_with_point_data, radius=padding/2, null_value=-10)
+
+  # Set values outside the mesh to a large -ve value
+  # to ensure they are not included in the isocontour
   grid_mask = (~grid_with_data.point_data['density'].mask 
                 if hasattr(grid_with_data.point_data['density'], 'mask')
                 else None)

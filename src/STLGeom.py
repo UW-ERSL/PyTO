@@ -22,6 +22,21 @@ class STLGeom:
         self.selected_triangles = set()
         self.file_path = file_path
 
+    def get_bounding_box(self):
+        """
+        Compute the bounding box (min/max coordinates) of the STL geometry.
+        Returns:
+            tuple: (xmin, xmax, ymin, ymax, zmin, zmax) coordinates of the bounding box
+        """
+        if not hasattr(self, 'mesh') or self.mesh is None:
+            return (0, 0, 0, 0, 0, 0)
+        # Get all vertices as a single array
+        vertices = self.mesh.vectors.reshape(-1, 3)
+        # Calculate min and max for each coordinate
+        xmin, ymin, zmin = np.min(vertices, axis=0)
+        xmax, ymax, zmax = np.max(vertices, axis=0)
+        return (xmin, xmax, ymin, ymax, zmin, zmax)
+
     def compute_areas_vectorized(self):
         """Compute all triangle areas using vectorized operations"""
         vectors = self.mesh.vectors
@@ -274,6 +289,20 @@ class STLGeom:
 
         return cumulative_area
     
+    def get_triangle_data(self, index):
+        """Get full triangle data for a given index"""
+        if not 0 <= index < self.stl_n_triangles:
+            return None
+        # Create triangle data structure similar to store_selected_triangles
+        triangle_data = {
+            'index': index,
+            'vertices': self.mesh.vectors[index],
+            'normal': self.tri_normals[index],
+            'area': self.tri_areas[index],
+            'center': self.get_triangle_center(index)
+        }
+        return triangle_data
+    
     def plotGeometry(self, show_edges=False, show_axes=True, show_bounding_box=True):
          # Create a PyVista mesh from the STL data
         vertices = self.mesh.vectors.reshape(-1, 3)
@@ -482,43 +511,23 @@ class STLGeom:
             selected_triangles_data.append(triangle_data)
    
         return selected_triangles_data
-    
-    def create_refined_mesh(self, target_edge_length):
-        """
-        Create a refined triangular mesh with approximately uniform edge lengths
-        Args:
-            target_edge_length: desired length for mesh edges
-        Returns:
-            vertices: nx3 array of vertex coordinates
-            faces: mx3 array of vertex indices forming triangles
-        """
-        import trimesh  # pip install trimesh
-
-        # Convert STL mesh to trimesh format
-        vertices = self.mesh.vectors.reshape(-1, 3)
-        faces = np.arange(len(vertices)).reshape(-1, 3)
-        mesh = trimesh.Trimesh(vertices=vertices, faces=faces)
-
-        # Remove duplicate vertices
-        mesh.remove_duplicate_vertices()
-
-        # Subdivide mesh to achieve target edge length
-        mesh = mesh.subdivide_to_size(max_edge=target_edge_length)
-
-        return mesh.vertices, mesh.faces
-
+   
 if __name__ == "__main__":
     import os
     import pyvista as pv
     script_dir = os.path.dirname(os.path.abspath(__file__))
+
+    stl_file = os.path.join(script_dir, '../Models/CantileverBeam/CantileverBeam.STL')
+    stl_file =  os.path.join(script_dir, '../Models/CompliantMechanism/CompliantMechanism.STL')
+    stl_file =  os.path.join(script_dir, '../Models/CircularPlateHole/CircularPlateHole.STL')
+    stl_file =  os.path.join(script_dir, '../Models/BliskModel/BliskQuarter.STL')
     
-    
-    
-    stl_file = os.path.join(script_dir, '../TOExamples/CantileverBeam/CantileverBeam.STL')
-    stl_file = os.path.join(script_dir, '../TOExamples/AlcoaGrabCAD/AlcoaGrabCAD.STL')
-    stl_file = os.path.join(script_dir, '../TOExamples/LBracket/LBracket.STL')
-    stl_file =  os.path.join(script_dir, '../TOExamples/CompliantMechanism/CompliantMechanism.STL')
-    stl_file =  os.path.join(script_dir, '../TOExamples/CircularPlateHole/CircularPlateHole.STL')
+    stl_file = os.path.join(script_dir, '../Models/LBracket/LBracket.STL')
+    stl_file = os.path.join(script_dir, '../Models/AlcoaGrabCAD/AlcoaGrabCAD.STL')
+    stl_file = os.path.join(script_dir, '../Models/Overhang/Overhang.STL')
+    stl_file = os.path.join(script_dir, '../Models/ThickPlate/ThickPlate.STL')
+    stl_file =  os.path.join(script_dir, '../Models/KnuckleAssembly/KnuckleAssembly.STL')
+    stl_file =  os.path.join(script_dir, '../Models/Table/Table.STL')
     stl_geom = STLGeom(stl_file)
 
     [area, volume, cg, inertia] = stl_geom.compute_mass_properties()
@@ -528,4 +537,4 @@ if __name__ == "__main__":
     print(f"Inertia: {inertia}")
 
 
-    stl_geom.plotGeometry()
+    stl_geom.plotGeometry(show_edges=True, show_axes=True, show_bounding_box=True)
