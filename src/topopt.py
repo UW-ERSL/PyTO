@@ -25,8 +25,8 @@ class TO_METHODS(enum.Enum):
 
 class MaterialModel(enum.Enum):
 	SIMP = enum.auto()
-	RAMP = enum.auto()
 	SIMPPLUS = enum.auto()
+	GRIP = enum.auto() # Generalized Rational Interpolation with Penalization
 
 
 def find_elements_with_forces(mesh: mesher.Mesher, force) -> np.ndarray:
@@ -146,7 +146,6 @@ def topopt_mma(fe_solver: sfea.StructFEA,
 		#  body-force model from the papers here:
 		#  https://doi.org/10.1002/nme.2499, https://doi.org/10.1016/j.cma.2017.04.021 
 
-
 	tStart = time.time()
 	num_elems= fe_solver.mesh.num_elems
 	history = {'compliance': [], 'volume': [], 'change': []}
@@ -155,14 +154,14 @@ def topopt_mma(fe_solver: sfea.StructFEA,
 
 	elemsWithForces = find_elements_with_forces(fe_solver.mesh, fe_solver.bc.force)
 
-	xMin = 1e-10
+
 	mma_params = mma.MMAParams(max_iter=maxMMAIterations,
 														kkt_tol = kkt_tol,
 														step_tol = move_tol,
 														move_limit = move_limit,
 														num_design_var = num_elems,
 														num_cons = 1,
-														lower_bound = xMin*np.ones((num_elems, 1)),
+														lower_bound = np.zeros((num_elems, 1)),
 														upper_bound = np.ones((num_elems, 1)),
 														)
 	mma_state = mma.init_mma(to_params.DesiredVolFraction * np.ones((num_elems, 1)), mma_params)
@@ -201,10 +200,15 @@ def topopt_mma(fe_solver: sfea.StructFEA,
 			penal = material_model_dict['penal']
 			d_elem_material_scaling_dx = (alpha - 1) / alpha * penal * x ** (penal - 1) + 1 / alpha
 			grad_obj = -d_elem_material_scaling_dx * ce
+		elif material_model == MaterialModel.GRIP:
+			# x/(2-x)**penal
+			penal = material_model_dict['penal']
+			d_elem_material_scaling_dx = 1/(2 - x)**penal + (penal*x)/(2 - x)**(penal + 1)
+			grad_obj = -d_elem_material_scaling_dx * ce
 			
 		if (nodal_body_force is not None):
 			ce_body_force = (u[fe_solver.mesh.edofMat].reshape(num_elems, 24) * nodal_body_force[fe_solver.mesh.edofMat].reshape(num_elems, 24)).sum(1)
-			grad_obj +=  2*ce_body_force # Assumes body force is linear w.r.t. x : https://doi.org/10.1002/nme.2499 , https://doi.org/10.1016/j.cma.2017.04.021 
+			grad_obj +=  2*ce_body_force # Assumes body force is linear w.r.t. x
 	
 		grad_obj = (H * grad_obj)/Hs
 
@@ -240,8 +244,9 @@ def topopt_mma(fe_solver: sfea.StructFEA,
 		history['change'].append(change)
 
 		if (len(history['compliance'])) >= minMMAIterations:
-			dJ = (history['compliance'][-1] - history['compliance'][-2]) / history['compliance'][-2]
-			if abs(dJ) < rel_conv_tol and (cons) < rel_conv_tol:
+			dJ1 = (history['compliance'][-1] - history['compliance'][-2]) / history['compliance'][-2]
+			
+			if abs(dJ1) < rel_conv_tol and  change < 0.1 and (cons) < rel_conv_tol:
 				break
 		if time.time() - tStart > timeLimit:
 			success = False
@@ -816,7 +821,7 @@ def runTOTests():
 		timeTaken = time.time() - startTime
 
 		# Create the directory if it does not exist
-		output_dir = f"./Results_{time.strftime('%Y-%m-%d')}/{optimizationMethod.name}"
+		output_dir = f"./Results/Results_{time.strftime('%Y-%m-%d')}/{optimizationMethod.name}"
 		if not os.path.exists(output_dir):
 			os.makedirs(output_dir)
 

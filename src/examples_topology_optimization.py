@@ -109,7 +109,7 @@ def getStructuralTOProblem(to_problem: StructuralTOExamples, **kwargs):
         to_params.Comment  = "Body Force TO"
         to_params.XSymmetry = True
         to_params.nDOFDesired = 20000
-        to_params.DesiredVolFraction = 0.1
+        to_params.DesiredVolFraction = 0.6
     elif to_problem == StructuralTOExamples.LBracket:
         structural_problem = StructuralExamples.LBracket
         to_params.Comment  = "Benchmark TO Problem"
@@ -118,10 +118,11 @@ def getStructuralTOProblem(to_problem: StructuralTOExamples, **kwargs):
         to_params.DesiredVolFraction = 0.25
     elif to_problem == StructuralTOExamples.CentrifugalPlate:
         structural_problem = StructuralExamples.CentrifugalPlate
-        to_params.Comment  = "Centrifigal + Radial Loading"
+        to_params.Comment  = "Centrifigal + Vertical Loading"
+        to_params.ExtrudeZ = True
         to_params.ZAxisAngularSymmetry = 4
-        to_params.nDOFDesired = 100000
-        to_params.DesiredVolFraction = 0.5
+        to_params.nDOFDesired = 50000
+        to_params.DesiredVolFraction = 0.8
         to_params.KeepFixedElems = True  # Keep elements that are fixed in the centrifugal plate example
     elif to_problem == StructuralTOExamples.TorquePlate:
         structural_problem = StructuralExamples.TorquePlate

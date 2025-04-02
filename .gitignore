@@ -6,7 +6,6 @@
 *.png
 *.face
 *.node
-/TOExamples
 /Models
 /PyTOSlides
 /Results

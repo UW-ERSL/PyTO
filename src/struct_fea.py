@@ -66,7 +66,9 @@ class StructFEA:
       alpha = elasticity_material_model['alpha']
       penal = elasticity_material_model['penal']
       elem_material_scaling = (alpha-1)/alpha * x ** penal + (1/alpha) * x
-
+    elif elasticity_material_model['name'] == 'GRIP':# Generalized Rational Interpolation with Penalization
+      penal = elasticity_material_model['penal']
+      elem_material_scaling = x/((2-x)**penal)
 
     elem_stiff_mtrx = jnp.einsum('ij, e -> eij',
                                  self.elem_stiff,
@@ -172,7 +174,7 @@ if __name__ == "__main__":
 
   from examples_structural import *
 
-  problem = StructuralExamples.GravityPlate
+  problem = StructuralExamples.CentrifugalPlate
   nDOFDesired = 50000
   mesh, mat_prop, bc,elem_body_force = getStructuralProblem(problem,nDOFDesired = nDOFDesired)
   solver = lin_solv.Solvers.PARDISO # typically DPCG or PARDISO
