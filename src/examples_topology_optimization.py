@@ -21,6 +21,7 @@ class TOParams:
     Comment = "" # Comment for the topology optimization problem
     nDOFDesired = 20000 # Desired number of degrees of freedom in the finite element problem
     DesiredVolFraction = 0.5
+    ExactVolumeFraction = False # If True, the volume fraction is exactly met
     RelativeFilterRadius = 1.5 #relative to the element size
     XSymmetry = False
     YSymmetry = False
@@ -108,8 +109,9 @@ def getStructuralTOProblem(to_problem: StructuralTOExamples, **kwargs):
         structural_problem = StructuralExamples.GravityPlate
         to_params.Comment  = "Body Force TO"
         to_params.XSymmetry = True
+        to_params.ExactVolumeFraction = True
         to_params.nDOFDesired = 20000
-        to_params.DesiredVolFraction = 0.6
+        to_params.DesiredVolFraction = 0.25
     elif to_problem == StructuralTOExamples.LBracket:
         structural_problem = StructuralExamples.LBracket
         to_params.Comment  = "Benchmark TO Problem"

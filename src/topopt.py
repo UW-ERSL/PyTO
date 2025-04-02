@@ -51,8 +51,8 @@ def find_elements_with_forces(mesh: mesher.Mesher, force) -> np.ndarray:
 	return np.array(elements_with_forces)
 
 
-def _volume_constraint(density: jnp.ndarray,
-											 volfrac: float,
+def volume_fraction_upperlimit(density: jnp.ndarray,
+											 volfracUpper: float,
 											 )-> jnp.ndarray:
 	"""Compute the volume constraint.
 	
@@ -64,8 +64,22 @@ def _volume_constraint(density: jnp.ndarray,
 		returned value is zero. The constraint is inactive when the returned
 		value is negative.
 	"""
-	return (jnp.mean(density)/volfrac) - 1.0
+	return (jnp.mean(density)/volfracUpper) - 1.0
 
+def volume_fraction_lowerlimit(density: jnp.ndarray,
+											 volfracLower: float,
+											 )-> jnp.ndarray:
+	"""Compute the volume constraint.
+	
+	Args:
+		density: Array of (num_elems,) containing the element densities.
+		volfrac: The target volume fraction.
+	
+	Returns: The volume constraint. The constraint is satisfied when the
+		returned value is zero. The constraint is inactive when the returned
+		value is negative.
+	"""
+	return 1- (jnp.mean(density)/volfracLower)
 
 def _compliance_objective(x: jnp.ndarray,
 								fe_solver: sfea.StructFEA,
@@ -154,14 +168,19 @@ def topopt_mma(fe_solver: sfea.StructFEA,
 
 	elemsWithForces = find_elements_with_forces(fe_solver.mesh, fe_solver.bc.force)
 
+	if (to_params.ExactVolumeFraction):
+		nConstraints = 2
+	else:
+		nConstraints = 1
 
+	xmin = 0.001  # Minimum density
 	mma_params = mma.MMAParams(max_iter=maxMMAIterations,
 														kkt_tol = kkt_tol,
 														step_tol = move_tol,
 														move_limit = move_limit,
 														num_design_var = num_elems,
-														num_cons = 1,
-														lower_bound = np.zeros((num_elems, 1)),
+														num_cons = nConstraints,
+														lower_bound = xmin*np.ones((num_elems, 1)),
 														upper_bound = np.ones((num_elems, 1)),
 														)
 	mma_state = mma.init_mma(to_params.DesiredVolFraction * np.ones((num_elems, 1)), mma_params)
@@ -221,24 +240,46 @@ def topopt_mma(fe_solver: sfea.StructFEA,
 			#x[to_params.ElemsToKeep] = 1.0
 
 		vf = np.mean(x)
-		cons = _volume_constraint(x, to_params.DesiredVolFraction)
-		grad_cons = np.ones(num_elems)/to_params.DesiredVolFraction/num_elems
+		if (to_params.ExactVolumeFraction):
+			uppervolfraction =  to_params.DesiredVolFraction + 0.001
+			consUpper = volume_fraction_upperlimit(x, uppervolfraction)
+			grad_cons_upper = np.ones(num_elems)/uppervolfraction/num_elems
 
-		
-		timeMMAStart = time.time()
-		mma_state = mma.update_mma(mma_state,
-														   mma_params,
-														 	 obj,
-															 np.array([grad_obj]).reshape((num_elems, 1)),
-														 	 jnp.array([cons]).reshape((1, 1)),
-															 grad_cons.reshape((1, num_elems))
-															 )
+			lowervolfraction =  to_params.DesiredVolFraction -0.001
+			consLower = volume_fraction_lowerlimit(x, lowervolfraction)
+			grad_cons_lower = -np.ones(num_elems)/lowervolfraction/num_elems
+
+			cons = np.array([consUpper, consLower]).reshape((2, 1))
+			grad_cons = np.array([grad_cons_upper, grad_cons_lower]).reshape((2, num_elems))
+
+			timeMMAStart = time.time()
+			mma_state = mma.update_mma(mma_state,
+															mma_params,
+																obj,
+																np.array([grad_obj]).reshape((num_elems, 1)),
+																cons,
+																grad_cons
+																)
+		else:
+			cons = np.array(volume_fraction_upperlimit(x, to_params.DesiredVolFraction))
+			grad_cons = np.ones(num_elems)/to_params.DesiredVolFraction/num_elems
+
+			timeMMAStart = time.time()
+			mma_state = mma.update_mma(mma_state,
+															mma_params,
+																obj,
+																np.array([grad_obj]).reshape((num_elems, 1)),
+																jnp.array([cons]).reshape((1, 1)),
+																grad_cons.reshape((1, num_elems))
+																)
 		timeMMA += time.time() - timeMMAStart
 
 		change = np.max(np.abs(x - x_old))
 		x_old = x
-		print(f"it.: {mma_state.epoch}, obj.: {obj[0]:.6g} vf: {vf:.3f}",
-					f"ch: {change:.3f}")
+		# Estimate the percentage of grey elements
+		grey_elements = np.sum((x > 0.05) & (x < 0.95))
+		fraction_grey = (grey_elements / num_elems) 
+		print(f"it.: {mma_state.epoch}, obj.: {obj[0]:.4g}, vf: {vf:.3f}, grey: {fraction_grey:.3f}")
 		history['compliance'].append(obj[0])
 		history['volume'].append(np.mean(x))
 		history['change'].append(change)
@@ -246,16 +287,12 @@ def topopt_mma(fe_solver: sfea.StructFEA,
 		if (len(history['compliance'])) >= minMMAIterations:
 			dJ1 = (history['compliance'][-1] - history['compliance'][-2]) / history['compliance'][-2]
 			
-			if abs(dJ1) < rel_conv_tol and  change < 0.1 and (cons) < rel_conv_tol:
+			if abs(dJ1) < rel_conv_tol and fraction_grey < 0.1 and (np.max(cons) < rel_conv_tol):
 				break
 		if time.time() - tStart > timeLimit:
 			success = False
 			print("MMA optimization terminated due to time limit.")
 			break
-		# if (history['compliance'][-1] > 100*history['compliance'][0]):
-		# 	print("Optimization terminated due to large compliance increase.")
-		# 	success = False
-		# 	break
 
 	if mma_state.epoch >= maxMMAIterations:
 		print("MMA optimization did not converge.")
@@ -356,7 +393,7 @@ def topopt_optimality_criteria(
 		if (to_params.ElemsToKeep is not None):
 			grad_obj[to_params.ElemsToKeep] = min(grad_obj)
 
-		cons = _volume_constraint(x, to_params.DesiredVolFraction)
+		cons = volume_fraction_upperlimit(x, to_params.DesiredVolFraction)
 		# Optimality criteria update
 		xold = x.copy()
 		if  not directLagrangeMethod: # bisection method
@@ -883,10 +920,10 @@ if __name__ == "__main__":
 	jax.config.update("jax_enable_x64", True)
 	optimizationMethod = TO_METHODS.DENSITYMMA # DENSITYMMA, DENSITYOC, PARETO, LEVELSET
 
-	#runTOTests(); exit(0) # Run all tests for each example in the StructuralTOExamples enum
+	runTOTests(); exit(0) # Run all tests for each example in the StructuralTOExamples enum
 	
 	# Choose the TO problem
-	to_problem = StructuralTOExamples.GravityPlate
+	to_problem = StructuralTOExamples.EdgeCantilever
 	solver = lin_solv.Solvers.PARDISO # Typically PARDISO, but DPCG for DOF > 200,000
 	debug = False
 
