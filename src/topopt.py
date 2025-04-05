@@ -11,9 +11,7 @@ import mma
 import deflation
 from to_filters import *
 import time
-from mpl_toolkits.mplot3d import Axes3D
 import matplotlib.pyplot as plt
-import matplotlib.animation as animation
 _LARGE_NUMBER = 1.e9
 
 
@@ -160,6 +158,7 @@ def topopt_mma(fe_solver: sfea.StructFEA,
 		#  body-force model from the papers here:
 		#  https://doi.org/10.1002/nme.2499, https://doi.org/10.1016/j.cma.2017.04.021 
 
+
 	tStart = time.time()
 	num_elems= fe_solver.mesh.num_elems
 	history = {'compliance': [], 'volume': [], 'change': []}
@@ -277,7 +276,7 @@ def topopt_mma(fe_solver: sfea.StructFEA,
 		change = np.max(np.abs(x - x_old))
 		x_old = x
 		# Estimate the percentage of grey elements
-		grey_elements = np.sum((x > 0.05) & (x < 0.95))
+		grey_elements = np.sum((x > 0.1) & (x < 0.9))
 		fraction_grey = (grey_elements / num_elems) 
 		print(f"it.: {mma_state.epoch}, obj.: {obj[0]:.4g}, vf: {vf:.3f}, grey: {fraction_grey:.3f}")
 		history['compliance'].append(obj[0])
@@ -918,12 +917,12 @@ if __name__ == "__main__":
 	import plots	
 	
 	jax.config.update("jax_enable_x64", True)
-	optimizationMethod = TO_METHODS.DENSITYMMA # DENSITYMMA, DENSITYOC, PARETO, LEVELSET
+	optimizationMethod = TO_METHODS.PARETO # DENSITYMMA, DENSITYOC, PARETO, LEVELSET
 
-	runTOTests(); exit(0) # Run all tests for each example in the StructuralTOExamples enum
+	#runTOTests(); exit(0) # Run all tests for each example in the StructuralTOExamples enum
 	
 	# Choose the TO problem
-	to_problem = StructuralTOExamples.EdgeCantilever
+	to_problem = StructuralTOExamples.NoseCone
 	solver = lin_solv.Solvers.PARDISO # Typically PARDISO, but DPCG for DOF > 200,000
 	debug = False
 

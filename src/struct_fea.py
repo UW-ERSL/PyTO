@@ -174,8 +174,8 @@ if __name__ == "__main__":
 
   from examples_structural import *
 
-  problem = StructuralExamples.CentrifugalPlate
-  nDOFDesired = 50000
+  problem = StructuralExamples.NoseCone
+  nDOFDesired = 100000
   mesh, mat_prop, bc,elem_body_force = getStructuralProblem(problem,nDOFDesired = nDOFDesired)
   solver = lin_solv.Solvers.PARDISO # typically DPCG or PARDISO
   

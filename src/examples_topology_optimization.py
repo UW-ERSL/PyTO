@@ -16,6 +16,7 @@ class StructuralTOExamples(enum.Enum):
 	KnuckleAssembly = enum.auto()
 	Table = enum.auto()
 	BliskWithBlade = enum.auto()
+	NoseCone = enum.auto()
      
 class TOParams:
     Comment = "" # Comment for the topology optimization problem
@@ -145,16 +146,22 @@ def getStructuralTOProblem(to_problem: StructuralTOExamples, **kwargs):
         to_params.Comment = "Large DOF"
         to_params.XSymmetry = True
         to_params.ZSymmetry = True
-        to_params.nDOFDesired = 500000
+        to_params.nDOFDesired = 100000
         to_params.DesiredVolFraction = 0.1
     elif to_problem == StructuralTOExamples.BliskWithBlade:
         structural_problem = StructuralExamples.BliskWithBlade
         to_params.Comment  = "Large DOF"
         to_params.KeepFixedElems = True
-        to_params.RemoveHangingElems = True
+        to_params.RemoveHangingElems = False
         to_params.nDOFDesired = 100000
         to_params.DesiredVolFraction = 0.5
-
+    elif to_problem == StructuralTOExamples.NoseCone:
+        structural_problem = StructuralExamples.NoseCone
+        to_params.Comment  = "Large DOF"
+        to_params.KeepFixedElems = True
+        to_params.RemoveHangingElems = False
+        to_params.nDOFDesired = 100000
+        to_params.DesiredVolFraction = 0.95
     else:
         raise ValueError(f"Unknown problem: {to_problem}")
     
