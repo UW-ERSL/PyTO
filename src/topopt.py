@@ -111,7 +111,7 @@ def createFilters(fe_solver: sfea.StructFEA,to_params):
 		HZ = createZSymmetryFilter(fe_solver.mesh)
 		H = H*HZ
 	if to_params.ZAxisAngularSymmetry >	0:
-		HAZ = createAngularSymmetryFilter(fe_solver.mesh, to_params.ZAxisAngularSymmetry)
+		HAZ = createZAngularSymmetryFilter(fe_solver.mesh, to_params.ZAxisAngularSymmetry)
 		H = H*HAZ
 	if (to_params.ExtrudeZ):
 		HEZ = createZExtrudeFilter(fe_solver.mesh)
@@ -922,7 +922,7 @@ if __name__ == "__main__":
 	#runTOTests(); exit(0) # Run all tests for each example in the StructuralTOExamples enum
 	
 	# Choose the TO problem
-	to_problem = StructuralTOExamples.NoseCone
+	to_problem = StructuralTOExamples.TorquePlate
 	solver = lin_solv.Solvers.PARDISO # Typically PARDISO, but DPCG for DOF > 200,000
 	debug = False
 

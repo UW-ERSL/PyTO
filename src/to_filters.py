@@ -182,8 +182,109 @@ def createZSymmetryFilter(mesh: mesher.Mesher) -> tuple[coo_matrix, np.ndarray]:
 
 	HZ = coo_matrix((data, (rows, cols)), shape=(num_elems, num_elems)).tocsc()
 	return HZ
+def createXAngularSymmetryFilter(mesh: mesher.Mesher, n_fold: int) -> tuple[coo_matrix, np.ndarray]:
+	"""Create a filter matrix for n-fold angular symmetry about X axis.
+	
+	Args:
+		mesh: The mesh object.
+		n_fold: Number of symmetric segments 
+	
+	Returns:
+		tuple containing:
+			HAX: Sparse matrix that enforces angular symmetry
+			HAXs: Array of row sums of HAX matrix
+	"""
 
-def createAngularSymmetryFilter(mesh: mesher.Mesher, n_fold: int) -> tuple[coo_matrix, np.ndarray]:
+	num_elems = mesh.num_elems
+	angle_step = 2 * np.pi / n_fold
+	
+	rows = []
+	cols = []
+	data = []
+	
+	for i in range(num_elems):
+		elemCenter = mesh.elem_centers[i, :]
+		r = np.sqrt(elemCenter[1]**2 + elemCenter[2]**2)
+		theta = np.arctan2(elemCenter[2], elemCenter[1])
+		
+		weight = 1.0 / n_fold
+		rows.append(i)
+		cols.append(i)
+		data.append(weight)
+		
+		# Vectorized computation for all k at once
+		k_values = np.arange(1, n_fold)
+		new_thetas = theta + k_values[:, None] * angle_step
+		new_y = r * np.cos(new_thetas)
+		new_z = r * np.sin(new_thetas)
+		
+		# Create array of other element centers for all k
+		otherElemCenters = np.column_stack((np.full_like(new_y.flatten(), elemCenter[0]),
+											new_y.flatten(),
+											new_z.flatten()))
+		# Find nearest elements for each symmetric position
+		sym_indices = [mesh.get_element_near_point(center) for center in otherElemCenters]
+		
+		# Append to COO matrix components
+		rows.extend([i] * (n_fold - 1))
+		cols.extend(sym_indices)
+		data.extend([weight] * (n_fold - 1))
+	
+	HAX = coo_matrix((data, (rows, cols)), shape=(num_elems, num_elems)).tocsc()
+	return HAX
+
+
+def createYAngularSymmetryFilter(mesh: mesher.Mesher, n_fold: int) -> tuple[coo_matrix, np.ndarray]:
+	"""Create a filter matrix for n-fold angular symmetry about Y axis.
+	
+	Args:
+		mesh: The mesh object.
+		n_fold: Number of symmetric segments 
+	
+	Returns:
+		tuple containing:
+			HA: Sparse matrix that enforces angular symmetry
+			HAs: Array of row sums of HA matrix
+	"""
+
+	num_elems = mesh.num_elems
+	angle_step = 2 * np.pi / n_fold
+	
+	rows = []
+	cols = []
+	data = []
+	
+	for i in range(num_elems):
+		elemCenter = mesh.elem_centers[i, :]
+		r = np.sqrt(elemCenter[0]**2 + elemCenter[2]**2)
+		theta = np.arctan2(elemCenter[2], elemCenter[0])
+		
+		weight = 1.0 / n_fold
+		rows.append(i)
+		cols.append(i)
+		data.append(weight)
+		
+		# Vectorized computation for all k at once
+		k_values = np.arange(1, n_fold)
+		new_thetas = theta + k_values[:, None] * angle_step
+		new_x = r * np.cos(new_thetas)
+		new_z = r * np.sin(new_thetas)
+		
+		# Create array of other element centers for all k
+		otherElemCenters = np.column_stack((new_x.flatten(),
+											np.full_like(new_x.flatten(), elemCenter[1]),
+											new_z.flatten()))
+		# Find nearest elements for each symmetric position
+		sym_indices = [mesh.get_element_near_point(center) for center in otherElemCenters]
+		
+		# Append to COO matrix components
+		rows.extend([i] * (n_fold - 1))
+		cols.extend(sym_indices)
+		data.extend([weight] * (n_fold - 1))
+	
+	HAY = coo_matrix((data, (rows, cols)), shape=(num_elems, num_elems)).tocsc()
+	return HAY
+def createZAngularSymmetryFilter(mesh: mesher.Mesher, n_fold: int) -> tuple[coo_matrix, np.ndarray]:
 	"""Create a filter matrix for n-fold angular symmetry about Z axis.
 	
 	Args:

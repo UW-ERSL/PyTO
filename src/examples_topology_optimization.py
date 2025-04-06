@@ -130,7 +130,7 @@ def getStructuralTOProblem(to_problem: StructuralTOExamples, **kwargs):
     elif to_problem == StructuralTOExamples.TorquePlate:
         structural_problem = StructuralExamples.TorquePlate
         to_params.Comment  = "Circular Symmetry"
-        to_params.ZAxisAngularSymmetry = 6
+        to_params.ZAxisAngularSymmetry = 7
         to_params.ExtrudeZ = True
         to_params.nDOFDesired = 50000
         to_params.DesiredVolFraction = 0.5

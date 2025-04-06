@@ -27,9 +27,9 @@ script_dir = os.path.dirname(os.path.abspath(__file__))
 sys.path.append(script_dir)
 
 # Configuration paths
-PROJECTS_DIR = "../Projects"
-MODELS_DIR = "../Models"
-RESULTS_DIR = "../Results"
+PROJECTS_DIR = "C:\\Semester_5\\Research\\Test\\projects"
+MODELS_DIR = "C:\\Semester_5\\Research\\Test\\models"
+RESULTS_DIR = "C:\\Semester_5\\Research\\Test\\results"
 
 
 # ======================================================== Validation utility functions =========================================================
@@ -140,12 +140,18 @@ class BaseAnalysis:
     def generate_mesh(self):
         """Generate mesh from STL file."""
         try:
+            self.log_print(f"Generating mesh with target {self.n_elements} elements...")
             self.mesh = Mesher()
             self.mesh.createMeshFromSTLFile(self.stl_path, nElemsDesired=self.n_elements)
             self.mesh_type_setup()
             
             # Load STL geometry
             self.stl_geom = STLGeom(self.stl_path)
+            
+            if hasattr(self.mesh, 'num_elems'):
+                if self.mesh.num_elems != self.n_elements:
+                    self.log_print(f"Note: Requested {self.n_elements} elements, but mesh was created with {self.mesh.num_elems} elements")
+                    
             return True
         except Exception as e:
             self.log_print(f"Error generating mesh: {e}")
@@ -716,18 +722,72 @@ class AnalysisManager:
             return False, False
     
     @staticmethod
-    def run_analysis(project_file, n_elements=10000, output_dir=None, analysis_type='auto'):
+    def run_analysis(project_file, n_elements=None, output_dir=None, analysis_type='auto', solver=None):
         """Run appropriate analysis based on project file data and requested type."""
+        # Load project data to get settings
+        try:
+            with open(project_file, 'r') as f:
+                project_data = json.load(f)
+            
+            # Log source and value for number of elements
+            original_n_elements = n_elements
+            
+            # Get analysis settings from project file if available and not overridden
+            if n_elements is None and 'analysis_settings' in project_data and 'n_elements' in project_data['analysis_settings']:
+                n_elements = project_data['analysis_settings']['n_elements']
+                print(f"Using number of elements from project file: {n_elements}")
+            else:
+                if n_elements is None:
+                    n_elements = 10000  # Default if not specified
+                    print(f"Using default number of elements: {n_elements}")
+                else:
+                    print(f"Using command-line specified number of elements: {n_elements}")
+                
+            # Get solver from project file if available and not overridden
+            solver_source = "default"
+            if solver is None and 'analysis_settings' in project_data and 'solver_type' in project_data['analysis_settings']:
+                solver_type = project_data['analysis_settings']['solver_type']
+                solver_source = f"project file ({solver_type})"
+                # Convert string to solver enum
+                if solver_type == "PARDISO":
+                    solver = lin_solv.Solvers.PARDISO
+                elif solver_type == "DPCG":
+                    solver = lin_solv.Solvers.DPCG
+                elif solver_type == "CG":
+                    solver = lin_solv.Solvers.CG
+                elif solver_type == "PYAMG":
+                    solver = lin_solv.Solvers.PYAMG
+                elif solver_type == "SPSOLVE":
+                    solver = lin_solv.Solvers.SPSOLVE
+            
+            if solver is None:
+                solver = lin_solv.Solvers.PARDISO
+                
+            print(f"Using solver from {solver_source}: {solver.name}")
+                
+        except Exception as e:
+            print(f"Could not read analysis settings from project file: {e}")
+            # Use default values
+            if n_elements is None:
+                n_elements = 10000
+                print(f"Using default number of elements due to error: {n_elements}")
+            solver = solver or lin_solv.Solvers.PARDISO
+            print(f"Using default solver due to error: {solver.name}")
+        
         has_valid_structural, has_valid_thermal = AnalysisManager.determine_analysis_type(project_file)
         
         if analysis_type == 'auto':
             if has_valid_structural:
                 print(f"Auto-detected structural analysis for: {os.path.basename(project_file)}")
                 analyzer = StructuralAnalysis(project_file, n_elements, output_dir)
+                if solver:
+                    analyzer.solver = solver
                 return analyzer.execute()
             elif has_valid_thermal:
                 print(f"Auto-detected thermal analysis for: {os.path.basename(project_file)}")
                 analyzer = ThermalAnalysis(project_file, n_elements, output_dir)
+                if solver:
+                    analyzer.solver = solver
                 return analyzer.execute()
             else:
                 print(f"No valid analysis data found in: {os.path.basename(project_file)}")
@@ -735,6 +795,8 @@ class AnalysisManager:
         elif analysis_type == 'structural':
             if has_valid_structural:
                 analyzer = StructuralAnalysis(project_file, n_elements, output_dir)
+                if solver:
+                    analyzer.solver = solver
                 return analyzer.execute()
             else:
                 print(f"No structural data found in: {os.path.basename(project_file)}")
@@ -742,6 +804,8 @@ class AnalysisManager:
         elif analysis_type == 'thermal':
             if has_valid_thermal:
                 analyzer = ThermalAnalysis(project_file, n_elements, output_dir)
+                if solver:
+                    analyzer.solver = solver
                 return analyzer.execute()
             else:
                 print(f"No thermal data found in: {os.path.basename(project_file)}")
@@ -750,7 +814,7 @@ class AnalysisManager:
         return False
     
     @staticmethod
-    def batch_run_all_projects(n_elements=10000, analysis_type='auto'):
+    def batch_run_all_projects(n_elements=None, analysis_type='auto'):
         """Run analysis on all project files in the PROJECTS_DIR directory."""
         project_files = glob(os.path.join(PROJECTS_DIR, "*.pyto"))
         
@@ -768,7 +832,7 @@ class AnalysisManager:
             
             success = AnalysisManager.run_analysis(
                 project_file,
-                n_elements=n_elements,
+                n_elements=None,
                 output_dir=os.path.join(RESULTS_DIR, os.path.splitext(os.path.basename(project_file))[0]),
                 analysis_type=analysis_type
             )
@@ -795,8 +859,8 @@ def main():
     parser = argparse.ArgumentParser(description='Run FEA from PyTO project files with PARDISO solver')
     parser.add_argument('-p', '--project', default=None,
                         help='Path to specific .pyto project file (if omitted, runs all projects in PROJECTS_DIR)')
-    parser.add_argument('-e', '--elements', type=int, default=10000,
-                        help='Target number of mesh elements (default: 10000)')
+    parser.add_argument('-e', '--elements', type=int, default=None,
+                        help='Target number of mesh elements (default: use settings from project file)')
     parser.add_argument('-o', '--output', default=None,
                         help='Output directory for results (if omitted, uses RESULTS_DIR)')
     parser.add_argument('-t', '--type', choices=['structural', 'thermal', 'auto'], default='auto',
