@@ -26,10 +26,7 @@ jax.config.update("jax_enable_x64", True)
 script_dir = os.path.dirname(os.path.abspath(__file__))
 sys.path.append(script_dir)
 
-# Configuration paths
-PROJECTS_DIR = "C:\\Semester_5\\Research\\Test\\projects"
-MODELS_DIR = "C:\\Semester_5\\Research\\Test\\models"
-RESULTS_DIR = "C:\\Semester_5\\Research\\Test\\results"
+
 
 
 # ======================================================== Validation utility functions =========================================================
@@ -853,58 +850,13 @@ class AnalysisManager:
         return success_count > 0
 #==================================================================================================================================
 
-#==================================================================================================================================
-def main():
-    """Parse command line arguments and run the analysis"""
-    parser = argparse.ArgumentParser(description='Run FEA from PyTO project files with PARDISO solver')
-    parser.add_argument('-p', '--project', default=None,
-                        help='Path to specific .pyto project file (if omitted, runs all projects in PROJECTS_DIR)')
-    parser.add_argument('-e', '--elements', type=int, default=None,
-                        help='Target number of mesh elements (default: use settings from project file)')
-    parser.add_argument('-o', '--output', default=None,
-                        help='Output directory for results (if omitted, uses RESULTS_DIR)')
-    parser.add_argument('-t', '--type', choices=['structural', 'thermal', 'auto'], default='auto',
-                        help='Type of analysis to run (default: auto-detect)')
-    
-    args = parser.parse_args()
-    
-    os.makedirs(PROJECTS_DIR, exist_ok=True)
-    os.makedirs(MODELS_DIR, exist_ok=True)
-    os.makedirs(RESULTS_DIR, exist_ok=True)
-    
-    if args.project:
-        project_path = args.project
-        if not os.path.isabs(project_path):
-            project_path = os.path.join(PROJECTS_DIR, project_path)
-        
-        success = AnalysisManager.run_analysis(
-            project_path,
-            n_elements=args.elements,
-            output_dir=args.output,
-            analysis_type=args.type
-        )
-    else:
-        success = AnalysisManager.batch_run_all_projects(
-            n_elements=args.elements,
-            analysis_type=args.type
-        )
-    
-    return 0 if success else 1
-
 
 if __name__ == "__main__":
-    if len(sys.argv) == 1:
-        print("FEA Automation - Run structural and thermal analysis from PyTO project files")
-        print("\nUsage options:")
-        print("  1. Run all projects in the projects directory:")
-        print(f"     python {os.path.basename(__file__)}")
-        print("\n  2. Run a specific project:")
-        print(f"     python {os.path.basename(__file__)} -p project_name.pyto")
-        print("\n  3. Show this help message:")
-        print(f"     python {os.path.basename(__file__)} -h")
-        print("\nOptions:")
-        print("  -e, --elements NUM      Target number of mesh elements (default: 10000)")
-        print("  -o, --output DIR        Directory to save results")
-        print("  -t, --type TYPE         Type of analysis to run: structural, thermal, or auto (default: auto)")
-        print("                          'auto' will detect the available analysis type from the project file")
-    sys.exit(main())
+    # Example usage of the AnalysisManager class
+    project_file = "../Models/CantileverBeam/CantileverBeamStructural.pyto"
+    output_dir = "../Models/CantileverBeam/Results"
+    
+    # Run structural analysis
+    AnalysisManager.run_analysis(project_file, output_dir, analysis_type='structural')
+    
+    

@@ -27,6 +27,8 @@ class TOParams:
     XSymmetry = False
     YSymmetry = False
     ZSymmetry = False
+    XAxisAngularSymmetry = 0
+    YAxisAngularSymmetry = 0
     ZAxisAngularSymmetry = 0
     ExtrudeX = False
     ExtrudeY = False
