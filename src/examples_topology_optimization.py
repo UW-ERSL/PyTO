@@ -74,33 +74,33 @@ def getStructuralTOProblem(to_problem: StructuralTOExamples, **kwargs):
     to_params = TOParams()
     if to_problem == StructuralTOExamples.EdgeCantilever:
         structural_problem = StructuralExamples.EdgeCantilever
-        to_params.Comment = "Benchmark TO Problem"
+        to_params.Comment = "Benchmark TO"
         to_params.YSymmetry = True
         to_params.nDOFDesired = 50000
         to_params.DesiredVolFraction = 0.5
     elif to_problem == StructuralTOExamples.MidCantilever:
         structural_problem = StructuralExamples.MidCantilever
-        to_params.Comment  = "Benchmark TO Problem"
+        to_params.Comment  = "Benchmark TO"
         to_params.YSymmetry = True  # Symmetry about the Y-axis
         to_params.nDOFDesired = 30000
         to_params.DesiredVolFraction = 0.5
     elif to_problem == StructuralTOExamples.ThreeHoleBracket:
         structural_problem = StructuralExamples.ThreeHoleBracket
-        to_params.Comment  = "Retain Material"
+        to_params.Comment  = "Retaining Material"
         to_params.ZSymmetry = True
         to_params.KeepFixedElems = True
         to_params.nDOFDesired = 40000
         to_params.DesiredVolFraction = 0.35
     elif to_problem == StructuralTOExamples.MBB:
         structural_problem = StructuralExamples.MBB
-        to_params.Comment  = "Benchmark TO Poblem"
+        to_params.Comment  = "Benchmark TO"
         to_params.nDOFDesired = 50000
         to_params.DesiredVolFraction = 0.25
     elif to_problem == StructuralTOExamples.DistributedLoad:
         structural_problem = StructuralExamples.DistributedLoad
         to_params.Comment  = "Distributed Load"
         to_params.XSymmetry = True 
-        to_params.nDOFDesired = 50000
+        to_params.nDOFDesired = 60000
         to_params.DesiredVolFraction = 0.25
     elif to_problem == StructuralTOExamples.Multiload:
         structural_problem = StructuralExamples.Multiload
@@ -110,24 +110,25 @@ def getStructuralTOProblem(to_problem: StructuralTOExamples, **kwargs):
         to_params.DesiredVolFraction = 0.25
     elif to_problem == StructuralTOExamples.GravityPlate:
         structural_problem = StructuralExamples.GravityPlate
-        to_params.Comment  = "Body Force TO"
+        to_params.Comment  = "Body Force"
         to_params.XSymmetry = True
         to_params.ExactVolumeFraction = True
         to_params.nDOFDesired = 20000
         to_params.DesiredVolFraction = 0.25
     elif to_problem == StructuralTOExamples.LBracket:
         structural_problem = StructuralExamples.LBracket
-        to_params.Comment  = "Benchmark TO Problem"
+        to_params.Comment  = "Benchmark TO"
         to_params.ExtrudeZ = True
         to_params.nDOFDesired = 50000
         to_params.DesiredVolFraction = 0.25
     elif to_problem == StructuralTOExamples.CentrifugalPlate:
         structural_problem = StructuralExamples.CentrifugalPlate
-        to_params.Comment  = "Centrifigal + Vertical Loading"
+        to_params.Comment  = "Body Force"
         to_params.ExtrudeZ = True
+        to_params.ExactVolumeFraction = True
         to_params.ZAxisAngularSymmetry = 4
         to_params.nDOFDesired = 50000
-        to_params.DesiredVolFraction = 0.8
+        to_params.DesiredVolFraction = 0.5
         to_params.KeepFixedElems = True  # Keep elements that are fixed in the centrifugal plate example
     elif to_problem == StructuralTOExamples.TorquePlate:
         structural_problem = StructuralExamples.TorquePlate
@@ -138,14 +139,14 @@ def getStructuralTOProblem(to_problem: StructuralTOExamples, **kwargs):
         to_params.DesiredVolFraction = 0.5
     elif to_problem == StructuralTOExamples.KnuckleAssembly:
         structural_problem = StructuralExamples.KnuckleAssembly
-        to_params.Comment = "Assembly TO"
+        to_params.Comment = "Retaining Components"
         to_params.XSymmetry = True
         to_params.ZSymmetry = True
         to_params.nDOFDesired = 100000
         to_params.DesiredVolFraction = 0.5
     elif to_problem == StructuralTOExamples.Table:
         structural_problem = StructuralExamples.Table
-        to_params.Comment = "Large DOF"
+        to_params.Comment = "Thin Structure"
         to_params.XSymmetry = True
         to_params.ZSymmetry = True
         to_params.nDOFDesired = 100000

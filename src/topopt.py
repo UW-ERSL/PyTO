@@ -122,6 +122,71 @@ def createFilters(fe_solver: sfea.StructFEA,to_params):
 
 	return H, Hs
 
+def computeTopologicalSensitivity(mesh, mat_prop, u, rho):
+	"""Compute topological sensitivity field. Vectorized version."""
+	
+	num_elems = mesh.num_elems
+	T = np.zeros(num_elems)
+	e, nu = mat_prop.youngs_modulus, mat_prop.poissons_ratio
+	
+	# Create constitutive matrix
+	v1 = 2 * nu**2 + nu - 1
+	v2 = 2 * nu + 2
+	D = e * np.array([
+		[(nu - 1) / v1, -nu / v1, -nu / v1, 0, 0, 0],
+		[-nu / v1, (nu - 1) / v1, -nu / v1, 0, 0, 0],
+		[-nu / v1, -nu / v1, (nu - 1) / v1, 0, 0, 0],
+		[0, 0, 0, 1 / v2, 0, 0],
+		[0, 0, 0, 0, 1 / v2, 0],
+		[0, 0, 0, 0, 0, 1 / v2]
+	])
+	
+	# Shape function gradients at center
+	gradN = (1 / 8) * np.array([
+		[-1, 1, 1, -1, -1, 1, 1, -1],
+		[-1, -1, 1, 1, -1, -1, 1, 1],
+		[-1, -1, -1, -1, 1, 1, 1, 1]
+	])
+	
+	# Get element degrees of freedom
+	edof = mesh.edofMat
+	
+	# Compute displacement gradients
+	uGrad = gradN @ u[edof[:, ::3]].T
+	vGrad = gradN @ u[edof[:, 1::3]].T
+	wGrad = gradN @ u[edof[:, 2::3]].T
+	
+	# Compute strains
+	strains = np.stack([
+		uGrad[0], vGrad[1], wGrad[2],
+		uGrad[1] + vGrad[0],
+		uGrad[2] + wGrad[0],
+		vGrad[2] + wGrad[1]
+	], axis=1)  # Shape: (num_elems, 6)
+	
+	# Compute stresses
+	stresses = strains @ D.T  # Shape: (num_elems, 6)
+	
+	# Create stress and strain tensors
+	stress_tensor = rho[:, None, None] * np.array([
+		[stresses[:, 0], stresses[:, 3], stresses[:, 4]],
+		[stresses[:, 3], stresses[:, 1], stresses[:, 5]],
+		[stresses[:, 4], stresses[:, 5], stresses[:, 2]]
+	]).transpose(2, 0, 1)  # Shape: (num_elems, 3, 3)
+	
+	strain_tensor = np.array([
+		[strains[:, 0], strains[:, 3], strains[:, 4]],
+		[strains[:, 3], strains[:, 1], strains[:, 5]],
+		[strains[:, 4], strains[:, 5], strains[:, 2]]
+	]).transpose(2, 0, 1)  # Shape: (num_elems, 3, 3)
+	
+	# Compute topological sensitivity
+	trace_stress = np.trace(stress_tensor, axis1=1, axis2=2)
+	trace_strain = np.trace(strain_tensor, axis1=1, axis2=2)
+	T = (4 / (1 + nu) * np.sum(stress_tensor * strain_tensor, axis=(1, 2)) -
+		(1 - 3 * nu) / (1 - nu**2) * trace_stress * trace_strain)
+
+	return T
 def topopt_mma(fe_solver: sfea.StructFEA,
 			   			to_params,
 			   			minMMAIterations: int = 5,
@@ -131,7 +196,7 @@ def topopt_mma(fe_solver: sfea.StructFEA,
 							 move_limit: float = 0.2,
 							 kkt_tol: float = 1.e-6,
 							 move_tol: float = 0.025,
-							 rel_conv_tol: float = 1.e-4,
+							 rel_conv_tol: float = 1.e-3,
 							 debug: bool = False,
 							 ) -> tuple[np.ndarray, dict]:
 	"""MMA based topology optimization for minimum compliance.
@@ -198,7 +263,7 @@ def topopt_mma(fe_solver: sfea.StructFEA,
 		nodal_body_force = None
 
 	success = True
-	
+	errorMsg = ""
 	while not mma_state.is_converged:
 		x = mma_state.x.reshape(-1)
 		timeFEAStart = time.time()
@@ -229,7 +294,6 @@ def topopt_mma(fe_solver: sfea.StructFEA,
 			grad_obj +=  2*ce_body_force # Assumes body force is linear w.r.t. x
 	
 		grad_obj = (H * grad_obj)/Hs
-
 
 		if (elemsWithForces.size > 0):
 			grad_obj[elemsWithForces] = min(grad_obj)
@@ -284,23 +348,42 @@ def topopt_mma(fe_solver: sfea.StructFEA,
 		history['change'].append(change)
 
 		if (len(history['compliance'])) >= minMMAIterations:
-			dJ1 = (history['compliance'][-1] - history['compliance'][-2]) / history['compliance'][-2]
-			
-			if abs(dJ1) < rel_conv_tol and fraction_grey < 0.1 and (np.max(cons) < rel_conv_tol):
+			dJ1 = abs((history['compliance'][-1] - history['compliance'][-2]) / history['compliance'][-2])
+	
+			if dJ1 < rel_conv_tol and (np.max(cons) < rel_conv_tol) and (fraction_grey < 0.1): # success
 				break
 		if time.time() - tStart > timeLimit:
 			success = False
+			errorMsg = "Time limit exceeded."
 			print("MMA optimization terminated due to time limit.")
 			break
 
 	if mma_state.epoch >= maxMMAIterations:
 		print("MMA optimization did not converge.")
+		errorMsg = "Maximum iterations reached."
 		success = False
-		
+	
+	# extract binary topology
+	x[x < 0.5] = 0
+	x[x >= 0.5] = 1
+	volfrac = np.mean(x)
 	fe_solver.mesh.setPseudoDensity(x)
+	obj,u = _compliance_objective(x, fe_solver, material_model_dict)
+	history['compliance'].append(obj)
+	history['volume'].append(volfrac)
+	history['change'].append(change)
+	if (obj > 2*history['compliance'][-2]):
+		errorMsg = "Disconnected topology"
+		success = False
+	if (volfrac > 1.1*to_params.DesiredVolFraction):
+		errorMsg = f"vf {to_params.DesiredVolFraction:0.3f} not reached"
+		success = False 
+	grey_elements = np.sum((x > 0.1) & (x < 0.9))
+	fraction_grey = (grey_elements / num_elems) 
+	print(f"Final objective: {obj:.4g}, vf: {np.mean(x):.3f}, grey: {fraction_grey:.3f}")
 	print(f"Time FEA: {timeFEA:.2f} s, Time MMA: {timeMMA:.2f} s")
 	print(f"Total Time: {timeFEA+timeMMA:.2f} s")
-	return np.asarray(u), history,success
+	return np.asarray(u), history,success,errorMsg
 
 
 def topopt_optimality_criteria(
@@ -310,8 +393,8 @@ def topopt_optimality_criteria(
 							penal: float = 3,
 							move: float = 0.2,
 							move_tol: float = 0.025,
-							rel_conv_tol: float = 1.e-4,
-							directLagrangeMethod: bool = True,
+							rel_conv_tol: float = 1.e-3,
+							directLagrangeMethod: bool = False,
 							debug: bool = False,
 							) -> tuple[np.ndarray, dict]:
 	"""Optimality Criteria based topology optimization for minimum compliance.
@@ -327,7 +410,7 @@ def topopt_optimality_criteria(
 	Returns: A tuple containing the displacement field of the optimized structure
 		and a dictionary containing the optimization history.
 	"""
-
+	tStart = time.time()
 	elem_body_force = fe_solver.elem_body_force
 	if elem_body_force is None or (np.linalg.norm(elem_body_force) == 0):
 		material_model = MaterialModel.SIMP #For no body forces, using SIMP material model
@@ -363,6 +446,7 @@ def topopt_optimality_criteria(
 	KE = elem_stiff.hex8_stiffness_matrix_structural( fe_solver.mat_prop,fe_solver.mesh.elem_size)
 	
 	success = True
+	errorMsg = ""
 	for iter in range(maxIterations):
 		x = np.array(x)
 		obj,u = _compliance_objective(x, fe_solver,material_model_dict)
@@ -383,7 +467,6 @@ def topopt_optimality_criteria(
 			ce_body_force = (u[fe_solver.mesh.edofMat].reshape(num_elems, 24) * nodal_body_force[fe_solver.mesh.edofMat].reshape(num_elems, 24)).sum(1)
 			grad_obj +=  2*ce_body_force
 			
-		
 		grad_obj = (H * grad_obj)/Hs
 
 		if (elemsWithForces.size > 0):
@@ -405,7 +488,7 @@ def topopt_optimality_criteria(
 				lmid = 0.5 * (l2 + l1)
 				b = -grad_obj / lmid	
 				# OC update with damping and bounds
-				xnew = jnp.maximum(xmin,jnp.maximum(x - move,jnp.minimum(xmax, jnp.minimum(x + move, x * np.sqrt(b)))))
+				xnew = jnp.maximum(xmin,np.maximum(x - move,np.minimum(xmax, np.minimum(x + move, x * np.sqrt(b)))))
 
 				if jnp.sum(xnew) - to_params.DesiredVolFraction * num_elems > 0:
 					l1 = lmid
@@ -424,9 +507,8 @@ def topopt_optimality_criteria(
 			volToDistribute = to_params.DesiredVolFraction*num_elems
 			varTimesGrad = x*(abs(grad_obj))**eta
 			while setChange:
-				xnew = varTimesGrad/ (np.sum(varTimesGrad[varIn]) /volToDistribute)
+				xnew = varTimesGrad/((np.sum(varTimesGrad[varIn])+1e-12) /(volToDistribute+1e-12)) 
 				volToDistribute = to_params.DesiredVolFraction*num_elems -np.sum(xMax[xnew>=xMax]) -np.sum(xMin[xnew<=xMin])
-				setChange = np.sum(xnew) - to_params.DesiredVolFraction * num_elems > 0
 				setChange = not np.array_equal((xnew<xMax) & (xnew>xMin), varIn)
 				varIn = (xnew < xMax) & (xnew > xMin)
 			
@@ -444,34 +526,59 @@ def topopt_optimality_criteria(
 		history['compliance'].append(obj)
 		history['volume'].append(np.mean(xPhys))
 		history['change'].append(change)
-		
+		# Estimate the percentage of grey elements
+		grey_elements = np.sum((x > 0.1) & (x < 0.9))
+		fraction_grey = (grey_elements / num_elems) 
 		print(f"it.: {iter+1:d}, obj.: {obj:.5g}, "
-				  	f"vol.: {np.mean(xPhys):.3g}, ch.: {change:.3f}")
+				  	f"vol.: {np.mean(xPhys):.3g}, grey: {fraction_grey:.3f}")
 		if np.isnan(obj):
 			print("Objective function became NaN. Exiting optimization.")
+			errorMsg = "Objective is diverging"
 			success = False
 			break
-		if (change < move_tol):
+		if (change < move_tol):# success
 			break
 		if (len(history['compliance'])) >= 2:
-			dJ = (history['compliance'][-1] - history['compliance'][-2]) / history['compliance'][-2]
-			if (abs(dJ) < rel_conv_tol and abs(cons) < rel_conv_tol):
+			dJ = abs((history['compliance'][-1] - history['compliance'][-2]) / history['compliance'][-2])
+			if (debug):
+				print(f" dJ1: {dJ:.4g}, cons: {abs(cons):.4g}, grey: {fraction_grey:.4g}")
+			if (abs(dJ) < rel_conv_tol and abs(cons) < rel_conv_tol) and (fraction_grey < 0.1): # success
 				break
 
 	if iter == maxIterations - 1:
-		print("Maximum iterations reached without convergence.")
+		errorMsg = "Maximum iterations reached"
+		print(errorMsg)
+		success = False
+	totalTime = time.time() - tStart
+	# extract binary topology
+	x = np.where(x < 0.5, 0.0, 1.0)
+	volfrac = np.mean(x)
+	fe_solver.mesh.setPseudoDensity(x)
+	obj,u = _compliance_objective(x, fe_solver, material_model_dict)
+	history['compliance'].append(obj)
+	history['volume'].append(volfrac)
+	history['change'].append(change)
+	if (obj > 2*history['compliance'][-2]):
+		errorMsg = "Disconnected topology"
+		success = False
+	if (volfrac > 1.1*to_params.DesiredVolFraction):
+		errorMsg =  f"vf {to_params.DesiredVolFraction:0.3f} not reached"
 		success = False
 
-	return np.asarray(u), history, success
+	grey_elements = np.sum((x > 0.1) & (x < 0.9))
+	fraction_grey = (grey_elements / num_elems) 
+	print(f"Final objective: {obj:.4g}, vf: {np.mean(x):.3f}, grey: {fraction_grey:.3f}")
+	print(f"Total Time: {totalTime:.2f} s")
+	return np.asarray(u), history, success, errorMsg 
 
 
 def topopt_pareto(fe_solver: sfea.StructFEA,
 				  to_params,
 							rel_err: float = 0.025,
 							vol_decr_max: float = 0.05,
-							vol_decr_min: float = 0.001,
+							vol_decr_min: float = 0.0025,
 							min_local_iters: int = 2,
-							max_local_iters: int = 10,
+							max_local_iters: int = 5,
 							rhoVoid: float = 0,
 							debug: bool = False
 							)-> tuple[np.ndarray, dict]:
@@ -494,71 +601,7 @@ def topopt_pareto(fe_solver: sfea.StructFEA,
 	"""
 	import numpy as np
 
-	def computeTopologicalSensitivity(mesh, mat_prop, u, rho):
-		"""Compute topological sensitivity field. Vectorized version."""
-		
-		num_elems = mesh.num_elems
-		T = np.zeros(num_elems)
-		e, nu = mat_prop.youngs_modulus, mat_prop.poissons_ratio
-		
-		# Create constitutive matrix
-		v1 = 2 * nu**2 + nu - 1
-		v2 = 2 * nu + 2
-		D = e * np.array([
-			[(nu - 1) / v1, -nu / v1, -nu / v1, 0, 0, 0],
-			[-nu / v1, (nu - 1) / v1, -nu / v1, 0, 0, 0],
-			[-nu / v1, -nu / v1, (nu - 1) / v1, 0, 0, 0],
-			[0, 0, 0, 1 / v2, 0, 0],
-			[0, 0, 0, 0, 1 / v2, 0],
-			[0, 0, 0, 0, 0, 1 / v2]
-		])
-		
-		# Shape function gradients at center
-		gradN = (1 / 8) * np.array([
-			[-1, 1, 1, -1, -1, 1, 1, -1],
-			[-1, -1, 1, 1, -1, -1, 1, 1],
-			[-1, -1, -1, -1, 1, 1, 1, 1]
-		])
-		
-		# Get element degrees of freedom
-		edof = mesh.edofMat
-		
-		# Compute displacement gradients
-		uGrad = gradN @ u[edof[:, ::3]].T
-		vGrad = gradN @ u[edof[:, 1::3]].T
-		wGrad = gradN @ u[edof[:, 2::3]].T
-		
-		# Compute strains
-		strains = np.stack([
-			uGrad[0], vGrad[1], wGrad[2],
-			uGrad[1] + vGrad[0],
-			uGrad[2] + wGrad[0],
-			vGrad[2] + wGrad[1]
-		], axis=1)  # Shape: (num_elems, 6)
-		
-		# Compute stresses
-		stresses = strains @ D.T  # Shape: (num_elems, 6)
-		
-		# Create stress and strain tensors
-		stress_tensor = rho[:, None, None] * np.array([
-			[stresses[:, 0], stresses[:, 3], stresses[:, 4]],
-			[stresses[:, 3], stresses[:, 1], stresses[:, 5]],
-			[stresses[:, 4], stresses[:, 5], stresses[:, 2]]
-		]).transpose(2, 0, 1)  # Shape: (num_elems, 3, 3)
-		
-		strain_tensor = np.array([
-			[strains[:, 0], strains[:, 3], strains[:, 4]],
-			[strains[:, 3], strains[:, 1], strains[:, 5]],
-			[strains[:, 4], strains[:, 5], strains[:, 2]]
-		]).transpose(2, 0, 1)  # Shape: (num_elems, 3, 3)
-		
-		# Compute topological sensitivity
-		trace_stress = np.trace(stress_tensor, axis1=1, axis2=2)
-		trace_strain = np.trace(strain_tensor, axis1=1, axis2=2)
-		T = (4 / (1 + nu) * np.sum(stress_tensor * strain_tensor, axis=(1, 2)) -
-			(1 - 3 * nu) / (1 - nu**2) * trace_stress * trace_strain)
 
-		return T
 
 
 	removeHangingElems = to_params.RemoveHangingElems
@@ -618,6 +661,7 @@ def topopt_pareto(fe_solver: sfea.StructFEA,
 
 	success = True
 	terminatePareto = False
+	errorMsg = ""
 	while volfrac > to_params.DesiredVolFraction:
 		# Move to next volume fraction
 		volfrac = max(to_params.DesiredVolFraction, volfrac - vol_decr)
@@ -634,7 +678,12 @@ def topopt_pareto(fe_solver: sfea.StructFEA,
 		innerLoopSuccess = True
 		while True:
 			if (debug):
-				print(f"Local Iteration: {localIter}/{max_local_iters}, JTemp: {JTemp:.3g}")
+				print(f"Local Iteration: {localIter}/{max_local_iters}, JTemp: {JTemp:.3g}, JPrev: {JPrev:.3g}")
+			# Check convergence, and break if converged
+			if localIter >= min_local_iters:
+				if abs(JPrev - JTemp)/JTemp < rel_err or abs(min(JPrev,JPrevPrev) - JTemp)/JTemp < rel_err:
+					innerLoopSuccess = True
+					break
 			if (localIter >= max_local_iters) or abs(JTemp) > 10 * history['compliance'][-1]:  # large change in compliance	
 				innerLoopSuccess = False
 				rho = rhoPrev.copy()
@@ -648,11 +697,7 @@ def topopt_pareto(fe_solver: sfea.StructFEA,
 				if vol_decr < vol_decr_min:
 					terminatePareto = True
 				break
-			# Check convergence, and break if converged
-			if localIter >= min_local_iters:
-				if abs(JPrev - JTemp)/JTemp < rel_err or abs(min(JPrev,JPrevPrev) - JTemp)/JTemp < rel_err:
-					innerLoopSuccess = True
-					break
+
 
 			# Find cutoff value and update design
 			value = np.sort(T.flatten())[int(fe_solver.mesh.num_elems * (1 - volfrac))]
@@ -698,13 +743,13 @@ def topopt_pareto(fe_solver: sfea.StructFEA,
 			totalIter += 1
 
 		if terminatePareto:
-			success = False
-			print("-" * 50)
-			print("Pareto: Failed to reach volume fraction.")
-			print("Recommendations:")	
-			print("1. Check for incorrect symmetry constraints")
-			print("2. Increase mesh size")
-			print("3. Decrease vol_decr_max parameter")
+			if (volfrac > 1.1*to_params.DesiredVolFraction):
+				success = False
+				errorMsg =  f"vf {to_params.DesiredVolFraction:0.3f} not reached"
+				print("-" * 50)
+				print("Pareto: Failed to reach volume fraction.")
+				print("1. Check for incorrect symmetry constraints")
+				print("2. Increase mesh size")
 			break
 		if innerLoopSuccess:
 			history['compliance'].append(JTemp)
@@ -714,7 +759,7 @@ def topopt_pareto(fe_solver: sfea.StructFEA,
 			print(f"vf={history['volume'][-1]:.3f}, J={history['compliance'][-1]:.3g},   #FEA={totalIter:2d}")
 			fe_solver.mesh.setPseudoDensity(rho.flatten())
 			
-	return u, history, success
+	return u, history, success,errorMsg
 
 def topopt_levelset(fe_solver: sfea.StructFEA,
 					 to_params,
@@ -723,7 +768,6 @@ def topopt_levelset(fe_solver: sfea.StructFEA,
 						 time_step: float = 0.1,
 						 epsilon: float = 1.0,
 						 rel_conv_tol: float = 1e-4,
-						 
 						 debug: bool = False) -> tuple[np.ndarray, dict]:
 		"""Level Set Method for Topology Optimization using Hamilton-Jacobi equation.
 
@@ -771,6 +815,7 @@ def topopt_levelset(fe_solver: sfea.StructFEA,
 		KE = elem_stiff.hex8_stiffness_matrix_structural(fe_solver.mat_prop, fe_solver.mesh.elem_size)
 		[H,Hs] = createFilters(fe_solver, to_params)
 		success = True
+		errorMsg = ""
 		for iter in range(maxIterations):
 			# Compute velocity field and objective
 			velocity, obj = compute_velocity_field(fe_solver, phi, material_model_dict)
@@ -805,7 +850,7 @@ def topopt_levelset(fe_solver: sfea.StructFEA,
 			success = False
 		# Solve for final displacement field
 		u = np.asarray(fe_solver.solve(density))
-		return u, history, success
+		return u, history, success,errorMsg
 
 
 def runTOTests():
@@ -815,17 +860,17 @@ def runTOTests():
 	dsolver = deflation.DeflationSolver()
 	for to_problem in StructuralTOExamples:
 		if (to_problem == StructuralTOExamples.BliskWithBlade):
-			continue
+			break
 		print("-" * 50)
 		print(f"Running {to_problem.name}...")
 		print("-" * 50)
 
 		mesh, mat_prop, bc,elem_body_force, to_params = getStructuralTOProblem(to_problem)
 
-		if (to_params.nDOFDesired < 200000):# Typically PARDISO 
+		if (to_params.nDOFDesired < 100000):#  PARDISO 
 			print("Solver: Pardiso")
 			solver = lin_solv.Solvers.PARDISO
-		else: #DPCG for DOF > 200,000
+		else: 
 			print("Solver: DPCG")
 			solver = lin_solv.Solvers.DPCG 
 			nGroups =  min(dsolver.maxGroups,max(dsolver.minGroups,round(3*mesh.num_nodes/dsolver.dofPerGroup)))
@@ -843,16 +888,16 @@ def runTOTests():
 					elem_body_force = elem_body_force)
 		startTime = time.time()
 		if optimizationMethod == TO_METHODS.DENSITYMMA:
-			u, history,success = topopt_mma(fe_solver = fe_solver,
+			u, history,success,errorMsg = topopt_mma(fe_solver = fe_solver,
 									to_params = to_params)
 		elif optimizationMethod == TO_METHODS.DENSITYOC:
-			u, history, success = topopt_optimality_criteria(fe_solver = fe_solver,
+			u, history, success,errorMsg = topopt_optimality_criteria(fe_solver = fe_solver,
 											to_params = to_params)
 		elif optimizationMethod == TO_METHODS.PARETO:
-			u, history, success = topopt_pareto(fe_solver = fe_solver,
+			u, history, success,errorMsg = topopt_pareto(fe_solver = fe_solver,
 													to_params = to_params)
 		elif optimizationMethod == TO_METHODS.LEVELSET:
-			u, history, success = topopt_levelset(fe_solver = fe_solver,
+			u, history, success,errorMsg = topopt_levelset(fe_solver = fe_solver,
 													to_params = to_params)
 		timeTaken = time.time() - startTime
 
@@ -866,7 +911,6 @@ def runTOTests():
 	
 		plots.plotMesh(fe_solver.mesh, bc = None, u=None, save_path = image_path, title = title)
 		
-		
 		results_list.append({
 			'name': to_problem.name,
 			'comment': to_params.Comment,  
@@ -874,15 +918,15 @@ def runTOTests():
 			'volume': history['volume'][-1],
 			'compliance': history['compliance'][-1],
 			'time (s)': timeTaken,
-			'success': success
+			'success': success,
+			'error': errorMsg
 		})
-	
 
 	# Convert results_list to a DataFrame for better visualization
 	results_df = pd.DataFrame(results_list)
 
 	# Format
-	results_df['volume'] = results_df['volume'].map(lambda x: f"{x:.3g}")
+	results_df['volume'] = results_df['volume'].map(lambda x: f"{x:.2g}")
 	results_df['compliance'] = results_df['compliance'].map(lambda x: f"{x:.3g}")
 	results_df['time (s)'] = results_df['time (s)'].map(lambda x: f"{x:.3g}")
 
@@ -902,6 +946,9 @@ def runTOTests():
 	
 	# Save the table as an image
 	results_path = f"{output_dir}/{optimizationMethod.name}_summary.png"
+	# Save the table as a CSV file
+	csv_path = f"{output_dir}/{optimizationMethod.name}_summary.csv"
+	results_df.to_csv(csv_path, index=False)
 	plt.savefig(results_path, bbox_inches='tight')
 
 	
@@ -922,7 +969,10 @@ if __name__ == "__main__":
 	#runTOTests(); exit(0) # Run all tests for each example in the StructuralTOExamples enum
 	
 	# Choose the TO problem
-	to_problem = StructuralTOExamples.TorquePlate
+	print("-" * 50)
+	to_problem = StructuralTOExamples.ThreeHoleBracket
+	print(f"Running {to_problem.name}...")
+	print("-" * 50)
 	solver = lin_solv.Solvers.PARDISO # Typically PARDISO, but DPCG for DOF > 200,000
 	debug = False
 
@@ -957,7 +1007,7 @@ if __name__ == "__main__":
 	startTime = time.time()
 	if optimizationMethod == TO_METHODS.DENSITYMMA:
 		print("OptimizationMethod: MMA")
-		u, history,success = topopt_mma(fe_solver = fe_solver,
+		u, history,success,errorMsg = topopt_mma(fe_solver = fe_solver,
 						  			to_params = to_params,
 									debug = debug)
 		timeTaken = time.time() - startTime
@@ -990,7 +1040,7 @@ if __name__ == "__main__":
 
 	elif optimizationMethod == TO_METHODS.DENSITYOC:
 		print("OptimizationMethod: OC")
-		u, history, success = topopt_optimality_criteria(fe_solver = fe_solver,
+		u, history, success,errorMsg = topopt_optimality_criteria(fe_solver = fe_solver,
 										  		to_params = to_params,
 												debug = debug)
 		timeTaken = time.time() - startTime
@@ -1023,7 +1073,7 @@ if __name__ == "__main__":
 	
 	elif optimizationMethod == TO_METHODS.PARETO:
 		print("OptimizationMethod: Pareto")
-		u, history, success = topopt_pareto(fe_solver = fe_solver,
+		u, history, success,errorMsg = topopt_pareto(fe_solver = fe_solver,
 										to_params = to_params,
 										debug = debug)
 		
@@ -1040,7 +1090,7 @@ if __name__ == "__main__":
 		plt.show(block=False)
 	elif optimizationMethod == TO_METHODS.LEVELSET:
 		print("OptimizationMethod: Level Set")
-		u, history, success = topopt_levelset(fe_solver = fe_solver,
+		u, history, success,errorMsg = topopt_levelset(fe_solver = fe_solver,
 										to_params = to_params,
 										maxIterations = 100,
 										time_step = 0.1,
@@ -1051,5 +1101,6 @@ if __name__ == "__main__":
 		title = f"Level Set: nDOF: {3*fe_solver.mesh.num_nodes}, vol: {history['volume'][-1]:0.2f}, J: {history['compliance'][-1]:.3g}, time: {timeTaken:.0f} s"	
 
 	print(f"Time taken: {timeTaken:.0f} s")
-	
+	if not success:
+		print(f"Error: {errorMsg}")
 	plots.plotMesh(fe_solver.mesh, bc = None, u=None, title = title)

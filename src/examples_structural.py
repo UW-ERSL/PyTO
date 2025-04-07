@@ -926,7 +926,7 @@ def createFilletedBeamProblem(nDOFDesired=50000, youngs_modulus = 2.1e5, poisson
   
 def createCentrifugalPlateProblem(nDOFDesired: int = 10000, youngs_modulus = 2e11, 
                                poissons_ratio = 0.28, material_density = 7700,
-                               rpm = 10000, verticalLoad = 200):
+                               rpm = 10000, verticalLoad = 100):
  
   # Read the STL model, create a mesh of desired size, and a structural problem is posed on it.
   stl_file = os.path.join(script_dir, '../Models/CircularPlateHole/CircularPlateHole.STL')

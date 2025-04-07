@@ -31,12 +31,11 @@ from examples_structural import *
 
 '''
 pyTOGUI To do:
-1. Main buttons state (blue, green, red)  (implemented)
-2. Hide/show mesh option under Display  (implemented) (will carefully look at this option because others are getting messed up sometimes)
-3. Show thermal heat arrows and dirichlet BC (similar to structural) (implemented)
-4. Add Total Heat option (in addition to Heat Flux) (implemented)
-5. Remove bottom left text in GUI window. Instead, can you show that next to arrows in the scene? (removed)
-6. Save topopt constraints in project (remaining)
+1. Units IPS not working
+2. Add a button to clear all selections
+3. Add a button to clear all loads
+4. Add a button to clear all constraints
+5. Add a button to clear all results
 '''
 #---------------------------------------------------------------------------------
 class MainWindow(QtWidgets.QMainWindow):
