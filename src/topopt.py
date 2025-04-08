@@ -967,13 +967,13 @@ if __name__ == "__main__":
 	import plots	
 	
 	jax.config.update("jax_enable_x64", True)
-	optimizationMethod = TO_METHODS.DENSITYOC # DENSITYMMA, DENSITYOC, PARETO, LEVELSET
+	optimizationMethod = TO_METHODS.PARETO # DENSITYMMA, DENSITYOC, PARETO, LEVELSET
 
-	runTOTests(); exit(0) # Run all tests for each example in the StructuralTOExamples enum
+	#runTOTests(); exit(0) # Run all tests for each example in the StructuralTOExamples enum
 	
 	# Choose the TO problem
 	print("-" * 50)
-	to_problem = StructuralTOExamples.Multiload
+	to_problem = StructuralTOExamples.DistributedLoad
 	print(f"Running {to_problem.name}...")
 	print("-" * 50)
 	solver = lin_solv.Solvers.PARDISO # Typically PARDISO, but DPCG for DOF > 200,000

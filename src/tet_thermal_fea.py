@@ -66,6 +66,44 @@ class ThermalFEATet:
 
     return ke
 
+  
+  def tet4_specific_heat_matrix(
+          mat_prop: mat_lib.ThermalMaterial,
+          xyz_nodes: jnp.ndarray,
+        ) -> jnp.ndarray:
+    """Computes the element specific heat matrix of a tetrahedral element in 3D.
+    The specific heat matrix is simplified as:
+
+          C = (1/20) * C*V*rho * predefined_matrix
+
+    Args:
+    mat_prop: The thermal material properties of the element.
+    xyz_nodes: Array of (4, 3) containing the x, y, z coordinates of the nodes.
+
+    Returns: The element specific heat matrix of size (4, 4)
+    """
+    # Compute the Jacobian matrix
+    dN_dxi = np.array([[-1, 1, 0, 0],
+                       [-1, 0, 1, 0],
+                       [-1, 0, 0, 1]])
+    jac = dN_dxi @ xyz_nodes
+    det_jac = np.linalg.det(jac)
+
+    # Define the predefined matrix of 1s and 2s
+    predefined_matrix = np.array([
+        [2, 1, 1, 1],
+        [1, 2, 1, 1],
+        [1, 1, 2, 1],
+        [1, 1, 1, 2]
+    ])
+    C=mat_prop.specific_heat
+    rho=mat_prop.mass_density
+    # Compute the specific heat matrix
+    ce = (1 / 120) * det_jac * predefined_matrix*C*rho
+    # print(f"Specific heat matrix (ce):\n{ce}")
+    # t=1
+    return ce
+
   def assemble_global_stiffness_matrix(self):
     """Assemble the global stiffness matrix."""
     # Initialize the global stiffness matrix in COO format
