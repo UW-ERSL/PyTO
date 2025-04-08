@@ -211,7 +211,8 @@ class TetMesher:
                 force_vector[node] += q * tri_area / 3.0
         # print(f"Total area of triangles: {total_area}")
         return force_vector
-    def compute_surface_triangle_normals(self):
+    
+    def compute_surface_triangle_properties(self):
         """
         Computes unit normal vectors for all surface triangles.
         Returns:
@@ -219,17 +220,22 @@ class TetMesher:
         normals : np.ndarray of shape (n_surface_triangles, 3)
             The unit normal vector for each triangle.
         """
+        centers = np.zeros((len(self.surface_triangles), 3))
         normals = np.zeros((len(self.surface_triangles), 3))
+        areas = np.zeros(len(self.surface_triangles))
         for i, tri in enumerate(self.surface_triangles):
             p0, p1, p2 = self.nodes[tri]
+            centers[i] = (p0 + p1 + p2) / 3
             v1 = p1 - p0
             v2 = p2 - p0
             normal = np.cross(v1, v2)
             norm = np.linalg.norm(normal)
+            areas[i] = 0.5*norm
             if norm > 0:
                 normal /= norm
             normals[i] = normal
-        return normals
+        return centers, normals, areas
+    
     def createEdofMatThermal(self):
         self.edofMat = np.array(self.elems[:, :4], dtype=int)
     
