@@ -45,7 +45,7 @@ class TetTransientThermalFEA:
                                 shape=(bc.num_dofs, bc.num_dofs))
         datasp = []
         for i in range(self.mesh.num_elems):
-            elem_specific_heat =  jnp.asarray(es.tet4_specific_heat_matrix(mat_prop, self.mesh.nodes[self.mesh.edofMat[i, :]]))
+            elem_specific_heat =  jnp.asarray(ttf.tet4_specific_heat_matrix(mat_prop, self.mesh.nodes[self.mesh.edofMat[i, :]]))
             datasp.append( elem_specific_heat.flatten())
 
         elem_specific_heat_stacked = jnp.concatenate(datasp)

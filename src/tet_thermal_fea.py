@@ -23,7 +23,7 @@ class ThermalFEATet:
     self.solver, self.kwargs = solver, kwargs
    
   
-  def tet4_stiffness_matrix_thermal(self,
+  def tet4_stiffness_matrix_thermal(
           mat_prop: mat_lib.ThermalMaterial,
           xyz_nodes: jnp.ndarray,
         ) -> jnp.ndarray:
