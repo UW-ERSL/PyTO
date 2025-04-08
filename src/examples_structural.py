@@ -603,7 +603,7 @@ def createLBracketProblem(nDOFDesired: int = 10000, youngs_modulus = 2.1e11, poi
   mesh.node_indices[fixed_nodes, 3] = 1 # for plotting
 
   node_pts = mesh.node_xyz
-  load_nodes = np.where((node_pts[:, 1] > 0.039) & (node_pts[:, 0] > 0.095))[0] # hard coded    
+  load_nodes = np.where((node_pts[:, 1] > 0.039) & (node_pts[:, 0] > 0.09))[0] # hard coded    
   load_dofs = 3 * load_nodes + 1  # z direction
   mesh.node_indices[load_nodes, 3] = 2 # for plotting
   
@@ -683,7 +683,7 @@ def createGravityBarProblem(nDOFDesired: int = 10000, youngs_modulus = 2.1e11, p
   
 def createGravityPlateProblem(nDOFDesired: int = 10000, L: float = [1.0, 0.5, 0.01],
                                youngs_modulus = 2e11, poissons_ratio = 0.3,material_density = 7700,
-                               verticalForcePercent = 50):
+                               verticalForcePercent = 0):
   nVoxelsDesired = nDOFDesired/3    
   # Let the number of voxels be proportional to the length in each direction
   alpha = (nVoxelsDesired/(L[0]*L[1]*L[2]))**(1/3)

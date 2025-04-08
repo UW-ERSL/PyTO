@@ -340,7 +340,7 @@ def topopt_mma(fe_solver: sfea.StructFEA,
 		change = np.max(np.abs(x - x_old))
 		x_old = x
 		# Estimate the percentage of grey elements
-		grey_elements = np.sum((x > 0.1) & (x < 0.9))
+		grey_elements = np.sum((x > 0.05) & (x < 0.95))
 		fraction_grey = (grey_elements / num_elems) 
 		print(f"it.: {mma_state.epoch}, obj.: {obj[0]:.4g}, vf: {vf:.3f}, grey: {fraction_grey:.3f}")
 		history['compliance'].append(obj[0])
@@ -349,8 +349,7 @@ def topopt_mma(fe_solver: sfea.StructFEA,
 
 		if (len(history['compliance'])) >= minMMAIterations:
 			dJ1 = abs((history['compliance'][-1] - history['compliance'][-2]) / history['compliance'][-2])
-	
-			if dJ1 < rel_conv_tol and (np.max(cons) < rel_conv_tol) and (fraction_grey < 0.1): # success
+			if dJ1 < rel_conv_tol and (np.max(cons) < rel_conv_tol) and (fraction_grey < 0.05): # success
 				break
 		if time.time() - tStart > timeLimit:
 			success = False
@@ -364,10 +363,13 @@ def topopt_mma(fe_solver: sfea.StructFEA,
 		success = False
 	
 	# extract binary topology
-	x[x < 0.5] = 0
-	x[x >= 0.5] = 1
+	x = np.where(x < 0.5, 0.0, 1.0)
 	volfrac = np.mean(x)
 	fe_solver.mesh.setPseudoDensity(x)
+	meshComponents = fe_solver.mesh.find_connected_components()
+	if (len(meshComponents) > 1):
+		errorMsg = "Hanging elements"
+		success = False
 	obj,u = _compliance_objective(x, fe_solver, material_model_dict)
 	history['compliance'].append(obj)
 	history['volume'].append(volfrac)
@@ -380,6 +382,8 @@ def topopt_mma(fe_solver: sfea.StructFEA,
 		success = False 
 	grey_elements = np.sum((x > 0.1) & (x < 0.9))
 	fraction_grey = (grey_elements / num_elems) 
+	if (errorMsg != ""):	
+		print(errorMsg)
 	print(f"Final objective: {obj:.4g}, vf: {np.mean(x):.3f}, grey: {fraction_grey:.3f}")
 	print(f"Time FEA: {timeFEA:.2f} s, Time MMA: {timeMMA:.2f} s")
 	print(f"Total Time: {timeFEA+timeMMA:.2f} s")
@@ -527,7 +531,7 @@ def topopt_optimality_criteria(
 		history['volume'].append(np.mean(xPhys))
 		history['change'].append(change)
 		# Estimate the percentage of grey elements
-		grey_elements = np.sum((x > 0.1) & (x < 0.9))
+		grey_elements = np.sum((x > 0.05) & (x < 0.95))
 		fraction_grey = (grey_elements / num_elems) 
 		print(f"it.: {iter+1:d}, obj.: {obj:.5g}, "
 				  	f"vol.: {np.mean(xPhys):.3g}, grey: {fraction_grey:.3f}")
@@ -540,9 +544,7 @@ def topopt_optimality_criteria(
 			break
 		if (len(history['compliance'])) >= 2:
 			dJ = abs((history['compliance'][-1] - history['compliance'][-2]) / history['compliance'][-2])
-			if (debug):
-				print(f" dJ1: {dJ:.4g}, cons: {abs(cons):.4g}, grey: {fraction_grey:.4g}")
-			if (abs(dJ) < rel_conv_tol and abs(cons) < rel_conv_tol) and (fraction_grey < 0.1): # success
+			if (abs(dJ) < rel_conv_tol and abs(cons) < rel_conv_tol) and (fraction_grey < 0.05): # success
 				break
 
 	if iter == maxIterations - 1:
@@ -565,9 +567,8 @@ def topopt_optimality_criteria(
 		errorMsg =  f"vf {to_params.DesiredVolFraction:0.3f} not reached"
 		success = False
 
-	grey_elements = np.sum((x > 0.1) & (x < 0.9))
-	fraction_grey = (grey_elements / num_elems) 
-	print(f"Final objective: {obj:.4g}, vf: {np.mean(x):.3f}, grey: {fraction_grey:.3f}")
+	
+	print(f"Final objective: {obj:.4g}, vf: {np.mean(x):.3f}")
 	print(f"Total Time: {totalTime:.2f} s")
 	return np.asarray(u), history, success, errorMsg 
 
@@ -599,11 +600,11 @@ def topopt_pareto(fe_solver: sfea.StructFEA,
 	Returns: A tuple containing the displacement field of the optimized structure
 		and a dictionary containing the optimization history.
 	"""
-	import numpy as np
+	
 
 
-
-
+	tStart = time.time()
+	
 	removeHangingElems = to_params.RemoveHangingElems
 	if fe_solver.elem_body_force is not None and (np.linalg.norm(fe_solver.elem_body_force) > 0) and not removeHangingElems:
 		removeHangingElems = True #For body forces, must remove hanging elements in Pareto
@@ -657,7 +658,7 @@ def topopt_pareto(fe_solver: sfea.StructFEA,
 
 	print(f"vf={history['volume'][-1]:.3f},  J={history['compliance'][-1]:.3g},  #FEA={totalIter:2d}")
 	vol_decr = vol_decr_max
-	wtDamping = 0.5 # 0 means full wt to current T values, else previous T values are damped in
+	wtDamping = 0.25 # 0 means full wt to current T values, else previous T values are damped in
 
 	success = True
 	terminatePareto = False
@@ -758,7 +759,9 @@ def topopt_pareto(fe_solver: sfea.StructFEA,
 			#vol_decr = max(vol_decr_min,vol_decr/scale**2) # Adjust volume decrease factor for steep increase in compliance
 			print(f"vf={history['volume'][-1]:.3f}, J={history['compliance'][-1]:.3g},   #FEA={totalIter:2d}")
 			fe_solver.mesh.setPseudoDensity(rho.flatten())
-			
+	totalTime = time.time() - tStart
+	print(f"Final vf: {history['volume'][-1]:.3f},  objective: {history['compliance'][-1]:.4g}")
+	print(f"Total Time: {totalTime:.2f} s")
 	return u, history, success,errorMsg
 
 def topopt_levelset(fe_solver: sfea.StructFEA,
@@ -964,13 +967,13 @@ if __name__ == "__main__":
 	import plots	
 	
 	jax.config.update("jax_enable_x64", True)
-	optimizationMethod = TO_METHODS.PARETO # DENSITYMMA, DENSITYOC, PARETO, LEVELSET
+	optimizationMethod = TO_METHODS.DENSITYOC # DENSITYMMA, DENSITYOC, PARETO, LEVELSET
 
-	#runTOTests(); exit(0) # Run all tests for each example in the StructuralTOExamples enum
+	runTOTests(); exit(0) # Run all tests for each example in the StructuralTOExamples enum
 	
 	# Choose the TO problem
 	print("-" * 50)
-	to_problem = StructuralTOExamples.ThreeHoleBracket
+	to_problem = StructuralTOExamples.Multiload
 	print(f"Running {to_problem.name}...")
 	print("-" * 50)
 	solver = lin_solv.Solvers.PARDISO # Typically PARDISO, but DPCG for DOF > 200,000
