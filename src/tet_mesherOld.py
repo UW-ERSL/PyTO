@@ -54,6 +54,11 @@ class TetMesher:
         self.num_elems = len(self.elems)
         print(f"Tetmesh: Number of nodes: {self.num_nodes}, Number of elements: {self.num_elems}")
 
+        # Calculate and store bounding box
+        self.bbox_min = np.min(self.nodes, axis=0)
+        self.bbox_max = np.max(self.nodes, axis=0)
+
+
         self.createSurfaceMesh()
     
     def createSurfaceMesh(self):
@@ -66,21 +71,17 @@ class TetMesher:
         """
         # Get all faces from tetrahedra
         faces = np.vstack([
-            # self.elems[:, [0, 1, 2]],
-            # self.elems[:, [0, 3, 1]],
-            # self.elems[:, [1, 3, 2]],
-            # self.elems[:, [3, 0, 2]]
-            self.elems[:, [0, 2, 1]],
+            self.elems[:, [0, 1, 2]],
             self.elems[:, [0, 1, 3]],
             self.elems[:, [1, 2, 3]],
-            self.elems[:, [3, 2, 0]]
+            self.elems[:, [0, 2, 3]]
         ])
 
         # Sort faces for comparison
-        sortedfaces = np.sort(faces, axis=1)
+        faces = np.sort(faces, axis=1)
 
         # Find unique faces and their counts
-        _, idx, counts = np.unique(sortedfaces, axis=0, return_index=True, return_counts=True)
+        _, idx, counts = np.unique(faces, axis=0, return_index=True, return_counts=True)
 
         # Surface triangles are faces that appear only once
         self.surface_triangles = faces[idx[counts == 1]]
@@ -168,10 +169,10 @@ class TetMesher:
             # Distribute the force over the triangle nodes
             for node in tri:
                 force_vector[node] += q * tri_area / 3.0
-        # print(f"Total area of triangles: {total_area}")
-        return force_vector/total_area
+        print(f"Total area of triangles: {total_area}")
+        return force_vector
     
-    def integrate_function_over_surface_triangles(self, func, tri_surface_indices): 
+    def integrate_function_over_surface_triangles(self, func, tri_surface_indices):
         """
         Integrates a given function over specified surface triangles and distributes the result as a force vector.
         Parameters:
@@ -209,27 +210,9 @@ class TetMesher:
             q = func(center)
             for node in tri:
                 force_vector[node] += q * tri_area / 3.0
-        # print(f"Total area of triangles: {total_area}")
+        print(f"Total area of triangles: {total_area}")
         return force_vector
-    def compute_surface_triangle_normals(self):
-        """
-        Computes unit normal vectors for all surface triangles.
-        Returns:
-        --------
-        normals : np.ndarray of shape (n_surface_triangles, 3)
-            The unit normal vector for each triangle.
-        """
-        normals = np.zeros((len(self.surface_triangles), 3))
-        for i, tri in enumerate(self.surface_triangles):
-            p0, p1, p2 = self.nodes[tri]
-            v1 = p1 - p0
-            v2 = p2 - p0
-            normal = np.cross(v1, v2)
-            norm = np.linalg.norm(normal)
-            if norm > 0:
-                normal /= norm
-            normals[i] = normal
-        return normals
+    
     def createEdofMatThermal(self):
         self.edofMat = np.array(self.elems[:, :4], dtype=int)
     
@@ -247,97 +230,6 @@ class TetMesher:
         dist = np.linalg.norm(nodes, axis=1)
         return np.where((dist >= innerRadius) & (dist <= outerRadius))[0]
     
-    def getNodesOnBoundingBoxPlane(self, axis: int, min_limit: bool): # WRITTEN BY GAURAV DEODHARE
-        """
-        Get the nodes on a bounding box plane for the tetrahedral mesh.
-
-        Args:
-            axis (int): The axis of the bounding box plane (0 = x, 1 = y, 2 = z).
-            min_limit (bool): Whether to get nodes on the minimum (True) or maximum (False) plane.
-
-        Returns:
-            np.ndarray: Indices of nodes on the specified bounding box plane.
-        """
-        if not hasattr(self, 'nodes') or self.nodes is None:
-            raise ValueError("Node coordinates are not defined. Please ensure the mesh is loaded.")
-
-        # Determine the plane coordinate (min or max along the specified axis)
-        plane_coord = np.min(self.nodes[:, axis]) if min_limit else np.max(self.nodes[:, axis])
-
-        # Find nodes on the specified plane (within a small tolerance to account for floating-point errors)
-        tolerance = 1e-6
-        nodes_on_plane = np.where(np.abs(self.nodes[:, axis] - plane_coord) <= tolerance)[0]
-
-        return nodes_on_plane
-
-    def get_nodes_within_radius(self, pt: np.ndarray, r: float) -> np.ndarray: # WRITTEN BY GAURAV DEODHARE
-            """Find nodes within a given radius from a point.
-            
-            Args:
-                pt: Array of shape (3,) containing x, y, z coordinates of the point
-                r: Radius within which to find nodes
-                
-            Returns:
-                np.ndarray: Indices of nodes within the given radius
-            """
-            # Calculate squared distances from the point to all nodes
-            distances_sq = np.sum((self.nodes - pt)**2, axis=1)
-            
-            # Find nodes within the radius (compare squared distances to squared radius)
-            nodes_within_radius = np.where(distances_sq <= r**2)[0]
-            return nodes_within_radius
-    def get_boundary_nodes(self) -> np.ndarray: # WRITTEN BY GAURAV DEODHARE
-        """
-        Find nodes that lie on the boundary of a tetrahedral mesh.
-
-        Returns:
-            np.ndarray: Array of unique node indices that are on the boundary.
-        """
-        if not hasattr(self, 'surface_triangles') or self.surface_triangles is None:
-            raise ValueError("Surface triangles are not defined. Please ensure the mesh is created.")
-
-        # Extract unique node indices from surface triangles
-        boundary_nodes = np.unique(self.surface_triangles.flatten())
-        return boundary_nodes
-
-    
-    def get_element_containing_point(self, point: np.ndarray) -> tuple: # WRITTEN BY GAURAV DEODHARE
-        """Find the element that contains the given point in a tetrahedral mesh and compute its shape functions.
-        
-        Args:
-            point: Array of shape (3,) containing x, y, z coordinates.
-            
-        Returns:
-            tuple: (Index of the element containing the point, Shape function values at the point),
-                or (-1, None) if no element is found.
-        """
-        # Iterate through all elements to find the one containing the point
-        for elem_idx, elem_nodes in enumerate(self.elems):
-            # Get vertices of the tetrahedron
-            vertices = self.nodes[elem_nodes]  # Shape: (4, 3)
-
-            # Compute the matrix for barycentric coordinates
-            bary_matrix = np.vstack([
-                vertices.T,
-                np.ones((1, 4))
-            ])  # Shape: (4, 4)
-
-            # Add the point to compute barycentric coordinates
-            point_extended = np.append(point, 1)
-            
-            # Solve for barycentric coordinates
-            try:
-                bary_coords = np.linalg.solve(bary_matrix, point_extended)
-            except np.linalg.LinAlgError:
-                continue  # Skip elements with degenerate tetrahedra
-
-            # Check if all barycentric coordinates are between 0 and 1 (inclusive)
-            if np.all(bary_coords >= 0) and np.all(bary_coords <= 1):
-                # Compute shape function values (they are equal to barycentric coordinates for tet4)
-                shape_functions = bary_coords
-                return elem_idx, shape_functions
-
-        return -1, None  # No containing element found
     def get_surface_triangles_within_annular_region(self, centerPt, axis, innerRadius, outerRadius):
         # Get the surface triangles within the annular region defined by the center point, axis, and radii
         axis = axis / np.linalg.norm(axis)
@@ -378,6 +270,100 @@ class TetMesher:
                 surface_tri_indices.append(i)
         return surface_tri_indices
 
+    def getNodesOnBoundingBoxPlane(self, axis: int, min_limit: bool): 
+        """
+        Get the nodes on a bounding box plane for the tetrahedral mesh.
+
+        Args:
+            axis (int): The axis of the bounding box plane (0 = x, 1 = y, 2 = z).
+            min_limit (bool): Whether to get nodes on the minimum (True) or maximum (False) plane.
+
+        Returns:
+            np.ndarray: Indices of nodes on the specified bounding box plane.
+        """
+        if not hasattr(self, 'nodes') or self.nodes is None:
+            raise ValueError("Node coordinates are not defined. Please ensure the mesh is loaded.")
+
+        # Determine the plane coordinate (min or max along the specified axis)
+        plane_coord = np.min(self.nodes[:, axis]) if min_limit else np.max(self.nodes[:, axis])
+
+        # Find nodes on the specified plane (within a small tolerance to account for floating-point errors)
+        tolerance = 1e-6 * (self.bbox_max[axis] - self.bbox_min[axis])
+        nodes_on_plane = np.where(np.abs(self.nodes[:, axis] - plane_coord) <= tolerance)[0]
+
+        return nodes_on_plane
+
+    def get_nodes_within_radius(self, pt: np.ndarray, r: float) -> np.ndarray: 
+            """Find nodes within a given radius from a point.
+            
+            Args:
+                pt: Array of shape (3,) containing x, y, z coordinates of the point
+                r: Radius within which to find nodes
+                
+            Returns:
+                np.ndarray: Indices of nodes within the given radius
+            """
+            # Calculate squared distances from the point to all nodes
+            distances_sq = np.sum((self.nodes - pt)**2, axis=1)
+            
+            # Find nodes within the radius (compare squared distances to squared radius)
+            nodes_within_radius = np.where(distances_sq <= r**2)[0]
+            return nodes_within_radius
+    
+    def get_boundary_nodes(self) -> np.ndarray: 
+        """
+        Find nodes that lie on the boundary of a tetrahedral mesh.
+
+        Returns:
+            np.ndarray: Array of unique node indices that are on the boundary.
+        """
+        if not hasattr(self, 'surface_triangles') or self.surface_triangles is None:
+            raise ValueError("Surface triangles are not defined. Please ensure the mesh is created.")
+
+        # Extract unique node indices from surface triangles
+        boundary_nodes = np.unique(self.surface_triangles.flatten())
+        return boundary_nodes
+
+    
+    def get_element_containing_point(self, point: np.ndarray) -> tuple:
+        """Find the element that contains the given point in a tetrahedral mesh and compute its shape functions.
+        
+        Args:
+            point: Array of shape (3,) containing x, y, z coordinates.
+            
+        Returns:
+            tuple: (Index of the element containing the point, Shape function values at the point),
+                or (-1, None) if no element is found.
+        """
+        # Iterate through all elements to find the one containing the point
+        for elem_idx, elem_nodes in enumerate(self.elems):
+            # Get vertices of the tetrahedron
+            vertices = self.nodes[elem_nodes]  # Shape: (4, 3)
+
+            # Compute the matrix for barycentric coordinates
+            bary_matrix = np.vstack([
+                vertices.T,
+                np.ones((1, 4))
+            ])  # Shape: (4, 4)
+
+            # Add the point to compute barycentric coordinates
+            point_extended = np.append(point, 1)
+            
+            # Solve for barycentric coordinates
+            try:
+                bary_coords = np.linalg.solve(bary_matrix, point_extended)
+            except np.linalg.LinAlgError:
+                continue  # Skip elements with degenerate tetrahedra
+
+            # Check if all barycentric coordinates are between 0 and 1 (inclusive)
+            if np.all(bary_coords >= 0) and np.all(bary_coords <= 1):
+                # Compute shape function values (they are equal to barycentric coordinates for tet4)
+                shape_functions = bary_coords
+                return elem_idx, shape_functions
+
+        return -1, None  # No containing element found
+    
+    
     def plot(self, title = 'Tet Mesh'):
         plotter = pv.UnstructuredGrid({pv.CellType.TETRA: self.elems}, self.nodes)
         plotter.plot(show_edges=True, show_scalar_bar=False, show_grid=True)
