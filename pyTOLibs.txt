@@ -1,0 +1,14 @@
+conda install pip
+pip install numpy
+pip install scipy
+pip install jax
+pip install matplotlib
+pip install scikit-learn
+pip install pypardiso
+pip install absl-py
+pip install pyvista
+pip install numpy-stl
+pip install tetgen
+pip install pandas
+pip install pyamg
+pip install numba
