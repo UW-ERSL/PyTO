@@ -9,7 +9,7 @@ import linear_solvers as lin_sol
 import element_stiffness as elem_stiff
 import mat_lib
 import bound_cond
-import plots
+
 import struct_fea as fea
 import linear_solvers as lin_solv
 import mat_lib
@@ -171,7 +171,7 @@ class StructFEA:
   
 if __name__ == "__main__":    
   jax.config.update("jax_enable_x64", True)
-
+  import plots
   from examples_structural import *
 
   problem = StructuralExamples.NoseCone

@@ -13,9 +13,9 @@ class StructuralMaterial:
     poissons_ratio: The poisson's ratio of the material [-].
     mass_density: Mass density of material in [kg/m^3].
   """
-  youngs_modulus: Optional[float] = None
-  poissons_ratio: Optional[float] = None
-  mass_density: Optional[float] = None
+  youngs_modulus: Optional[float] = 2.1e11  # Pa
+  poissons_ratio: Optional[float] = 0.28  # [-]
+  mass_density: Optional[float] = 7700.0  # kg/m^3
 
 @dataclasses.dataclass
 class ThermalMaterial:

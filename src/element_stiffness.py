@@ -199,6 +199,7 @@ _isotropic_constitutive_matrix = lambda e, nu: (
                                   )
 
 
+
 def hex8_stiffness_matrix_structural(
               mat_prop: mat_lib.StructuralMaterial,
               elem_size: tuple[float, float, float],
@@ -257,6 +258,57 @@ def hex8_stiffness_matrix_structural(
 
     ke += b.T @ c @ b * np.linalg.det(jac) *gauss_wts[ctr]
   return ke
+
+def hex8_mass_matrix_structural(
+        mat_prop: mat_lib.StructuralMaterial, 
+        elem_size: tuple[float, float, float],
+        gauss_order: int = 6,
+      ) -> np.ndarray:
+  """Computes the element mass matrix of a hexahedral element in 3D.
+  The mass matrix for structural dynamics is derived as:
+
+        M = sum_gauss(rho * N'N |J| w )
+    Where,
+      rho is the density
+      N are the shape functions
+      J is the Jacobian
+      w is the gauss weight
+      
+  Args:
+  mat_prop: The structural material properties of the element.
+  elem_size: The size of the element in x, y, z directions.
+  gauss_order: The Gauss integration order.
+
+  Returns: The element mass matrix of size (24, 24). The 24 corresponds to
+  the 8 nodes and 3 DOF per node.
+  """
+  dx, dy, dz = elem_size
+  nodes = np.array([[0, dx, dx, 0, 0, dx, dx, 0],
+          [0, 0, dy, dy, 0, 0, dy, dy],
+          [0, 0, 0, 0, dz, dz, dz, dz]]).T
+
+  # Initialize the element mass matrix
+  me = np.zeros((24, 24))
+
+  elem = Hex8Element()
+  gauss_pts, gauss_wts = get_gauss_integ_points_weights(gauss_order,
+                            elem.dimension)
+
+  jacobians, _ = elem.compute_jacobian_and_determinant(gauss_pts, nodes)
+  N = elem.shape_functions(gauss_pts)
+
+  for ctr in range(gauss_wts.shape[0]):
+    jac = jacobians[ctr, :, :]
+    # Build block diagonal matrix with shape functions
+    n_mat = np.zeros((3, 24))
+    for i in range(8):
+      n_mat[0, 3*i] = N[ctr, i]
+      n_mat[1, 3*i + 1] = N[ctr, i]
+      n_mat[2, 3*i + 2] = N[ctr, i]
+  
+    me += mat_prop.mass_density * n_mat.T @ n_mat * np.linalg.det(jac) * gauss_wts[ctr]
+
+  return me
 
 def hex8_stiffness_matrix_thermal(
               mat_prop: mat_lib.ThermalMaterial,
@@ -360,10 +412,14 @@ if __name__ == "__main__":
   # Define the material properties
   mat_prop = mat_lib.StructuralMaterial(youngs_modulus=1e6,
                                         poissons_ratio=0.3)
+  print("Material Properties:")
+  print(mat_prop)
   elem_size = (1, 1, 1)
   ke = hex8_stiffness_matrix_structural(mat_prop, elem_size)
 
 
+  me = hex8_mass_matrix_structural(mat_prop, elem_size)
+  
   # Test thermal stiffness matrix
   thermal_mat_prop = mat_lib.ThermalMaterial(thermal_conductivity=1.0)
   ke_thermal = hex8_stiffness_matrix_thermal(thermal_mat_prop, elem_size)
