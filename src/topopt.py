@@ -79,7 +79,7 @@ def volume_fraction_lowerlimit(density: jnp.ndarray,
 	"""
 	return 1- (jnp.mean(density)/volfracLower)
 
-def _compliance_objective(x: jnp.ndarray,
+def compliance(x: jnp.ndarray,
 								fe_solver: sfea.StructFEA,
 													material_model_dict = None,
 													) -> jnp.ndarray:
@@ -197,6 +197,7 @@ def topopt_mma(fe_solver: sfea.StructFEA,
 							 kkt_tol: float = 1.e-6,
 							 move_tol: float = 0.025,
 							 rel_conv_tol: float = 1.e-3,
+							 grey_tol: float = 0.2,
 							 debug: bool = False,
 							 ) -> tuple[np.ndarray, dict]:
 	"""MMA based topology optimization for minimum compliance.
@@ -267,7 +268,7 @@ def topopt_mma(fe_solver: sfea.StructFEA,
 	while not mma_state.is_converged:
 		x = mma_state.x.reshape(-1)
 		timeFEAStart = time.time()
-		obj,u = _compliance_objective(x, fe_solver, material_model_dict)
+		obj,u = compliance(x, fe_solver, material_model_dict)
 		
 		timeFEA += time.time() - timeFEAStart
 		obj = np.array([obj])
@@ -349,7 +350,7 @@ def topopt_mma(fe_solver: sfea.StructFEA,
 
 		if (len(history['compliance'])) >= minMMAIterations:
 			dJ1 = abs((history['compliance'][-1] - history['compliance'][-2]) / history['compliance'][-2])
-			if dJ1 < rel_conv_tol and (np.max(cons) < rel_conv_tol) and (fraction_grey < 0.05): # success
+			if dJ1 < rel_conv_tol and (np.max(cons) < rel_conv_tol): # success
 				break
 		if time.time() - tStart > timeLimit:
 			success = False
@@ -370,7 +371,7 @@ def topopt_mma(fe_solver: sfea.StructFEA,
 	if (len(meshComponents) > 1):
 		errorMsg = "Hanging elements"
 		success = False
-	obj,u = _compliance_objective(x, fe_solver, material_model_dict)
+	obj,u = compliance(x, fe_solver, material_model_dict)
 	history['compliance'].append(obj)
 	history['volume'].append(volfrac)
 	history['change'].append(change)
@@ -453,7 +454,7 @@ def topopt_optimality_criteria(
 	errorMsg = ""
 	for iter in range(maxIterations):
 		x = np.array(x)
-		obj,u = _compliance_objective(x, fe_solver,material_model_dict)
+		obj,u = compliance(x, fe_solver,material_model_dict)
 		ce = (np.dot(u[fe_solver.mesh.edofMat].reshape(num_elems, 24), KE) * u[fe_solver.mesh.edofMat].reshape(num_elems, 24)).sum(1)
 		if material_model == MaterialModel.SIMP:
 			# For SIMP material model: x**penal
@@ -493,12 +494,10 @@ def topopt_optimality_criteria(
 				b = -grad_obj / lmid	
 				# OC update with damping and bounds
 				xnew = jnp.maximum(xmin,np.maximum(x - move,np.minimum(xmax, np.minimum(x + move, x * np.sqrt(b)))))
-
 				if jnp.sum(xnew) - to_params.DesiredVolFraction * num_elems > 0:
 					l1 = lmid
 				else:
-					l2 = lmid
-			
+					l2 = lmid	
 			x = xnew
 			xPhys = x
 		else: # direct method
@@ -544,7 +543,7 @@ def topopt_optimality_criteria(
 			break
 		if (len(history['compliance'])) >= 2:
 			dJ = abs((history['compliance'][-1] - history['compliance'][-2]) / history['compliance'][-2])
-			if (abs(dJ) < rel_conv_tol and abs(cons) < rel_conv_tol) and (fraction_grey < 0.05): # success
+			if (abs(dJ) < rel_conv_tol and abs(cons) < rel_conv_tol) and (fraction_grey < 0.1): # success
 				break
 
 	if iter == maxIterations - 1:
@@ -556,7 +555,7 @@ def topopt_optimality_criteria(
 	x = np.where(x < 0.5, 0.0, 1.0)
 	volfrac = np.mean(x)
 	fe_solver.mesh.setPseudoDensity(x)
-	obj,u = _compliance_objective(x, fe_solver, material_model_dict)
+	obj,u = compliance(x, fe_solver, material_model_dict)
 	history['compliance'].append(obj)
 	history['volume'].append(volfrac)
 	history['change'].append(change)
@@ -682,7 +681,7 @@ def topopt_pareto(fe_solver: sfea.StructFEA,
 				print(f"Local Iteration: {localIter}/{max_local_iters}, JTemp: {JTemp:.3g}, JPrev: {JPrev:.3g}")
 			# Check convergence, and break if converged
 			if localIter >= min_local_iters:
-				if abs(JPrev - JTemp)/JTemp < rel_err or abs(min(JPrev,JPrevPrev) - JTemp)/JTemp < rel_err:
+				if abs(JPrev - JTemp)/abs(JTemp) < rel_err or abs(min(JPrev,JPrevPrev) - JTemp)/abs(JTemp)  < rel_err:
 					innerLoopSuccess = True
 					break
 			if (localIter >= max_local_iters) or abs(JTemp) > 10 * history['compliance'][-1]:  # large change in compliance	
@@ -799,7 +798,7 @@ def topopt_levelset(fe_solver: sfea.StructFEA,
 		def compute_velocity_field(fe_solver, phi, material_model_dict):
 			"""Compute the velocity field for the level set update."""
 			density = heaviside(phi, epsilon)
-			obj, u = _compliance_objective(density, fe_solver, material_model_dict)
+			obj, u = compliance(density, fe_solver, material_model_dict)
 			ce = (np.dot(u[fe_solver.mesh.edofMat].reshape(num_elems, 24), KE) * u[fe_solver.mesh.edofMat].reshape(num_elems, 24)).sum(1)
 			velocity = -ce * heaviside_derivative(phi, epsilon)
 			return velocity, obj
@@ -973,7 +972,7 @@ if __name__ == "__main__":
 	
 	# Choose the TO problem
 	print("-" * 50)
-	to_problem = StructuralTOExamples.DistributedLoad
+	to_problem = StructuralTOExamples.MidCantilever
 	print(f"Running {to_problem.name}...")
 	print("-" * 50)
 	solver = lin_solv.Solvers.PARDISO # Typically PARDISO, but DPCG for DOF > 200,000
@@ -1107,3 +1106,6 @@ if __name__ == "__main__":
 	if not success:
 		print(f"Error: {errorMsg}")
 	plots.plotMesh(fe_solver.mesh, bc = None, u=None, title = title)
+
+	plots.plotIsocontour(fe_solver.mesh, title = title, save_path = None)
+	# Save the mesh and results

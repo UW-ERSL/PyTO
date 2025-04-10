@@ -333,7 +333,7 @@ def plotIsocontour(mesh: mesher.Mesher,
                    u=None,
                    Binarization = False,
                    isovalue=0.5,
-                   show_edges=True,
+                   show_edges=False,
                    resolution=1,
                    window_size=(716, 538),
                    background_color='white',
@@ -438,7 +438,7 @@ def plotIsocontour(mesh: mesher.Mesher,
   if u is not None:
     plotter.add_mesh(
                     isosurf,
-                    color='lightgreen',
+                    color='lightskyblue',
                     show_edges=show_edges,
                     edge_color=edge_color,
                     line_width=1
@@ -446,7 +446,7 @@ def plotIsocontour(mesh: mesher.Mesher,
   else:
     plotter.add_mesh(
                     isosurf,
-                    color='lightgreen',
+                    color='lightskyblue',
                     show_edges=show_edges,
                     edge_color=edge_color,
                     line_width=1

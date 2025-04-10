@@ -145,7 +145,7 @@ if __name__ == "__main__":
         rtol = 1e-8,
         elem_body_force = elem_body_force)
 
-  nEigenModes = 3
+  nEigenModes = 10
   eigenvals, eigenvecs = fe_solver.computeEigenModes(nEigenModes = nEigenModes)
  
   print('-----------------------------')
