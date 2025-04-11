@@ -16,7 +16,7 @@ if __name__ == "__main__":
 	import matplotlib.pyplot as plt
 	import deflation
 	import plots	
-
+	
 	jax.config.update("jax_enable_x64", True)
 	optimizationMethod = TO_METHODS.PARETO # DENSITYMMA, DENSITYOC, PARETO, LEVELSET
 
@@ -24,7 +24,7 @@ if __name__ == "__main__":
 	
 	# Choose the TO problem
 	print("-" * 50)
-	to_problem = StructuralTOExamplesDemo.NoseCone
+	to_problem = StructuralTOExamplesDemo.LongBeamDemo
 	print(f"Running {to_problem.name}...")
 	print("-" * 50)
 	solver = lin_solv.Solvers.PARDISO # Typically PARDISO, but DPCG for DOF > 200,000
@@ -56,7 +56,6 @@ if __name__ == "__main__":
 	
 	title = f'nDOF: {3*fe_solver.mesh.num_nodes}, nElem: {fe_solver.mesh.num_elems}'
 	#plots.plotMesh(mesh, bc,title = title)
-
 
 	startTime = time.time()
 	if optimizationMethod == TO_METHODS.DENSITYMMA:
@@ -157,15 +156,15 @@ if __name__ == "__main__":
 	print(f"Time taken: {timeTaken:.0f} s")
 	if not success:
 		print(f"Error: {errorMsg}")
-	plots.plotMesh(fe_solver.mesh, bc = None, u=None, title = title)
+	plots.plotMesh(fe_solver.mesh, bc = None, u=None, title = title, show_edges = False)
 
 	plots.plotIsocontour(fe_solver.mesh, title = title, save_path = None)
 	# Save the mesh and results
-	fp_original_stl = '../Models/EdgeCantilever/EdgeCantilever.STL'
-	fp_original_stl = '../Models/Rocket/HollowNoseConeWithSolidBaseNew.STL'
-	if fp_original_stl is not None and os.path.isfile(fp_original_stl):
-		print(f'{fp_original_stl} File exists.')
-	else:
-		print(f'{fp_original_stl} File does not exists.')
-	plots_demo.retainOuterGeom(fe_solver.mesh, fp_original_stl)
+	# fp_original_stl = '../Models/EdgeCantilever/EdgeCantilever.STL'
+	# fp_original_stl = '../Models/Rocket/HollowNoseConeWithSolidBaseNew.STL'
+	# if fp_original_stl is not None and os.path.isfile(fp_original_stl):
+	# 	print(f'{fp_original_stl} File exists.')
+	# else:
+	# 	print(f'{fp_original_stl} File does not exists.')
+	# plots_demo.retainOuterGeom(fe_solver.mesh, fp_original_stl)
 	#plots_demo.retainOuterGeomUsingIsoSurf(fe_solver.mesh, fp_original_stl, u, isovalue=0.5)
