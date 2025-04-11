@@ -217,10 +217,10 @@ def topopt_mma(fe_solver: sfea.StructFEA,
 	elem_body_force = fe_solver.elem_body_force
 	if elem_body_force is None or (np.linalg.norm(elem_body_force) == 0):
 		material_model = MaterialModel.SIMP #For no body forces, using SIMP material model
-		material_model_dict = {'name': 'SIMP', 'penal': 3.0} # Default SIMP model
+		material_model_dict = {'name': 'SIMP', 'penal': 3.0,'masspenal': 1} # Default SIMP model
 	else:
 		material_model = MaterialModel.SIMPPLUS #For body forces, using SIMPPLUS material model
-		material_model_dict = {'name': 'SIMPPLUS', 'penal': 3, 'alpha': 16} 
+		material_model_dict = {'name': 'SIMPPLUS', 'penal':10, 'penalIncr': 0, 'alpha': 16,'masspenal':1} 
 		#  body-force model from the papers here:
 		#  https://doi.org/10.1002/nme.2499, https://doi.org/10.1016/j.cma.2017.04.021 
 
@@ -248,9 +248,13 @@ def topopt_mma(fe_solver: sfea.StructFEA,
 														lower_bound = xmin*np.ones((num_elems, 1)),
 														upper_bound = np.ones((num_elems, 1)),
 														)
-	mma_state = mma.init_mma(to_params.DesiredVolFraction * np.ones((num_elems, 1)), mma_params)
+	
 	KE = elem_stiff.hex8_stiffness_matrix_structural( fe_solver.mat_prop,fe_solver.mesh.elem_size)
-	x_old = to_params.DesiredVolFraction *np.ones(num_elems, dtype = float)
+	x0 = to_params.DesiredVolFraction * np.ones(num_elems, dtype = float)
+	x0 = x0.reshape(-1, 1)
+	mma_state = mma.init_mma(x0, mma_params)
+	
+	x_old = mma_state.x.reshape(-1)
 	timeFEA = 0
 	timeMMA = 0
 	if (fe_solver.elem_body_force is not None):
@@ -273,6 +277,7 @@ def topopt_mma(fe_solver: sfea.StructFEA,
 		timeFEA += time.time() - timeFEAStart
 		obj = np.array([obj])
 		ce = (np.dot(u[fe_solver.mesh.edofMat].reshape(num_elems, 24), KE) * u[fe_solver.mesh.edofMat].reshape(num_elems, 24)).sum(1)
+		
 		if material_model == MaterialModel.SIMP:
 			# For SIMP material model: x**penal
 			penal = material_model_dict['penal']
@@ -291,8 +296,10 @@ def topopt_mma(fe_solver: sfea.StructFEA,
 			grad_obj = -d_elem_material_scaling_dx * ce
 			
 		if (nodal_body_force is not None):
+			massPenal = material_model_dict['masspenal']
+
 			ce_body_force = (u[fe_solver.mesh.edofMat].reshape(num_elems, 24) * nodal_body_force[fe_solver.mesh.edofMat].reshape(num_elems, 24)).sum(1)
-			grad_obj +=  2*ce_body_force # Assumes body force is linear w.r.t. x
+			grad_obj +=  massPenal*2*ce_body_force *x**(massPenal-1) 
 	
 		grad_obj = (H * grad_obj)/Hs
 
@@ -343,14 +350,15 @@ def topopt_mma(fe_solver: sfea.StructFEA,
 		# Estimate the percentage of grey elements
 		grey_elements = np.sum((x > 0.05) & (x < 0.95))
 		fraction_grey = (grey_elements / num_elems) 
-		print(f"it.: {mma_state.epoch}, obj.: {obj[0]:.4g}, vf: {vf:.3f}, grey: {fraction_grey:.3f}")
+		print(f"it.: {mma_state.epoch}, obj.: {obj[0]:.4g}, vf: {vf:.3f}, change: {change: 0.3f}, grey: {fraction_grey:.3f}")
 		history['compliance'].append(obj[0])
 		history['volume'].append(np.mean(x))
 		history['change'].append(change)
 
 		if (len(history['compliance'])) >= minMMAIterations:
 			dJ1 = abs((history['compliance'][-1] - history['compliance'][-2]) / history['compliance'][-2])
-			if dJ1 < rel_conv_tol and (np.max(cons) < rel_conv_tol): # success
+			# we need multiple checks else it will terminate too early for some problems such as TorquePlate
+			if dJ1 < rel_conv_tol and (np.max(cons) < rel_conv_tol) and (change < 0.2) and (fraction_grey < 0.2): # success
 				break
 		if time.time() - tStart > timeLimit:
 			success = False
@@ -358,6 +366,10 @@ def topopt_mma(fe_solver: sfea.StructFEA,
 			print("MMA optimization terminated due to time limit.")
 			break
 
+		# Reduce material_model_dict['masspenal'] by 0.1, but no less than 1
+		if 'panel' in material_model_dict:
+			material_model_dict['penal'] =  material_model_dict['penal']+material_model_dict['penalIncr']
+			material_model_dict['penal'] = max(material_model_dict['penal'], 1.0)
 	if mma_state.epoch >= maxMMAIterations:
 		print("MMA optimization did not converge.")
 		errorMsg = "Maximum iterations reached."
@@ -966,13 +978,13 @@ if __name__ == "__main__":
 	import plots	
 	
 	jax.config.update("jax_enable_x64", True)
-	optimizationMethod = TO_METHODS.PARETO # DENSITYMMA, DENSITYOC, PARETO, LEVELSET
+	optimizationMethod = TO_METHODS.DENSITYMMA # DENSITYMMA, DENSITYOC, PARETO, LEVELSET
 
 	#runTOTests(); exit(0) # Run all tests for each example in the StructuralTOExamples enum
 	
 	# Choose the TO problem
 	print("-" * 50)
-	to_problem = StructuralTOExamples.MidCantilever
+	to_problem = StructuralTOExamples.LBracket
 	print(f"Running {to_problem.name}...")
 	print("-" * 50)
 	solver = lin_solv.Solvers.PARDISO # Typically PARDISO, but DPCG for DOF > 200,000
@@ -1107,5 +1119,5 @@ if __name__ == "__main__":
 		print(f"Error: {errorMsg}")
 	plots.plotMesh(fe_solver.mesh, bc = None, u=None, title = title)
 
-	plots.plotIsocontour(fe_solver.mesh, title = title, save_path = None)
+	#plots.plotIsocontour(fe_solver.mesh, title = title, save_path = None)
 	# Save the mesh and results

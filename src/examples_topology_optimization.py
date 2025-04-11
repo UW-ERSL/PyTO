@@ -21,6 +21,7 @@ class StructuralTOExamples(enum.Enum):
 class TOParams:
     Comment = "" # Comment for the topology optimization problem
     nDOFDesired = 20000 # Desired number of degrees of freedom in the finite element problem
+    
     DesiredVolFraction = 0.5
     ExactVolumeFraction = False # If True, the volume fraction is exactly met
     RelativeFilterRadius = 1.5 #relative to the element size
@@ -134,9 +135,8 @@ def getStructuralTOProblem(to_problem: StructuralTOExamples, **kwargs):
     elif to_problem == StructuralTOExamples.TorquePlate:
         structural_problem = StructuralExamples.TorquePlate
         to_params.Comment  = "Circular Symmetry"
-        to_params.ZAxisAngularSymmetry = 6
-        to_params.ExtrudeZ = True
-        to_params.nDOFDesired = 50000
+        to_params.ZAxisAngularSymmetry = 3
+        to_params.nDOFDesired = 70000
         to_params.DesiredVolFraction = 0.5
     elif to_problem == StructuralTOExamples.KnuckleAssembly:
         structural_problem = StructuralExamples.KnuckleAssembly
