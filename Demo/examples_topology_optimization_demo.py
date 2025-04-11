@@ -99,7 +99,6 @@ def getStructuralTOProblem(to_problem: StructuralTOExamplesDemo, **kwargs):
         structural_problem = StructuralExamplesDemo.LongBeamDemo
         to_params.Comment = "TO Problem for Design Trial"
         to_params.XSymmetry = True
-        #to_params.AMBuildConstraint = True
         to_params.KeepFixedElems = True
         #to_params.RelativeFilterRadius = 3.5 #relative to the element size
         to_params.nDOFDesired = 50000
