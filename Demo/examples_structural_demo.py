@@ -1,3 +1,6 @@
+import sys
+sys.path.append('../PyTO-1/src') #assuming the PyTO is in the parent directory
+
 import numpy as np
 import mat_lib
 import bound_cond
@@ -7,7 +10,7 @@ import os
 import enum
 from mat_xml_parser import *
 script_dir = os.path.dirname(os.path.abspath(__file__))
-
+import pyvista as pv
 
 class StructuralExamplesDemo(enum.Enum):
 	KnuckleAssemblyDemo = enum.auto()
@@ -253,8 +256,9 @@ def createBasePlateProblem(nDOFDesired: int = 10000, youngs_modulus = 1e7,
                                poissons_ratio = 0.28, totalLoad =  1000):
  
   # Read the STL model, create a mesh of desired size, and a structural problem is posed on it.
-  stl_file = os.path.join(script_dir, 'C:/Users/pthombre/Downloads/RocketPy_PyTO/Models/Rocket/PayloadBaseRecreatedForDemoSTL.STL')
-
+  stl_file = '../Models/Rocket/PayloadBaseRecreatedForDemoSTL.STL'
+  stl = pv.read(stl_file)
+  stl.plot(color='lightskyblue')
   nElemsDesired = nDOFDesired/3    # estimate
   mesh = mesher.Mesher()
   
@@ -291,8 +295,11 @@ def createBasePlateProblem(nDOFDesired: int = 10000, youngs_modulus = 1e7,
   force = np.zeros(3*mesh.num_nodes)
   force[load_dofs] = load_per_dof 
   bc = bound_cond.BC(force = force,fixed_dofs = fixed_dofs,dirichlet_values = dirichlet_values) 
-
   
+  # Get material data from XML if it exists
+  fp_materialXML = os.path.join(script_dir, './material.xml')
+  if fp_materialXML is not None and os.path.isfile(fp_materialXML):
+      youngs_modulus, poissons_ratio = parse_material_properties(fp_materialXML)
   mat_prop = mat_lib.StructuralMaterial(youngs_modulus=youngs_modulus,
                       poissons_ratio=poissons_ratio)
   

@@ -76,11 +76,13 @@ def getStructuralTOProblem(to_problem: StructuralTOExamplesDemo, **kwargs):
     elif to_problem == StructuralTOExamplesDemo.BasePlate:
         structural_problem = StructuralExamplesDemo.BasePlate
         to_params.Comment  = "Large DOF"
-        to_params.KeepFixedElems = True
-        to_params.RemoveHangingElems = False
+        to_params.YSymmetry = True
+        #to_params.ZSymmetry = True
+        #to_params.KeepFixedElems = True
+        #to_params.RemoveHangingElems = True
         #to_params.ZAxisAngularSymmetry = 4
         to_params.nDOFDesired = 100000
-        to_params.DesiredVolFraction = 0.75
+        to_params.DesiredVolFraction = 0.70
     elif to_problem == StructuralTOExamplesDemo.EdgeCantileverDemo:
         structural_problem = StructuralExamplesDemo.EdgeCantileverDemo
         to_params.Comment = "Benchmark TO Problem for Design Trial"

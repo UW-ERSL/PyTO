@@ -24,7 +24,7 @@ if __name__ == "__main__":
 	
 	# Choose the TO problem
 	print("-" * 50)
-	to_problem = StructuralTOExamplesDemo.LongBeamDemo
+	to_problem = StructuralTOExamplesDemo.BasePlate
 	print(f"Running {to_problem.name}...")
 	print("-" * 50)
 	solver = lin_solv.Solvers.PARDISO # Typically PARDISO, but DPCG for DOF > 200,000
@@ -56,6 +56,7 @@ if __name__ == "__main__":
 	
 	title = f'nDOF: {3*fe_solver.mesh.num_nodes}, nElem: {fe_solver.mesh.num_elems}'
 	#plots.plotMesh(mesh, bc,title = title)
+	#plots.plotIsocontour(fe_solver.mesh, title = title, save_path = None)
 
 	startTime = time.time()
 	if optimizationMethod == TO_METHODS.DENSITYMMA:
