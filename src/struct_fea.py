@@ -80,8 +80,13 @@ class StructFEA:
     self.total_force = self.bc.force.copy()
     if self.elem_body_force is not None:
       elem_force = self.elem_body_force.copy()
+      if elasticity_material_model is None:
+        masspenal = 1
+      else:
+        masspenal = elasticity_material_model['masspenal']
+      
       for i in range(3):
-        elem_force[i::3]  *= x
+        elem_force[i::3]  *= (x**masspenal)
         
       node_forces = np.zeros((self.mesh.num_nodes * 3,))
       node_forces[0::3] = self.mesh.elem_to_node_field_mapping* elem_force[0::3] 
