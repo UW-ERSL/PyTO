@@ -29,10 +29,19 @@ class ModalFEA:
 
     self.mesh, self.mat_prop, self.bc = mesh, mat_prop, bc
     self.solver, self.kwargs = solver, kwargs
-    self.elem_stiff = jnp.asarray(
-                    elem_stiff.hex8_stiffness_matrix_structural(mat_prop, mesh.elem_size))
-    
-    self.elem_mass = jnp.asarray(
+     # Handle single material or list of materials
+    if isinstance(mat_prop, list):
+      # Create element stiffness matrix for each material
+      elem_stiff_list = [elem_stiff.hex8_stiffness_matrix_structural(mp, mesh.elem_size) 
+                for mp in mat_prop]
+      self.elem_stiff = jnp.stack(elem_stiff_list)
+      elem_mass_list = [elem_stiff.hex8_mass_matrix_structural(mp, mesh.elem_size) 
+            for mp in mat_prop]
+      self.elem_mass = jnp.stack(elem_mass_list)
+    else:
+      self.elem_stiff = jnp.expand_dims(
+          elem_stiff.hex8_stiffness_matrix_structural(mat_prop, mesh.elem_size), axis=0)
+      self.elem_mass = jnp.asarray(
                     elem_stiff.hex8_mass_matrix_structural(mat_prop, mesh.elem_size))
 
     self.node_idx = jnp.stack((
@@ -68,10 +77,29 @@ class ModalFEA:
       penal = elasticity_material_model['penal']
       elem_material_scaling = (alpha-1)/alpha * x ** penal + (1/alpha) * x
 
- 
-    elem_stiff_mtrx = jnp.einsum('ij, e -> eij',
-                                 self.elem_stiff,
-								 elem_material_scaling).flatten(order = 'C')
+
+  
+    if self.elem_stiff.shape[0] == 1:
+      # Single material case (1,N,N)
+      elem_stiff_mtrx = jnp.einsum('ij, e -> eij',
+                    self.elem_stiff[0],
+                    elem_material_scaling).flatten(order = 'C')
+      elem_mass_mtrx = jnp.einsum('ij, e -> eij',
+                                 self.elem_mass,
+                                 elem_material_scaling).flatten(order = 'C')
+    else:
+      # Multiple materials case (M,N,N)
+      # Assuming elem_mat_id contains material ID (0 to M-1) for each element
+      # Randomly assign material IDs (0 or 1) to each element
+      
+      elem_stiff_mtrx = jnp.einsum('mij, e, em -> eij',
+                    self.elem_stiff,
+                    elem_material_scaling,
+                    jnp.eye(self.elem_stiff.shape[0])[self.mesh.elemComponentId]).flatten(order = 'C')
+      elem_mass_mtrx = jnp.einsum('mij, e, em -> eij',
+                    self.elem_mass,
+                    elem_material_scaling,
+                    jnp.eye(self.elem_mass.shape[0])[self.mesh.elemComponentId]).flatten(order = 'C')
 
     stiff_mtrx = jax_sprs.BCOO((elem_stiff_mtrx, self.node_idx),
                                 shape=(self.bc.num_dofs, self.bc.num_dofs))
@@ -85,9 +113,7 @@ class ModalFEA:
           K[self.bc.free_dofs, :][:, self.bc.free_dofs]
           )
 
-    elem_mass_mtrx = jnp.einsum('ij, e -> eij',
-                                 self.elem_mass,
-                                 elem_material_scaling).flatten(order = 'C')
+    
     
     mass_mtrx = jax_sprs.BCOO((elem_mass_mtrx, self.node_idx),
                                 shape=(self.bc.num_dofs, self.bc.num_dofs))
@@ -129,15 +155,13 @@ if __name__ == "__main__":
   from examples_structural import *
 
 
-  problem = StructuralExamples.LBracket
+  problem = StructuralExamples.KnuckleAssembly
   nDOFDesired = 50000
   mesh, mat_prop, bc,elem_body_force = getStructuralProblem(problem,nDOFDesired = nDOFDesired)
   solver = lin_solv.Solvers.PARDISO 
-  
 
   startTime = time.time()
 
-  
   fe_solver = fea.ModalFEA(mesh = mesh,
         mat_prop = mat_prop,
         bc = bc,
@@ -145,7 +169,7 @@ if __name__ == "__main__":
         rtol = 1e-8,
         elem_body_force = elem_body_force)
 
-  nEigenModes = 10
+  nEigenModes = 3
   eigenvals, eigenvecs = fe_solver.computeEigenModes(nEigenModes = nEigenModes)
  
   print('-----------------------------')

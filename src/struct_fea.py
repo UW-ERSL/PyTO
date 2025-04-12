@@ -132,14 +132,7 @@ class StructFEA:
           The order of the stress components is:
           sigma_xx, sigma_yy, sigma_zz, sigma_yz, sigma_xz, sigma_xy
       """
-      num_elems = self.mesh.num_elems
-      num_nodes_per_elem = 8 # hard coded for hex8 elements
-      elemArray = self.mesh.elemArray
-      element_size = self.mesh.elem_size
-      
-      # reshape u into a matrix of size (num_nodes, 3)
-      #u_matrix = u.reshape(-1, 3)
-      # Shape function gradients at center
+   
       gradN = (1 / 8) * np.array([
         [-1, 1, 1, -1, -1, 1, 1, -1],
         [-1, -1, 1, 1, -1, -1, 1, 1],
