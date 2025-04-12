@@ -980,7 +980,7 @@ def createCentrifugalPlateProblem(nDOFDesired: int = 10000, youngs_modulus = 2e1
 # ----------------------------------------
 
 def createTorquePlateProblem(nDOFDesired: int = 10000, youngs_modulus = 2e11, 
-                               poissons_ratio = 0.28, torque =  100):
+                               poissons_ratio = 0.28, torque =  500):
  
   # Read the STL model, create a mesh of desired size, and a structural problem is posed on it.
   stl_file = os.path.join(script_dir, '../Models/CircularPlateHole/CircularPlateHole.STL')
@@ -1215,8 +1215,8 @@ def createBliskSectionWithBlade(nDOFDesired: int = 10000, youngs_modulus = 2.1e1
 
   # ----------------------------------------
 
-def createKnuckleAssemblyProblem(nDOFDesired: int = 10000, youngs_modulus = 2e11, 
-                               poissons_ratio = 0.28, totalLoad =  10000):
+def createKnuckleAssemblyProblem(nDOFDesired: int = 10000, youngs_modulus = [2e11,0.7e11], 
+                               poissons_ratio = [0.28,0.3], totalLoad =  10000):
  
   # Read the STL model, create a mesh of desired size, and a structural problem is posed on it.
   stl_file = os.path.join(script_dir, '../Models/KnuckleAssembly/KnuckleAssembly.STL')
@@ -1247,9 +1247,13 @@ def createKnuckleAssemblyProblem(nDOFDesired: int = 10000, youngs_modulus = 2e11
   force[load_dofs] = load_per_dof
   bc = bound_cond.BC(force = force,fixed_dofs = fixed_dofs,dirichlet_values = dirichlet_values) 
 
-  mat_prop = mat_lib.StructuralMaterial(youngs_modulus=youngs_modulus,
-                      poissons_ratio=poissons_ratio)
-  
+  # There are 2 components in the assembly
+  # Assign material properties to each component
+  mat_prop = 2*[None]
+  mat_prop[0] = mat_lib.StructuralMaterial(youngs_modulus=youngs_modulus[0],
+                      poissons_ratio=poissons_ratio[0]) # Knuckle
+  mat_prop[1] = mat_lib.StructuralMaterial(youngs_modulus=youngs_modulus[1],
+                      poissons_ratio=poissons_ratio[1]) # Shaft
   elem_body_force = None
   return mesh, mat_prop, bc, elem_body_force
 
@@ -1280,7 +1284,7 @@ def createTableProblem(nDOFDesired: int = 10000, youngs_modulus = 1e7,
   mesh.node_indices[load_nodes, 3] = 2 # for plotting
   load_dofs = 3 * load_nodes + 1  # y direction
 
-  load_per_dof = -totalLoad/len(load_nodes)
+  load_per_dof = totalLoad/len(load_nodes)
   force = np.zeros(3*mesh.num_nodes)
   force[load_dofs] = load_per_dof
   bc = bound_cond.BC(force = force,fixed_dofs = fixed_dofs,dirichlet_values = dirichlet_values) 
