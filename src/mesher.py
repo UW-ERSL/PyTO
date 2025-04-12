@@ -449,15 +449,36 @@ class Mesher:
 		self.elemArray = self.voxels.cell_connectivity
 		self.elemArray = self.elemArray.reshape((self.num_elems, 8))
 		
-			# Create an array to store component IDs for each element
+		# Create an array to store component IDs for each element
 		self.elemComponentId = np.zeros(self.num_elems, dtype=np.int32)
 		for elem_idx in range(self.num_elems):
 			self.elemComponentId[elem_idx] = self.voxels.cell_data["component_id"][elem_idx]
 
 		# Count the number of elements for each component
 		component_counts = np.bincount(self.elemComponentId)
+	
+		# Remove components with zero elements and shift the IDs
+		# Get counts per component excluding zero
+		valid_counts = component_counts[component_counts > 0]
+		self.num_components = len(valid_counts)
+
+		# Create mapping from old to new component IDs 
+		old_to_new = np.zeros(len(component_counts), dtype=np.int32)
+		new_id = 1
+		for i in range(len(component_counts)):
+			if component_counts[i] > 0:
+				old_to_new[i] = new_id
+				new_id += 1
+
+		# Update component IDs using the mapping
+		self.elemComponentId = old_to_new[self.elemComponentId]
+		
+		# Recount components after remapping
+		component_counts = valid_counts
+	
 		for component_id, count in enumerate(component_counts):
 			print(f"Component {component_id}: {count} elements")
+		
 		# Create a mapping from component ID to part index
 
 		self.elemPartIndex = np.zeros(self.num_elems)
@@ -990,16 +1011,18 @@ class Mesher:
 	def plot(self):
 		plotter = pv.Plotter()
 		# Add voxelized mesh with component colors
-		for i in range(self.num_components):
-			# Generate color based on component index
-			color = [i/self.num_components, 1.0, 1 - i/self.num_components]
-			# Filter cells belonging to this component. Ensures that only cells with component_id = i + 1 are selected, excluding any other components.
-			component_cells = self.voxels.threshold(i + 1, scalars="component_id")
-			if component_cells.n_cells > 0:
-				plotter.add_mesh(component_cells, color=color, label=f'Component {i}', show_edges=True)
+		if self.num_components == 1:
+			# Simple case - just plot the voxels
+			plotter.add_mesh(self.voxels, show_edges=True)
+		else:
+			# Multi-component case - plot each component with different colors
+			for i in range(self.num_components):
+				color = [i/self.num_components, 1.0, 1 - i/self.num_components]
+				component_cells = self.voxels.threshold(i + 1, scalars="component_id")
+				if component_cells.n_cells > 0:
+					plotter.add_mesh(component_cells, color=color, label=f'Component {i}', show_edges=True)
 
-
-		plotter.add_legend()
+			plotter.add_legend()
 		plotter.add_axes()
 		plotter.show_grid()
 		plotter.show()
@@ -1009,7 +1032,7 @@ if __name__ == "__main__":
     mesh = Mesher()
     script_dir = os.path.dirname(os.path.abspath(__file__))
     stlFileName = os.path.join(script_dir, '../Models/LBracket/LBracket.STL')
-    stlFileName = os.path.join(script_dir, '../Models/AlcoaGrabCAD/AlcoaGrabCAD.STL')
+    #stlFileName = os.path.join(script_dir, '../Models/AlcoaGrabCAD/AlcoaGrabCAD.STL')
     stlFileName = os.path.join(script_dir, '../Models/KnuckleAssembly/KnuckleAssembly.STL')
     #stlFileName = os.path.join(script_dir, '../Models/SwingArmAssembly/SwingArmAssembly.STL')
     mesh.createMeshFromSTLFile(stlFileName, nElemsDesired=28358)

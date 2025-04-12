@@ -122,24 +122,43 @@ def createFilters(fe_solver: sfea.StructFEA,to_params):
 
 	return H, Hs
 
-def computeTopologicalSensitivity(mesh, mat_prop, u, rho):
+def computeTopologicalSensitivity(mat_prop,strains,stresses,x):
+	stress_tensor = x[:, None, None] * np.array([
+		[stresses[:, 0], stresses[:, 3], stresses[:, 4]],
+		[stresses[:, 3], stresses[:, 1], stresses[:, 5]],
+		[stresses[:, 4], stresses[:, 5], stresses[:, 2]]
+	]).transpose(2, 0, 1)  # Shape: (num_elems, 3, 3)
+	
+	strain_tensor = np.array([
+		[strains[:, 0], strains[:, 3], strains[:, 4]],
+		[strains[:, 3], strains[:, 1], strains[:, 5]],
+		[strains[:, 4], strains[:, 5], strains[:, 2]]
+	]).transpose(2, 0, 1)  # Shape: (num_elems, 3, 3)
+	
+	# Compute topological sensitivity
+	trace_stress = np.trace(stress_tensor, axis1=1, axis2=2)
+	trace_strain = np.trace(strain_tensor, axis1=1, axis2=2)
+	if isinstance(mat_prop, list):
+		# Handle multiple materials based on element component ID
+		
+		# This needs to be fixed to handle different nu values
+		nu = mat_prop[0].poissons_ratio
+		
+		T = (4 / (1 + nu) * np.sum(stress_tensor * strain_tensor, axis=(1,2)) -
+			 (1 - 3 * nu) / (1 - nu**2) * trace_stress * trace_strain)
+	else:
+		# Single material case
+		nu = mat_prop.poissons_ratio
+		T = (4 / (1 + nu) * np.sum(stress_tensor * strain_tensor, axis=(1, 2)) -
+			(1 - 3 * nu) / (1 - nu**2) * trace_stress * trace_strain)
+	return T
+
+def computeTopologicalSensitivityOld(mesh, mat_prop, u, rho):
 	"""Compute topological sensitivity field. Vectorized version."""
 	
 	num_elems = mesh.num_elems
 	T = np.zeros(num_elems)
-	e, nu = mat_prop.youngs_modulus, mat_prop.poissons_ratio
 	
-	# Create constitutive matrix
-	v1 = 2 * nu**2 + nu - 1
-	v2 = 2 * nu + 2
-	D = e * np.array([
-		[(nu - 1) / v1, -nu / v1, -nu / v1, 0, 0, 0],
-		[-nu / v1, (nu - 1) / v1, -nu / v1, 0, 0, 0],
-		[-nu / v1, -nu / v1, (nu - 1) / v1, 0, 0, 0],
-		[0, 0, 0, 1 / v2, 0, 0],
-		[0, 0, 0, 0, 1 / v2, 0],
-		[0, 0, 0, 0, 0, 1 / v2]
-	])
 	
 	# Shape function gradients at center
 	gradN = (1 / 8) * np.array([
@@ -164,6 +183,19 @@ def computeTopologicalSensitivity(mesh, mat_prop, u, rho):
 		vGrad[2] + wGrad[1]
 	], axis=1)  # Shape: (num_elems, 6)
 	
+	E, nu = mat_prop.youngs_modulus, mat_prop.poissons_ratio
+	
+	# Create constitutive matrix
+	v1 = 2 * nu**2 + nu - 1
+	v2 = 2 * nu + 2
+	D = E * np.array([
+		[(nu - 1) / v1, -nu / v1, -nu / v1, 0, 0, 0],
+		[-nu / v1, (nu - 1) / v1, -nu / v1, 0, 0, 0],
+		[-nu / v1, -nu / v1, (nu - 1) / v1, 0, 0, 0],
+		[0, 0, 0, 1 / v2, 0, 0],
+		[0, 0, 0, 0, 1 / v2, 0],
+		[0, 0, 0, 0, 0, 1 / v2]
+	])
 	# Compute stresses
 	stresses = strains @ D.T  # Shape: (num_elems, 6)
 	
@@ -648,10 +680,10 @@ def topopt_pareto(fe_solver: sfea.StructFEA,
 	# Store initial compliance
 	history['compliance'].append(fe_solver.total_force.T @ u)
 	history['volume'].append(volfrac)
-
+	fe_solver.postprocess(u) # compute stresses and strains for the initial design
 	# Compute initial topological sensitivity
-	T = computeTopologicalSensitivity(fe_solver.mesh, fe_solver.mat_prop, u, rho)
-
+	T = computeTopologicalSensitivity(fe_solver.mat_prop,fe_solver.strainComponents,fe_solver.stressComponents,rho)
+	#T = computeTopologicalSensitivityOld(fe_solver.mesh, fe_solver.mat_prop, u, rho)
 	# Add contribution from body force to topological sensitivity if present
 	if (nodal_body_force is not None):
 		T_body = np.zeros(fe_solver.mesh.num_elems)
@@ -733,7 +765,9 @@ def topopt_pareto(fe_solver: sfea.StructFEA,
 			JTemp = float(fe_solver.total_force.T @ u)
 			#plots.plotMesh(fe_solver.mesh, bc = None, u=u, title = title)
 			# Update sensitivity
-			T = computeTopologicalSensitivity(fe_solver.mesh, fe_solver.mat_prop, u, rho)
+			fe_solver.postprocess(u)
+			T = computeTopologicalSensitivity(fe_solver.mat_prop,fe_solver.strainComponents,fe_solver.stressComponents,rho)
+			#T = computeTopologicalSensitivityOld(fe_solver.mesh, fe_solver.mat_prop, u, rho)
 			# Add contribution from body force to topological sensitivity if present
 			if (nodal_body_force is not None):
 				T_body = np.zeros(fe_solver.mesh.num_elems)
@@ -978,13 +1012,13 @@ if __name__ == "__main__":
 	import plots	
 	
 	jax.config.update("jax_enable_x64", True)
-	optimizationMethod = TO_METHODS.DENSITYMMA # DENSITYMMA, DENSITYOC, PARETO, LEVELSET
+	optimizationMethod = TO_METHODS.PARETO # DENSITYMMA, DENSITYOC, PARETO, LEVELSET
 
 	#runTOTests(); exit(0) # Run all tests for each example in the StructuralTOExamples enum
 	
 	# Choose the TO problem
 	print("-" * 50)
-	to_problem = StructuralTOExamples.LBracket
+	to_problem = StructuralTOExamples.KnuckleAssembly
 	print(f"Running {to_problem.name}...")
 	print("-" * 50)
 	solver = lin_solv.Solvers.PARDISO # Typically PARDISO, but DPCG for DOF > 200,000

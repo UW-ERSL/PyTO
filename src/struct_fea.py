@@ -22,22 +22,31 @@ class StructFEA:
   """Linear Structural Finite Element Analysis."""
 
   def __init__(self,
-							 mesh,
-							 mat_prop: mat_lib.StructuralMaterial,
-							 bc: bound_cond.BC,
-							 solver: lin_sol.Solvers,
-               elem_body_force: jnp.ndarray = None,
-							 **kwargs):
+         mesh,
+         mat_prop: mat_lib.StructuralMaterial | list[mat_lib.StructuralMaterial],
+         bc: bound_cond.BC,
+         solver: lin_sol.Solvers,
+         elem_body_force: jnp.ndarray = None,
+         **kwargs):
 
     self.mesh, self.mat_prop, self.bc = mesh, mat_prop, bc
     self.solver, self.kwargs = solver, kwargs
-    self.elem_stiff = jnp.asarray(
-                    elem_stiff.hex8_stiffness_matrix_structural(mat_prop, mesh.elem_size))
 
+    # Handle single material or list of materials
+    if isinstance(mat_prop, list):
+    # Create element stiffness matrix for each material
+      elem_stiff_list = [elem_stiff.hex8_stiffness_matrix_structural(mp, mesh.elem_size) 
+                for mp in mat_prop]
+      self.elem_stiff = jnp.stack(elem_stiff_list)
+    else:
+      self.elem_stiff = jnp.expand_dims(
+          elem_stiff.hex8_stiffness_matrix_structural(mat_prop, mesh.elem_size), axis=0)
+
+   
     self.node_idx = jnp.stack((
-                      np.kron(self.mesh.edofMat, np.ones((24, 1))).flatten(),
-                      np.kron(self.mesh.edofMat, np.ones((1, 24))).flatten())
-                      ).T.astype(int)
+            np.kron(self.mesh.edofMat, np.ones((24, 1))).flatten(),
+            np.kron(self.mesh.edofMat, np.ones((1, 24))).flatten())
+            ).T.astype(int)
     self.elem_body_force = elem_body_force
 
 
@@ -70,13 +79,25 @@ class StructFEA:
       penal = elasticity_material_model['penal']
       elem_material_scaling = x/((2-x)**penal)
 
-    elem_stiff_mtrx = jnp.einsum('ij, e -> eij',
-                                 self.elem_stiff,
-									               elem_material_scaling).flatten(order = 'C')
+  
+    # Handle different shapes of elem_stiff
+    if self.elem_stiff.shape[0] == 1:
+      # Single material case (1,N,N)
+      elem_stiff_mtrx = jnp.einsum('ij, e -> eij',
+                    self.elem_stiff[0],
+                    elem_material_scaling).flatten(order = 'C')
+    else:
+      # Multiple materials case (M,N,N)
+      # Assuming elem_mat_id contains material ID (0 to M-1) for each element
+      # Randomly assign material IDs (0 or 1) to each element
+      
+      elem_stiff_mtrx = jnp.einsum('mij, e, em -> eij',
+                    self.elem_stiff,
+                    elem_material_scaling,
+                    jnp.eye(self.elem_stiff.shape[0])[self.mesh.elemComponentId]).flatten(order = 'C')
 
     stiff_mtrx = jax_sprs.BCOO((elem_stiff_mtrx, self.node_idx),
-                                shape=(self.bc.num_dofs, self.bc.num_dofs))
-  
+                   shape=(self.bc.num_dofs, self.bc.num_dofs))
     self.total_force = self.bc.force.copy()
     if self.elem_body_force is not None:
       elem_force = self.elem_body_force.copy()
@@ -111,60 +132,62 @@ class StructFEA:
           The order of the stress components is:
           sigma_xx, sigma_yy, sigma_zz, sigma_yz, sigma_xz, sigma_xy
       """
-      num_elems = self.mesh.num_elems
-      num_nodes_per_elem = 8 # hard coded for hex8 elements
-      elemArray = self.mesh.elemArray
-      element_size = self.mesh.elem_size
+   
+      gradN = (1 / 8) * np.array([
+        [-1, 1, 1, -1, -1, 1, 1, -1],
+        [-1, -1, 1, 1, -1, -1, 1, 1],
+        [-1, -1, -1, -1, 1, 1, 1, 1]
+      ])
       
-      # reshape u into a matrix of size (num_nodes, 3)
-      u_matrix = u.reshape(-1, 3)
-
-      # collect the displacement of each node for each element
-      element_u = u_matrix[elemArray, :] # (num_elems, num_nodes_per_elem, 3)
-      element_u = jnp.reshape(element_u, (num_elems, num_nodes_per_elem*3)) # (num_elems, num_nodes_per_elem*3)
-
+      # Get element degrees of freedom
+      edof = self.mesh.edofMat
       
-      # Shape function derivatives at center point (xi=eta=zeta=0)
-      dNdxi = jnp.array([-0.125, 0.125, 0.125, -0.125, -0.125, 0.125, 0.125, -0.125])
-      dNdeta = jnp.array([-0.125, -0.125, 0.125, 0.125, -0.125, -0.125, 0.125, 0.125])
-      dNdzeta = jnp.array([-0.125, -0.125, -0.125, -0.125, 0.125, 0.125, 0.125, 0.125])
+      # Compute displacement gradients
+      uGrad = gradN @ u[edof[:, ::3]].T
+      vGrad = gradN @ u[edof[:, 1::3]].T
+      wGrad = gradN @ u[edof[:, 2::3]].T
+      
+      # Compute strains
+      strain = np.stack([
+        uGrad[0], vGrad[1], wGrad[2],
+        uGrad[1] + vGrad[0],
+        uGrad[2] + wGrad[0],
+        vGrad[2] + wGrad[1]
+      ], axis=1)  # Shape: (num_elems, 6)
 
-      # Compute dN/dx = J^(-1) * dN/dxi
-      dNdx = 2*dNdxi / element_size[0]
-      dNdy = 2*dNdeta / element_size[1]
-      dNdz = 2*dNdzeta / element_size[2]
-
-      # Fill B matrix
-      B = np.zeros((6, 24))
-      for i in range(8):
-        # Normal strains
-        B[0, i*3] = dNdx[i]
-        B[1, i*3+1] = dNdy[i]
-        B[2, i*3+2] = dNdz[i]
-        
-        # Shear strains
-        B[3, i*3+1] = dNdz[i]
-        B[3, i*3+2] = dNdy[i]
-        B[4, i*3] = dNdz[i]
-        B[4, i*3+2] = dNdx[i]
-        B[5, i*3] = dNdy[i]
-        B[5, i*3+1] = dNdx[i]
-  
-      strain = jnp.einsum('ij,je->ei', B, element_u.T)
-
-       # Constitutive matrix D for plane stress
-      E = self.mat_prop.youngs_modulus # Young's modulus
-      nu = self.mat_prop.poissons_ratio # Poisson's ratio
-
-      D = E / ((1 + nu) * (1 - 2*nu)) * jnp.array([
+      # Constitutive matrix D for each material
+      if isinstance(self.mat_prop, list):
+        # Create D matrix for each material
+        D_list = []
+        for mp in self.mat_prop:
+          E = mp.youngs_modulus
+          nu = mp.poissons_ratio
+          D = E / ((1 + nu) * (1 - 2*nu)) * jnp.array([
         [1-nu, nu, nu, 0, 0, 0],
         [nu, 1-nu, nu, 0, 0, 0],
         [nu, nu, 1-nu, 0, 0, 0],
         [0, 0, 0, (1-2*nu)/2, 0, 0],
         [0, 0, 0, 0, (1-2*nu)/2, 0],
         [0, 0, 0, 0, 0, (1-2*nu)/2]
-      ])
-      element_stress = jnp.einsum('ij,ej->ei', D, strain)
+          ])
+          D_list.append(D)
+        D_stack = jnp.stack(D_list)
+        # Use elem_mat_id to select correct D matrix for each element
+        element_stress = jnp.einsum('mij,ej,em->ei', D_stack, strain, 
+                  jnp.eye(len(self.mat_prop))[self.mesh.elemComponentId])
+      else:
+        # Single material case
+        E = self.mat_prop.youngs_modulus 
+        nu = self.mat_prop.poissons_ratio
+        D = E / ((1 + nu) * (1 - 2*nu)) * jnp.array([
+          [1-nu, nu, nu, 0, 0, 0],
+          [nu, 1-nu, nu, 0, 0, 0],
+          [nu, nu, 1-nu, 0, 0, 0],
+          [0, 0, 0, (1-2*nu)/2, 0, 0],
+          [0, 0, 0, 0, (1-2*nu)/2, 0],
+          [0, 0, 0, 0, 0, (1-2*nu)/2]
+        ])
+        element_stress = jnp.einsum('ij,ej->ei', D, strain)
       self.strainComponents = strain
       self.stressComponents = element_stress
       self.vonMisesStress = jnp.sqrt(0.5*((element_stress[:,0]-element_stress[:,1])**2 +
@@ -179,8 +202,8 @@ if __name__ == "__main__":
   import plots
   from examples_structural import *
 
-  problem = StructuralExamples.NoseCone
-  nDOFDesired = 100000
+  problem = StructuralExamples.LBracket
+  nDOFDesired = 60000
   mesh, mat_prop, bc,elem_body_force = getStructuralProblem(problem,nDOFDesired = nDOFDesired)
   solver = lin_solv.Solvers.PARDISO # typically DPCG or PARDISO
   
