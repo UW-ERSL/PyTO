@@ -231,21 +231,12 @@ def getRetainedOuterGeomSTL(fp_original_stl: str,
   mesh_diff.save(fp_outputstlpath, binary=True)
  
 
-def plot(self):
+def plot_stl(stl_file: str, color = 'lightskyblue', show_edges = False):
   plotter = pv.Plotter()
-  # Add voxelized mesh with component colors
-  print('Unique: ',np.unique(self.voxels.cell_data["component_id"]))
+  component = pv.read(stl_file)
+  
+  plotter.add_mesh(component, color=color, show_edges=show_edges)
 
-  for i in range(self.num_components):
-    # Generate color based on component index
-    color = [i/self.num_components, 1.0, 1 - i/self.num_components]
-    # Filter cells belonging to this component. Ensures that only cells with component_id = i + 1 are selected, excluding any other components.
-    component_cells = self.voxels.threshold(i + 1, scalars="component_id")
-    if component_cells.n_cells > 0:
-      plotter.add_mesh(component_cells, color=color, label=f'Component {i}', show_edges=True)
-
-
-  plotter.add_legend()
   plotter.add_axes()
   plotter.show_grid()
   plotter.show()

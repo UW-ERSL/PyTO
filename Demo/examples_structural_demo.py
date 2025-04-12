@@ -1,6 +1,6 @@
 import sys
 sys.path.append('../PyTO-1/src') #assuming the PyTO is in the parent directory
-
+import plots_demo
 import numpy as np
 import mat_lib
 import bound_cond
@@ -22,7 +22,7 @@ class StructuralExamplesDemo(enum.Enum):
 	LongBeamDemo = enum.auto()
 	SimpleBracketDemo = enum.auto()
 	LongBeamTopBottomLoadDemo = enum.auto()
-  
+	BasePlateAssembly = enum.auto()
   
   
 
@@ -58,6 +58,8 @@ def getStructuralProblem(problem: StructuralExamplesDemo, **kwargs):
     return createSimpleBracketDemoProblem(**kwargs)
   elif problem == StructuralExamplesDemo.LongBeamTopBottomLoadDemo:
     return createLongBeamTopBottomLoadDemoProblem(**kwargs)
+  elif problem == StructuralExamplesDemo.BasePlateAssembly:
+    return createBasePlateAssemblyProblem(**kwargs)
   else:
     raise ValueError("Invalid structural example name.")
   
@@ -257,8 +259,7 @@ def createBasePlateProblem(nDOFDesired: int = 10000, youngs_modulus = 1e7,
  
   # Read the STL model, create a mesh of desired size, and a structural problem is posed on it.
   stl_file = '../Models/Rocket/PayloadBaseRecreatedForDemoSTL.STL'
-  stl = pv.read(stl_file)
-  stl.plot(color='lightskyblue')
+  plots_demo.plot_stl(stl_file)
   nElemsDesired = nDOFDesired/3    # estimate
   mesh = mesher.Mesher()
   
@@ -306,6 +307,60 @@ def createBasePlateProblem(nDOFDesired: int = 10000, youngs_modulus = 1e7,
   elem_body_force = None
   return mesh, mat_prop, bc, elem_body_force
 
+def createBasePlateAssemblyProblem(nDOFDesired: int = 10000, youngs_modulus = 1e7, 
+                               poissons_ratio = 0.28, totalLoad =  1000):
+ 
+  # Read the STL model, create a mesh of desired size, and a structural problem is posed on it.
+  stl_file = '../Models/Rocket/PayLoadBaseAssembly.STL'
+  plots_demo.plot_stl(stl_file)
+  nElemsDesired = nDOFDesired/3    # estimate
+  mesh = mesher.Mesher()
+  
+  mesh.createMeshFromSTLFile(stl_file, nElemsDesired=nElemsDesired)
+  mesh.createEdofMatStructural()
+
+  node_pts = mesh.node_xyz
+
+  # fix inner radius
+  centerPt = [0,52.5,54]
+  axis = [1,0,0]
+  innerRadius = 20  # 20 mm
+  outerRadius = 65  # 65 mm
+  outerBottomRadius = 60  # 60 mm
+  fixed_nodes = mesh.get_nodes_within_annular_region(centerPt,axis,outerBottomRadius-mesh.elem_size[0]*3,
+                                                     outerBottomRadius+mesh.elem_size[0]*0.907)  
+  
+  nodes_to_optimize = np.where(node_pts[:, 0] >= 10)[0]       
+  
+  fixed_nodes = np.setdiff1d(fixed_nodes, nodes_to_optimize)
+
+  fixed_dofs = np.array([3 * fixed_nodes,
+              3 * fixed_nodes + 1,
+              3 * fixed_nodes + 2]).flatten().astype(int)
+  dirichlet_values = 0*np.ones_like(fixed_dofs, dtype = float)
+  mesh.node_indices[fixed_nodes, 3] = 1 # for plotting
+  
+  # line defined by x = xMax
+  load_nodes = mesh.getNodesOnBoundingBoxPlane(0,False) # x = xMax plane 
+  if load_nodes.shape[0] == 0:
+    load_nodes = np.where(mesh.node_indices[:, 0] == mesh.grid[0]-1)[0]
+  load_dofs = 3 * load_nodes  # x direction
+  mesh.node_indices[load_nodes, 3] = 2
+  load_per_dof = -totalLoad/len(load_nodes)
+
+  force = np.zeros(3*mesh.num_nodes)
+  force[load_dofs] = load_per_dof 
+  bc = bound_cond.BC(force = force,fixed_dofs = fixed_dofs,dirichlet_values = dirichlet_values) 
+  
+  # Get material data from XML if it exists
+  fp_materialXML = os.path.join(script_dir, './material.xml')
+  if fp_materialXML is not None and os.path.isfile(fp_materialXML):
+      youngs_modulus, poissons_ratio = parse_material_properties(fp_materialXML)
+  mat_prop = mat_lib.StructuralMaterial(youngs_modulus=youngs_modulus,
+                      poissons_ratio=poissons_ratio)
+  
+  elem_body_force = None
+  return mesh, mat_prop, bc, elem_body_force
 
 def createEdgeCantileverDemoProblem(nDOFDesired: int = 10000, L: float = [0.4, 0.2, 0.1],
                                 youngs_modulus = 2.1e11, poissons_ratio = 0.28,totalLoad = 10000):
@@ -593,7 +648,7 @@ def createLongBeamTopBottomLoadDemoProblem(nDOFDesired: int = 10000, L: float = 
   """
   # Read the STL model, create a mesh of desired size, and a structural problem is posed on it.
   stl_file = '../Models/EdgeCantilever/EdgeCantilever.STL'
-
+  plots_demo.plot_stl(stl_file)
   nElemsDesired = nDOFDesired/3    # estimate
   mesh = mesher.Mesher()
   

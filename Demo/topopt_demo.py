@@ -55,7 +55,7 @@ if __name__ == "__main__":
 	print("nElem: ", fe_solver.mesh.num_elems)	
 	
 	title = f'nDOF: {3*fe_solver.mesh.num_nodes}, nElem: {fe_solver.mesh.num_elems}'
-	#plots.plotMesh(mesh, bc,title = title)
+	plots.plotMesh(mesh, bc,title = title)
 	#plots.plotIsocontour(fe_solver.mesh, title = title, save_path = None)
 
 	startTime = time.time()

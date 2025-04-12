@@ -17,6 +17,8 @@ class StructuralTOExamplesDemo(enum.Enum):
 	LongBeamDemo = enum.auto()
 	SimpleBracketDemo = enum.auto()
 	LongBeamTopBottomLoadDemo = enum.auto()
+	BasePlateAssembly = enum.auto()
+     
      
 
 def find_elements_with_nodes(mesh: mesher.Mesher, nodes_to_find: np.ndarray) -> np.ndarray:
@@ -75,6 +77,16 @@ def getStructuralTOProblem(to_problem: StructuralTOExamplesDemo, **kwargs):
         to_params.DesiredVolFraction = 0.935
     elif to_problem == StructuralTOExamplesDemo.BasePlate:
         structural_problem = StructuralExamplesDemo.BasePlate
+        to_params.Comment  = "Large DOF"
+        to_params.YSymmetry = True
+        #to_params.ZSymmetry = True
+        #to_params.KeepFixedElems = True
+        #to_params.RemoveHangingElems = True
+        #to_params.ZAxisAngularSymmetry = 4
+        to_params.nDOFDesired = 100000
+        to_params.DesiredVolFraction = 0.70
+    elif to_problem == StructuralTOExamplesDemo.BasePlateAssembly:
+        structural_problem = StructuralExamplesDemo.BasePlateAssembly
         to_params.Comment  = "Large DOF"
         to_params.YSymmetry = True
         #to_params.ZSymmetry = True
