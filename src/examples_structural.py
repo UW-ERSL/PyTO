@@ -11,6 +11,7 @@ script_dir = os.path.dirname(os.path.abspath(__file__))
 class StructuralExamples(enum.Enum):
 	TensileBar = enum.auto()
 	BeamBending = enum.auto()
+	ShearBlock = enum.auto()
 	EdgeCantilever = enum.auto()
 	MidCantilever = enum.auto()
 	ThreeHoleBracket = enum.auto()
@@ -52,6 +53,8 @@ def getStructuralProblem(problem: StructuralExamples, **kwargs):
     return createTensileBarProblem(**kwargs)
   elif problem == StructuralExamples.BeamBending:
     return createBeamBendingProblem(**kwargs)
+  elif problem == StructuralExamples.ShearBlock:
+    return createShearBlockProblem(**kwargs)
   elif problem == StructuralExamples.EdgeCantilever:
     return createEdgeCantileverProblem(**kwargs)
   elif problem == StructuralExamples.MidCantilever:
@@ -297,6 +300,82 @@ def createBeamBendingProblem(nDOFDesired: int = 10000, L: float = [10, 1, 1],you
   return mesh, mat_prop, bc, elem_body_force
 
   # ----------------------------------------
+
+
+def createShearBlockProblem(nDOFDesired: int = 10000, L: float = [1, 1, 1],youngs_modulus = 2e11, 
+                            poissons_ratio = 0.3,shearForce = 1000):
+  """Creates a shear problem with approximate desired DOFs.
+
+  Parameters:
+  ----------
+  nDOFDesired : int
+    Desired number of degrees of freedom (default 10000)
+  L : list of float
+    Dimensions [Lx, Ly, Lz] of domain (default [1, 0.1, 0.1])
+  youngs_modulus : float
+    Young's modulus of material (default 2e11)
+  poissons_ratio : float 
+    Poisson's ratio of material (default 0.3)
+
+  Returns:
+  -------
+  tuple
+    (mesh, mat_prop, bc) containing:
+    - mesh: Mesher object with grid discretization
+    - mat_prop: Material properties object
+    - bc: Boundary conditions with fixed left face and load on right face
+  """
+ 
+  nVoxelsDesired = nDOFDesired/3    
+  # Let the number of voxels be proportional to the length in each direction
+  alpha = (nVoxelsDesired/(L[0]*L[1]*L[2]))**(1/3)
+  nelx = round(alpha*L[0])
+  nely = round(alpha*L[1])
+  nelz = round(alpha*L[2])
+  mesh = mesher.Mesher()
+  mesh.grid_mesh(num_elems = (nelx, nely, nelz),
+                  elem_size = (L[0]/nelx, L[1]/nely, L[2]/nelz))
+  mesh.createEdofMatStructural()
+
+  fixed_nodes = mesh.getNodesOnBoundingBoxPlane(0,True) # x = 0 plane
+  fixed_dofs = np.array([3 * fixed_nodes]).flatten().astype(int) # fixed in x direction
+  fixed_dofs = np.array([3 * fixed_nodes,
+              3 * fixed_nodes + 1,
+              3 * fixed_nodes + 2]).flatten().astype(int)
+  dirichlet_values = 0*np.ones_like(fixed_dofs, dtype = float)
+  mesh.node_indices[fixed_nodes, 3] = 1
+  
+  # Add forces on x=xMax plane with different magnitudes for edges and corners
+  # that is consistent with numerical integration over the surface
+  load_nodes = mesh.getNodesOnBoundingBoxPlane(0,False) # x = xMax plane
+  # Find edge and corner nodes
+  edge_nodes = []
+  corner_nodes = []
+  face_nodes = [] 
+
+  load_dof = 3*load_nodes + 1 # y direction
+
+  # Apply forces according to node type
+  force = np.zeros(3*mesh.num_nodes)
+  force[load_dof] = shearForce/len(load_nodes)
+
+
+  mesh.node_indices[load_nodes, 3] = 2
+  
+  bc = bound_cond.BC(force = force,
+            fixed_dofs = fixed_dofs,
+            dirichlet_values = dirichlet_values) 
+
+  mat_prop = mat_lib.StructuralMaterial(youngs_modulus=youngs_modulus,
+                      poissons_ratio=poissons_ratio)
+  
+  elem_body_force = None
+
+  return mesh, mat_prop, bc, elem_body_force
+
+
+  # ----------------------------------------
+
 
 def createEdgeCantileverProblem(nDOFDesired: int = 10000, L: float = [0.4, 0.2, 0.1],
                                 youngs_modulus = 2e11, poissons_ratio = 0.3,totalLoad = 10000):
@@ -1215,8 +1294,8 @@ def createBliskSectionWithBlade(nDOFDesired: int = 10000, youngs_modulus = 2.1e1
 
   # ----------------------------------------
 
-def createKnuckleAssemblyProblem(nDOFDesired: int = 10000, youngs_modulus = [2e11,0.7e11], 
-                               poissons_ratio = [0.28,0.3], totalLoad =  10000):
+def createKnuckleAssemblyProblem(nDOFDesired: int = 10000, youngs_modulus = [2e11,2e11], 
+                               poissons_ratio = [0.28,0.28], totalLoad =  10000):
  
   # Read the STL model, create a mesh of desired size, and a structural problem is posed on it.
   stl_file = os.path.join(script_dir, '../Models/KnuckleAssembly/KnuckleAssembly.STL')

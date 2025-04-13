@@ -24,8 +24,6 @@ class TO_METHODS(enum.Enum):
 class MaterialModel(enum.Enum):
 	SIMP = enum.auto()
 	SIMPPLUS = enum.auto()
-	GRIP = enum.auto() # Generalized Rational Interpolation with Penalization
-
 
 def find_elements_with_forces(mesh: mesher.Mesher, force) -> np.ndarray:
 	"""Find all elements that have nodes on which force has been applied.
@@ -130,9 +128,9 @@ def computeTopologicalSensitivity(mat_prop,strains,stresses,x):
 	]).transpose(2, 0, 1)  # Shape: (num_elems, 3, 3)
 	
 	strain_tensor = np.array([
-		[strains[:, 0], strains[:, 3], strains[:, 4]],
-		[strains[:, 3], strains[:, 1], strains[:, 5]],
-		[strains[:, 4], strains[:, 5], strains[:, 2]]
+		[strains[:, 0], strains[:, 3]/2, strains[:, 4]/2],
+		[strains[:, 3]/2, strains[:, 1], strains[:, 5]/2],
+		[strains[:, 4]/2, strains[:, 5]/2, strains[:, 2]]
 	]).transpose(2, 0, 1)  # Shape: (num_elems, 3, 3)
 	
 	# Compute topological sensitivity
@@ -153,72 +151,6 @@ def computeTopologicalSensitivity(mat_prop,strains,stresses,x):
 			(1 - 3 * nu) / (1 - nu**2) * trace_stress * trace_strain)
 	return T
 
-def computeTopologicalSensitivityOld(mesh, mat_prop, u, rho):
-	"""Compute topological sensitivity field. Vectorized version."""
-	
-	num_elems = mesh.num_elems
-	T = np.zeros(num_elems)
-	
-	
-	# Shape function gradients at center
-	gradN = (1 / 8) * np.array([
-		[-1, 1, 1, -1, -1, 1, 1, -1],
-		[-1, -1, 1, 1, -1, -1, 1, 1],
-		[-1, -1, -1, -1, 1, 1, 1, 1]
-	])
-	
-	# Get element degrees of freedom
-	edof = mesh.edofMat
-	
-	# Compute displacement gradients
-	uGrad = gradN @ u[edof[:, ::3]].T
-	vGrad = gradN @ u[edof[:, 1::3]].T
-	wGrad = gradN @ u[edof[:, 2::3]].T
-	
-	# Compute strains
-	strains = np.stack([
-		uGrad[0], vGrad[1], wGrad[2],
-		uGrad[1] + vGrad[0],
-		uGrad[2] + wGrad[0],
-		vGrad[2] + wGrad[1]
-	], axis=1)  # Shape: (num_elems, 6)
-	
-	E, nu = mat_prop.youngs_modulus, mat_prop.poissons_ratio
-	
-	# Create constitutive matrix
-	v1 = 2 * nu**2 + nu - 1
-	v2 = 2 * nu + 2
-	D = E * np.array([
-		[(nu - 1) / v1, -nu / v1, -nu / v1, 0, 0, 0],
-		[-nu / v1, (nu - 1) / v1, -nu / v1, 0, 0, 0],
-		[-nu / v1, -nu / v1, (nu - 1) / v1, 0, 0, 0],
-		[0, 0, 0, 1 / v2, 0, 0],
-		[0, 0, 0, 0, 1 / v2, 0],
-		[0, 0, 0, 0, 0, 1 / v2]
-	])
-	# Compute stresses
-	stresses = strains @ D.T  # Shape: (num_elems, 6)
-	
-	# Create stress and strain tensors
-	stress_tensor = rho[:, None, None] * np.array([
-		[stresses[:, 0], stresses[:, 3], stresses[:, 4]],
-		[stresses[:, 3], stresses[:, 1], stresses[:, 5]],
-		[stresses[:, 4], stresses[:, 5], stresses[:, 2]]
-	]).transpose(2, 0, 1)  # Shape: (num_elems, 3, 3)
-	
-	strain_tensor = np.array([
-		[strains[:, 0], strains[:, 3], strains[:, 4]],
-		[strains[:, 3], strains[:, 1], strains[:, 5]],
-		[strains[:, 4], strains[:, 5], strains[:, 2]]
-	]).transpose(2, 0, 1)  # Shape: (num_elems, 3, 3)
-	
-	# Compute topological sensitivity
-	trace_stress = np.trace(stress_tensor, axis1=1, axis2=2)
-	trace_strain = np.trace(strain_tensor, axis1=1, axis2=2)
-	T = (4 / (1 + nu) * np.sum(stress_tensor * strain_tensor, axis=(1, 2)) -
-		(1 - 3 * nu) / (1 - nu**2) * trace_stress * trace_strain)
-
-	return T
 def topopt_mma(fe_solver: sfea.StructFEA,
 			   			to_params,
 			   			minMMAIterations: int = 5,
@@ -256,7 +188,7 @@ def topopt_mma(fe_solver: sfea.StructFEA,
 		#  body-force model from the papers here:
 		#  https://doi.org/10.1002/nme.2499, https://doi.org/10.1016/j.cma.2017.04.021 
 
-
+	
 	tStart = time.time()
 	num_elems= fe_solver.mesh.num_elems
 	history = {'compliance': [], 'volume': [], 'change': []}
@@ -281,7 +213,13 @@ def topopt_mma(fe_solver: sfea.StructFEA,
 														upper_bound = np.ones((num_elems, 1)),
 														)
 	
-	KE = elem_stiff.hex8_stiffness_matrix_structural( fe_solver.mat_prop,fe_solver.mesh.elem_size)
+	if isinstance(fe_solver.mat_prop, list):
+		KE_list = [elem_stiff.hex8_stiffness_matrix_structural( mp,fe_solver.mesh.elem_size)
+			 for mp in fe_solver.mat_prop]
+		KE = KE_list[0]
+		print("Density-MMA: Assuming all elements have the same material properties")
+	else:
+		KE = elem_stiff.hex8_stiffness_matrix_structural( fe_solver.mat_prop,fe_solver.mesh.elem_size)
 	x0 = to_params.DesiredVolFraction * np.ones(num_elems, dtype = float)
 	x0 = x0.reshape(-1, 1)
 	mma_state = mma.init_mma(x0, mma_params)
@@ -308,8 +246,10 @@ def topopt_mma(fe_solver: sfea.StructFEA,
 		
 		timeFEA += time.time() - timeFEAStart
 		obj = np.array([obj])
-		ce = (np.dot(u[fe_solver.mesh.edofMat].reshape(num_elems, 24), KE) * u[fe_solver.mesh.edofMat].reshape(num_elems, 24)).sum(1)
+
 		
+		ce = (np.dot(u[fe_solver.mesh.edofMat].reshape(num_elems, 24), KE) * u[fe_solver.mesh.edofMat].reshape(num_elems, 24)).sum(1)
+
 		if material_model == MaterialModel.SIMP:
 			# For SIMP material model: x**penal
 			penal = material_model_dict['penal']
@@ -492,8 +432,14 @@ def topopt_optimality_criteria(
 	# OC parameters
 	xmin = 0.001  # Minimum density
 	xmax = 1.0    # Maximum density
-	KE = elem_stiff.hex8_stiffness_matrix_structural( fe_solver.mat_prop,fe_solver.mesh.elem_size)
 	
+	if isinstance(fe_solver.mat_prop, list):
+		KE_list = [elem_stiff.hex8_stiffness_matrix_structural( mp,fe_solver.mesh.elem_size)
+			 for mp in fe_solver.mat_prop]
+		KE = KE_list[0]
+		print("Density-OC: Assuming all elements have the same material properties")
+	else:
+		KE = elem_stiff.hex8_stiffness_matrix_structural( fe_solver.mat_prop,fe_solver.mesh.elem_size)
 	success = True
 	errorMsg = ""
 	for iter in range(maxIterations):
@@ -726,6 +672,7 @@ def topopt_pareto(fe_solver: sfea.StructFEA,
 			# Check convergence, and break if converged
 			if localIter >= min_local_iters:
 				if abs(JPrev - JTemp)/abs(JTemp) < rel_err or abs(min(JPrev,JPrevPrev) - JTemp)/abs(JTemp)  < rel_err:
+					vol_frac_success = volfrac
 					innerLoopSuccess = True
 					break
 			if (localIter >= max_local_iters) or abs(JTemp) > 10 * history['compliance'][-1]:  # large change in compliance	
@@ -737,6 +684,8 @@ def topopt_pareto(fe_solver: sfea.StructFEA,
 				volfrac = volfrac + vol_decr # Restore volume fraction
 				vol_decr *= 0.75 # Reduce volume decrement
 				if (debug):
+					print("**Failed to converge, restoring previous design")
+					print(f"Previous successful vol_frac: {vol_frac_success:.5g}")
 					print(f"Decrementing vol_decr to: {vol_decr:.5g}")
 				if vol_decr < vol_decr_min:
 					terminatePareto = True
@@ -1012,7 +961,7 @@ if __name__ == "__main__":
 	import plots	
 	
 	jax.config.update("jax_enable_x64", True)
-	optimizationMethod = TO_METHODS.PARETO # DENSITYMMA, DENSITYOC, PARETO, LEVELSET
+	optimizationMethod = TO_METHODS.DENSITYOC # DENSITYMMA, DENSITYOC, PARETO, LEVELSET
 
 	#runTOTests(); exit(0) # Run all tests for each example in the StructuralTOExamples enum
 	
