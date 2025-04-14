@@ -2,7 +2,11 @@
 """Optimization routines for topology optimization."""
 import sys
 sys.path.append('../PyTO-1/src') #assuming the PyTO is in the parent directory
-from topopt import *
+from topopt_common import *
+from topopt_pareto import *
+from topopt_levelset import *
+from topopt_density_oc import *
+from topopt_density_mma import *
 import plots_demo	
 
 import jax
@@ -24,7 +28,7 @@ if __name__ == "__main__":
 	
 	# Choose the TO problem
 	print("-" * 50)
-	to_problem = StructuralTOExamplesDemo.BasePlate
+	to_problem = StructuralTOExamplesDemo.BasePlateAssembly
 	print(f"Running {to_problem.name}...")
 	print("-" * 50)
 	solver = lin_solv.Solvers.PARDISO # Typically PARDISO, but DPCG for DOF > 200,000
@@ -55,6 +59,7 @@ if __name__ == "__main__":
 	print("nElem: ", fe_solver.mesh.num_elems)	
 	
 	title = f'nDOF: {3*fe_solver.mesh.num_nodes}, nElem: {fe_solver.mesh.num_elems}'
+	mesh.plot()
 	plots.plotMesh(mesh, bc,title = title)
 	#plots.plotIsocontour(fe_solver.mesh, title = title, save_path = None)
 
@@ -127,7 +132,7 @@ if __name__ == "__main__":
 	
 	elif optimizationMethod == TO_METHODS.PARETO:
 		print("OptimizationMethod: Pareto")
-		u, history, success,errorMsg = topopt_pareto(fe_solver = fe_solver,
+		u, history, success,errorMsg,nFEAs = topopt_pareto(fe_solver = fe_solver,
 										to_params = to_params,
 										debug = debug)
 		

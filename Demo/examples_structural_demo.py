@@ -60,15 +60,17 @@ def getStructuralProblem(problem: StructuralExamplesDemo, **kwargs):
     return createLongBeamTopBottomLoadDemoProblem(**kwargs)
   elif problem == StructuralExamplesDemo.BasePlateAssembly:
     return createBasePlateAssemblyProblem(**kwargs)
+  elif problem == StructuralExamplesDemo.KnuckleAssemblyDemo:
+    return createKnuckleAssemblyProblem(**kwargs)
   else:
     raise ValueError("Invalid structural example name.")
   
 
-def createKnuckleAssemblyProblem(nDOFDesired: int = 10000, youngs_modulus = 2e11, 
-                               poissons_ratio = 0.28, totalLoad =  10000):
+def createKnuckleAssemblyProblem(nDOFDesired: int = 10000,  youngs_modulus = [2e11,0.7e11], 
+                               poissons_ratio = [0.28,0.3], totalLoad =  10000):
  
   # Read the STL model, create a mesh of desired size, and a structural problem is posed on it.
-  stl_file = os.path.join(script_dir, '../Models/KnuckleAssembly/KnuckleAssembly.STL')
+  stl_file = '../Models/KnuckleAssembly/KnuckleAssembly.STL'
 
   nElemsDesired = nDOFDesired/3    # estimate
   mesh = mesher.Mesher()
@@ -79,6 +81,7 @@ def createKnuckleAssemblyProblem(nDOFDesired: int = 10000, youngs_modulus = 2e11
   node_pts = mesh.node_xyz
   fixed_nodes_1 = np.where(node_pts[:, 0] == np.min(node_pts[:, 0]))[0]
   fixed_nodes_2 = np.where(node_pts[:, 0] == np.max(node_pts[:, 0]))[0]
+  
   fixed_nodes = np.union1d(fixed_nodes_1,fixed_nodes_2)
   fixed_dofs = np.array([3 * fixed_nodes,
               3 * fixed_nodes + 1,
@@ -96,8 +99,17 @@ def createKnuckleAssemblyProblem(nDOFDesired: int = 10000, youngs_modulus = 2e11
   force[load_dofs] = load_per_dof
   bc = bound_cond.BC(force = force,fixed_dofs = fixed_dofs,dirichlet_values = dirichlet_values) 
 
-  mat_prop = mat_lib.StructuralMaterial(youngs_modulus=youngs_modulus,
-                      poissons_ratio=poissons_ratio)
+  
+  # There are 2 components in the assembly
+  # Assign material properties to each component
+  mat_prop = 2*[None]
+  mat_prop[0] = mat_lib.StructuralMaterial(youngs_modulus=youngs_modulus[0],
+                      poissons_ratio=poissons_ratio[0]) # Knuckle
+  mat_prop[1] = mat_lib.StructuralMaterial(youngs_modulus=youngs_modulus[1],
+                      poissons_ratio=poissons_ratio[1]) # Shaft
+  
+  # mat_prop = mat_lib.StructuralMaterial(youngs_modulus=youngs_modulus,
+  #                     poissons_ratio=poissons_ratio)
   
   elem_body_force = None
   return mesh, mat_prop, bc, elem_body_force
@@ -307,11 +319,13 @@ def createBasePlateProblem(nDOFDesired: int = 10000, youngs_modulus = 1e7,
   elem_body_force = None
   return mesh, mat_prop, bc, elem_body_force
 
-def createBasePlateAssemblyProblem(nDOFDesired: int = 10000, youngs_modulus = 1e7, 
-                               poissons_ratio = 0.28, totalLoad =  1000):
+def createBasePlateAssemblyProblem(nDOFDesired: int = 10000,  youngs_modulus = [2e11,0.7e11], 
+                               poissons_ratio = [0.28,0.3], totalLoad =  1000):
  
   # Read the STL model, create a mesh of desired size, and a structural problem is posed on it.
-  stl_file = '../Models/Rocket/PayLoadBaseAssembly.STL'
+  stl_file = '../Models/Rocket/PayLoadBaseAssemblyWHole.STL'
+  #stl_file = '../Models/Rocket/PayLoadBaseAssemblyWHoleinZ.STL'
+  
   plots_demo.plot_stl(stl_file)
   nElemsDesired = nDOFDesired/3    # estimate
   mesh = mesher.Mesher()
@@ -356,8 +370,20 @@ def createBasePlateAssemblyProblem(nDOFDesired: int = 10000, youngs_modulus = 1e
   fp_materialXML = os.path.join(script_dir, './material.xml')
   if fp_materialXML is not None and os.path.isfile(fp_materialXML):
       youngs_modulus, poissons_ratio = parse_material_properties(fp_materialXML)
-  mat_prop = mat_lib.StructuralMaterial(youngs_modulus=youngs_modulus,
-                      poissons_ratio=poissons_ratio)
+
+  
+  # There are 2 components in the assembly
+  # Assign material properties to each component
+  mat_prop = 2*[None]
+  mat_prop[0] = mat_lib.StructuralMaterial(youngs_modulus=youngs_modulus[0],
+                      poissons_ratio=poissons_ratio[0]) # BasePlate
+  mat_prop[1] = mat_lib.StructuralMaterial(youngs_modulus=youngs_modulus[1],
+                      poissons_ratio=poissons_ratio[1]) # TopSolid
+  
+
+  # mat_prop = mat_lib.StructuralMaterial(youngs_modulus=youngs_modulus,
+  #                     poissons_ratio=poissons_ratio)
+  
   
   elem_body_force = None
   return mesh, mat_prop, bc, elem_body_force

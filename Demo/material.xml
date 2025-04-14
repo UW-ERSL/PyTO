@@ -13,6 +13,19 @@
         </recipe>
     </material>
     <material target="min_elastic_modulus">
+        <properties>
+                <property name="elastic_modulus" unit="GPa" value="210" />
+                <property name="poisons_ratio" unit="" value="0.29" />
+                <property name="yield_strength" unit="MPa" value="79.0" />
+                <property name="ultimate_tensile" unit="MPa" value="120.2" />
+        </properties>
+        <recipe mass="45" unit="kg">
+                <bin name="Al1" fraction="0.30" />
+                <bin name="Al2" fraction="0.55" />
+                <bin name="Si" fraction="0.15" />
+        </recipe>
+    </material>
+    <material target="min_elastic_modulus">
         ...
     </material>
 </rmpp>

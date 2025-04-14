@@ -17,37 +17,72 @@ def convert_to_si(value_str, unit):
 
 def parse_material_properties(file_path):
     """
-    Parses the XML file at file_path (after converting curly quotes to standard quotes)
-    and returns a tuple with:
-    - elastic_modulus in SI units (Pa)
-    - poisons_ratio as a float
+    Parses the XML file and returns two lists:
+    - youngs_modulus: list of floats in Pascals
+    - poissons_ratio: list of floats
     """
-    # Read and preprocess the XML file to replace curly quotes with standard quotes
     with open(file_path, "r", encoding="utf-8") as f:
         xml_content = f.read()
+
+    # Replace curly quotes if any
     xml_content = xml_content.replace("“", "\"").replace("”", "\"")
-    
+
     root = ET.fromstring(xml_content)
-    
-    elastic_modulus = None
-    poisons_ratio = None
+    youngs_modulus = []
+    poissons_ratio = []
 
     for material in root.findall("material"):
-        properties = material.find("properties")
-        if properties is not None:
-            em_element = properties.find("property[@name='elastic_modulus']")
-            pr_element = properties.find("property[@name='poisons_ratio']")
-            
-            if em_element is not None:
-                em_value, em_unit = em_element.get("value"), em_element.get("unit")
-                # Convert to SI units
-                elastic_modulus = convert_to_si(em_value, em_unit)
-            if pr_element is not None:
-                # For poisons_ratio, we assume it's unitless and can be converted to float
-                poisons_ratio = float(pr_element.get("value"))
-            
-            # Use the first matching material
-            if elastic_modulus is not None or poisons_ratio is not None:
-                break
+        props = material.find("properties")
+        if props is not None:
+            em_element = props.find("property[@name='elastic_modulus']")
+            pr_element = props.find("property[@name='poisons_ratio']")
 
-    return elastic_modulus, poisons_ratio
+            if em_element is not None and pr_element is not None:
+                em_value = em_element.get("value")
+                em_unit = em_element.get("unit")
+                pr_value = pr_element.get("value")
+
+                try:
+                    youngs_modulus.append(convert_to_si(em_value, em_unit))
+                    poissons_ratio.append(float(pr_value))
+                except Exception as e:
+                    print(f"Skipping material due to error: {e}")
+
+    return youngs_modulus, poissons_ratio
+
+# def parse_material_properties(file_path):
+#     """
+#     Parses the XML file at file_path (after converting curly quotes to standard quotes)
+#     and returns a tuple with:
+#     - elastic_modulus in SI units (Pa)
+#     - poisons_ratio as a float
+#     """
+#     # Read and preprocess the XML file to replace curly quotes with standard quotes
+#     with open(file_path, "r", encoding="utf-8") as f:
+#         xml_content = f.read()
+#     xml_content = xml_content.replace("“", "\"").replace("”", "\"")
+    
+#     root = ET.fromstring(xml_content)
+    
+#     elastic_modulus = None
+#     poisons_ratio = None
+
+#     for material in root.findall("material"):
+#         properties = material.find("properties")
+#         if properties is not None:
+#             em_element = properties.find("property[@name='elastic_modulus']")
+#             pr_element = properties.find("property[@name='poisons_ratio']")
+            
+#             if em_element is not None:
+#                 em_value, em_unit = em_element.get("value"), em_element.get("unit")
+#                 # Convert to SI units
+#                 elastic_modulus = convert_to_si(em_value, em_unit)
+#             if pr_element is not None:
+#                 # For poisons_ratio, we assume it's unitless and can be converted to float
+#                 poisons_ratio = float(pr_element.get("value"))
+            
+#             # Use the first matching material
+#             if elastic_modulus is not None or poisons_ratio is not None:
+#                 break
+
+#     return elastic_modulus, poisons_ratio
