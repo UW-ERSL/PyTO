@@ -207,11 +207,11 @@ if __name__ == "__main__":
 	jax.config.update("jax_enable_x64", True)
 	
 	print("-" * 50)
-	to_problem = StructuralTOExamples.MBBB # Choose the TO problem
+	to_problem = StructuralTOExamples.TwoBar # Choose the TO problem
 	print(f"Running {to_problem.name}...") 
 	print("-" * 50)
 	solver = lin_solv.Solvers.PARDISO # # Choose solver. Typically PARDISO, but DPCG for DOF > 200,000
-	debug = True
+	debug = False
 
 	# Get the structural problem
 	mesh, mat_prop, bc,elem_body_force, to_params = getStructuralTOProblem(to_problem)

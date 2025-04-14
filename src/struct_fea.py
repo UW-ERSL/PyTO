@@ -202,12 +202,10 @@ if __name__ == "__main__":
   import plots
   from examples_structural import *
 
-  problem = StructuralExamples.MBBB
-  nDOFDesired = 60000
+  problem = StructuralExamples.TwoBar
+  nDOFDesired = 50000
   mesh, mat_prop, bc,elem_body_force = getStructuralProblem(problem,nDOFDesired = nDOFDesired)
   solver = lin_solv.Solvers.PARDISO # typically DPCG or PARDISO
-  
-  
   
   dsolver = deflation.DeflationSolver()
   startTime = time.time()

@@ -3,14 +3,17 @@ from examples_structural import *
 import struct_fea as sfea
 
 class StructuralTOExamples(enum.Enum):
-	MitchellOneLoad = enum.auto()
-	MitchellTwoEqualLoads = enum.auto()
-	MitchellTwoUnequalLoads = enum.auto()       
-	MidCantilever = enum.auto()
-	EdgeCantilever = enum.auto()
+	Mitchell_1 = enum.auto()
+	Mitchell_2 = enum.auto()
+	Mitchell_3 = enum.auto()       
+	CantileverTipLoad = enum.auto()
+	CantileverMidLoad = enum.auto()
 	MBBB = enum.auto()
-	LBracket = enum.auto()
+	LBracketTopLoad = enum.auto()
+	LBracketMidLoad = enum.auto()
+	TwoBar = enum.auto()
 	DistributedLoad = enum.auto()
+	EdgeCantilever = enum.auto()
 	Multiload = enum.auto()
 	ThreeHoleBracket = enum.auto()
 	TorquePlate = enum.auto()
@@ -21,10 +24,9 @@ class StructuralTOExamples(enum.Enum):
 	BliskWithBlade = enum.auto()
 	NoseCone = enum.auto()
      
-class TOParams:
+class TOParams: # These are the default parameters
     Comment = "" # Comment for the topology optimization problem
     nDOFDesired = 20000 # Desired number of degrees of freedom in the finite element problem
-    
     DesiredVolFraction = 0.5
     ExactVolumeFraction = False # If True, the volume fraction is exactly met
     RelativeFilterRadius = 1.5 #relative to the element size
@@ -76,42 +78,81 @@ def getStructuralTOProblem(to_problem: StructuralTOExamples, **kwargs):
     """
     
     to_params = TOParams()
-    if to_problem == StructuralTOExamples.MitchellOneLoad:
+    if to_problem == StructuralTOExamples.Mitchell_1:
         structural_problem = StructuralExamples.Mitchell
         kwargs['load1'] = 5.6e4
         kwargs['load2'] = 0
-        to_params.Comment = "Benchmark TO"
+        to_params.Comment = "Benchmark 2.5D"
         to_params.ExtrudeZ = True
-        to_params.nDOFDesired = 50000
+        to_params.nDOFDesired = 25000
         to_params.DesiredVolFraction = 0.5
-    elif to_problem == StructuralTOExamples.MitchellTwoEqualLoads:
+    elif to_problem == StructuralTOExamples.Mitchell_2:
         structural_problem = StructuralExamples.Mitchell
         kwargs['load1'] = 2.8e4
         kwargs['load2'] = 2.8e4
-        to_params.Comment = "Benchmark TO"
+        to_params.Comment = "Benchmark 2.5D"
         to_params.ExtrudeZ = True
-        to_params.nDOFDesired = 50000
+        to_params.nDOFDesired = 25000
         to_params.DesiredVolFraction = 0.5
-    elif to_problem == StructuralTOExamples.MitchellTwoUnequalLoads:
+    elif to_problem == StructuralTOExamples.Mitchell_3:
         structural_problem = StructuralExamples.Mitchell
         kwargs['load1'] = 3.72e4
         kwargs['load2'] = 1.86e4
-        to_params.Comment = "Benchmark TO"
+        to_params.Comment = "Benchmark 2.5D"
         to_params.ExtrudeZ = True
-        to_params.nDOFDesired = 50000
+        to_params.nDOFDesired = 25000
         to_params.DesiredVolFraction = 0.5
+    elif to_problem == StructuralTOExamples.CantileverTipLoad:
+        structural_problem = StructuralExamples.CantileverTipLoad
+        to_params.Comment  = "Benchmark 2.5D"
+        to_params.ExtrudeZ = True
+        to_params.nDOFDesired = 25000
+        to_params.DesiredVolFraction = 0.5
+    elif to_problem == StructuralTOExamples.CantileverMidLoad:
+        structural_problem = StructuralExamples.CantileverMidLoad
+        to_params.Comment  = "Benchmark 2.5D"
+        to_params.YSymmetry = True  # Symmetry about the Y-axis
+        to_params.ExtrudeZ = True
+        to_params.nDOFDesired = 25000
+        to_params.DesiredVolFraction = 0.5
+    elif to_problem == StructuralTOExamples.MBBB:
+        structural_problem = StructuralExamples.MBBB
+        to_params.Comment  = "Benchmark 2.5D"
+        to_params.nDOFDesired = 50000
+        to_params.DesiredVolFraction = 0.25
+    elif to_problem == StructuralTOExamples.DistributedLoad:
+        structural_problem = StructuralExamples.DistributedLoad
+        to_params.Comment  = "Benchmark 2.5D"
+        to_params.XSymmetry = True 
+        to_params.nDOFDesired = 60000
+        to_params.DesiredVolFraction = 0.25
+    elif to_problem == StructuralTOExamples.LBracketTopLoad:
+        structural_problem = StructuralExamples.LBracket
+        kwargs['topload'] = 1.5e4
+        kwargs['midload'] = 0
+        to_params.Comment  = "Benchmark 2.5D"
+        to_params.ExtrudeZ = True
+        to_params.nDOFDesired = 25000
+        to_params.DesiredVolFraction = 0.5
+    elif to_problem == StructuralTOExamples.LBracketMidLoad:
+        structural_problem = StructuralExamples.LBracket
+        kwargs['topload'] = 1.5e4
+        kwargs['midload'] = 0
+        to_params.Comment  = "Benchmark 2.5D"
+        to_params.ExtrudeZ = True
+        to_params.nDOFDesired = 25000
+        to_params.DesiredVolFraction = 0.5
+    elif to_problem == StructuralTOExamples.TwoBar:
+        structural_problem = StructuralExamples.TwoBar
+        to_params.Comment  = "Benchmark 2.5D"
+        to_params.ExtrudeZ = True
+        to_params.nDOFDesired = 25000
+        to_params.DesiredVolFraction = 0.25
     elif to_problem == StructuralTOExamples.EdgeCantilever:
         structural_problem = StructuralExamples.EdgeCantilever
         to_params.Comment = "Benchmark TO"
         to_params.YSymmetry = True
         to_params.nDOFDesired = 50000
-        to_params.DesiredVolFraction = 0.5
-    elif to_problem == StructuralTOExamples.MidCantilever:
-        structural_problem = StructuralExamples.MidCantilever
-        to_params.Comment  = "Benchmark TO"
-        to_params.YSymmetry = True  # Symmetry about the Y-axis
-        to_params.ExtrudeZ = True
-        to_params.nDOFDesired = 30000
         to_params.DesiredVolFraction = 0.5
     elif to_problem == StructuralTOExamples.ThreeHoleBracket:
         structural_problem = StructuralExamples.ThreeHoleBracket
@@ -120,17 +161,6 @@ def getStructuralTOProblem(to_problem: StructuralTOExamples, **kwargs):
         to_params.KeepFixedElems = True
         to_params.nDOFDesired = 40000
         to_params.DesiredVolFraction = 0.35
-    elif to_problem == StructuralTOExamples.MBBB:
-        structural_problem = StructuralExamples.MBBB
-        to_params.Comment  = "Benchmark TO"
-        to_params.nDOFDesired = 50000
-        to_params.DesiredVolFraction = 0.25
-    elif to_problem == StructuralTOExamples.DistributedLoad:
-        structural_problem = StructuralExamples.DistributedLoad
-        to_params.Comment  = "Distributed Load"
-        to_params.XSymmetry = True 
-        to_params.nDOFDesired = 60000
-        to_params.DesiredVolFraction = 0.25
     elif to_problem == StructuralTOExamples.Multiload:
         structural_problem = StructuralExamples.Multiload
         to_params.Comment  = "Multiple Loading"
@@ -143,12 +173,6 @@ def getStructuralTOProblem(to_problem: StructuralTOExamples, **kwargs):
         to_params.XSymmetry = True
         to_params.ExactVolumeFraction = True
         to_params.nDOFDesired = 20000
-        to_params.DesiredVolFraction = 0.25
-    elif to_problem == StructuralTOExamples.LBracket:
-        structural_problem = StructuralExamples.LBracket
-        to_params.Comment  = "Benchmark TO"
-        to_params.ExtrudeZ = True
-        to_params.nDOFDesired = 50000
         to_params.DesiredVolFraction = 0.25
     elif to_problem == StructuralTOExamples.CentrifugalPlate:
         structural_problem = StructuralExamples.CentrifugalPlate

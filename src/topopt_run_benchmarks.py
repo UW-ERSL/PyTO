@@ -13,17 +13,22 @@ def runTOTests(optimizationMethod):
 	dsolver = deflation.DeflationSolver()
 
 
-	benchmarks_problems = [StructuralTOExamples.MitchellOneLoad, StructuralTOExamples.MitchellTwoEqualLoads,
-						StructuralTOExamples.MitchellTwoUnequalLoads, 
+	benchmarks_2D_problems = [StructuralTOExamples.Mitchell_1, StructuralTOExamples.Mitchell_2,
+						StructuralTOExamples.Mitchell_3, 
+						StructuralTOExamples.CantileverTipLoad, StructuralTOExamples.CantileverMidLoad,
 						StructuralTOExamples.MBBB,
-						StructuralTOExamples.MidCantilever, StructuralTOExamples.EdgeCantilever, 
+						StructuralTOExamples.LBracketTopLoad, StructuralTOExamples.LBracketMidLoad,
+						StructuralTOExamples.TwoBar, 
+						StructuralTOExamples.DistributedLoad,
+						StructuralTOExamples.TorquePlate]
+	
+	benchmarks_3D_problems = [StructuralTOExamples.EdgeCantilever, 
 						StructuralTOExamples.ThreeHoleBracket, 
-						 StructuralTOExamples.DistributedLoad, StructuralTOExamples.Multiload,
-						 StructuralTOExamples.LBracket, StructuralTOExamples.TorquePlate,
-						 StructuralTOExamples.KnuckleAssembly, StructuralTOExamples.Table]
+						 StructuralTOExamples.Multiload,	
+						StructuralTOExamples.KnuckleAssembly, 
+						StructuralTOExamples.Table]
 	
-	
-	for to_problem in benchmarks_problems:
+	for to_problem in benchmarks_2D_problems:
 		print("-" * 50)
 		print(f"Running {to_problem.name} using {optimizationMethod.name} method")
 		print("-" * 50)
@@ -223,7 +228,6 @@ if __name__ == "__main__":
 	jax.config.update("jax_enable_x64", True)
 	
 	optimizationMethods = [TO_METHODS.DENSITYMMA, TO_METHODS.DENSITYOC, TO_METHODS.PARETO]
-	optimizationMethods = [TO_METHODS.PARETO]
 	for optimizationMethod in optimizationMethods:
 		runTOTests(optimizationMethod)
 		print(f"Finished {optimizationMethod.name} tests.")
