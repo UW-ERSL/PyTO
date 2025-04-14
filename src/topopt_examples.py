@@ -1,6 +1,7 @@
 import enum
 from examples_structural import *
 import struct_fea as sfea
+from topopt_common import TOParams
 
 class StructuralTOExamples(enum.Enum):
 	Mitchell_1 = enum.auto()
@@ -12,11 +13,11 @@ class StructuralTOExamples(enum.Enum):
 	LBracketTopLoad = enum.auto()
 	LBracketMidLoad = enum.auto()
 	TwoBar = enum.auto()
+	TorquePlate = enum.auto()
 	DistributedLoad = enum.auto()
 	EdgeCantilever = enum.auto()
 	Multiload = enum.auto()
 	ThreeHoleBracket = enum.auto()
-	TorquePlate = enum.auto()
 	CentrifugalPlate = enum.auto()
 	GravityPlate = enum.auto()
 	KnuckleAssembly = enum.auto()
@@ -24,25 +25,7 @@ class StructuralTOExamples(enum.Enum):
 	BliskWithBlade = enum.auto()
 	NoseCone = enum.auto()
      
-class TOParams: # These are the default parameters
-    Comment = "" # Comment for the topology optimization problem
-    nDOFDesired = 20000 # Desired number of degrees of freedom in the finite element problem
-    DesiredVolFraction = 0.5
-    ExactVolumeFraction = False # If True, the volume fraction is exactly met
-    RelativeFilterRadius = 1.5 #relative to the element size
-    XSymmetry = False
-    YSymmetry = False
-    ZSymmetry = False
-    XAxisAngularSymmetry = 0
-    YAxisAngularSymmetry = 0
-    ZAxisAngularSymmetry = 0
-    ExtrudeX = False
-    ExtrudeY = False
-    ExtrudeZ = False
-    KeepFixedElems = False
-    RemoveHangingElems = False
-    AMBuildConstraint = False
-    ElemsToKeep = None
+
 
     
 def find_elements_with_fixedDOF(mesh, bc) -> np.ndarray:
@@ -124,6 +107,7 @@ def getStructuralTOProblem(to_problem: StructuralTOExamples, **kwargs):
         structural_problem = StructuralExamples.DistributedLoad
         to_params.Comment  = "Benchmark 2.5D"
         to_params.XSymmetry = True 
+        to_params.ExtrudeZ = True
         to_params.nDOFDesired = 60000
         to_params.DesiredVolFraction = 0.25
     elif to_problem == StructuralTOExamples.LBracketTopLoad:
@@ -148,9 +132,16 @@ def getStructuralTOProblem(to_problem: StructuralTOExamples, **kwargs):
         to_params.ExtrudeZ = True
         to_params.nDOFDesired = 25000
         to_params.DesiredVolFraction = 0.25
+    elif to_problem == StructuralTOExamples.TorquePlate:
+        structural_problem = StructuralExamples.TorquePlate
+        to_params.Comment  = "Benchmark 2.5D"
+        to_params.ZAxisAngularSymmetry = 6
+        to_params.ExtrudeZ = True
+        to_params.nDOFDesired = 40000
+        to_params.DesiredVolFraction = 0.75
     elif to_problem == StructuralTOExamples.EdgeCantilever:
         structural_problem = StructuralExamples.EdgeCantilever
-        to_params.Comment = "Benchmark TO"
+        to_params.Comment = "Benchmark 3D"
         to_params.YSymmetry = True
         to_params.nDOFDesired = 50000
         to_params.DesiredVolFraction = 0.5
@@ -183,18 +174,12 @@ def getStructuralTOProblem(to_problem: StructuralTOExamples, **kwargs):
         to_params.nDOFDesired = 50000
         to_params.DesiredVolFraction = 0.5
         to_params.KeepFixedElems = True  # Keep elements that are fixed in the centrifugal plate example
-    elif to_problem == StructuralTOExamples.TorquePlate:
-        structural_problem = StructuralExamples.TorquePlate
-        to_params.Comment  = "Circular Symmetry"
-        to_params.ZAxisAngularSymmetry = 6
-        to_params.nDOFDesired = 70000
-        to_params.DesiredVolFraction = 0.5
     elif to_problem == StructuralTOExamples.KnuckleAssembly:
         structural_problem = StructuralExamples.KnuckleAssembly
         to_params.Comment = "Retaining Components"
         to_params.XSymmetry = True
         to_params.ZSymmetry = True
-        to_params.nDOFDesired = 100000
+        to_params.nDOFDesired = 60000
         to_params.DesiredVolFraction = 0.5
     elif to_problem == StructuralTOExamples.Table:
         structural_problem = StructuralExamples.Table

@@ -12,7 +12,6 @@ import deflation
 from to_filters import *
 import time
 import matplotlib.pyplot as plt
-from topopt_examples import *
 import struct_fea as fea
 import linear_solvers as lin_solv
 import time
@@ -34,6 +33,26 @@ class TO_METHODS(enum.Enum):
 class MaterialModel(enum.Enum):
 	SIMP = enum.auto()
 	SIMPPLUS = enum.auto()
+
+class TOParams: # These are the default parameters
+    Comment = "" # Comment for the topology optimization problem
+    nDOFDesired = 20000 # Desired number of degrees of freedom in the finite element problem
+    DesiredVolFraction = 0.5
+    ExactVolumeFraction = False # If True, the volume fraction is exactly met
+    RelativeFilterRadius = 1.5 #relative to the element size
+    XSymmetry = False
+    YSymmetry = False
+    ZSymmetry = False
+    XAxisAngularSymmetry = 0
+    YAxisAngularSymmetry = 0
+    ZAxisAngularSymmetry = 0
+    ExtrudeX = False
+    ExtrudeY = False
+    ExtrudeZ = False
+    KeepFixedElems = False
+    RemoveHangingElems = False
+    AMBuildConstraint = False
+    ElemsToKeep = None
 
 def find_elements_with_forces(mesh: mesher.Mesher, force) -> np.ndarray:
 	"""Find all elements that have nodes on which force has been applied.

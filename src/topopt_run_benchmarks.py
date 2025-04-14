@@ -7,6 +7,7 @@ from topopt_levelset import topopt_levelset
 import glob
 
 def runTOTests(optimizationMethod):
+	
 
 	# Create a list to store results
 	results_list = []
@@ -226,8 +227,9 @@ def combine_results():
 
 if __name__ == "__main__":    
 	jax.config.update("jax_enable_x64", True)
-	
+	from topopt_examples import *
 	optimizationMethods = [TO_METHODS.DENSITYMMA, TO_METHODS.DENSITYOC, TO_METHODS.PARETO]
+
 	for optimizationMethod in optimizationMethods:
 		runTOTests(optimizationMethod)
 		print(f"Finished {optimizationMethod.name} tests.")

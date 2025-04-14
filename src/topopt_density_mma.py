@@ -227,9 +227,10 @@ def topopt_mma(fe_solver: sfea.StructFEA,
 	
 if __name__ == "__main__":    
 	jax.config.update("jax_enable_x64", True)
+	from topopt_examples import *
 	
 	print("-" * 50)
-	to_problem = StructuralTOExamples.LBracketTopLoad # Choose the TO problem
+	to_problem = StructuralTOExamples.DistributedLoad # Choose the TO problem
 	print(f"Running {to_problem.name}...") 
 	print("-" * 50)
 	solver = lin_solv.Solvers.PARDISO # # Choose solver. Typically PARDISO, but DPCG for DOF > 200,000

@@ -25,6 +25,7 @@ import linear_solvers as lin_solv
 import jax
 import thermal_fea
 import traceback
+import re
             
 # Enable double precision
 jax.config.update("jax_enable_x64", True)
@@ -32,12 +33,29 @@ jax.config.update("jax_enable_x64", True)
 from examples_structural import *
 
 '''
+
 recent updates in pyTO:
-
-
+1) Corrected the Units for all 
+2) Added the GUI for TopOpt Constraints(Cyclic constraints are wrong but correcting it) 
+3) Topology Optimization yet to be implemented (Please can you give me the direction or some hints on how to implement it)
+4) Saves the topology optimization constraints in the project file
 
 pyTOGUI To do:
+1. Main buttons state (blue, green, red)  (implemented)
+2. Hide/show mesh option under Display  (implemented) (will carefully look at this option because others are getting messed up sometimes)
+3. Show thermal heat arrows and dirichlet BC (similar to structural) (implemented)
+4. Add Total Heat option (in addition to Heat Flux) (implemented)
+5. Remove bottom left text in GUI window. Instead, can you show that next to arrows in the scene? (removed)
+6. Save topopt constraints in project (remaining)
 
+
+issues
+torque
+make arrow smaaller for top opt constraint
+method drop down
+mmc pareto level
+remove simp mthod
+remove volume step
 
 
 '''
@@ -2568,29 +2586,29 @@ class DisplayOptionsWindow(QtWidgets.QDialog):
         # Check if geometry is "None" - special case to hide everything
         if self.geom_combo.currentText() == "None":
             # Hide all geometry and results
-            if hasattr(self.parent, 'stl_actor'):
+            if hasattr(self.parent, 'stl_actor') and self.parent.stl_actor:
                 self.parent.stl_actor.SetVisibility(False)
-            if hasattr(self.parent, 'mesh_actor'):
+            if hasattr(self.parent, 'mesh_actor') and self.parent.mesh_actor:
                 self.parent.mesh_actor.SetVisibility(False)
-            if hasattr(self.parent, 'results_actor'):
+            if hasattr(self.parent, 'results_actor') and self.parent.results_actor:
                 self.parent.results_actor.SetVisibility(False)
-            if hasattr(self.parent, 'results_mesh_actor'):
+            if hasattr(self.parent, 'results_mesh_actor') and self.parent.results_mesh_actor:
                 self.parent.results_mesh_actor.SetVisibility(False)
-            if hasattr(self.parent, 'scalar_bar'):
+            if hasattr(self.parent, 'scalar_bar') and self.parent.scalar_bar:
                 self.parent.scalar_bar.SetVisibility(False)
-                
+                    
             # Add message to log
             if hasattr(self.parent, 'message_text'):
                 self.parent.message_text.append("Hiding all geometry and results")
-                
+                    
             # Skip the rest of the visualization updates
             self.parent.vtkWidget.GetRenderWindow().Render()
             return
-            
+                
         # Check if mesh should be shown (based on geometry dropdown)
         show_mesh = self.geom_combo.currentText() == "Mesh"
         self.toggle_mesh(show_mesh)
-        
+            
         # Apply field visualization if selected
         selected_field = self.field_combo.currentText()
         if selected_field != "None":
@@ -2598,20 +2616,20 @@ class DisplayOptionsWindow(QtWidgets.QDialog):
         else:
             # No field selected, hide result actors
             self.toggle_results_visibility(False)
-        
+            
         # Update all toggleable features
         feature_list = [
             'bounding_box', 'triangles', 'text', 'scale_deformation',
             'transparent', 'axis', 'structural_loads', 'thermal_loads',
             'topopt_constraints', 'non_design'
         ]
-        
+            
         for feature in feature_list:
             self.toggle_feature(feature)
-            
+                
         # Update cutting planes
         self.update_cutting_planes()
-        
+            
         # Render the changes
         self.parent.vtkWidget.GetRenderWindow().Render()
         
@@ -3222,7 +3240,7 @@ class StructuralLoadsWindow(QtWidgets.QDialog):
         load_type_layout = QtWidgets.QHBoxLayout()
         load_type_label = QtWidgets.QLabel("Load Type")
         self.load_type = QtWidgets.QComboBox()
-        self.load_type.addItems(["Force", "Fixed XYZ", "Fixed X", "Fixed Y", "Fixed Z"])
+        self.load_type.addItems(["Force", "Torque", "Fixed XYZ", "Fixed X", "Fixed Y", "Fixed Z"])
         load_type_layout.addWidget(load_type_label)
         load_type_layout.addWidget(self.load_type)
         layout.addLayout(load_type_layout)
@@ -3265,6 +3283,29 @@ class StructuralLoadsWindow(QtWidgets.QDialog):
         force_layout.addLayout(z_force_layout)
         
         layout.addWidget(self.force_group)
+
+        # Torque components
+        self.torque_group = QtWidgets.QGroupBox()
+        torque_layout = QtWidgets.QVBoxLayout(self.torque_group)
+        
+        # Torque magnitude
+        torque_magnitude_layout = QtWidgets.QHBoxLayout()
+        torque_magnitude_label = QtWidgets.QLabel(f"Torque Magnitude ({force_unit}·m)")
+        self.torque_magnitude_spin = QtWidgets.QDoubleSpinBox()
+        self.torque_magnitude_spin.setRange(-1e6, 1e6)
+        self.torque_magnitude_spin.setDecimals(1)
+        self.torque_magnitude_spin.setValue(100.0)  # Default value
+        torque_magnitude_layout.addWidget(torque_magnitude_label)
+        torque_magnitude_layout.addWidget(self.torque_magnitude_spin)
+        torque_layout.addLayout(torque_magnitude_layout)
+        
+        # Label for axis information
+        axis_info_label = QtWidgets.QLabel("Torque will be applied around the central axis of the selected cylindrical surface")
+        axis_info_label.setWordWrap(True)
+        torque_layout.addWidget(axis_info_label)
+        
+        layout.addWidget(self.torque_group)
+        self.torque_group.hide()  # Initially hide the torque controls
         
         # Buttons
         button_layout = QtWidgets.QHBoxLayout()
@@ -3282,7 +3323,9 @@ class StructuralLoadsWindow(QtWidgets.QDialog):
     def on_load_type_changed(self, load_type):
         # Show/hide force inputs based on load type
         show_force = load_type == "Force"
+        show_torque = load_type == "Torque"
         self.force_group.setVisible(show_force)
+        self.torque_group.setVisible(show_torque)
         self.adjustSize()
 
     def compute_alignment_matrix(self, normal):
@@ -3337,6 +3380,8 @@ class StructuralLoadsWindow(QtWidgets.QDialog):
         
         if load_type == "Force":
             self.apply_force()
+        elif load_type == "Torque":
+            self.apply_torque()
         elif load_type == "Fixed XYZ":
             self.apply_fixed_constraint()
         elif load_type == "Fixed X":
@@ -3345,6 +3390,290 @@ class StructuralLoadsWindow(QtWidgets.QDialog):
             self.apply_fixed_constraint_y()
         elif load_type == "Fixed Z":
             self.apply_fixed_constraint_z()
+
+    def apply_torque(self):
+        """Apply torque to selected cylindrical or planar surfaces with proper unit conversion"""
+        if not self.parent.stl_geom:
+            return
+                
+        try:
+            # Get torque magnitude from spinbox in current unit system
+            torque_magnitude = self.torque_magnitude_spin.value()
+            
+            # Convert to base units (Newton-meters) if needed
+            if self.parent.settings.unit_system != "MKS":
+                torque_magnitude = self.parent.settings.convert_force(torque_magnitude, 
+                                                        from_system=self.parent.settings.unit_system,
+                                                        to_system="MKS") * 1.0  # Multiply by 1.0 meter for torque
+            
+            if torque_magnitude == 0:
+                QtWidgets.QMessageBox.warning(self, "Error", "Torque magnitude cannot be zero")
+                return
+                
+            selected_faces = self.parent.stl_geom.store_selected_triangles()
+            if not selected_faces:
+                QtWidgets.QMessageBox.warning(self, "Error", "No faces selected")
+                return
+            
+            
+            # Call the assign_highlighted_triangles_to_group method
+            surface_type, average_normal, area, cylinder_axis, axis_point, cylinder_radius = self.parent.stl_geom.assign_highlighted_triangles_to_group(
+                group=1, stl_verbose=False
+            )
+            
+            # Check if surface is planar or cylindrical
+            if surface_type not in ["PLANAR", "CYLINDER"]:
+                QtWidgets.QMessageBox.warning(self, "Error", "Currently, torque can only be applied on planes or cylinders")
+                return
+            
+            # Calculate the direction vector based on surface type
+            if surface_type == "PLANAR":
+                # For planar surfaces, use the average normal
+                direction = average_normal
+                # Normalize direction
+                norm = np.linalg.norm(direction)
+                if norm < 1e-12:
+                    QtWidgets.QMessageBox.warning(self, "Error", "Invalid normal vector")
+                    return
+                direction = [d / norm for d in direction]
+                
+            elif surface_type == "CYLINDER":
+                # For cylindrical surfaces, use the cylinder axis
+                direction = cylinder_axis
+                # Normalize direction
+                norm = np.linalg.norm(direction)
+                if norm < 1e-12:
+                    QtWidgets.QMessageBox.warning(self, "Error", "Invalid cylinder axis")
+                    return
+                direction = [d / norm for d in direction]
+            
+            # Store selected face data and torque info for later node selection
+            if not hasattr(self.parent, 'torque_faces_groups'):
+                self.parent.torque_faces_groups = []
+                self.parent.torque_values = []
+                self.parent.torque_axis_points = []
+                
+            # Add this group of faces and its torque information
+            self.parent.torque_faces_groups.append(selected_faces)
+            
+            # Store the direction vector multiplied by torque magnitude
+            torque_vector = [torque_magnitude * d for d in direction]
+            self.parent.torque_values.append(torque_vector)
+            self.parent.torque_axis_points.append(axis_point)
+
+            # Get the appropriate force unit string for display
+            force_unit = self.parent.settings.get_force_unit_string()
+            
+            # Display magnitude in current unit system for messages
+            display_magnitude = torque_magnitude
+            if self.parent.settings.unit_system != "MKS":
+                display_magnitude = self.parent.settings.convert_force(torque_magnitude, 
+                                                                from_system="MKS", 
+                                                                to_system=self.parent.settings.unit_system)
+            
+            # Visualization code
+            points = np.array(self.parent.stl_geom.mesh.points)
+            bbox = [points[:,0].min(), points[:,0].max(),
+                    points[:,1].min(), points[:,1].max(),
+                    points[:,2].min(), points[:,2].max()]
+            geom_size = max(bbox[1]-bbox[0], bbox[3]-bbox[2], bbox[5]-bbox[4])
+            scale_factor = 0.15 * geom_size 
+            
+            # Create curved arrow for torque visualization
+            if not hasattr(self.parent, 'torque_actors'):
+                self.parent.torque_actors = []
+                
+            # Create a circle with an arrow tip
+            circle_resolution = 36
+            angle_increment = 270.0 / (circle_resolution - 1)  # 270 degree arc
+            
+            points = vtk.vtkPoints()
+            lines = vtk.vtkCellArray()
+            
+            # # Create a 270-degree arc
+            # radius = 0.24 * scale_factor  # Radius of the circle
+
+            # Create a 270-degree arc
+            if surface_type == "CYLINDER":
+                # For cylindrical surfaces
+                radius = 0.8 * cylinder_radius  # 80% of the cylinder radius
+            else:
+                # For planar surfaces
+                model_size = max(bbox[1]-bbox[0], bbox[3]-bbox[2], bbox[5]-bbox[4])
+                radius = 0.15 * model_size  
+            
+            # Make sure radius is not too small or too large
+            min_radius = 0.05 * scale_factor
+            max_radius = 0.24 * scale_factor
+            radius = max(min_radius, min(radius, max_radius))
+            
+            # Start with the center point
+            center_id = points.InsertNextPoint(axis_point)
+            
+            # Add points for the arc
+            for i in range(circle_resolution):
+                angle = math.radians(i * angle_increment)
+                # Calculate point on circle 
+                x = radius * math.cos(angle)
+                y = radius * math.sin(angle)
+                z = 0.0
+                points.InsertNextPoint([x, y, z])
+            
+            # Create a circle actor
+            circle_poly = vtk.vtkPolyData()
+            circle_poly.SetPoints(points)
+            
+            # Create lines for the arc
+            for i in range(1, circle_resolution):
+                line = vtk.vtkLine()
+                line.GetPointIds().SetId(0, i)
+                line.GetPointIds().SetId(1, i + 1 if i < circle_resolution - 1 else i)
+                lines.InsertNextCell(line)
+                
+            circle_poly.SetLines(lines)
+            
+            # Create arrow tip at end of arc
+            arrow_tip = vtk.vtkConeSource()
+            arrow_tip.SetHeight(0.2 * scale_factor)
+            arrow_tip.SetRadius(0.06 * scale_factor)
+            arrow_tip.SetResolution(10)
+            
+            # align it with the torque axis and position it
+            transform = vtk.vtkTransform()
+            transform.Identity()
+            
+            # Calculate the perpendicular vectors to the torque direction
+            perpendicular1 = [0, 0, 0]
+            perpendicular2 = [0, 0, 0]
+            
+            # Find perpendicular vectors using cross product
+            if abs(direction[2]) < 0.707:
+                perpendicular1[0] = -direction[1]
+                perpendicular1[1] = direction[0]
+                perpendicular1[2] = 0
+            else:
+                perpendicular1[0] = 0
+                perpendicular1[1] = -direction[2]
+                perpendicular1[2] = direction[1]
+                
+            # Normalize perpendicular_1
+            norm = math.sqrt(sum(v*v for v in perpendicular1))
+            if norm > 1e-6:
+                perpendicular1 = [v/norm for v in perpendicular1]
+                
+            # Calculate perpendicular_2 using cross product of direction and perpendicular1
+            perpendicular2[0] = direction[1]*perpendicular1[2] - direction[2]*perpendicular1[1]
+            perpendicular2[1] = direction[2]*perpendicular1[0] - direction[0]*perpendicular1[2]
+            perpendicular2[2] = direction[0]*perpendicular1[1] - direction[1]*perpendicular1[0]
+            
+            # Create transformation matrix
+            matrix = vtk.vtkMatrix4x4()
+            for i in range(3):
+                matrix.SetElement(i, 0, perpendicular1[i])
+                matrix.SetElement(i, 1, perpendicular2[i])
+                matrix.SetElement(i, 2, direction[i])
+                matrix.SetElement(i, 3, axis_point[i])
+            matrix.SetElement(3, 3, 1)
+            
+            transform.SetMatrix(matrix)
+            
+            # Create mapper and actor for the circle
+            circle_mapper = vtk.vtkPolyDataMapper()
+            circle_mapper.SetInputData(circle_poly)
+            
+            circle_actor = vtk.vtkActor()
+            circle_actor.SetMapper(circle_mapper)
+            circle_actor.SetUserTransform(transform)
+            circle_actor.GetProperty().SetColor(0, 0.8, 0)  # Green color for torque
+            circle_actor.GetProperty().SetLineWidth(3)
+            
+            # Add the circle actor to the renderer
+            self.parent.renderer.AddActor(circle_actor)
+            self.parent.torque_actors.append(circle_actor)
+            
+            # Position and orient the arrow tip at the end of the arc
+            arrow_tip_transform = vtk.vtkTransform()
+            arrow_tip_transform.Identity()
+            
+            # Last point on the arc
+            last_angle = math.radians(270.0)
+            tip_x = radius * math.cos(last_angle)
+            tip_y = radius * math.sin(last_angle)
+            
+            # Apply the main transform
+            arrow_tip_transform.Concatenate(transform)
+            
+            # Position at end of arc
+            arrow_tip_transform.Translate(tip_x, tip_y, 0)
+            
+            # Orient in the tangent direction
+            arrow_tip_transform.RotateZ(180)  # Align with tangent direction
+            
+            # Create mapper and actor for arrow tip
+            arrow_tip_mapper = vtk.vtkPolyDataMapper()
+            arrow_tip_mapper.SetInputConnection(arrow_tip.GetOutputPort())
+            
+            arrow_tip_actor = vtk.vtkActor()
+            arrow_tip_actor.SetMapper(arrow_tip_mapper)
+            arrow_tip_actor.SetUserTransform(arrow_tip_transform)
+            arrow_tip_actor.GetProperty().SetColor(0, 0.8, 0)  # Green color matching the arc
+            
+            # Add the arrow tip actor to the renderer
+            self.parent.renderer.AddActor(arrow_tip_actor)
+            self.parent.torque_actors.append(arrow_tip_actor)
+            
+            # Create text label for the torque value
+            text_offset = 0.2 * geom_size 
+            text_pos = [
+                axis_point[0] + text_offset * perpendicular1[0],
+                axis_point[1] + text_offset * perpendicular1[1],
+                axis_point[2] + text_offset * perpendicular1[2]
+            ]
+            
+            # Create a vtkCaptionActor2D for the torque value text
+            caption_actor = vtk.vtkCaptionActor2D()
+            
+            # Format the torque value with proper units
+            torque_text = f"{display_magnitude:.2f} {force_unit}·m"
+            caption_actor.SetCaption(torque_text)
+            caption_actor.SetAttachmentPoint(text_pos)
+            
+            # Customize text appearance
+            caption_actor.BorderOff()
+            caption_actor.LeaderOff()  # No leader line
+            
+            # Set text properties
+            text_prop = caption_actor.GetCaptionTextProperty()
+            text_prop.SetColor(0.0, 0.8, 0.0)  # Green text to match torque arrow
+            text_prop.SetFontSize(5)
+            
+            # Scale the text appropriately
+            caption_actor.SetWidth(0.15)
+            caption_actor.SetHeight(0.05)
+            text_prop.SetBold(True)
+            text_prop.SetShadow(True)
+            
+            # Add to renderer and store
+            self.parent.renderer.AddActor(caption_actor)
+            self.parent.torque_actors.append(caption_actor)
+            
+            # Release faces from selection
+            for triangle in selected_faces:
+                idx = triangle['index']
+                self.parent.stl_geom.tri_highlight[idx] = False
+            self.parent.update_highlights()
+            
+            self.parent.vtkWidget.GetRenderWindow().Render()
+            self.parent.message_text.append(f"Applied torque of {display_magnitude:.2f} {force_unit}·m to {len(selected_faces)} triangles ({surface_type.lower()} surface)")
+            self.parent.update_button_icon("Structural Loads", "check")
+            
+            # Update LivVar state
+            self.parent.update_LivVar('structural_loads.torque_applied', True)
+            self.parent.update_LivVar('structural_loads.applied', True)
+            self.close()
+            
+        except Exception as e:
+            QtWidgets.QMessageBox.warning(self, "Error", str(e))
             
     def apply_force(self):
         """Apply force to selected nodes with proper unit conversion"""
@@ -4000,6 +4329,17 @@ class AnalysisWindow(QtWidgets.QDialog):
                     force = self.parent.load_forces[i]
                     self.parent.message_text.append(f"\nLoad group {i+1}: {len(nodes)} nodes with force ({force[0]}, {force[1]}, {force[2]})N")
 
+            #process torque faces
+            torque_nodes_groups = []
+            if hasattr(self.parent, 'torque_faces_groups') and hasattr(self.parent, 'torque_values'):
+                for i, faces_group in enumerate(self.parent.torque_faces_groups):
+                    nodes = find_nodes_for_faces(faces_group)
+                    torque_nodes_groups.append(nodes)
+                    torque = self.parent.torque_values[i]
+                    axis_point = self.parent.torque_axis_points[i]
+                    torque_magnitude = np.linalg.norm(torque)
+                    self.parent.message_text.append(f"\nTorque group {i+1}: {len(nodes)} nodes with torque magnitude {torque_magnitude:.2f}N·m")
+            
             # Process thermal faces
             thermal_nodes = {'fixed_temps': [], 'heat_sources': [], 'convection': []}
             if hasattr(self.parent, 'thermal_loads'):
@@ -4029,6 +4369,7 @@ class AnalysisWindow(QtWidgets.QDialog):
                 'z': fixed_nodes_z
             }
             self.parent.load_nodes_groups = load_nodes_groups
+            self.parent.torque_nodes_groups = torque_nodes_groups
             self.parent.thermal_nodes = thermal_nodes
             
             
@@ -4076,6 +4417,8 @@ class AnalysisWindow(QtWidgets.QDialog):
                     colors.InsertNextTuple3(128, 128, 255)  # Light blue for Z
                 elif any(i in nodes for nodes in load_nodes_groups):
                     colors.InsertNextTuple3(255, 165, 0)  # Orange for loaded nodes
+                elif any(i in nodes for nodes in torque_nodes_groups):
+                    colors.InsertNextTuple3(0, 200, 0)
                 # Check for thermal boundary conditions
                 elif any(i in nodes for nodes, _ in thermal_nodes['fixed_temps']):
                     colors.InsertNextTuple3(0, 0, 255)  # Blue for fixed temperature
@@ -4169,6 +4512,59 @@ class AnalysisWindow(QtWidgets.QDialog):
                 for node in nodes:
                     force[3*node:3*node + 3] += force_per_node
                     mesh.node_indices[node, 3] = 5
+
+        # Process loads - initialize with zeros
+        # force = np.zeros(3*mesh.num_nodes)
+        # Process direct forces if they exist
+        # if 'load_nodes_groups' in load_data and 'load_forces' in load_data and load_data['load_nodes_groups'] and load_data['load_forces']:
+        #     for nodes, force_vector in zip(load_data['load_nodes_groups'], load_data['load_forces']):
+        #         if nodes:
+        #             force_per_node = np.array(force_vector) / len(nodes)
+        #             for node in nodes:
+        #                 force[3*node:3*node + 3] += force_per_node
+        #                 mesh.node_indices[node, 3] = 5
+
+        # # Process torque forces
+        # if 'torque_nodes_groups' in load_data and 'torque_values' in load_data and 'torque_axis_points' in load_data:
+        #     for i, nodes in enumerate(load_data['torque_nodes_groups']):
+        #         if nodes:
+        #             # Get the torque parameters
+        #             torque_vector = np.array(load_data['torque_values'][i])
+        #             axis_point = np.array(load_data['torque_axis_points'][i])
+        #             torque_magnitude = np.linalg.norm(torque_vector)
+                    
+        #             # Normalize torque direction
+        #             torque_dir = torque_vector / torque_magnitude if torque_magnitude > 0 else np.array([0, 0, 1])
+                    
+        #             # Process each node in this torque group
+        #             for node in nodes:
+        #                 # Get node position
+        #                 node_pos = mesh.node_xyz[node]
+                        
+        #                 # Vector from axis point to node
+        #                 r_vector = node_pos - axis_point
+                        
+        #                 # Project r_vector onto plane perpendicular to torque axis
+        #                 # by removing the component along the torque direction
+        #                 dot_product = np.dot(r_vector, torque_dir)
+        #                 r_proj = r_vector - dot_product * torque_dir
+        #                 r_norm = np.linalg.norm(r_proj)
+                        
+        #                 if r_norm > 1e-10:  # Only apply force if node is away from axis
+        #                     # Calculate tangential direction (perpendicular to r_proj in the plane)
+        #                     # Cross product of torque_dir and r_proj gives tangential direction
+        #                     tangent_dir = np.cross(torque_dir, r_proj)
+        #                     tangent_dir = tangent_dir / np.linalg.norm(tangent_dir)
+                            
+        #                     # Calculate force magnitude: torque = r × F, so F = torque / r
+        #                     force_magnitude = torque_magnitude / (r_norm * len(nodes))
+                            
+        #                     # Apply force in tangential direction
+        #                     force_vector = force_magnitude * tangent_dir
+        #                     force[3*node:3*node + 3] += force_vector
+                            
+        #                     # Mark as torque node for visualization
+        #                     mesh.node_indices[node, 3] = 6
 
         # Create boundary conditions and material properties
         bc = bound_cond.BC(force=force,
@@ -4547,6 +4943,18 @@ class AnalysisWindow(QtWidgets.QDialog):
                         'load_nodes_groups': self.parent.load_nodes_groups,
                         'load_forces': self.parent.load_forces
                     }
+
+                    # # Add torque data if it exists
+                    # if hasattr(self.parent, 'torque_nodes_groups') and self.parent.torque_nodes_groups:
+                    #     load_data['torque_nodes_groups'] = self.parent.torque_nodes_groups
+                    #     load_data['torque_values'] = self.parent.torque_values
+                    #     load_data['torque_axis_points'] = self.parent.torque_axis_points
+
+                    #     # Debug information
+                    # self.parent.message_text.append(f"\nIncluding {len(self.parent.torque_nodes_groups)} torque constraints")
+                    # for i, nodes in enumerate(self.parent.torque_nodes_groups):
+                    #     torque_mag = np.linalg.norm(self.parent.torque_values[i])
+                    #     self.parent.message_text.append(f"  - Torque {i+1}: {len(nodes)} nodes with magnitude {torque_mag:.2f} N·m")
                     
                     # Process mesh and create boundary conditions
                     _, _, self.parent.boundary_conditions = self.ProcessDataforSolver(
@@ -4572,6 +4980,11 @@ class AnalysisWindow(QtWidgets.QDialog):
             self.parent.message_text.append("\nRunning structural analysis...")
             startTime = time.time()
             u = np.asarray(fe_solver.solve())
+
+            # Compute stresses through post-processing
+            fe_solver.postprocess(u)
+            von_mises_stress = np.asarray(fe_solver.vonMisesStress)
+            max_stress = np.max(von_mises_stress)
             
             # Calculate displacements
             delta = np.sqrt(u[0::3]**2 + u[1::3]**2 + u[2::3]**2)
@@ -4580,12 +4993,15 @@ class AnalysisWindow(QtWidgets.QDialog):
             
             # Get the appropriate length unit
             length_unit = self.parent.settings.get_length_unit_string()
+            stress_unit = self.parent.settings.get_stress_unit_string()
             
-            # Convert max displacement value for display if needed
+            # Convert values for display if needed
             if self.parent.settings.unit_system != "MKS":
                 display_deltaMax = self.parent.settings.convert_length(deltaMax, from_system="MKS")
+                display_maxStress = self.parent.settings.convert_stress(max_stress, from_system="MKS")
             else:
                 display_deltaMax = deltaMax
+                display_maxStress = max_stress
                 
             # Print results
             self.parent.message_text.append('-----------------------------')
@@ -4593,6 +5009,7 @@ class AnalysisWindow(QtWidgets.QDialog):
             self.parent.message_text.append(f'Solver: {fe_solver.solver.name}')
             self.parent.message_text.append(f"FEA time: {time.time() - startTime:.4f} seconds")
             self.parent.message_text.append(f'Max displacement: {display_deltaMax:.6f} {length_unit}')
+            self.parent.message_text.append(f'Max von Mises stress: {display_maxStress:.6f} {stress_unit}')
             self.parent.message_text.append('-----------------------------')
             
             # Store results in MKS units (for internal use) and display units
@@ -4601,7 +5018,11 @@ class AnalysisWindow(QtWidgets.QDialog):
                 'max_displacement': deltaMax,
                 'display_max_displacement': display_deltaMax,
                 'delta': delta,
-                'length_unit': length_unit
+                'length_unit': length_unit,
+                'von_mises': von_mises_stress,
+                'max_stress': max_stress,
+                'display_max_stress': display_maxStress,
+                'stress_unit': stress_unit
             }
             
             # Update button status
@@ -4758,6 +5179,154 @@ class AnalysisWindow(QtWidgets.QDialog):
         except Exception as e:
             QtWidgets.QMessageBox.critical(self, "Error", f"Failed to visualize results: {str(e)}")
 
+    def visualize_stress(self, display_mode="Geometry"):
+        """Visualize von Mises stress from structural analysis"""
+        try:
+            if not hasattr(self, 'analysis_results') or self.analysis_results is None:
+                QtWidgets.QMessageBox.warning(self, "Error", "No analysis results available")
+                return
+                
+            if not hasattr(self, 'analysis_mesher'):
+                QtWidgets.QMessageBox.warning(self, "Error", "No analysis mesh available")
+                return
+                
+            if 'von_mises' not in self.analysis_results:
+                QtWidgets.QMessageBox.warning(self, "Error", "Von Mises stress not computed")
+                return
+                
+            # Get stress results
+            von_mises = self.analysis_results['von_mises']
+            stress_unit = self.analysis_results['stress_unit']
+            
+            # Create points for undeformed mesh (stress visualization typically shown on original mesh)
+            points = vtk.vtkPoints()
+            cells = vtk.vtkCellArray()
+            
+            # Add points
+            for i in range(self.analysis_mesher.num_nodes):
+                points.InsertNextPoint(self.analysis_mesher.node_xyz[i])
+                
+            # Add hex elements
+            for elem in self.analysis_mesher.elemArray:
+                hex_cell = vtk.vtkHexahedron()
+                for i in range(8):
+                    hex_cell.GetPointIds().SetId(i, elem[i])
+                cells.InsertNextCell(hex_cell)
+                
+            # Create mesh structure
+            mesh = vtk.vtkUnstructuredGrid()
+            mesh.SetPoints(points)
+            mesh.SetCells(vtk.VTK_HEXAHEDRON, cells)
+            
+            # Map element-based von Mises stresses to points
+            # We need to convert from element-based values to node-based values
+            scalars = vtk.vtkFloatArray()
+            scalars.SetNumberOfComponents(1)
+            scalars.SetName("Von Mises Stress")
+            
+            # Create node-to-element mapping for averaging
+            node_to_elements = [[] for _ in range(self.analysis_mesher.num_nodes)]
+            for i, elem in enumerate(self.analysis_mesher.elemArray):
+                for node_idx in elem:
+                    node_to_elements[node_idx].append(i)
+            
+            # Compute average stress for each node
+            for i in range(self.analysis_mesher.num_nodes):
+                if node_to_elements[i]:
+                    # Average the stress values from all elements connected to this node
+                    avg_stress = np.mean([von_mises[e] for e in node_to_elements[i]])
+                    scalars.InsertNextValue(avg_stress)
+                else:
+                    scalars.InsertNextValue(0.0)  # For nodes not connected to any element
+            
+            mesh.GetPointData().SetScalars(scalars)
+            
+            # Create mapper with improved color mapping
+            mapper = vtk.vtkDataSetMapper()
+            mapper.SetInputData(mesh)
+            mapper.SetScalarRange(0, np.max(von_mises))
+            
+            # Create custom color lookup table
+            lut = vtk.vtkLookupTable()
+            lut.SetHueRange(0.667, 0.0)  # Blue to red
+            lut.SetSaturationRange(1.0, 1.0)
+            lut.SetValueRange(1.0, 1.0)
+            lut.SetNumberOfTableValues(256)
+            lut.Build()
+            mapper.SetLookupTable(lut)
+            
+            # Create actor for visualization
+            if hasattr(self, 'results_actor'):
+                self.renderer.RemoveActor(self.results_actor)
+                
+            self.results_actor = vtk.vtkActor()
+            self.results_actor.SetMapper(mapper)
+            self.results_actor.GetProperty().EdgeVisibilityOn()
+            self.results_actor.GetProperty().SetEdgeColor(0.1, 0.1, 0.1)
+            self.results_actor.GetProperty().SetLineWidth(1)
+            
+            # Create enhanced scalar bar
+            if hasattr(self, 'scalar_bar'):
+                self.renderer.RemoveActor(self.scalar_bar)
+                
+            scalar_bar = vtk.vtkScalarBarActor()
+            scalar_bar.SetLookupTable(mapper.GetLookupTable())
+            scalar_bar.SetTitle(f"Von Mises Stress ({stress_unit})")
+            scalar_bar.SetNumberOfLabels(5)
+            scalar_bar.SetPosition(0.85, 0.05)
+            scalar_bar.SetWidth(0.1)
+            scalar_bar.SetHeight(0.8)
+
+            # UNCONSTRAIN FONT SIZES
+            scalar_bar.UnconstrainedFontSizeOn()
+            
+            # Create title text property
+            title_text_prop = vtk.vtkTextProperty()
+            title_text_prop.SetFontFamilyToArial()
+            title_text_prop.SetFontSize(22)
+            title_text_prop.SetBold(True)
+            title_text_prop.SetColor(0, 0, 0)
+
+            # Create label text property
+            label_text_prop = vtk.vtkTextProperty()
+            label_text_prop.SetFontFamilyToArial()
+            label_text_prop.SetFontSize(18)
+            label_text_prop.SetBold(False)
+            label_text_prop.SetColor(0, 0, 0)
+
+            # Apply the text properties
+            scalar_bar.SetTitleTextProperty(title_text_prop)
+            scalar_bar.SetLabelTextProperty(label_text_prop)
+
+            # Save and add actor
+            self.scalar_bar = scalar_bar
+            self.renderer.AddActor(scalar_bar)
+            
+            # Hide original mesh
+            if hasattr(self, 'mesh_actor'):
+                self.mesh_actor.SetVisibility(False)
+                
+            # Hide original geometry
+            if hasattr(self, 'stl_actor'):
+                self.stl_actor.SetVisibility(False)
+                
+            # Add actors to renderer
+            self.renderer.AddActor(self.results_actor)
+            self.renderer.AddActor(self.scalar_bar)
+            
+            # Reset camera and render
+            self.renderer.ResetCamera()
+            self.vtkWidget.GetRenderWindow().Render()
+            
+            # Add results summary with proper units
+            max_stress = self.analysis_results.get('display_max_stress', np.max(von_mises))
+            self.message_text.append(f"Maximum von Mises stress: {max_stress:.6f} {stress_unit}")
+            
+        except Exception as e:
+            QtWidgets.QMessageBox.critical(self, "Error", f"Failed to visualize von Mises stress: {str(e)}")
+            print(f"Error visualizing von Mises stress: {str(e)}")
+            traceback.print_exc()
+
 #---------------------------------------------------------------------------------
 class Analysis:
     def __init__(self):
@@ -4770,8 +5339,6 @@ class Analysis:
         self.include_thermal = True
         self.zero_strain_temp = 300
         self.remesh = False
-        
-    
 #---------------------------------------------------------------------------------
 class TopOptConstraintsWindow(QtWidgets.QDialog):
     def __init__(self, parent=None):
@@ -5069,10 +5636,12 @@ class TopOptConstraintsWindow(QtWidgets.QDialog):
         center = [(bbox[0] + bbox[1])/2, (bbox[2] + bbox[3])/2, (bbox[4] + bbox[5])/2]
         
         # Arrow dimensions - make it visually significant
-        arrow_length = model_size * 1.5  # 150% of model size
-        shaft_radius = model_size * 0.02
-        tip_radius = model_size * 0.05
-        tip_length = model_size * 0.1
+        arrow_length = model_size * 1.26  # % of model size
+        shaft_radius = model_size * 0.015
+        tip_radius = model_size * 0.04
+        tip_length = model_size * 0.09
+
+        start_offset = model_size * 0.1  # 10% of model size for offset
         
         # Create arrow source
         arrow = vtk.vtkArrowSource()
@@ -5087,17 +5656,17 @@ class TopOptConstraintsWindow(QtWidgets.QDialog):
         direction = self.extrude_combo.currentText()
         if direction == "XDir":
             # Position at minimum X, point to positive X
-            start_pos = [bbox[0] - arrow_length * 0.2, center[1], center[2]]
+            start_pos = [bbox[0] - arrow_length * 0.2 + start_offset, center[1], center[2]]
             transform.Translate(start_pos)
             # No rotation needed - arrow points in X direction by default
         elif direction == "YDir":
             # Position at minimum Y, point to positive Y
-            start_pos = [center[0], bbox[2] - arrow_length * 0.2, center[2]]
+            start_pos = [center[0], bbox[2] - arrow_length * 0.2 + start_offset, center[2]]
             transform.Translate(start_pos)
             transform.RotateZ(90)  # Rotate to point along Y axis
         elif direction == "ZDir":
             # Position at minimum Z, point to positive Z
-            start_pos = [center[0], center[1], bbox[4] - arrow_length * 0.2]
+            start_pos = [center[0], center[1], bbox[4] - arrow_length * 0.2 + start_offset]
             transform.Translate(start_pos)
             transform.RotateY(-90)  # Rotate to point along Z axis
         
@@ -5170,7 +5739,7 @@ class TopOptConstraintsWindow(QtWidgets.QDialog):
         center = [(bbox[0] + bbox[1])/2, (bbox[2] + bbox[3])/2, (bbox[4] + bbox[5])/2]
         
         # Arrow dimensions - make it visually significant
-        arrow_length = model_size * 1.3  # 130% of model size
+        arrow_length = model_size * 1.26  # 130% of model size
         shaft_radius = model_size * 0.015
         tip_radius = model_size * 0.04
         tip_length = model_size * 0.08
@@ -5971,13 +6540,19 @@ class OptimizeTopologyWindow(QtWidgets.QDialog):
         obj_layout.addWidget(self.obj_combo)
         layout.addLayout(obj_layout)
         
+        # Method selection
+        method_layout = QtWidgets.QHBoxLayout()
+        method_label = QtWidgets.QLabel("Method")
+        self.method_combo = QtWidgets.QComboBox()
+        self.method_combo.addItems(["DENSITY-OC", "DENSITY-MMA", "PARETO", "Levelset"])
+        method_layout.addWidget(method_label)
+        method_layout.addWidget(self.method_combo)
+        layout.addLayout(method_layout)
+        
         # Checkboxes
         self.use_all_loads = QtWidgets.QCheckBox("Use all Loads?")
         self.use_all_loads.setChecked(True)
         layout.addWidget(self.use_all_loads)
-        
-        self.use_simp = QtWidgets.QCheckBox("Use SIMP Method?")
-        layout.addWidget(self.use_simp)
         
         self.smooth_surface = QtWidgets.QCheckBox("Smooth surface?")
         self.smooth_surface.setChecked(True)
@@ -5992,30 +6567,6 @@ class OptimizeTopologyWindow(QtWidgets.QDialog):
         load_set_layout.addWidget(load_set_label)
         load_set_layout.addWidget(self.load_set_spin)
         layout.addLayout(load_set_layout)
-        
-        # Volume Fraction
-        vol_frac_layout = QtWidgets.QHBoxLayout()
-        vol_frac_label = QtWidgets.QLabel("Desired Vol.Frac.")
-        self.vol_frac_spin = QtWidgets.QDoubleSpinBox()
-        self.vol_frac_spin.setRange(0.1, 1.0)
-        self.vol_frac_spin.setValue(0.50)
-        self.vol_frac_spin.setDecimals(2)
-        self.vol_frac_spin.setSingleStep(0.05)
-        vol_frac_layout.addWidget(vol_frac_label)
-        vol_frac_layout.addWidget(self.vol_frac_spin)
-        layout.addLayout(vol_frac_layout)
-        
-        # Volume Step
-        vol_step_layout = QtWidgets.QHBoxLayout()
-        vol_step_label = QtWidgets.QLabel("Volume Step")
-        self.vol_step_spin = QtWidgets.QDoubleSpinBox()
-        self.vol_step_spin.setRange(0.001, 0.1)
-        self.vol_step_spin.setValue(0.02500)
-        self.vol_step_spin.setDecimals(5)
-        self.vol_step_spin.setSingleStep(0.005)
-        vol_step_layout.addWidget(vol_step_label)
-        vol_step_layout.addWidget(self.vol_step_spin)
-        layout.addLayout(vol_step_layout)
         
         # Save Intermediate
         self.save_intermediate = QtWidgets.QCheckBox("Save Intermediate?")
@@ -6042,12 +6593,12 @@ class OptimizeTopologyWindow(QtWidgets.QDialog):
         # Get optimization parameters
         optimization_params = {
             'objective': self.obj_combo.currentText(),
+            'method': self.method_combo.currentText(),
             'use_all_loads': self.use_all_loads.isChecked(),
-            'use_simp': self.use_simp.isChecked(),
             'smooth_surface': self.smooth_surface.isChecked(),
             'load_set': self.load_set_spin.value(),
-            'volume_fraction': self.vol_frac_spin.value(),
-            'volume_step': self.vol_step_spin.value(),
+            'volume_fraction': 0.50,  # Default value preserved in backend
+            'volume_step': 0.02500,   # Default value preserved in backend
             'save_intermediate': self.save_intermediate.isChecked()
         }
         
@@ -6073,24 +6624,24 @@ class OptimizeTopologyWindow(QtWidgets.QDialog):
         # Log parameters
         self.parent.message_text.append(f"Optimization parameters set:")
         self.parent.message_text.append(f"Objective: {optimization_params['objective']}")
-        self.parent.message_text.append(f"Volume Fraction: {optimization_params['volume_fraction']}")
+        self.parent.message_text.append(f"Method: {optimization_params['method']}")
         
         try:
             # Import necessary modules
             from topopt_common import MaterialModel, TO_METHODS
-            from topopt_examples import TOParams
+            from topopt_common import TOParams
             
             # Configure JAX for high precision
             jax.config.update("jax_enable_x64", True)
             
             # Get mesh, material, BC and other required data from parent
-            mesh = self.parent.stl_geom.mesh if hasattr(self.parent.stl_geom, 'mesh') else None
+            mesh = self.parent.analysis_mesher if hasattr(self.parent, 'analysis_mesher') else None
             mat_prop = self.parent.material_data
             bc = self.parent.stl_geom.bc if hasattr(self.parent.stl_geom, 'bc') else None
             elem_body_force = self.parent.stl_geom.body_force if hasattr(self.parent.stl_geom, 'body_force') else None
             
             # Setup topology optimization constraints
-            from topopt_examples import TOParams
+            from topopt_common import TOParams
             to_constraints = TOParams()
             
             # Map UI constraints to TO constraints
@@ -6113,7 +6664,6 @@ class OptimizeTopologyWindow(QtWidgets.QDialog):
                         if cyclic_sym.get('enabled', False) and 'angle' in cyclic_sym:
                             angle_text = cyclic_sym['angle']
                             try:
-                                import re
                                 match = re.search(r'\d+', angle_text)
                                 if match:
                                     angle = int(match.group())
@@ -6151,7 +6701,7 @@ class OptimizeTopologyWindow(QtWidgets.QDialog):
             
             # Setup material model
             material_model = MaterialModel.SIMP
-            if not optimization_params['use_simp'] and elem_body_force is not None and np.linalg.norm(elem_body_force) > 0:
+            if elem_body_force is not None and np.linalg.norm(elem_body_force) > 0:
                 material_model = MaterialModel.SIMPPLUS
             
             # Initialize the FE solver
@@ -6272,6 +6822,7 @@ class OptimizeTopologyWindow(QtWidgets.QDialog):
             return False
             
         return True
+    
     
 # ---------------------------------------------------------------------------------
 
@@ -7638,11 +8189,15 @@ class ProjectData:
         self.stl_file_path = None
         self.settings = None
         self.material_data = None
+        self.structuralBC = None
+        self.thermalBC = None
+        self.topopt_constraints = None
+        self.optimization_params = None
         self.analysis_settings = {
             "n_elements": 10000,  # Default value
             "solver_type": "PARDISO"  # Default solver
         }
-
+    
     def to_dict(self):
         return {
             'version': self.version,
@@ -7655,11 +8210,11 @@ class ProjectData:
             'material_data': self.material_data,
             'structuralBC': self.structuralBC,
             'thermalBC': self.thermalBC,
-            'topopt_constraints': getattr(self, 'topopt_constraints', None),
-            'optimization_params': getattr(self, 'optimization_params', None),
+            'topopt_constraints': self.topopt_constraints,
+            'optimization_params': self.optimization_params,
             'analysis_settings': self.analysis_settings
         }
-
+    
     @classmethod
     def from_dict(cls, data):
         project = cls()
@@ -7690,6 +8245,10 @@ class ProjectData:
         
         project.thermalBC = thermalBC
         project.material_data = data.get('material_data')
+        
+        # Load topopt constraints and optimization parameters
+        project.topopt_constraints = data.get('topopt_constraints')
+        project.optimization_params = data.get('optimization_params')
         
         # Load analysis settings with defaults if not present
         if data.get('analysis_settings'):
@@ -7953,6 +8512,17 @@ class ProjectsWindow(QtWidgets.QDialog):
                 # Load settings
                 if project.settings:
                     self.parent.settings = project.settings
+
+                # Load TopOpt constraints if present
+                if project.topopt_constraints:
+                    self.parent.topopt_constraints = project.topopt_constraints
+                    self.restore_topopt_constraints(project.topopt_constraints)
+                    self.parent.message_text.append(f"Loaded topology optimization constraints")
+
+                # Also ensure the optimization parameters are loaded if present
+                if project.optimization_params:
+                    self.parent.optimization_params = project.optimization_params
+                    self.parent.message_text.append(f"Loaded optimization parameters")
                     
                 # Restore structural boundary conditions if STL is loaded
                 if self.parent.stl_geom and project.structuralBC:
@@ -8351,6 +8921,171 @@ class ProjectsWindow(QtWidgets.QDialog):
                 self.parent.update_LivVar('thermal_loads.convection_applied', True)
                 
             self.parent.update_button_icon("Thermal Loads", "check")
+
+    def restore_topopt_constraints(self, constraints):
+        """Restore topology optimization constraints and visualization from saved data"""
+        if not hasattr(self.parent, 'stl_geom') or self.parent.stl_geom is None:
+            return
+            
+        # Initialize constraint actors if needed
+        if not hasattr(self.parent, 'topopt_constraint_actors'):
+            self.parent.initialize_constraint_actors()
+            
+        # Create a temporary TopOptConstraintsWindow to use its methods
+        try:
+            temp_window = TopOptConstraintsWindow(self.parent)
+            
+            # Set the UI elements based on the saved constraints
+            if 'manufacturing' in constraints:
+                manufacturing = constraints['manufacturing']
+                
+                # Set extrude constraints
+                if 'extrude' in manufacturing:
+                    extrude_data = manufacturing['extrude']
+                    temp_window.extrude_check.setChecked(extrude_data.get('enabled', False))
+                    if 'direction' in extrude_data:
+                        index = temp_window.extrude_combo.findText(extrude_data['direction'])
+                        if index >= 0:
+                            temp_window.extrude_combo.setCurrentIndex(index)
+                
+                # Set AM build constraints
+                if 'am_build' in manufacturing:
+                    am_build_data = manufacturing['am_build']
+                    temp_window.am_build_check.setChecked(am_build_data.get('enabled', False))
+                    if 'direction' in am_build_data:
+                        index = temp_window.am_build_combo.findText(am_build_data['direction'])
+                        if index >= 0:
+                            temp_window.am_build_combo.setCurrentIndex(index)
+                
+                # Set draw direction constraints
+                if 'draw_direction' in manufacturing:
+                    draw_dir_data = manufacturing['draw_direction']
+                    temp_window.draw_direction_check.setChecked(draw_dir_data.get('enabled', False))
+                    if 'direction' in draw_dir_data:
+                        index = temp_window.draw_direction_combo.findText(draw_dir_data['direction'])
+                        if index >= 0:
+                            temp_window.draw_direction_combo.setCurrentIndex(index)
+                
+                # Set cyclic symmetry constraints
+                if 'cyclic_symmetry' in manufacturing:
+                    cyclic_sym_data = manufacturing['cyclic_symmetry']
+                    temp_window.cyclic_sym_check.setChecked(cyclic_sym_data.get('enabled', False))
+                    if 'angle' in cyclic_sym_data:
+                        index = temp_window.cyclic_sym_combo.findText(cyclic_sym_data['angle'])
+                        if index >= 0:
+                            temp_window.cyclic_sym_combo.setCurrentIndex(index)
+            
+            # Set pattern constraints
+            if 'patterns' in constraints:
+                patterns = constraints['patterns']
+                
+                # Set X grid pattern
+                if 'x_grid' in patterns:
+                    x_grid_data = patterns['x_grid']
+                    temp_window.x_grid_check.setChecked(x_grid_data.get('enabled', False))
+                    if 'value' in x_grid_data:
+                        temp_window.x_grid_spin.setValue(x_grid_data['value'])
+                
+                # Set Y grid pattern
+                if 'y_grid' in patterns:
+                    y_grid_data = patterns['y_grid']
+                    temp_window.y_grid_check.setChecked(y_grid_data.get('enabled', False))
+                    if 'value' in y_grid_data:
+                        temp_window.y_grid_spin.setValue(y_grid_data['value'])
+                
+                # Set Z grid pattern
+                if 'z_grid' in patterns:
+                    z_grid_data = patterns['z_grid']
+                    temp_window.z_grid_check.setChecked(z_grid_data.get('enabled', False))
+                    if 'value' in z_grid_data:
+                        temp_window.z_grid_spin.setValue(z_grid_data['value'])
+            
+            # Set performance constraints
+            if 'performance' in constraints:
+                performance = constraints['performance']
+                
+                # Set stress safety
+                if 'stress_safety' in performance:
+                    stress_data = performance['stress_safety']
+                    temp_window.stress_safety_check.setChecked(stress_data.get('enabled', False))
+                    if 'value' in stress_data:
+                        temp_window.stress_safety_spin.setValue(stress_data['value'])
+                
+                # Set max displacement
+                if 'max_displacement' in performance:
+                    disp_data = performance['max_displacement']
+                    temp_window.max_disp_check.setChecked(disp_data.get('enabled', False))
+                    if 'value' in disp_data:
+                        temp_window.max_disp_spin.setValue(disp_data['value'])
+                
+                # Set min frequency
+                if 'min_frequency' in performance:
+                    freq_data = performance['min_frequency']
+                    temp_window.min_freq_check.setChecked(freq_data.get('enabled', False))
+                    if 'value' in freq_data:
+                        temp_window.min_freq_spin.setValue(freq_data['value'])
+                
+                # Set max temperature
+                if 'max_temperature' in performance:
+                    temp_data = performance['max_temperature']
+                    temp_window.max_temp_check.setChecked(temp_data.get('enabled', False))
+                    if 'value' in temp_data:
+                        temp_window.max_temp_spin.setValue(temp_data['value'])
+                
+                # Set min feature
+                if 'min_feature' in performance:
+                    min_feat_data = performance['min_feature']
+                    temp_window.min_feat_check.setChecked(min_feat_data.get('enabled', False))
+                    if 'value' in min_feat_data:
+                        temp_window.min_feat_spin.setValue(min_feat_data['value'])
+                
+                # Set max feature
+                if 'max_feature' in performance:
+                    max_feat_data = performance['max_feature']
+                    temp_window.max_feat_check.setChecked(max_feat_data.get('enabled', False))
+                    if 'value' in max_feat_data:
+                        temp_window.max_feat_spin.setValue(max_feat_data['value'])
+            
+            # Set symmetry constraints
+            if 'symmetry' in constraints:
+                symmetry = constraints['symmetry']
+                
+                # Set X symmetry
+                if 'x_symmetry' in symmetry:
+                    temp_window.x_symmetry_check.setChecked(symmetry['x_symmetry'])
+                
+                # Set Y symmetry
+                if 'y_symmetry' in symmetry:
+                    temp_window.y_symmetry_check.setChecked(symmetry['y_symmetry'])
+                
+                # Set Z symmetry
+                if 'z_symmetry' in symmetry:
+                    temp_window.z_symmetry_check.setChecked(symmetry['z_symmetry'])
+            
+            # Set other constraints
+            if 'other' in constraints:
+                other = constraints['other']
+                
+                # Set connected topology
+                if 'connected_topology' in other:
+                    temp_window.connected_topology_check.setChecked(other['connected_topology'])
+                
+                # Set keep fixed faces
+                if 'keep_fixed_faces' in other:
+                    temp_window.keep_fixed_faces_check.setChecked(other['keep_fixed_faces'])
+            
+            # Apply the constraints to update visualizations
+            temp_window.apply_constraints()
+            
+            # Clean up
+            temp_window.close()
+            
+            # Update UI indicators
+            self.parent.update_button_icon("TopOpt Constraints", "check")
+            self.parent.update_LivVar('topopt.constraints_defined', True)
+            
+        except Exception as e:
+            self.parent.message_text.append(f"Warning: Error loading topology optimization constraints: {str(e)}")
 
     def visualize_fixed_temp(self, nodes, temperature):
         """Visualize fixed temperature on the model with arrows"""

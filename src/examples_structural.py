@@ -858,7 +858,7 @@ def createMBBBProblem(nDOFDesired: int = 10000, L: float = [3, 1, 0.1],youngs_mo
 
   # ----------------------------------------
   
-def createDistributedLoadProblem(nDOFDesired: int = 10000, L: float = [1.0, 0.5, 0.01],youngs_modulus = 2e11, poissons_ratio = 0.3):
+def createDistributedLoadProblem(nDOFDesired: int = 10000, L: float = [1.0, 0.5, 0.025],youngs_modulus = 2e11, poissons_ratio = 0.3):
   nVoxelsDesired = nDOFDesired/3    
   # Let the number of voxels be proportional to the length in each direction
   alpha = (nVoxelsDesired/(L[0]*L[1]*L[2]))**(1/3)

@@ -192,8 +192,8 @@ def topopt_pareto(fe_solver: sfea.StructFEA,
 		if innerLoopSuccess:
 			history['compliance'].append(JTemp)
 			history['volume'].append(volfrac)
-			#scale = history['compliance'][-1] / history['compliance'][0]
-			#vol_decr = max(vol_decr_min,vol_decr/scale**2) # Adjust volume decrease factor for steep increase in compliance
+			scale = history['compliance'][-1] / history['compliance'][0]
+			vol_decr = max(vol_decr_min,min(vol_decr,vol_decr_max/scale)) # Reduce volume increment for steep increase in compliance
 			print(f"vf={history['volume'][-1]:.3f}, J={history['compliance'][-1]:.3g}, #FEA={nFEAs:2d}")
 			fe_solver.mesh.setPseudoDensity(x.flatten())
 	totalTime = time.time() - tStart
@@ -205,9 +205,10 @@ def topopt_pareto(fe_solver: sfea.StructFEA,
 
 if __name__ == "__main__":    
 	jax.config.update("jax_enable_x64", True)
+	from topopt_examples import *
 	
 	print("-" * 50)
-	to_problem = StructuralTOExamples.TwoBar # Choose the TO problem
+	to_problem = StructuralTOExamples.DistributedLoad # Choose the TO problem
 	print(f"Running {to_problem.name}...") 
 	print("-" * 50)
 	solver = lin_solv.Solvers.PARDISO # # Choose solver. Typically PARDISO, but DPCG for DOF > 200,000
