@@ -6078,7 +6078,7 @@ class OptimizeTopologyWindow(QtWidgets.QDialog):
         try:
             # Import necessary modules
             from topopt_common import MaterialModel, TO_METHODS
-            from examples_topology_optimization import TOParams
+            from topopt_examples import TOParams
             
             # Configure JAX for high precision
             jax.config.update("jax_enable_x64", True)
@@ -6090,7 +6090,7 @@ class OptimizeTopologyWindow(QtWidgets.QDialog):
             elem_body_force = self.parent.stl_geom.body_force if hasattr(self.parent.stl_geom, 'body_force') else None
             
             # Setup topology optimization constraints
-            from examples_topology_optimization import TOParams
+            from topopt_examples import TOParams
             to_constraints = TOParams()
             
             # Map UI constraints to TO constraints

@@ -10,6 +10,7 @@ def topopt_levelset(fe_solver: sfea.StructFEA,
 						 time_step: float = 0.1,
 						 epsilon: float = 1.0,
 						 rel_conv_tol: float = 1e-4,
+						plotIntermediateTopologies: bool = False,
 						 debug: bool = False) -> tuple[np.ndarray, dict]:
 		"""Level Set Method for Topology Optimization using Hamilton-Jacobi equation.
 
@@ -92,7 +93,8 @@ def topopt_levelset(fe_solver: sfea.StructFEA,
 			success = False
 		# Solve for final displacement field
 		u = np.asarray(fe_solver.solve(density))
-		return u, history, success,errorMsg
+		nFEAs = iter
+		return u, history, success,errorMsg, nFEAs
 
 
 if __name__ == "__main__":    
@@ -108,7 +110,7 @@ if __name__ == "__main__":
 	debug = False
 
 	# Get the structural problem
-	mesh, mat_prop, bc,elem_body_force, to_params = getStructuralTOProblem(to_problem)
+	mesh, mat_prop, bc,elem_body_force, to_params,nFEAs = getStructuralTOProblem(to_problem)
 
 	dsolver = deflation.DeflationSolver()
 	# initialize the fe solver 

@@ -12,10 +12,11 @@ class StructuralExamples(enum.Enum):
 	TensileBar = enum.auto()
 	BeamBending = enum.auto()
 	ShearBlock = enum.auto()
+	Mitchell = enum.auto()
 	EdgeCantilever = enum.auto()
 	MidCantilever = enum.auto()
 	ThreeHoleBracket = enum.auto()
-	MBB = enum.auto()
+	MBBB = enum.auto()
 	DistributedLoad = enum.auto()
 	Multiload = enum.auto()
 	GravityBar = enum.auto() 
@@ -55,14 +56,16 @@ def getStructuralProblem(problem: StructuralExamples, **kwargs):
     return createBeamBendingProblem(**kwargs)
   elif problem == StructuralExamples.ShearBlock:
     return createShearBlockProblem(**kwargs)
+  elif problem == StructuralExamples.Mitchell:
+    return createMitchellProblem(**kwargs)
   elif problem == StructuralExamples.EdgeCantilever:
     return createEdgeCantileverProblem(**kwargs)
   elif problem == StructuralExamples.MidCantilever:
     return createMidCantileverProblem(**kwargs)
   elif problem == StructuralExamples.ThreeHoleBracket:
     return createThreeHoleBracketProblem(**kwargs)
-  elif problem == StructuralExamples.MBB:
-    return createMBBProblem(**kwargs)
+  elif problem == StructuralExamples.MBBB:
+    return createMBBBProblem(**kwargs)
   elif problem == StructuralExamples.DistributedLoad:
     return createDistributedLoadProblem(**kwargs)
   elif problem == StructuralExamples.Multiload:
@@ -348,10 +351,6 @@ def createShearBlockProblem(nDOFDesired: int = 10000, L: float = [1, 1, 1],young
   # Add forces on x=xMax plane with different magnitudes for edges and corners
   # that is consistent with numerical integration over the surface
   load_nodes = mesh.getNodesOnBoundingBoxPlane(0,False) # x = xMax plane
-  # Find edge and corner nodes
-  edge_nodes = []
-  corner_nodes = []
-  face_nodes = [] 
 
   load_dof = 3*load_nodes + 1 # y direction
 
@@ -361,6 +360,86 @@ def createShearBlockProblem(nDOFDesired: int = 10000, L: float = [1, 1, 1],young
 
 
   mesh.node_indices[load_nodes, 3] = 2
+  
+  bc = bound_cond.BC(force = force,
+            fixed_dofs = fixed_dofs,
+            dirichlet_values = dirichlet_values) 
+
+  mat_prop = mat_lib.StructuralMaterial(youngs_modulus=youngs_modulus,
+                      poissons_ratio=poissons_ratio)
+  
+  elem_body_force = None
+
+  return mesh, mat_prop, bc, elem_body_force
+
+
+
+def createMitchellProblem(nDOFDesired: int = 10000, L: float = [1, 1, 0.1],youngs_modulus = 2e11, 
+                            poissons_ratio = 0.26,load1 = 5.6e4, load2 = 0):
+  """
+  See: Topology Optimization Benchmarks in 2D: Results for Minimum Compliance and Minimum Volume in Planar Stress Problems
+S. Ivvan Valdez, et al. Arch Computat Methods Eng (2017) 24:803–839, DOI 10.1007/s11831-016-9190-3
+  Parameters:
+  ----------
+  nDOFDesired : int
+    Desired number of degrees of freedom (default 10000)
+  L : list of float
+    Dimensions [Lx, Ly, Lz] of domain (default [1, 0.1, 0.1])
+  youngs_modulus : float
+    Young's modulus of material (default 2e11)
+  poissons_ratio : float 
+    Poisson's ratio of material (default 0.3)
+
+  Returns:
+  -------
+  tuple
+    (mesh, mat_prop, bc) containing:
+    - mesh: Mesher object with grid discretization
+    - mat_prop: Material properties object
+    - bc: Boundary conditions with fixed left face and load on right face
+  """
+  
+  nVoxelsDesired = nDOFDesired/3    
+  # Let the number of voxels be proportional to the length in each direction
+  alpha = (nVoxelsDesired/(L[0]*L[1]*L[2]))**(1/3)
+  nelx = round(alpha*L[0])
+  nely = round(alpha*L[1])
+  nelz = round(alpha*L[2])
+  mesh = mesher.Mesher()
+  mesh.grid_mesh(num_elems = (nelx, nely, nelz),
+                  elem_size = (L[0]/nelx, L[1]/nely, L[2]/nelz))
+  mesh.createEdofMatStructural()
+
+  node_pts = mesh.node_xyz
+  left_nodes = mesh.getNodesOnBoundingBoxPlane(0,True) # x = 0 plane
+  left_dofs = np.array([3 * left_nodes]).flatten().astype(int) # fixed in x direction
+
+  bottom_nodes = mesh.getNodesOnBoundingBoxPlane(1,True) # y = 0 plane
+  right_nodes = np.intersect1d(bottom_nodes, np.where(node_pts[:, 0] >= 0.9)[0]) # hard coded
+  right_dofs = np.array([3 * right_nodes+1]).flatten().astype(int)# fixed in y direction
+  
+  fixed_dofs = np.union1d(left_dofs,right_dofs)
+  dirichlet_values = 0*np.ones_like(fixed_dofs, dtype = float)
+
+  mesh.node_indices[left_nodes, 3] = 1
+  mesh.node_indices[right_nodes, 3] = 1
+  
+  
+  load_nodes_1 = np.intersect1d(bottom_nodes, np.where(node_pts[:, 0] <= 0.1))
+  load_dof_1 = 3*load_nodes_1 + 1 # y direction
+
+  load_nodes_2 = np.intersect1d(bottom_nodes, np.where((node_pts[:, 0] >= 0.25) & (node_pts[:, 0] <= 0.35))[0])
+  load_dof_2 = 3*load_nodes_2 + 1 # y direction
+
+  # Apply forces according to node type
+  force = np.zeros(3*mesh.num_nodes)
+
+  force[load_dof_1] = -load1/len(load_nodes_1)
+  force[load_dof_2] = -load2/len(load_nodes_2)
+
+ 
+  mesh.node_indices[load_nodes_1, 3] = 2
+  mesh.node_indices[load_nodes_2, 3] = 2
   
   bc = bound_cond.BC(force = force,
             fixed_dofs = fixed_dofs,
@@ -511,7 +590,12 @@ def createMidCantileverProblem(nDOFDesired: int = 10000, L: float = [0.4, 0.2, 0
   # ----------------------------------------
   
 
-def createMBBProblem(nDOFDesired: int = 10000, L: float = [0.5, 0.167, 0.01],youngs_modulus = 2e11, poissons_ratio = 0.3):
+def createMBBBProblem(nDOFDesired: int = 10000, L: float = [3, 1, 0.1],youngs_modulus = 2e11, 
+                      poissons_ratio = 0.3,load = 2.7e4):
+  ''' 
+    See: Topology Optimization Benchmarks in 2D: Results for Minimum Compliance and Minimum Volume in Planar Stress Problems
+  S. Ivvan Valdez, et al. Arch Computat Methods Eng (2017) 24:803–839, DOI 10.1007/s11831-016-9190-3
+'''
   nVoxelsDesired = nDOFDesired/3    
   # Let the number of voxels be proportional to the length in each direction
   alpha = (nVoxelsDesired/(L[0]*L[1]*L[2]))**(1/3)
@@ -526,20 +610,20 @@ def createMBBProblem(nDOFDesired: int = 10000, L: float = [0.5, 0.167, 0.01],you
   symmetry_nodes = mesh.getNodesOnBoundingBoxPlane(0,True) # x = 0 plane
   symmetry_dofs = np.array([3 * symmetry_nodes]).flatten().astype(int)
 
-  fixed_nodes=np.intersect1d(mesh.getNodesOnBoundingBoxPlane(0,False), mesh.getNodesOnBoundingBoxPlane(1,True))
-  fixed_dofs = np.union1d(symmetry_dofs,np.array([3 * fixed_nodes,
-              3 * fixed_nodes + 1,
-              3 * fixed_nodes + 2]).flatten().astype(int))
+  right_nodes=np.intersect1d(mesh.getNodesOnBoundingBoxPlane(1,True), np.where(mesh.node_xyz[:,0] >= 2.7)[0])
+  right_dofs = np.array([3 * right_nodes+1]).flatten().astype(int)
   
+  fixed_dofs = np.union1d(symmetry_dofs,right_dofs)
+  fixed_nodes = np.union1d(symmetry_nodes,right_nodes)
   dirichlet_values = 0*np.ones_like(fixed_dofs, dtype = float)
   mesh.node_indices[fixed_nodes, 3] = 1
 
  
-  load_nodes = np.intersect1d(mesh.getNodesOnBoundingBoxPlane(0,True), mesh.getNodesOnBoundingBoxPlane(1,False))
+  load_nodes = np.intersect1d(mesh.getNodesOnBoundingBoxPlane(1,False), np.where(mesh.node_xyz[:,0] <= 0.3)[0])
   load_dofs = 3 * load_nodes + 1  # y direction
 
   mesh.node_indices[load_nodes, 3] = 2
-  load_per_dof = -10000/len(load_nodes)
+  load_per_dof = -load/len(load_nodes)
 
   force = np.zeros(3*mesh.num_nodes)
   force[load_dofs] = load_per_dof

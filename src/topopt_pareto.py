@@ -3,12 +3,13 @@ from topopt_common import *
 
 def topopt_pareto(fe_solver: sfea.StructFEA,
 				  to_params,
-							rel_err: float = 0.025,
+							rel_err: float = 0.02,
 							vol_decr_max: float = 0.05,
 							vol_decr_min: float = 0.0025,
 							min_local_iters: int = 2,
 							max_local_iters: int = 5,
-							rhoVoid: float = 0,
+							xVoid: float = 0,
+							plotIntermediateTopologies: bool = False,
 							debug: bool = False
 							)-> tuple[np.ndarray, dict]:
 	"""Pareto method for Topology Optimization.
@@ -28,8 +29,6 @@ def topopt_pareto(fe_solver: sfea.StructFEA,
 	Returns: A tuple containing the displacement field of the optimized structure
 		and a dictionary containing the optimization history.
 	"""
-	
-
 
 	tStart = time.time()
 	
@@ -40,7 +39,7 @@ def topopt_pareto(fe_solver: sfea.StructFEA,
 	totalIter = 1
 
 	# Initialize design field
-	rho = np.ones((fe_solver.mesh.num_elems))
+	x = np.ones((fe_solver.mesh.num_elems))
 	volfrac = 1.0
 	
 	history = {'compliance': [], 'volume': []}
@@ -60,21 +59,22 @@ def topopt_pareto(fe_solver: sfea.StructFEA,
 		nodal_body_force = None
 
 	print("Initial FEA...")
-	u = np.asarray(fe_solver.solve(rho))
-
+	
+	u = np.asarray(fe_solver.solve(x))
+	nFEAs = 1
 	# Store initial compliance
 	history['compliance'].append(fe_solver.total_force.T @ u)
 	history['volume'].append(volfrac)
 	fe_solver.postprocess(u) # compute stresses and strains for the initial design
 	# Compute initial topological sensitivity
-	T = computeTopologicalSensitivity(fe_solver.mat_prop,fe_solver.strainComponents,fe_solver.stressComponents,rho)
-	#T = computeTopologicalSensitivityOld(fe_solver.mesh, fe_solver.mat_prop, u, rho)
+	T = computeTopologicalSensitivity(fe_solver.mat_prop,fe_solver.strainComponents,fe_solver.stressComponents,x)
+	
 	# Add contribution from body force to topological sensitivity if present
 	if (nodal_body_force is not None):
 		T_body = np.zeros(fe_solver.mesh.num_elems)
 		for elem in range(fe_solver.mesh.num_elems):
 			edof = fe_solver.mesh.edofMat[elem]
-			T_body[elem] =  (rho[elem]*u[edof] * nodal_body_force[edof]).sum()
+			T_body[elem] =  (x[elem]*u[edof] * nodal_body_force[edof]).sum()
 		T += 2*T_body
 
 	if (elemsWithForces.size > 0): #For pure body forces, this may be empty
@@ -84,14 +84,16 @@ def topopt_pareto(fe_solver: sfea.StructFEA,
 	T = (H * T) / Hs
 
 
-	print(f"vf={history['volume'][-1]:.3f},  J={history['compliance'][-1]:.3g},  #FEA={totalIter:2d}")
+	print(f"vf={history['volume'][-1]:.3f}, J={history['compliance'][-1]:.3g}, #FEA={totalIter:2d}")
 	vol_decr = vol_decr_max
-	wtDamping = 0.25 # 0 means full wt to current T values, else previous T values are damped in
-
+	
 	success = True
 	terminatePareto = False
 	errorMsg = ""
+	wtDamping = 0.25 # 0 means full wt to current T values, else previous T values are damped in
+
 	while volfrac > to_params.DesiredVolFraction:
+		
 		# Move to next volume fraction
 		volfrac = max(to_params.DesiredVolFraction, volfrac - vol_decr)
 		if (debug):
@@ -100,10 +102,10 @@ def topopt_pareto(fe_solver: sfea.StructFEA,
 		# Initialize local iteration variables
 		localIter = 0
 		JTemp = history['compliance'][-1]  # Store previous value
-		JPrev = float('inf')  # Initialize JPrev
-		JPrevPrev = float('inf')  # Initialize JPrev
+		JPrev = JTemp  # Initialize JPrev
+		JPrevPrev = JTemp # Initialize JPrevPrev
 		TPrev = T.copy()  # Store previous sensitivity
-		rhoPrev = rho.copy()  # Store previous design
+		xPrev = x.copy()  # Store previous design
 		innerLoopSuccess = True
 		while True:
 			if (debug):
@@ -116,9 +118,9 @@ def topopt_pareto(fe_solver: sfea.StructFEA,
 					break
 			if (localIter >= max_local_iters) or abs(JTemp) > 10 * history['compliance'][-1]:  # large change in compliance	
 				innerLoopSuccess = False
-				rho = rhoPrev.copy()
+				x = xPrev.copy()
 				T = TPrev.copy()
-				fe_solver.mesh.setPseudoDensity(rho.flatten())
+				fe_solver.mesh.setPseudoDensity(x.flatten())
 				JTemp = JPrev
 				volfrac = volfrac + vol_decr # Restore volume fraction
 				vol_decr *= 0.75 # Reduce volume decrement
@@ -133,35 +135,37 @@ def topopt_pareto(fe_solver: sfea.StructFEA,
 
 			# Find cutoff value and update design
 			value = np.sort(T.flatten())[int(fe_solver.mesh.num_elems * (1 - volfrac))]
-			rho = np.ones((fe_solver.mesh.num_elems))
-			rho[T < value] = rhoVoid
-			fe_solver.mesh.setPseudoDensity(rho.flatten())
+			x = np.ones((fe_solver.mesh.num_elems))
+			x[T < value] = xVoid
+			fe_solver.mesh.setPseudoDensity(x.flatten())
 			if (removeHangingElems):
 				meshComponents = fe_solver.mesh.find_connected_components()
 				if (len(meshComponents) > 1):
 					# Find the largest connected component and its size
 					largest_component = max(meshComponents, key=len)
-					# Set density to rhoVoid for all elements
-					rho[:] = rhoVoid
+					# Set density to xVoid for all elements
+					x[:] = xVoid
 					# Set density to 1 for elements in largest component
-					rho[list(largest_component)] = 1.0
-					fe_solver.mesh.setPseudoDensity(rho.flatten())
+					x[list(largest_component)] = 1.0
+					fe_solver.mesh.setPseudoDensity(x.flatten())
 			
 			JPrevPrev = JPrev  # Store previous to previous value
 			JPrev = JTemp  # Store previous value
-			u = np.asarray(fe_solver.solve(rho))
+
+			u = np.asarray(fe_solver.solve(x))
+			nFEAs += 1
 			JTemp = float(fe_solver.total_force.T @ u)
 			#plots.plotMesh(fe_solver.mesh, bc = None, u=u, title = title)
 			# Update sensitivity
 			fe_solver.postprocess(u)
-			T = computeTopologicalSensitivity(fe_solver.mat_prop,fe_solver.strainComponents,fe_solver.stressComponents,rho)
-			#T = computeTopologicalSensitivityOld(fe_solver.mesh, fe_solver.mat_prop, u, rho)
+			T = computeTopologicalSensitivity(fe_solver.mat_prop,fe_solver.strainComponents,fe_solver.stressComponents,x)
+		
 			# Add contribution from body force to topological sensitivity if present
 			if (nodal_body_force is not None):
 				T_body = np.zeros(fe_solver.mesh.num_elems)
 				for elem in range(fe_solver.mesh.num_elems):
 					edof = fe_solver.mesh.edofMat[elem]
-					T_body[elem] =  (rho[elem]*u[edof] * nodal_body_force[edof]).sum()
+					T_body[elem] =  (x[elem]*u[edof] * nodal_body_force[edof]).sum()
 				T += 2*T_body
 
 			T = (H * T) / Hs
@@ -175,7 +179,7 @@ def topopt_pareto(fe_solver: sfea.StructFEA,
 
 			localIter += 1
 			totalIter += 1
-
+			
 		if terminatePareto:
 			if (volfrac > 1.1*to_params.DesiredVolFraction):
 				success = False
@@ -190,25 +194,24 @@ def topopt_pareto(fe_solver: sfea.StructFEA,
 			history['volume'].append(volfrac)
 			#scale = history['compliance'][-1] / history['compliance'][0]
 			#vol_decr = max(vol_decr_min,vol_decr/scale**2) # Adjust volume decrease factor for steep increase in compliance
-			print(f"vf={history['volume'][-1]:.3f}, J={history['compliance'][-1]:.3g},   #FEA={totalIter:2d}")
-			fe_solver.mesh.setPseudoDensity(rho.flatten())
+			print(f"vf={history['volume'][-1]:.3f}, J={history['compliance'][-1]:.3g}, #FEA={nFEAs:2d}")
+			fe_solver.mesh.setPseudoDensity(x.flatten())
 	totalTime = time.time() - tStart
+
 	print(f"Final vf: {history['volume'][-1]:.3f},  objective: {history['compliance'][-1]:.4g}")
 	print(f"Total Time: {totalTime:.2f} s")
-	return u, history, success,errorMsg
+	return u, history, success,errorMsg,nFEAs
 
 
 if __name__ == "__main__":    
 	jax.config.update("jax_enable_x64", True)
 	
 	print("-" * 50)
-	to_problem = StructuralTOExamples.MidCantilever # Choose the TO problem
+	to_problem = StructuralTOExamples.MBBB # Choose the TO problem
 	print(f"Running {to_problem.name}...") 
 	print("-" * 50)
 	solver = lin_solv.Solvers.PARDISO # # Choose solver. Typically PARDISO, but DPCG for DOF > 200,000
-	debug = False
-
-
+	debug = True
 
 	# Get the structural problem
 	mesh, mat_prop, bc,elem_body_force, to_params = getStructuralTOProblem(to_problem)
@@ -241,7 +244,7 @@ if __name__ == "__main__":
 	startTime = time.time()
 
 	print("OptimizationMethod: Pareto")
-	u, history, success,errorMsg = topopt_pareto(fe_solver = fe_solver,
+	u, history, success,errorMsg,nFEAs = topopt_pareto(fe_solver = fe_solver,
 									to_params = to_params,
 									debug = debug)
 	

@@ -202,10 +202,12 @@ if __name__ == "__main__":
   import plots
   from examples_structural import *
 
-  problem = StructuralExamples.TensileBar
+  problem = StructuralExamples.MBBB
   nDOFDesired = 60000
   mesh, mat_prop, bc,elem_body_force = getStructuralProblem(problem,nDOFDesired = nDOFDesired)
   solver = lin_solv.Solvers.PARDISO # typically DPCG or PARDISO
+  
+  
   
   dsolver = deflation.DeflationSolver()
   startTime = time.time()
@@ -223,6 +225,7 @@ if __name__ == "__main__":
         rtol = 1e-8,
         elem_body_force = elem_body_force)
 
+  plots.plotMesh(fe_solver.mesh, bc=bc)
   u = np.asarray(fe_solver.solve())
   delta = np.sqrt(u[0::3]**2 +  u[1::3]**2 +  u[2::3]**2)
   deltaMax = np.max(delta)
@@ -238,14 +241,15 @@ if __name__ == "__main__":
   print("Max von Mises stress: ", f"{maxStress:.2g}")
   print('-----------------------------')
   
+ 
   plots.plotMesh(fe_solver.mesh, bc=None, u=u, 
                  title=f'dof = {nDOF}, Max deformation: {deltaMax:.3e}')
-  
-  plots.plotElementField(fe_solver.mesh, fe_solver.strainComponents[:,3],
-                title=f'Strain component: {'γxy'}', cmap='jet')
-  
- 
 
   plots.plotElementField(fe_solver.mesh, fe_solver.vonMisesStress,
                         title='von Mises stress', cmap='jet')
+  
+
+  #plots.plotElementField(fe_solver.mesh, fe_solver.strainComponents[:,3], title=f'Strain component: {'γxy'}', cmap='jet')
+  
+ 
   

@@ -529,7 +529,7 @@ if __name__ == "__main__":
     stl_file =  os.path.join(script_dir, '../Models/KnuckleAssembly/KnuckleAssembly.STL')
     stl_file =  os.path.join(script_dir, '../Models/Table/Table.STL')
     stl_file = os.path.join(script_dir, '../Models/LBracket/LBracket.STL')
-    stl_file = os.path.join(script_dir, '../Models/Nosecone/HollowNosecone.STL')
+    #stl_file = os.path.join(script_dir, '../Models/Nosecone/HollowNosecone.STL')
     stl_geom = STLGeom(stl_file)
 
     [area, volume, cg, inertia] = stl_geom.compute_mass_properties()

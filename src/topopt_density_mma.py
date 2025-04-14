@@ -10,6 +10,7 @@ def topopt_mma(fe_solver: sfea.StructFEA,
 							 kkt_tol: float = 1.e-6,
 							 move_tol: float = 0.025,
 							 rel_conv_tol: float = 1.e-3,
+							plotIntermediateTopologies: bool = False,
 							 grey_tol: float = 0.2,
 							 debug: bool = False,
 							 ) -> tuple[np.ndarray, dict]:
@@ -88,11 +89,12 @@ def topopt_mma(fe_solver: sfea.StructFEA,
 
 	success = True
 	errorMsg = ""
+	nFEAs = 0
 	while not mma_state.is_converged:
 		x = mma_state.x.reshape(-1)
 		timeFEAStart = time.time()
 		obj,u = compliance(x, fe_solver, material_model_dict)
-		
+		nFEAs += 1
 		timeFEA += time.time() - timeFEAStart
 		obj = np.array([obj])
 
@@ -221,19 +223,17 @@ def topopt_mma(fe_solver: sfea.StructFEA,
 	print(f"Final objective: {obj:.4g}, vf: {np.mean(x):.3f}, grey: {fraction_grey:.3f}")
 	print(f"Time FEA: {timeFEA:.2f} s, Time MMA: {timeMMA:.2f} s")
 	print(f"Total Time: {timeFEA+timeMMA:.2f} s")
-	return np.asarray(u), history,success,errorMsg
+	return np.asarray(u), history,success,errorMsg,nFEAs
 	
 if __name__ == "__main__":    
 	jax.config.update("jax_enable_x64", True)
 	
 	print("-" * 50)
-	to_problem = StructuralTOExamples.MidCantilever # Choose the TO problem
+	to_problem = StructuralTOExamples.MBBB # Choose the TO problem
 	print(f"Running {to_problem.name}...") 
 	print("-" * 50)
 	solver = lin_solv.Solvers.PARDISO # # Choose solver. Typically PARDISO, but DPCG for DOF > 200,000
 	debug = False
-
-
 
 	# Get the structural problem
 	mesh, mat_prop, bc,elem_body_force, to_params = getStructuralTOProblem(to_problem)
@@ -265,7 +265,7 @@ if __name__ == "__main__":
 
 	startTime = time.time()
 	print("OptimizationMethod: MMA")
-	u, history,success,errorMsg = topopt_mma(fe_solver = fe_solver,
+	u, history,success,errorMsg,nFEAs = topopt_mma(fe_solver = fe_solver,
 								to_params = to_params,
 								debug = debug)
 	timeTaken = time.time() - startTime

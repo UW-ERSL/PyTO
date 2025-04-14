@@ -12,7 +12,7 @@ import deflation
 from to_filters import *
 import time
 import matplotlib.pyplot as plt
-from examples_topology_optimization import *
+from topopt_examples import *
 import struct_fea as fea
 import linear_solvers as lin_solv
 import time

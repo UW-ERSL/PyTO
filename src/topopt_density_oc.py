@@ -12,6 +12,7 @@ def topopt_optimality_criteria(
 							move_tol: float = 0.025,
 							rel_conv_tol: float = 1.e-3,
 							directLagrangeMethod: bool = False,
+							plotIntermediateTopologies: bool = False,
 							debug: bool = False,
 							) -> tuple[np.ndarray, dict]:
 	"""Optimality Criteria based topology optimization for minimum compliance.
@@ -184,17 +185,17 @@ def topopt_optimality_criteria(
 		errorMsg =  f"vf {to_params.DesiredVolFraction:0.3f} not reached"
 		success = False
 
-	
+	nFEAs = iter + 1
 	print(f"Final objective: {obj:.4g}, vf: {np.mean(x):.3f}")
 	print(f"Total Time: {totalTime:.2f} s")
-	return np.asarray(u), history, success, errorMsg 
+	return np.asarray(u), history, success, errorMsg, nFEAs
 
 	
 if __name__ == "__main__":    
 	jax.config.update("jax_enable_x64", True)
 	
 	print("-" * 50)
-	to_problem = StructuralTOExamples.MidCantilever # Choose the TO problem
+	to_problem = StructuralTOExamples.MitchellOneLoad # Choose the TO problem
 	print(f"Running {to_problem.name}...") 
 	print("-" * 50)
 	solver = lin_solv.Solvers.PARDISO # # Choose solver. Typically PARDISO, but DPCG for DOF > 200,000
@@ -231,7 +232,7 @@ if __name__ == "__main__":
 	startTime = time.time()
 	
 	print("OptimizationMethod: OC")
-	u, history, success,errorMsg = topopt_optimality_criteria(fe_solver = fe_solver,
+	u, history, success,errorMsg,nFEAs = topopt_optimality_criteria(fe_solver = fe_solver,
 											to_params = to_params,
 											debug = debug)
 	timeTaken = time.time() - startTime
