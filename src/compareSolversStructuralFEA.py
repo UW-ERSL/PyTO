@@ -36,7 +36,7 @@ import matplotlib.pyplot as plt # pip install matplotlib
 import struct_fea as fea
 import deflation
 import linear_solvers as lin_solv
-import topopt as topopt
+import topopt_common as topopt_common
 import os
 from examples_structural import *
 jax.config.update("jax_enable_x64", True)

@@ -1,0 +1,306 @@
+from topopt_common import *
+
+def topopt_mma(fe_solver: sfea.StructFEA,
+			   			to_params,
+			   			minMMAIterations: int = 5,
+			   			 maxMMAIterations: int = 250, 
+							timeLimit: float =3600, #1 hour
+						   penal: float = 3.0,
+							 move_limit: float = 0.2,
+							 kkt_tol: float = 1.e-6,
+							 move_tol: float = 0.025,
+							 rel_conv_tol: float = 1.e-3,
+							plotIntermediateTopologies: bool = False,
+							 grey_tol: float = 0.2,
+							 debug: bool = False,
+							 ) -> tuple[np.ndarray, dict]:
+	"""MMA based topology optimization for minimum compliance.
+
+	Args:
+		fe_solver: The structural FEA solver object.
+		maxMMAIterations: Maximum number of MMA iterations.
+		volfrac: The target volume fraction.
+		penal: The penalization factor for the SIMP method.
+		move_limit: The maximum change allowed for the design variables in each
+			iteration.
+		kkt_tol: The tolerance for the KKT conditions.
+		step_tol: The tolerance for the step size.
+
+	Returns: The displacement field of the optimized structure.
+	"""
+	elem_body_force = fe_solver.elem_body_force
+	if elem_body_force is None or (np.linalg.norm(elem_body_force) == 0):
+		material_model = MaterialModel.SIMP #For no body forces, using SIMP material model
+		material_model_dict = {'name': 'SIMP', 'penal': 3.0,'masspenal': 1} # Default SIMP model
+	else:
+		material_model = MaterialModel.SIMPPLUS #For body forces, using SIMPPLUS material model
+		material_model_dict = {'name': 'SIMPPLUS', 'penal':10, 'penalIncr': 0, 'alpha': 16,'masspenal':1} 
+		#  body-force model from the papers here:
+		#  https://doi.org/10.1002/nme.2499, https://doi.org/10.1016/j.cma.2017.04.021 
+
+	
+	tStart = time.time()
+	num_elems= fe_solver.mesh.num_elems
+	history = {'compliance': [], 'volume': [], 'change': []}
+	
+	[H,Hs] = createFilters(fe_solver, to_params)
+
+	elemsWithForces = find_elements_with_forces(fe_solver.mesh, fe_solver.bc.force)
+
+	if (to_params.ExactVolumeFraction):
+		nConstraints = 2
+	else:
+		nConstraints = 1
+
+	xmin = 0.001  # Minimum density
+	mma_params = mma.MMAParams(max_iter=maxMMAIterations,
+														kkt_tol = kkt_tol,
+														step_tol = move_tol,
+														move_limit = move_limit,
+														num_design_var = num_elems,
+														num_cons = nConstraints,
+														lower_bound = xmin*np.ones((num_elems, 1)),
+														upper_bound = np.ones((num_elems, 1)),
+														)
+	
+	if isinstance(fe_solver.mat_prop, list):
+		KE_list = [elem_stiff.hex8_stiffness_matrix_structural( mp,fe_solver.mesh.elem_size)
+			 for mp in fe_solver.mat_prop]
+		KE = KE_list[0]
+		print("Density-MMA: Assuming all elements have the same material properties")
+	else:
+		KE = elem_stiff.hex8_stiffness_matrix_structural( fe_solver.mat_prop,fe_solver.mesh.elem_size)
+	x0 = to_params.DesiredVolFraction * np.ones(num_elems, dtype = float)
+	x0 = x0.reshape(-1, 1)
+	mma_state = mma.init_mma(x0, mma_params)
+	
+	x_old = mma_state.x.reshape(-1)
+	timeFEA = 0
+	timeMMA = 0
+	if (fe_solver.elem_body_force is not None):
+		elem_force = fe_solver.elem_body_force.copy()
+		nNodes = fe_solver.mesh.num_nodes
+		nodal_body_force = np.zeros((nNodes * 3,))
+		nodal_body_force[0::3] = fe_solver.mesh.elem_to_node_field_mapping @ elem_force[0::3]
+		nodal_body_force[1::3] = fe_solver.mesh.elem_to_node_field_mapping @ elem_force[1::3]
+		nodal_body_force[2::3] = fe_solver.mesh.elem_to_node_field_mapping @ elem_force[2::3]
+	else:
+		nodal_body_force = None
+
+	success = True
+	errorMsg = ""
+	nFEAs = 0
+	while not mma_state.is_converged:
+		x = mma_state.x.reshape(-1)
+		timeFEAStart = time.time()
+		obj,u = compliance(x, fe_solver, material_model_dict)
+		nFEAs += 1
+		timeFEA += time.time() - timeFEAStart
+		obj = np.array([obj])
+
+		
+		ce = (np.dot(u[fe_solver.mesh.edofMat].reshape(num_elems, 24), KE) * u[fe_solver.mesh.edofMat].reshape(num_elems, 24)).sum(1)
+
+		if material_model == MaterialModel.SIMP:
+			# For SIMP material model: x**penal
+			penal = material_model_dict['penal']
+			grad_obj = (-penal * x ** (penal - 1)) * ce
+		elif material_model == MaterialModel.SIMPPLUS:
+			# Needed for body force
+			# For material model: (alpha-1)/alpha * x ** penal + (1/alpha) * x
+			alpha = material_model_dict['alpha']
+			penal = material_model_dict['penal']
+			d_elem_material_scaling_dx = (alpha - 1) / alpha * penal * x ** (penal - 1) + 1 / alpha
+			grad_obj = -d_elem_material_scaling_dx * ce
+		elif material_model == MaterialModel.GRIP:
+			# x/(2-x)**penal
+			penal = material_model_dict['penal']
+			d_elem_material_scaling_dx = 1/(2 - x)**penal + (penal*x)/(2 - x)**(penal + 1)
+			grad_obj = -d_elem_material_scaling_dx * ce
+			
+		if (nodal_body_force is not None):
+			massPenal = material_model_dict['masspenal']
+
+			ce_body_force = (u[fe_solver.mesh.edofMat].reshape(num_elems, 24) * nodal_body_force[fe_solver.mesh.edofMat].reshape(num_elems, 24)).sum(1)
+			grad_obj +=  massPenal*2*ce_body_force *x**(massPenal-1) 
+	
+		grad_obj = (H * grad_obj)/Hs
+
+		if (elemsWithForces.size > 0):
+			grad_obj[elemsWithForces] = min(grad_obj)
+
+		if (to_params.ElemsToKeep is not None):
+			grad_obj[to_params.ElemsToKeep] = min(grad_obj)
+			#x[to_params.ElemsToKeep] = 1.0
+
+		vf = np.mean(x)
+		if (to_params.ExactVolumeFraction):
+			uppervolfraction =  to_params.DesiredVolFraction + 0.001
+			consUpper = volume_fraction_upperlimit(x, uppervolfraction)
+			grad_cons_upper = np.ones(num_elems)/uppervolfraction/num_elems
+
+			lowervolfraction =  to_params.DesiredVolFraction -0.001
+			consLower = volume_fraction_lowerlimit(x, lowervolfraction)
+			grad_cons_lower = -np.ones(num_elems)/lowervolfraction/num_elems
+
+			cons = np.array([consUpper, consLower]).reshape((2, 1))
+			grad_cons = np.array([grad_cons_upper, grad_cons_lower]).reshape((2, num_elems))
+
+			timeMMAStart = time.time()
+			mma_state = mma.update_mma(mma_state,
+															mma_params,
+																obj,
+																np.array([grad_obj]).reshape((num_elems, 1)),
+																cons,
+																grad_cons
+																)
+		else:
+			cons = np.array(volume_fraction_upperlimit(x, to_params.DesiredVolFraction))
+			grad_cons = np.ones(num_elems)/to_params.DesiredVolFraction/num_elems
+
+			timeMMAStart = time.time()
+			mma_state = mma.update_mma(mma_state,
+															mma_params,
+																obj,
+																np.array([grad_obj]).reshape((num_elems, 1)),
+																jnp.array([cons]).reshape((1, 1)),
+																grad_cons.reshape((1, num_elems))
+																)
+		timeMMA += time.time() - timeMMAStart
+
+		change = np.max(np.abs(x - x_old))
+		x_old = x
+		# Estimate the percentage of grey elements
+		grey_elements = np.sum((x > 0.05) & (x < 0.95))
+		fraction_grey = (grey_elements / num_elems) 
+		print(f"it.: {mma_state.epoch}, obj.: {obj[0]:.4g}, vf: {vf:.3f}, change: {change: 0.3f}, grey: {fraction_grey:.3f}")
+		history['compliance'].append(obj[0])
+		history['volume'].append(np.mean(x))
+		history['change'].append(change)
+
+		if (len(history['compliance'])) >= minMMAIterations:
+			dJ1 = abs((history['compliance'][-1] - history['compliance'][-2]) / history['compliance'][-2])
+			# we need multiple checks else it will terminate too early for some problems such as TorquePlate
+			if dJ1 < rel_conv_tol and (np.max(cons) < rel_conv_tol) and (change < 0.2) and (fraction_grey < 0.2): # success
+				break
+		if time.time() - tStart > timeLimit:
+			success = False
+			errorMsg = "Time limit exceeded."
+			print("MMA optimization terminated due to time limit.")
+			break
+
+		# Reduce material_model_dict['masspenal'] by 0.1, but no less than 1
+		if 'panel' in material_model_dict:
+			material_model_dict['penal'] =  material_model_dict['penal']+material_model_dict['penalIncr']
+			material_model_dict['penal'] = max(material_model_dict['penal'], 1.0)
+	if mma_state.epoch >= maxMMAIterations:
+		print("MMA optimization did not converge.")
+		errorMsg = "Maximum iterations reached."
+		success = False
+	
+	# extract binary topology
+	x = np.where(x < 0.5, 0.0, 1.0)
+	volfrac = np.mean(x)
+	fe_solver.mesh.setPseudoDensity(x)
+	meshComponents = fe_solver.mesh.find_connected_components()
+	if (len(meshComponents) > 1):
+		errorMsg = "Hanging elements"
+		success = False
+	obj,u = compliance(x, fe_solver, material_model_dict)
+	history['compliance'].append(obj)
+	history['volume'].append(volfrac)
+	history['change'].append(change)
+	if (obj > 2*history['compliance'][-2]):
+		errorMsg = "Disconnected topology"
+		success = False
+	if (volfrac > 1.1*to_params.DesiredVolFraction):
+		errorMsg = f"vf {to_params.DesiredVolFraction:0.3f} not reached"
+		success = False 
+	grey_elements = np.sum((x > 0.1) & (x < 0.9))
+	fraction_grey = (grey_elements / num_elems) 
+	if (errorMsg != ""):	
+		print(errorMsg)
+	print(f"Final objective: {obj:.4g}, vf: {np.mean(x):.3f}, grey: {fraction_grey:.3f}")
+	print(f"Time FEA: {timeFEA:.2f} s, Time MMA: {timeMMA:.2f} s")
+	print(f"Total Time: {timeFEA+timeMMA:.2f} s")
+	return np.asarray(u), history,success,errorMsg,nFEAs
+	
+if __name__ == "__main__":    
+	jax.config.update("jax_enable_x64", True)
+	from topopt_examples import *
+	
+	print("-" * 50)
+	to_problem = StructuralTOExamples.DistributedLoad # Choose the TO problem
+	print(f"Running {to_problem.name}...") 
+	print("-" * 50)
+	solver = lin_solv.Solvers.PARDISO # # Choose solver. Typically PARDISO, but DPCG for DOF > 200,000
+	debug = False
+
+	# Get the structural problem
+	mesh, mat_prop, bc,elem_body_force, to_params = getStructuralTOProblem(to_problem)
+
+	dsolver = deflation.DeflationSolver()
+	# initialize the fe solver 
+	if (solver == lin_solv.Solvers.DPCG):
+		nGroups =  min(dsolver.maxGroups,max(dsolver.minGroups,round(3*mesh.num_nodes/dsolver.dofPerGroup)))
+		dsolver.create_deflation_groups(mesh, nGroups)
+		dsolver.create_delfation_matrix(mesh)
+		dsolver.W = dsolver.W[bc.free_dofs, :]
+
+	fe_solver = fea.StructFEA(mesh = mesh,
+				mat_prop = mat_prop,
+				bc = bc,
+				solver = solver,
+				dsolver = dsolver,
+				rtol = 1e-8,
+        		elem_body_force = elem_body_force)
+	
+
+	print('Solver: ', fe_solver.solver.name)
+	print("nDof: ", 3*fe_solver.mesh.num_nodes)
+	print("nElem: ", fe_solver.mesh.num_elems)	
+	
+	title = f'nDOF: {3*fe_solver.mesh.num_nodes}, nElem: {fe_solver.mesh.num_elems}'
+	#plots.plotMesh(mesh, bc,title = title)
+
+
+	startTime = time.time()
+	print("OptimizationMethod: MMA")
+	u, history,success,errorMsg,nFEAs = topopt_mma(fe_solver = fe_solver,
+								to_params = to_params,
+								debug = debug)
+	timeTaken = time.time() - startTime
+	fig, ax1 = plt.subplots()
+
+	# Plot compliance on left y-axis
+	ax1.set_xlabel('Iterations')
+	ax1.set_ylabel('Compliance', color='tab:blue')
+	ax1.plot(history['compliance'], color='tab:blue', label='Compliance')
+	ax1.tick_params(axis='y', labelcolor='tab:blue')
+
+	# Plot volume fraction on right y-axis with dotted line
+	ax2 = ax1.twinx()
+	ax2.set_ylabel('Volume Fraction', color='tab:orange')
+	ax2.plot(history['volume'], color='tab:orange', linestyle=':', label='Volume Fraction')
+	ax2.tick_params(axis='y', labelcolor='tab:orange')
+	ax2.yaxis.set_major_formatter(plt.FormatStrFormatter('%.2f'))
+
+	plt.title('MMA: Volume and Compliance vs. Iterations')
+
+	# Add legend
+	lines1, labels1 = ax1.get_legend_handles_labels()
+	lines2, labels2 = ax2.get_legend_handles_labels()
+	ax1.legend(lines1 + lines2, labels1 + labels2)
+
+	plt.grid(True)
+	plt.show(block=False)
+
+	title = f"MMA: nDOF: {3*fe_solver.mesh.num_nodes}, vol: {history['volume'][-1]:0.2f}, J: {history['compliance'][-1]:.3g}, time: {timeTaken:.0f} s"
+
+	print(f"Time taken: {timeTaken:.0f} s")
+	if not success:
+		print(f"Error: {errorMsg}")
+	plots.plotMesh(fe_solver.mesh, bc = None, u=None, title = title)
+
+	#plots.plotIsocontour(fe_solver.mesh, title = title, save_path = None)
+	# Save the mesh and results

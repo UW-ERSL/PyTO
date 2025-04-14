@@ -511,6 +511,168 @@ class STLGeom:
             selected_triangles_data.append(triangle_data)
    
         return selected_triangles_data
+    
+    def assign_highlighted_triangles_to_group(self, group, stl_verbose=False):
+        """
+        Assign highlighted triangles to a group and determine surface type.
+       
+        Args:
+            group: Group identifier for the triangles
+            stl_verbose: Flag for verbose logging
+           
+        Returns:
+            tuple: (surface_type, average_normal, area, cylinder_axis, axis_point, cylinder_radius)
+                surface_type: String - 'PLANAR', 'CYLINDER', or 'OTHER'
+                average_normal: List of 3 floats - average normal vector of the surface
+                area: Float - total area of the highlighted triangles
+                cylinder_axis: List of 3 floats - axis direction for cylindrical surfaces
+                axis_point: List of 3 floats - point on cylinder axis
+                cylinder_radius: Float - radius of the cylinder (if applicable)
+        """
+        average_normal = [0.0, 0.0, 0.0]  # Used for pressure loading (keeping it fr future use)
+        cylinder_axis = [0.0, 0.0, 0.0]  # Used for cylinder surfaces
+        mean_xyz = [0.0, 0.0, 0.0]  # Used for cylinder surfaces
+        normal0 = [0.0, 0.0, 0.0]
+        area = 0.0
+       
+        # Initialie flags and counters
+        is_planar = True
+        is_cylinder = False
+        n_tri_selected = 0
+        radius_avg = 0.0
+        cylinder_radius = 0.0
+       
+        if stl_verbose:
+            print("STLGeom: In assign_highlighted_triangles_to_group")
+       
+        tri_group = {}  # need to store triangle group in a dict
+       
+        for tri in range(self.stl_n_triangles):
+            if self.tri_highlight[tri]:
+                tri_group[tri] = group
+                center = self.get_triangle_center(tri)
+                vertices = self.mesh.vectors[tri]
+                x, y, z = vertices[:, 0], vertices[:, 1], vertices[:, 2]
+                tri_area = self.compute_area_of_triangle(x, y, z)
+               
+                # Area weighted center
+                mean_xyz[0] += tri_area * center[0]
+                mean_xyz[1] += tri_area * center[1]
+                mean_xyz[2] += tri_area * center[2]
+               
+                area += tri_area
+                normal = self.tri_normals[tri]
+               
+                average_normal[0] += normal[0]
+                average_normal[1] += normal[1]
+                average_normal[2] += normal[2]
+               
+                # For planes
+                norm = np.linalg.norm(average_normal)
+                if norm > self.TOL:
+                    dot_prod = np.dot(average_normal, normal) / norm
+                    if dot_prod < 0.99:
+                        is_planar = False
+               
+                # For cylinders
+                if n_tri_selected == 0:  # The first triangle
+                    normal0[0] = normal[0]
+                    normal0[1] = normal[1]
+                    normal0[2] = normal[2]
+                else:
+                    # Take cross-product
+                    temp_vec = np.cross(normal0, normal)
+                    norm = np.linalg.norm(temp_vec)
+                   
+                    if norm > self.TOL and (temp_vec[0] + temp_vec[1] + temp_vec[2]) > 0:  # Avoid cancellations with opposing vectors
+                        cylinder_axis[0] += temp_vec[0] / norm
+                        cylinder_axis[1] += temp_vec[1] / norm
+                        cylinder_axis[2] += temp_vec[2] / norm
+               
+                n_tri_selected += 1
+       
+        if n_tri_selected > 0:  # At least one triangle selected
+            # Set group number attribute if doesn't exist
+            if not hasattr(self, 'stl_n_tri_groups'):
+                self.stl_n_tri_groups = 0
+            self.stl_n_tri_groups += 1
+           
+            average_normal[0] /= n_tri_selected
+            average_normal[1] /= n_tri_selected
+            average_normal[2] /= n_tri_selected
+       
+        if area > self.TOL:
+            mean_xyz[0] /= area
+            mean_xyz[1] /= area
+            mean_xyz[2] /= area
+       
+        axis_point = mean_xyz.copy()
+       
+        if (n_tri_selected > 0) and (not is_planar):
+            if (np.linalg.norm(average_normal) < 0.25):
+                if stl_verbose:
+                    print("STLGeom: Could be cylinder")
+                    print(f"STLGeom: average_normal magnitude = {np.linalg.norm(average_normal)}")
+               
+                norm = np.linalg.norm(cylinder_axis)
+                if norm > self.TOL:
+                    cylinder_axis = [cylinder_axis[0] / norm, cylinder_axis[1] / norm, cylinder_axis[2] / norm]
+               
+                is_cylinder = True
+               
+                max_radius = float('-inf')
+                min_radius = float('inf')
+           
+            if stl_verbose:
+                print(f"STLGeom: cylinderAxis = {cylinder_axis[0]} {cylinder_axis[1]} {cylinder_axis[2]}")
+                print(f"STLGeom: meanXYZ = {mean_xyz[0]} {mean_xyz[1]} {mean_xyz[2]}")
+           
+            for tri in range(self.stl_n_triangles):
+                if self.tri_highlight[tri]:
+                    vertices = self.mesh.vectors[tri]
+                    x, y, z = vertices[:, 0], vertices[:, 1], vertices[:, 2]
+                   
+                    # Consider the vector from point on axis to (x,y,z)
+                    vec = [x[0] - mean_xyz[0], y[0] - mean_xyz[1], z[0] - mean_xyz[2]]
+                   
+                    # Project the vector onto the axis
+                    dot_prod = vec[0] * cylinder_axis[0] + vec[1] * cylinder_axis[1] + vec[2] * cylinder_axis[2]
+                   
+                    # Create the perpendicular vector
+                    vec[0] -= dot_prod * cylinder_axis[0]
+                    vec[1] -= dot_prod * cylinder_axis[1]
+                    vec[2] -= dot_prod * cylinder_axis[2]
+                   
+                    radius = np.linalg.norm(vec)
+                   
+                    max_radius = max(max_radius, radius)
+                    min_radius = min(min_radius, radius)
+                   
+                    radius_error = 2 * (max_radius - min_radius) / (max_radius + min_radius)
+                   
+                    if radius_error > 0.45:
+                        is_cylinder = False
+                        break
+           
+            cylinder_radius = (max_radius + min_radius) / 2
+       
+        # Determine surface type
+        if is_planar:
+            surface_type = "PLANAR"
+        elif is_cylinder:
+            if not hasattr(self, 'stl_smallest_cylinder_radius'):
+                self.stl_smallest_cylinder_radius = float('inf')
+               
+            self.stl_smallest_cylinder_radius = min(self.stl_smallest_cylinder_radius, cylinder_radius)
+           
+            if stl_verbose:
+                print(f"STLGeom: smallest radius = {self.stl_smallest_cylinder_radius:.6e}")
+           
+            surface_type = "CYLINDER"
+        else:
+            surface_type = "OTHER"
+       
+        return surface_type, average_normal, area, cylinder_axis, axis_point, cylinder_radius
    
 if __name__ == "__main__":
     import os
@@ -529,7 +691,7 @@ if __name__ == "__main__":
     stl_file =  os.path.join(script_dir, '../Models/KnuckleAssembly/KnuckleAssembly.STL')
     stl_file =  os.path.join(script_dir, '../Models/Table/Table.STL')
     stl_file = os.path.join(script_dir, '../Models/LBracket/LBracket.STL')
-    stl_file = os.path.join(script_dir, '../Models/Nosecone/HollowNosecone.STL')
+    #stl_file = os.path.join(script_dir, '../Models/Nosecone/HollowNosecone.STL')
     stl_geom = STLGeom(stl_file)
 
     [area, volume, cg, inertia] = stl_geom.compute_mass_properties()

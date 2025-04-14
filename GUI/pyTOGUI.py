@@ -6,10 +6,12 @@ import numpy as np
 import os
 import json
 import time
+import threading
 import bound_cond
 import mat_lib
 from PyQt5 import QtWidgets
 from PyQt5 import QtCore
+from PyQt5.QtCore import QMetaObject, Q_ARG, Qt, QObject
 from vtkmodules.qt.QVTKRenderWindowInteractor import QVTKRenderWindowInteractor
 from PyQt5.QtGui import QIcon
 from PyQt5.QtCore import QSize, Qt
@@ -23,6 +25,7 @@ import linear_solvers as lin_solv
 import jax
 import thermal_fea
 import traceback
+import re
             
 # Enable double precision
 jax.config.update("jax_enable_x64", True)
@@ -30,12 +33,31 @@ jax.config.update("jax_enable_x64", True)
 from examples_structural import *
 
 '''
+
+recent updates in pyTO:
+1) Corrected the Units for all 
+2) Added the GUI for TopOpt Constraints(Cyclic constraints are wrong but correcting it) 
+3) Topology Optimization yet to be implemented (Please can you give me the direction or some hints on how to implement it)
+4) Saves the topology optimization constraints in the project file
+
 pyTOGUI To do:
-1. Units IPS not working
-2. Add a button to clear all selections
-3. Add a button to clear all loads
-4. Add a button to clear all constraints
-5. Add a button to clear all results
+1. Main buttons state (blue, green, red)  (implemented)
+2. Hide/show mesh option under Display  (implemented) (will carefully look at this option because others are getting messed up sometimes)
+3. Show thermal heat arrows and dirichlet BC (similar to structural) (implemented)
+4. Add Total Heat option (in addition to Heat Flux) (implemented)
+5. Remove bottom left text in GUI window. Instead, can you show that next to arrows in the scene? (removed)
+6. Save topopt constraints in project (remaining)
+
+
+issues
+torque
+make arrow smaaller for top opt constraint
+method drop down
+mmc pareto level
+remove simp mthod
+remove volume step
+
+
 '''
 #---------------------------------------------------------------------------------
 class MainWindow(QtWidgets.QMainWindow):
@@ -110,6 +132,8 @@ class MainWindow(QtWidgets.QMainWindow):
             "radiation": [],        # List of (node_ids, emissivity, ambient_temp)
             "internal_heat": []     # List of (node_ids, heat_generation)
         }
+
+    
 
         # Modify h_layout to use proper stretch factors
         self.h_layout = QtWidgets.QHBoxLayout()
@@ -768,14 +792,215 @@ class MainWindow(QtWidgets.QMainWindow):
         """Open the topology optimization constraints window"""
         ready, message = self.check_workflow_readiness('topopt_constraints')
         if ready:
+            # Create the dialog
             dialog = TopOptConstraintsWindow(self)
+            
+            # If we have previously saved constraints, restore the UI state
+            if hasattr(self, 'topopt_constraints') and self.topopt_constraints:
+                self.update_constraints_window_from_dict(dialog, self.topopt_constraints)
+            
             dialog.show()
         else:
             QtWidgets.QMessageBox.warning(self, "Workflow Error", message)
 
+    def update_constraints_window_from_dict(self, window, constraints_dict):
+        """
+        Update the constraints window UI based on loaded constraints dictionary.
+        
+        Parameters:
+        - window: The TopOptConstraintsWindow instance to update
+        - constraints_dict: Dictionary containing constraint settings
+        """
+        # Manufacturing constraints
+        if 'manufacturing' in constraints_dict:
+            mfg = constraints_dict['manufacturing']
+            
+            # Extrude
+            if 'extrude' in mfg:
+                window.extrude_check.setChecked(mfg['extrude']['enabled'])
+                window.extrude_combo.setCurrentText(mfg['extrude']['direction'])
+            
+            # AM Build
+            if 'am_build' in mfg:
+                window.am_build_check.setChecked(mfg['am_build']['enabled'])
+                window.am_build_combo.setCurrentText(mfg['am_build']['direction'])
+            
+            # Draw Direction
+            if 'draw_direction' in mfg:
+                window.draw_direction_check.setChecked(mfg['draw_direction']['enabled'])
+                window.draw_direction_combo.setCurrentText(mfg['draw_direction']['direction'])
+            
+            # Cyclic Symmetry
+            if 'cyclic_symmetry' in mfg:
+                window.cyclic_sym_check.setChecked(mfg['cyclic_symmetry']['enabled'])
+                window.cyclic_sym_combo.setCurrentText(mfg['cyclic_symmetry']['angle'])
+        
+        # Patterns
+        if 'patterns' in constraints_dict:
+            patterns = constraints_dict['patterns']
+            
+            # X Grid
+            if 'x_grid' in patterns:
+                window.x_grid_check.setChecked(patterns['x_grid']['enabled'])
+                window.x_grid_spin.setValue(patterns['x_grid']['value'])
+            
+            # Y Grid
+            if 'y_grid' in patterns:
+                window.y_grid_check.setChecked(patterns['y_grid']['enabled'])
+                window.y_grid_spin.setValue(patterns['y_grid']['value'])
+            
+            # Z Grid
+            if 'z_grid' in patterns:
+                window.z_grid_check.setChecked(patterns['z_grid']['enabled'])
+                window.z_grid_spin.setValue(patterns['z_grid']['value'])
+        
+        # Performance constraints
+        if 'performance' in constraints_dict:
+            perf = constraints_dict['performance']
+            
+            # Stress Safety
+            if 'stress_safety' in perf:
+                window.stress_safety_check.setChecked(perf['stress_safety']['enabled'])
+                window.stress_safety_spin.setValue(perf['stress_safety']['value'])
+            
+            # Max Displacement
+            if 'max_displacement' in perf:
+                window.max_disp_check.setChecked(perf['max_displacement']['enabled'])
+                window.max_disp_spin.setValue(perf['max_displacement']['value'])
+            
+            # Min Frequency
+            if 'min_frequency' in perf:
+                window.min_freq_check.setChecked(perf['min_frequency']['enabled'])
+                window.min_freq_spin.setValue(perf['min_frequency']['value'])
+            
+            # Max Temperature
+            if 'max_temperature' in perf:
+                window.max_temp_check.setChecked(perf['max_temperature']['enabled'])
+                window.max_temp_spin.setValue(perf['max_temperature']['value'])
+            
+            # Min Feature
+            if 'min_feature' in perf:
+                window.min_feat_check.setChecked(perf['min_feature']['enabled'])
+                window.min_feat_spin.setValue(perf['min_feature']['value'])
+            
+            # Max Feature
+            if 'max_feature' in perf:
+                window.max_feat_check.setChecked(perf['max_feature']['enabled'])
+                window.max_feat_spin.setValue(perf['max_feature']['value'])
+        
+        # Symmetry constraints
+        if 'symmetry' in constraints_dict:
+            sym = constraints_dict['symmetry']
+            
+            # X Symmetry
+            if 'x_symmetry' in sym:
+                window.x_symmetry_check.setChecked(sym['x_symmetry'])
+            
+            # Y Symmetry
+            if 'y_symmetry' in sym:
+                window.y_symmetry_check.setChecked(sym['y_symmetry'])
+            
+            # Z Symmetry
+            if 'z_symmetry' in sym:
+                window.z_symmetry_check.setChecked(sym['z_symmetry'])
+        
+        # Other constraints
+        if 'other' in constraints_dict:
+            other = constraints_dict['other']
+            
+            # Connected Topology
+            if 'connected_topology' in other:
+                window.connected_topology_check.setChecked(other['connected_topology'])
+            
+            # Keep Fixed Faces
+            if 'keep_fixed_faces' in other:
+                window.keep_fixed_faces_check.setChecked(other['keep_fixed_faces'])
+        
+        # Update visualizations if needed
+        window.update_extrude_visualization()
+        window.update_draw_direction_visualization()
+        window.update_cyclic_symmetry_visualization()
+        window.update_grid_pattern_visualization()
+        window.update_symmetry_visualization()
+
+    def initialize_constraint_actors(self):
+        """
+        Initialize the dictionary for storing topological optimization constraint visualization actors.
+        Should be called in the parent window class.
+        """
+        # Create a dictionary to store all constraint visualization actors
+        self.topopt_constraint_actors = {
+            'extrude': None,
+            'am_build': None,
+            'draw_direction': None,
+            'cyclic_symmetry': None,
+            'bounding_box': None,
+            'grid_patterns': {
+                'x_grid': [],
+                'y_grid': [],
+                'z_grid': []
+            },
+            'symmetry': {
+                'x_symmetry': None,
+                'y_symmetry': None,
+                'z_symmetry': None
+            }
+        }
+
+
     def open_optimize_topology_window(self):
         dialog = OptimizeTopologyWindow(self)
         dialog.show()
+
+    def update_optimization_results(self, dialog, u, history, elapsed_time):
+        """Update UI with topology optimization results"""
+        self.message_text.append(f"Optimization completed in {elapsed_time:.2f} seconds")
+        self.message_text.append(f"Final compliance: {history['compliance'][-1]:.6g}")
+        self.message_text.append(f"Final volume fraction: {history['volume'][-1]:.3f}")
+        
+        # Store results
+        self.topopt_results = {
+            'displacement': u,
+            'history': history,
+            'elapsed_time': elapsed_time
+        }
+        
+        # Visualize the optimized topology
+        self.visualize_optimized_topology(u)
+        
+        # Stop the optimization process in the dialog
+        dialog.stop_optimization()
+
+    def visualize_optimized_topology(self, u=None):
+        """Visualize the optimized topology"""
+        if not hasattr(self, 'stl_geom') or self.stl_geom is None or not hasattr(self.stl_geom, 'mesh'):
+            self.message_text.append("Error: No valid mesh to visualize")
+            return
+            
+        # Import plots module
+        import plots
+        
+        # Clear previous visualization
+        self.renderer.RemoveAllViewProps()
+        
+        # Generate title
+        title = f"Optimized topology (Vol.Frac: {self.optimization_params['volume_fraction']})"
+        
+        # Get density values from the mesh
+        mesh = self.stl_geom.mesh
+        
+        # Add mesh visualization to renderer
+        actor = plots.get_mesh_actor(mesh, u, show_edges=True)
+        self.renderer.AddActor(actor)
+        
+        # Add density isosurface
+        iso_actor = plots.get_isocontour_actor(mesh, binarize=self.optimization_params['smooth_surface'])
+        if iso_actor:
+            self.renderer.AddActor(iso_actor)
+        
+        # Reset camera and render
+        self.renderer.ResetCamera()
+        self.vtkWidget.GetRenderWindow().Render()
 
     def open_structural_topopt_window(self):
         ready, message = self.check_workflow_readiness('topopt')
@@ -815,6 +1040,7 @@ class UnitsWindow(QtWidgets.QDialog):
         self.setWindowTitle("Units")
         self.resize(200, 200)
         self.settings = settings
+        self.parent = parent  # Store parent reference
 
         layout = QtWidgets.QVBoxLayout(self)
 
@@ -836,33 +1062,258 @@ class UnitsWindow(QtWidgets.QDialog):
         layout.addWidget(apply_button)
 
     def apply_settings(self):
+        old_unit_system = self.settings.unit_system
+        new_unit_system = self.unit_system.currentText()
+        
+        # Update settings in parent
         self.settings.update_settings(
             self.unit_system.currentText(),
             self.temperature_unit.currentText(),
             self.angle_unit.currentText()
         )
         
+        # Apply unit conversion to displayed geometry metrics
+        if hasattr(self.parent, 'stl_geom') and self.parent.stl_geom and old_unit_system != new_unit_system:
+            self.update_geometry_info(old_unit_system, new_unit_system)
+            
+        # Update any spinbox values in open windows
+        self.update_open_windows(old_unit_system, new_unit_system)
+        
         # Update the Units button icon to show a green checkmark
-        if hasattr(self.parent(), 'update_button_icon'):
-            self.parent().update_button_icon("Units", "check")
+        if hasattr(self.parent, 'update_button_icon'):
+            self.parent.update_button_icon("Units", "check")
         
         # Add a message to the parent's message text
-        if hasattr(self.parent(), 'message_text'):
-            self.parent().message_text.append(f"Units updated: {self.unit_system.currentText()}, " + 
-                                        f"{self.temperature_unit.currentText()}, {self.angle_unit.currentText()}")
+        if hasattr(self.parent, 'message_text'):
+            self.parent.message_text.append(f"Units updated: {self.unit_system.currentText()}, " + 
+                                      f"{self.temperature_unit.currentText()}, {self.angle_unit.currentText()}")
         
         self.accept()
+        
+    def update_geometry_info(self, old_unit_system, new_unit_system):
+        """Update geometry information display with new unit system"""
+        # Update geometry display text if it exists
+        if hasattr(self.parent, 'text_actor'):
+            # Get current metrics and update with new unit system
+            metrics = None
+            if hasattr(self.parent, 'calculate_geometry_metrics'):
+                metrics = self.parent.calculate_geometry_metrics()
+            
+            if metrics:
+                # Convert length and volume
+                length_unit = self.settings.get_length_unit_string()
+                converted_length = self.settings.convert_length(metrics['length'], from_system=old_unit_system)
+                
+                # Volume conversion depends on unit system (cubic conversion)
+                volume_conversion = pow(self.settings.unit_conversions["length"][new_unit_system] / 
+                                      self.settings.unit_conversions["length"][old_unit_system], 3)
+                converted_volume = metrics['volume'] * volume_conversion
+                
+                # Update display text
+                info_text = (
+                    f"{metrics['model']}\n"
+                    f"Length: {converted_length:.2f} ({length_unit})\n"
+                    f"Volume: {converted_volume:.2e} ({length_unit}^3)"
+                )
+                self.parent.text_actor.SetInput(info_text)
+                self.parent.vtkWidget.GetRenderWindow().Render()
+    
+    def update_open_windows(self, old_unit_system, new_unit_system):
+        """Update values in any open dialog windows"""
+        # Find all child windows that might need unit conversion
+        for child in self.parent.findChildren(QtWidgets.QDialog):
+            # Skip self to avoid recursion
+            if child is self:
+                continue
+                
+            # Handle specific window types
+            if isinstance(child, StructuralLoadsWindow):
+                self.update_structural_loads_window(child, old_unit_system, new_unit_system)
+            elif isinstance(child, ThermalLoadsWindow):
+                self.update_thermal_loads_window(child, old_unit_system, new_unit_system)
+            elif isinstance(child, MaterialWindow):
+                self.update_material_window(child, old_unit_system, new_unit_system)
+    
+    def update_structural_loads_window(self, window, old_unit_system, new_unit_system):
+        """Update force values in structural loads window"""
+        if hasattr(window, 'x_force_spin'):
+            # Convert force values
+            window.x_force_spin.setValue(
+                self.settings.convert_force(window.x_force_spin.value(), 
+                                           from_system=old_unit_system, 
+                                           to_system=new_unit_system)
+            )
+            window.y_force_spin.setValue(
+                self.settings.convert_force(window.y_force_spin.value(), 
+                                           from_system=old_unit_system, 
+                                           to_system=new_unit_system)
+            )
+            window.z_force_spin.setValue(
+                self.settings.convert_force(window.z_force_spin.value(), 
+                                           from_system=old_unit_system, 
+                                           to_system=new_unit_system)
+            )
+    
+    def update_thermal_loads_window(self, window, old_unit_system, new_unit_system):
+        """Update heat flux values in thermal loads window"""
+        # Heat flux conversion (W/m² to W/mm² or W/in²)
+        if hasattr(window, 'heat_flux_value_spin'):
+            # Area conversion factor
+            area_conversion = (self.settings.unit_conversions["length"][old_unit_system] / 
+                              self.settings.unit_conversions["length"][new_unit_system]) ** 2
+                              
+            window.heat_flux_value_spin.setValue(
+                window.heat_flux_value_spin.value() * area_conversion
+            )
+            
+        # Total heat doesn't need conversion (Watts are the same in all unit systems)
+        
+        # For internal heat generation (W/m³), cube the conversion
+        if hasattr(window, 'internal_heat_value_spin'):
+            volume_conversion = (self.settings.unit_conversions["length"][old_unit_system] / 
+                               self.settings.unit_conversions["length"][new_unit_system]) ** 3
+                               
+            window.internal_heat_value_spin.setValue(
+                window.internal_heat_value_spin.value() * volume_conversion
+            )
+    
+    def update_material_window(self, window, old_unit_system, new_unit_system):
+        """Update material property values with unit conversion"""
+        if not hasattr(window, 'young_input'):
+            return
+            
+        # Convert Young's modulus (stress units)
+        try:
+            young_value = float(window.young_input.text())
+            converted_young = self.settings.convert_stress(young_value, 
+                                                         from_system=old_unit_system, 
+                                                         to_system=new_unit_system)
+            window.young_input.setText(f"{converted_young:.2e}")
+        except ValueError:
+            pass
+            
+        # Convert yield strength (stress units)
+        try:
+            yield_value = float(window.yield_input.text())
+            converted_yield = self.settings.convert_stress(yield_value,
+                                                        from_system=old_unit_system,
+                                                        to_system=new_unit_system)
+            window.yield_input.setText(f"{converted_yield:.2e}")
+        except ValueError:
+            pass
 #---------------------------------------------------------------------------------   
 class Settings:
     def __init__(self):
         self.unit_system = "MKS"
         self.temperature_unit = "Kelvin"
         self.angle_unit = "Degree"
-
+        
+        # Add conversion factors for different unit systems
+        self.unit_conversions = {
+            # Length conversions to/from meters
+            "length": {
+                "MKS": 1.0,       # meters (base)
+                "mmKS": 1000.0,   # millimeters
+                "IPS": 39.37      # inches
+            },
+            # Force conversions to/from Newtons
+            "force": {
+                "MKS": 1.0,      # Newtons (base)
+                "mmKS": 1.0,     # Newtons
+                "IPS": 0.2248    # pounds-force
+            },
+            # Stress conversions to/from Pascal
+            "stress": {
+                "MKS": 1.0,           # Pascal (base) 
+                "mmKS": 1.0e-6,       # MPa
+                "IPS": 1.45038e-4     # psi
+            }
+        }
+        
     def update_settings(self, unit_system, temperature_unit, angle_unit):
+        """Update settings with user preferences"""
         self.unit_system = unit_system
         self.temperature_unit = temperature_unit
         self.angle_unit = angle_unit
+    
+    def convert_length(self, value, from_system="MKS", to_system=None):
+        """Convert a length value between unit systems"""
+        if to_system is None:
+            to_system = self.unit_system
+            
+        if from_system == to_system:
+            return value
+            
+        # Convert to meters first (base unit)
+        value_in_meters = value / self.unit_conversions["length"][from_system]
+        
+        # Then convert to target unit
+        return value_in_meters * self.unit_conversions["length"][to_system]
+    
+    def convert_force(self, value, from_system="MKS", to_system=None):
+        """Convert a force value between unit systems"""
+        if to_system is None:
+            to_system = self.unit_system
+            
+        if from_system == to_system:
+            return value
+            
+        # Convert to newtons first (base unit)
+        value_in_newtons = value / self.unit_conversions["force"][from_system]
+        
+        # Then convert to target unit
+        return value_in_newtons * self.unit_conversions["force"][to_system]
+    
+    def convert_stress(self, value, from_system="MKS", to_system=None):
+        """Convert a stress value between unit systems"""
+        if to_system is None:
+            to_system = self.unit_system
+            
+        if from_system == to_system:
+            return value
+            
+        # Convert to Pascal first (base unit)
+        value_in_pascal = value / self.unit_conversions["stress"][from_system]
+        
+        # Then convert to target unit
+        return value_in_pascal * self.unit_conversions["stress"][to_system]
+        
+    def get_length_unit_string(self):
+        """Return the appropriate length unit string"""
+        if self.unit_system == "MKS":
+            return "m"
+        elif self.unit_system == "mmKS":
+            return "mm"
+        elif self.unit_system == "IPS":
+            return "in"
+        return "m"  # Default
+        
+    def get_force_unit_string(self):
+        """Return the appropriate force unit string"""
+        if self.unit_system == "MKS" or self.unit_system == "mmKS":
+            return "N"
+        elif self.unit_system == "IPS":
+            return "lbf"
+        return "N"  # Default
+    
+    def get_stress_unit_string(self):
+        """Return the appropriate stress unit string"""
+        if self.unit_system == "MKS":
+            return "Pa"
+        elif self.unit_system == "mmKS":
+            return "MPa"
+        elif self.unit_system == "IPS":
+            return "psi"
+        return "Pa"  # Default
+
+    def get_temperature_unit_symbol(self):
+        """Return the temperature unit symbol"""
+        if self.temperature_unit == "Celsius":
+            return "°C"
+        elif self.temperature_unit == "Fahrenheit":
+            return "°F"
+        else:  # Kelvin
+            return "K"
 #---------------------------------------------------------------------------------
 class GeometryWindow(QtWidgets.QDialog):
     def __init__(self, parent, main_window):
@@ -965,10 +1416,13 @@ class GeometryWindow(QtWidgets.QDialog):
 
         metrics = self.calculate_geometry_metrics()
         if metrics:
+            # Get unit strings
+            length_unit = self.main_window.settings.get_length_unit_string()
+            
             info_text = (
                 f"{metrics['model']}\n"
-                f"Length: {metrics['length']:.2f} (m)\n"
-                f"Volume: {metrics['volume']:.2e} (m^3)"
+                f"Length: {metrics['length']:.2f} ({length_unit})\n"
+                f"Volume: {metrics['volume']:.2e} ({length_unit}^3)"
             )
             self.text_actor.SetInput(info_text)
 
@@ -1068,172 +1522,273 @@ class GeometryWindow(QtWidgets.QDialog):
         self.main_window.on_geometry_loaded()
 #---------------------------------------------------------------------------------
 class DisplayOptionsWindow(QtWidgets.QDialog):
+    """
+    Display Options Window for setting visualization parameters.
+    """
     def __init__(self, parent):
-        super().__init__(parent)
-        self.setWindowTitle("Display Options")
-        self.resize(300, 500)
-        self.parent = parent
-        
-        layout = QtWidgets.QVBoxLayout(self)
-        layout.setSpacing(10)
-        
-        # Geometry dropdown
-        geom_layout = QtWidgets.QHBoxLayout()
-        geom_label = QtWidgets.QLabel("Geometry")
-        self.geom_combo = QtWidgets.QComboBox()
-        self.geom_combo.addItems(["InitialDesign", "OptimizedDesign", "Both"])
-        geom_layout.addWidget(geom_label)
-        geom_layout.addWidget(self.geom_combo)
-        layout.addLayout(geom_layout)
-        
-        # Field dropdown
-        field_layout = QtWidgets.QHBoxLayout()
-        field_label = QtWidgets.QLabel("Field")
-        self.field_combo = QtWidgets.QComboBox()
-        self.field_combo.addItems(["None", "Displacement", "Von Mises Stress", "Temperature"])
-        field_layout.addWidget(field_label)
-        field_layout.addWidget(self.field_combo)
-        layout.addLayout(field_layout)
-        
-        # Display mode dropdown (geometry or mesh)
-        display_mode_layout = QtWidgets.QHBoxLayout()
-        display_mode_label = QtWidgets.QLabel("Display On")
-        self.display_mode_combo = QtWidgets.QComboBox()
-        self.display_mode_combo.addItems(["Geometry", "Mesh"])
-        display_mode_layout.addWidget(display_mode_label)
-        display_mode_layout.addWidget(self.display_mode_combo)
-        layout.addLayout(display_mode_layout)
-        
-        # Cutting Percent spinboxes (X, Y, Z)
-        # X Cutting Percent
-        x_cutting_layout = QtWidgets.QHBoxLayout()
-        x_cutting_label = QtWidgets.QLabel("XCuttingPercent")
-        self.x_cutting_spin = QtWidgets.QSpinBox()
-        self.x_cutting_spin.setRange(0, 100)
-        self.x_cutting_spin.setValue(0)
-        x_cutting_layout.addWidget(x_cutting_label)
-        x_cutting_layout.addWidget(self.x_cutting_spin)
-        layout.addLayout(x_cutting_layout)
-        
-        # Y Cutting Percent
-        y_cutting_layout = QtWidgets.QHBoxLayout()
-        y_cutting_label = QtWidgets.QLabel("YCuttingPercent")
-        self.y_cutting_spin = QtWidgets.QSpinBox()
-        self.y_cutting_spin.setRange(0, 100)
-        self.y_cutting_spin.setValue(0)
-        y_cutting_layout.addWidget(y_cutting_label)
-        y_cutting_layout.addWidget(self.y_cutting_spin)
-        layout.addLayout(y_cutting_layout)
-        
-        # Z Cutting Percent
-        z_cutting_layout = QtWidgets.QHBoxLayout()
-        z_cutting_label = QtWidgets.QLabel("ZCuttingPercent")
-        self.z_cutting_spin = QtWidgets.QSpinBox()
-        self.z_cutting_spin.setRange(0, 100)
-        self.z_cutting_spin.setValue(0)
-        z_cutting_layout.addWidget(z_cutting_label)
-        z_cutting_layout.addWidget(self.z_cutting_spin)
-        layout.addLayout(z_cutting_layout)
-        
-        # Eigen Number
-        eigen_layout = QtWidgets.QHBoxLayout()
-        eigen_label = QtWidgets.QLabel("EigenNumber")
-        self.eigen_spin = QtWidgets.QSpinBox()
-        self.eigen_spin.setRange(1, 10)
-        self.eigen_spin.setValue(1)
-        eigen_layout.addWidget(eigen_label)
-        eigen_layout.addWidget(self.eigen_spin)
-        layout.addLayout(eigen_layout)
-        
-        # Checkboxes
-        self.show_bounding_box = QtWidgets.QCheckBox("Show bounding box")
-        layout.addWidget(self.show_bounding_box)
-        
-        self.show_triangles = QtWidgets.QCheckBox("Show triangles")
-        layout.addWidget(self.show_triangles)
-        
-        self.show_text = QtWidgets.QCheckBox("Show text")
-        self.show_text.setChecked(True)
-        layout.addWidget(self.show_text)
-        
-        self.scale_deformation = QtWidgets.QCheckBox("Scale deformation")
-        self.scale_deformation.setChecked(True)
-        layout.addWidget(self.scale_deformation)
-        
-        self.show_transparent = QtWidgets.QCheckBox("Show transparent geometry")
-        layout.addWidget(self.show_transparent)
-        
-        self.show_axis = QtWidgets.QCheckBox("Show axis")
-        self.show_axis.setChecked(True)
-        layout.addWidget(self.show_axis)
-        
-        self.show_structural_loads = QtWidgets.QCheckBox("Show structural loads")
-        self.show_structural_loads.setChecked(True)
-        layout.addWidget(self.show_structural_loads)
-        
-        self.show_thermal_loads = QtWidgets.QCheckBox("Show thermal loads")
-        layout.addWidget(self.show_thermal_loads)
-        
-        self.show_topopt_constraints = QtWidgets.QCheckBox("Show TopOpt Constraints")
-        self.show_topopt_constraints.setChecked(True)
-        layout.addWidget(self.show_topopt_constraints)
-        
-        self.show_non_design = QtWidgets.QCheckBox("Show non-design parts")
-        self.show_non_design.setChecked(True)
-        layout.addWidget(self.show_non_design)
+            super().__init__(parent)
+            self.setWindowTitle("Display Options")
+            self.resize(300, 500)
+            self.parent = parent
+            
+            layout = QtWidgets.QVBoxLayout(self)
+            layout.setSpacing(10)
+            
+            # Geometry dropdown
+            geom_layout = QtWidgets.QHBoxLayout()
+            geom_label = QtWidgets.QLabel("Geometry")
+            self.geom_combo = QtWidgets.QComboBox()
+            self.geom_combo.addItems(["None", "InitialDesign", "OptimizedDesign", "Both", "Mesh"])
+            geom_layout.addWidget(geom_label)
+            geom_layout.addWidget(self.geom_combo)
+            layout.addLayout(geom_layout)
+            
+            # Field dropdown
+            field_layout = QtWidgets.QHBoxLayout()
+            field_label = QtWidgets.QLabel("Field")
+            self.field_combo = QtWidgets.QComboBox()
+            self.field_combo.addItem("None")  # Always have "None" as the first option
+            # Other field options will be populated dynamically based on available analysis results
+            field_layout.addWidget(field_label)
+            field_layout.addWidget(self.field_combo)
+            layout.addLayout(field_layout)
+            
+            # Display mode dropdown (geometry or mesh)
+            display_mode_layout = QtWidgets.QHBoxLayout()
+            display_mode_label = QtWidgets.QLabel("Display On")
+            self.display_mode_combo = QtWidgets.QComboBox()
+            self.display_mode_combo.addItems(["Geometry", "Mesh"])
+            display_mode_layout.addWidget(display_mode_label)
+            display_mode_layout.addWidget(self.display_mode_combo)
+            layout.addLayout(display_mode_layout)
+            
+            # Cutting Percent spinboxes (X, Y, Z)
+            # X Cutting Percent
+            x_cutting_layout = QtWidgets.QHBoxLayout()
+            x_cutting_label = QtWidgets.QLabel("XCuttingPercent")
+            self.x_cutting_spin = QtWidgets.QSpinBox()
+            self.x_cutting_spin.setRange(0, 100)
+            self.x_cutting_spin.setValue(0)
+            x_cutting_layout.addWidget(x_cutting_label)
+            x_cutting_layout.addWidget(self.x_cutting_spin)
+            layout.addLayout(x_cutting_layout)
+            
+            # Y Cutting Percent
+            y_cutting_layout = QtWidgets.QHBoxLayout()
+            y_cutting_label = QtWidgets.QLabel("YCuttingPercent")
+            self.y_cutting_spin = QtWidgets.QSpinBox()
+            self.y_cutting_spin.setRange(0, 100)
+            self.y_cutting_spin.setValue(0)
+            y_cutting_layout.addWidget(y_cutting_label)
+            y_cutting_layout.addWidget(self.y_cutting_spin)
+            layout.addLayout(y_cutting_layout)
+            
+            # Z Cutting Percent
+            z_cutting_layout = QtWidgets.QHBoxLayout()
+            z_cutting_label = QtWidgets.QLabel("ZCuttingPercent")
+            self.z_cutting_spin = QtWidgets.QSpinBox()
+            self.z_cutting_spin.setRange(0, 100)
+            self.z_cutting_spin.setValue(0)
+            z_cutting_layout.addWidget(z_cutting_label)
+            z_cutting_layout.addWidget(self.z_cutting_spin)
+            layout.addLayout(z_cutting_layout)
+            
+            # Eigen Number
+            eigen_layout = QtWidgets.QHBoxLayout()
+            eigen_label = QtWidgets.QLabel("EigenNumber")
+            self.eigen_spin = QtWidgets.QSpinBox()
+            self.eigen_spin.setRange(1, 10)
+            self.eigen_spin.setValue(1)
+            eigen_layout.addWidget(eigen_label)
+            eigen_layout.addWidget(self.eigen_spin)
+            layout.addLayout(eigen_layout)
+            
+            # Checkboxes
+            self.show_bounding_box = QtWidgets.QCheckBox("Show bounding box")
+            layout.addWidget(self.show_bounding_box)
+            
+            self.show_triangles = QtWidgets.QCheckBox("Show triangles")
+            layout.addWidget(self.show_triangles)
+            
+            self.show_text = QtWidgets.QCheckBox("Show text")
+            self.show_text.setChecked(True)
+            layout.addWidget(self.show_text)
+            
+            self.scale_deformation = QtWidgets.QCheckBox("Scale deformation")
+            self.scale_deformation.setChecked(True)
+            layout.addWidget(self.scale_deformation)
+            
+            self.show_transparent = QtWidgets.QCheckBox("Show transparent geometry")
+            layout.addWidget(self.show_transparent)
+            
+            self.show_axis = QtWidgets.QCheckBox("Show axis")
+            self.show_axis.setChecked(True)
+            layout.addWidget(self.show_axis)
+            
+            self.show_structural_loads = QtWidgets.QCheckBox("Show structural loads")
+            self.show_structural_loads.setChecked(True)
+            layout.addWidget(self.show_structural_loads)
+            
+            self.show_thermal_loads = QtWidgets.QCheckBox("Show thermal loads")
+            layout.addWidget(self.show_thermal_loads)
+            
+            self.show_topopt_constraints = QtWidgets.QCheckBox("Show TopOpt Constraints")
+            self.show_topopt_constraints.setChecked(True)
+            layout.addWidget(self.show_topopt_constraints)
+            
+            self.show_non_design = QtWidgets.QCheckBox("Show non-design parts")
+            self.show_non_design.setChecked(True)
+            layout.addWidget(self.show_non_design)
+            
+            # Action buttons
+            self.animate_button = QtWidgets.QPushButton("Animate for 3 cycles")
+            self.animate_button.clicked.connect(self.animate_view)
+            layout.addWidget(self.animate_button)
+            
+            self.hide_selected_button = QtWidgets.QPushButton("Hide Selected Part")
+            self.hide_selected_button.clicked.connect(self.hide_selected_part)
+            layout.addWidget(self.hide_selected_button)
+            
+            self.save_image_button = QtWidgets.QPushButton("Save Image")
+            self.save_image_button.clicked.connect(self.save_image)
+            layout.addWidget(self.save_image_button)
+            
+            self.reset_view_button = QtWidgets.QPushButton("Reset View")
+            self.reset_view_button.clicked.connect(self.reset_view)
+            layout.addWidget(self.reset_view_button)
+            
+            self.close_button = QtWidgets.QPushButton("Close")
+            self.close_button.clicked.connect(self.close)
+            layout.addWidget(self.close_button)
+            
+            # Initially block all signals to prevent actions when loading
+            self.blockAllSignals(True)
+            
+            # Update field options based on available analysis results
+            self.update_field_options()
+            
+            # Load current settings without applying them
+            self.load_current_settings(apply_immediately=False)
+            
+            # Set the enabled state of controls that depend on analysis results
+            self.update_controls_enabled_state()
+            
+            # Now connect controls to handlers
+            self.blockAllSignals(False)
+            self.connect_controls()
 
-        self.show_mesh = QtWidgets.QCheckBox("Show mesh")
-        self.show_mesh.setChecked(True)
-        layout.addWidget(self.show_mesh)
+    def showEvent(self, event):
+        """Override showEvent to update field options when dialog is shown"""
+        # Update field options based on available analysis results
+        self.update_field_options()
+        
+        # Update enabled state of controls
+        self.update_controls_enabled_state()
+        
+        # Call parent implementation
+        super().showEvent(event)
 
-        # Add Show/Hide Geometry checkbox
-        self.show_geometry = QtWidgets.QCheckBox("Show geometry")
-        self.show_geometry.setChecked(True)
-        layout.addWidget(self.show_geometry)
+    def blockAllSignals(self, block):
+        """Block or unblock signals for all interactive widgets"""
+        widgets = [
+            self.geom_combo, self.field_combo, self.display_mode_combo,
+            self.x_cutting_spin, self.y_cutting_spin, self.z_cutting_spin,
+            self.eigen_spin, self.show_bounding_box, self.show_triangles,
+            self.show_text, self.scale_deformation, self.show_transparent,
+            self.show_axis, self.show_structural_loads, self.show_thermal_loads,
+            self.show_topopt_constraints, self.show_non_design
+        ]
         
-        # Connect the geometry checkbox to toggle_feature
-        self.show_geometry.stateChanged.connect(lambda: self.toggle_feature('geometry'))
+        for widget in widgets:
+            widget.blockSignals(block)
 
-        # Add Results Visibility checkbox after other checkboxes
-        self.show_results = QtWidgets.QCheckBox("Show Analysis Results")
-        self.show_results.setChecked(True)
-        layout.addWidget(self.show_results)
+    def update_field_options(self):
+        """Update the field dropdown options based on available analysis results"""
+        # Store current selection if any
+        current_selection = self.field_combo.currentText()
         
-        # Connect the new checkbox to toggle_feature
-        self.show_results.stateChanged.connect(lambda: self.toggle_feature('results'))
+        # Clear all items except "None"
+        while self.field_combo.count() > 1:
+            self.field_combo.removeItem(1)
         
-        # Action buttons
-        self.animate_button = QtWidgets.QPushButton("Animate for 3 cycles")
-        self.animate_button.clicked.connect(self.animate_view)
-        layout.addWidget(self.animate_button)
+        # Check for available analysis results
+        has_structural_results = hasattr(self.parent, 'analysis_results') and self.parent.analysis_results is not None
+        has_thermal_results = hasattr(self.parent, 'thermal_results') and self.parent.thermal_results is not None
         
-        self.hide_selected_button = QtWidgets.QPushButton("Hide Selected Part")
-        self.hide_selected_button.clicked.connect(self.hide_selected_part)
-        layout.addWidget(self.hide_selected_button)
+        # Add appropriate field options
+        if has_structural_results:
+            self.field_combo.addItem("Displacement")
+            self.field_combo.addItem("Von Mises Stress")
+            
+        if has_thermal_results:
+            self.field_combo.addItem("Temperature")
         
-        self.save_image_button = QtWidgets.QPushButton("Save Image")
-        self.save_image_button.clicked.connect(self.save_image)
-        layout.addWidget(self.save_image_button)
+        # Try to restore previous selection if it exists in the new list
+        index = self.field_combo.findText(current_selection)
+        if index >= 0:
+            self.field_combo.setCurrentIndex(index)
+        else:
+            # If no previous selection or it's no longer available, make a smart default choice
+            if has_thermal_results and not has_structural_results:
+                # Only thermal results available, select Temperature
+                temp_index = self.field_combo.findText("Temperature")
+                if temp_index >= 0:
+                    self.field_combo.setCurrentIndex(temp_index)
+            elif has_structural_results and not has_thermal_results:
+                # Only structural results available, select Displacement
+                disp_index = self.field_combo.findText("Displacement")
+                if disp_index >= 0:
+                    self.field_combo.setCurrentIndex(disp_index)
+            else:
+                # Default to "None" or choose based on most recent analysis
+                self.field_combo.setCurrentIndex(0)  # Default to "None"
+
+    def update_controls_enabled_state(self):
+        """Update the enabled state of controls based on available data"""
+        # Check if we have geometry
+        has_geometry = hasattr(self.parent, 'stl_geom') and self.parent.stl_geom is not None
         
-        self.reset_view_button = QtWidgets.QPushButton("Reset View")
-        self.reset_view_button.clicked.connect(self.reset_view)
-        layout.addWidget(self.reset_view_button)
+        # Check if we have mesh
+        has_mesh = hasattr(self.parent, 'mesh_actor') and self.parent.mesh_actor is not None
         
-        self.close_button = QtWidgets.QPushButton("Close")
-        self.close_button.clicked.connect(self.close)
-        layout.addWidget(self.close_button)
+        # Check for available analysis results
+        has_results = hasattr(self.parent, 'analysis_results') and self.parent.analysis_results is not None
+        has_thermal = hasattr(self.parent, 'thermal_results') and self.parent.thermal_results is not None
         
-        # Connect controls to handlers
-        self.connect_controls()
+        # Enable/disable controls based on available data
+        self.geom_combo.setEnabled(has_geometry or has_mesh)
+        self.display_mode_combo.setEnabled(has_geometry and has_mesh)
         
-        # Load current settings without applying them
-        self.load_current_settings(apply_immediately=False)
+        # Enable scale deformation only if we have displacement results
+        self.scale_deformation.setEnabled(has_results)
+        
+        # Enable animate button only if we have results and scale deformation is checked
+        self.animate_button.setEnabled(has_results and self.scale_deformation.isChecked())
+        
+        # Enable structural loads toggle only if we have structural loads
+        # This is the problematic line - force_actors is a list, not a boolean
+        has_structural_loads = hasattr(self.parent, 'force_actors') and len(self.parent.force_actors) > 0
+        self.show_structural_loads.setEnabled(has_structural_loads)
+        
+        # Enable thermal loads toggle only if we have thermal loads
+        has_thermal_loads = (hasattr(self.parent, 'fixed_temp_actors') and len(self.parent.fixed_temp_actors) > 0) or \
+                            (hasattr(self.parent, 'heat_flux_actors') and len(self.parent.heat_flux_actors) > 0) or \
+                            (hasattr(self.parent, 'convection_actors') and len(self.parent.convection_actors) > 0)
+        self.show_thermal_loads.setEnabled(has_thermal_loads)
+        
+        # Enable topopt constraints toggle only if we have topopt constraints
+        has_topopt = hasattr(self.parent, 'topopt_constraint_actors') and self.parent.topopt_constraint_actors
+        self.show_topopt_constraints.setEnabled(has_topopt)
+        
+        # Enable non-design toggle only if we have non-design parts
+        has_non_design = hasattr(self.parent, 'non_design_actors') and self.parent.non_design_actors
+        self.show_non_design.setEnabled(has_non_design)
 
     def connect_controls(self):
         """Connect controls to update handlers"""
         # Connect dropdowns
-        self.geom_combo.currentIndexChanged.connect(self.update_display)
-        self.field_combo.currentIndexChanged.connect(self.update_display)
+        self.geom_combo.currentIndexChanged.connect(self.update_geometry_display)
+        self.field_combo.currentIndexChanged.connect(self.update_field_display)  
         self.display_mode_combo.currentIndexChanged.connect(self.update_display)
         
         # Connect spinboxes
@@ -1244,18 +1799,30 @@ class DisplayOptionsWindow(QtWidgets.QDialog):
         
         # Connect checkboxes
         self.show_bounding_box.stateChanged.connect(lambda: self.toggle_feature('bounding_box'))
-        self.show_mesh.stateChanged.connect(lambda: self.toggle_feature('mesh'))
         self.show_triangles.stateChanged.connect(lambda: self.toggle_feature('triangles'))
         self.show_text.stateChanged.connect(lambda: self.toggle_feature('text'))
-        self.scale_deformation.stateChanged.connect(lambda: self.toggle_feature('scale_deformation'))
+        self.scale_deformation.stateChanged.connect(self.handle_scale_deformation_changed)
         self.show_transparent.stateChanged.connect(lambda: self.toggle_feature('transparent'))
         self.show_axis.stateChanged.connect(lambda: self.toggle_feature('axis'))
         self.show_structural_loads.stateChanged.connect(lambda: self.toggle_feature('structural_loads'))
         self.show_thermal_loads.stateChanged.connect(lambda: self.toggle_feature('thermal_loads'))
         self.show_topopt_constraints.stateChanged.connect(lambda: self.toggle_feature('topopt_constraints'))
         self.show_non_design.stateChanged.connect(lambda: self.toggle_feature('non_design'))
-        self.show_geometry.stateChanged.connect(lambda: self.toggle_feature('geometry'))
-        self.show_results.stateChanged.connect(lambda: self.toggle_feature('results'))
+    
+    def handle_scale_deformation_changed(self):
+        """Handle changes to the scale deformation checkbox"""
+        is_checked = self.scale_deformation.isChecked()
+        
+        # Update display settings
+        if hasattr(self.parent, 'display_settings'):
+            self.parent.display_settings['scale_deformation'] = is_checked
+        
+        # Enable/disable animate button based on checkbox state and available results
+        has_results = hasattr(self.parent, 'analysis_results') and self.parent.analysis_results is not None
+        self.animate_button.setEnabled(is_checked and has_results)
+        
+        # Toggle the feature
+        self.toggle_feature('scale_deformation')
     
     def load_current_settings(self, apply_immediately=False):
         """
@@ -1277,27 +1844,34 @@ class DisplayOptionsWindow(QtWidgets.QDialog):
                 'z_cutting': 0,
                 'eigen_number': 1,
                 'show_bounding_box': False,
-                'show_mesh': True,
-                'show_results': True,
+                'show_results': False,
                 'show_triangles': False,
                 'show_text': True,
                 'scale_deformation': True,
                 'show_transparent': False,
                 'show_axis': True,
                 'show_structural_loads': True,
-                'show_thermal_loads': True,
+                'show_thermal_loads': False,
                 'show_topopt_constraints': True,
                 'show_non_design': True,
-                'show_geometry': True
             }
             
         settings = self.parent.display_settings
         
+        # Block signals to prevent auto-update while setting values
+        self.blockAllSignals(True)
+        
         # Set dropdowns
         if 'geometry' in settings:
-            index = self.geom_combo.findText(settings['geometry'])
-            if index >= 0:
-                self.geom_combo.setCurrentIndex(index)
+            # If "None" is selected or previously had "show_mesh" enabled, select the appropriate option
+            if settings.get('geometry') == 'None':
+                self.geom_combo.setCurrentText("None")
+            elif settings.get('show_mesh', False) and settings['geometry'] == 'InitialDesign':
+                self.geom_combo.setCurrentText("Mesh")
+            else:
+                index = self.geom_combo.findText(settings['geometry'])
+                if index >= 0:
+                    self.geom_combo.setCurrentIndex(index)
         
         if 'field' in settings:
             index = self.field_combo.findText(settings['field'])
@@ -1318,34 +1892,14 @@ class DisplayOptionsWindow(QtWidgets.QDialog):
             self.z_cutting_spin.setValue(settings['z_cutting'])
         if 'eigen_number' in settings:
             self.eigen_spin.setValue(settings['eigen_number'])
-
-        self.x_cutting_spin.blockSignals(False)
-        self.y_cutting_spin.blockSignals(False)
-        self.z_cutting_spin.blockSignals(False)
-        self.eigen_spin.blockSignals(False)
-        
-        # Set checkboxes (without triggering updates)
-        # Block signals temporarily to prevent auto-application
-        for checkbox in [self.show_bounding_box, self.show_mesh, self.show_triangles, self.show_text, 
-                         self.show_geometry, self.scale_deformation, self.show_transparent, 
-                         self.show_axis, self.show_structural_loads, self.show_thermal_loads,
-                         self.show_topopt_constraints, self.show_non_design, self.show_results]:
-            checkbox.blockSignals(True)
         
         # Set checkboxes
         if 'show_bounding_box' in settings:
             self.show_bounding_box.setChecked(settings['show_bounding_box'])
-        if 'show_mesh' in settings:
-            self.show_mesh.setChecked(settings['show_mesh'])
-        # Additional check for mesh visibility to ensure UI matches actual state
-        if hasattr(self.parent, 'mesh_actor'):
-            self.show_mesh.setChecked(self.parent.mesh_actor.GetVisibility())
         if 'show_triangles' in settings:
             self.show_triangles.setChecked(settings['show_triangles'])
         if 'show_text' in settings:
             self.show_text.setChecked(settings['show_text'])
-        if 'show_geometry' in settings:
-            self.show_geometry.setChecked(settings['show_geometry'])
         if 'scale_deformation' in settings:
             self.scale_deformation.setChecked(settings['scale_deformation'])
         if 'show_transparent' in settings:
@@ -1360,19 +1914,230 @@ class DisplayOptionsWindow(QtWidgets.QDialog):
             self.show_topopt_constraints.setChecked(settings['show_topopt_constraints'])
         if 'show_non_design' in settings:
             self.show_non_design.setChecked(settings['show_non_design'])
-        if 'show_results' in settings:
-            self.show_results.setChecked(settings['show_results'])
 
         # Restore signals
-        for checkbox in [self.show_bounding_box, self.show_mesh, self.show_triangles, self.show_text, 
-                         self.show_geometry, self.scale_deformation, self.show_transparent, 
-                         self.show_axis, self.show_structural_loads, self.show_thermal_loads,
-                         self.show_topopt_constraints, self.show_non_design, self.show_results]:
-            checkbox.blockSignals(False)
+        self.blockAllSignals(False)
 
         # Only apply changes if requested
         if apply_immediately:
             self.update_visualization()
+
+    def update_geometry_display(self):
+        """Update the display based on geometry dropdown selection"""
+        selected_geometry = self.geom_combo.currentText()
+        
+        # First, hide all geometry and results actors to start with a clean slate
+        if hasattr(self.parent, 'stl_actor') and self.parent.stl_actor:
+            self.parent.stl_actor.SetVisibility(False)
+        
+        if hasattr(self.parent, 'mesh_actor') and self.parent.mesh_actor:
+            self.parent.mesh_actor.SetVisibility(False)
+            
+        # Update settings
+        if hasattr(self.parent, 'display_settings'):
+            if selected_geometry == "None":
+                # When "None" is selected, hide all geometry and mesh
+                self.parent.display_settings['geometry'] = 'None'
+                self.parent.display_settings['show_mesh'] = False
+                
+                # Results actors are already hidden above, but for clarity:
+                if hasattr(self.parent, 'results_actor') and self.parent.results_actor:
+                    self.parent.results_actor.SetVisibility(False)
+                    
+                if hasattr(self.parent, 'results_mesh_actor') and self.parent.results_mesh_actor:
+                    self.parent.results_mesh_actor.SetVisibility(False)
+                    
+                # Hide scalar bar if it exists
+                if hasattr(self.parent, 'scalar_bar') and self.parent.scalar_bar:
+                    self.parent.scalar_bar.SetVisibility(False)
+                
+                # Hide structural loads
+                if hasattr(self.parent, 'force_actors') and self.parent.force_actors:
+                    for actor in self.parent.force_actors:
+                        if actor:  # Check if actor is not None
+                            actor.SetVisibility(False)
+                            
+                if hasattr(self.parent, 'constraint_actors') and self.parent.constraint_actors:
+                    for actor in self.parent.constraint_actors:
+                        if actor:  # Check if actor is not None
+                            actor.SetVisibility(False)
+                
+                # Hide thermal loads
+                thermal_actor_lists = [
+                    'fixed_temp_actors',
+                    'heat_flux_actors',
+                    'total_heat_actors',
+                    'heat_source_actors',
+                    'convection_actors',
+                    'radiation_actors',
+                    'internal_heat_actors'
+                ]
+                
+                for actor_list_name in thermal_actor_lists:
+                    if hasattr(self.parent, actor_list_name):
+                        actors = getattr(self.parent, actor_list_name)
+                        if actors and isinstance(actors, list):
+                            for actor in actors:
+                                if actor:  # Check if actor is not None
+                                    actor.SetVisibility(False)
+                
+                # Hide topopt constraints
+                if hasattr(self.parent, 'topopt_constraint_actors') and self.parent.topopt_constraint_actors:
+                    for actor in self.parent.topopt_constraint_actors:
+                        if actor:  # Check if actor is not None
+                            actor.SetVisibility(False)
+                            
+                # Hide non-design parts
+                if hasattr(self.parent, 'non_design_actors') and self.parent.non_design_actors:
+                    for actor in self.parent.non_design_actors:
+                        if actor:  # Check if actor is not None
+                            actor.SetVisibility(False)
+                            
+                # Update checkbox states in the UI to reflect the actual visibility
+                # Block signals temporarily to prevent recursive updates
+                self.blockAllSignals(True)
+                self.parent.display_settings['show_structural_loads'] = False
+                self.parent.display_settings['show_thermal_loads'] = False
+                self.parent.display_settings['show_topopt_constraints'] = False
+                self.parent.display_settings['show_non_design'] = False
+                
+                self.show_structural_loads.setChecked(False)
+                self.show_thermal_loads.setChecked(False)
+                self.show_topopt_constraints.setChecked(False)
+                self.show_non_design.setChecked(False)
+                self.blockAllSignals(False)
+                
+                # Add message to log
+                if hasattr(self.parent, 'message_text'):
+                    self.parent.message_text.append("Hiding all geometry and visualization elements")
+                
+            elif selected_geometry == "Mesh":
+                # When "Mesh" is selected, show mesh only
+                self.parent.display_settings['geometry'] = 'InitialDesign'
+                self.parent.display_settings['show_mesh'] = True
+
+                # Hide geometry
+                if hasattr(self.parent, 'stl_actor') and self.parent.stl_actor:
+                    self.parent.stl_actor.SetVisibility(False)
+                
+                # Set mesh visibility
+                if hasattr(self.parent, 'mesh_actor') and self.parent.mesh_actor:
+                    self.parent.mesh_actor.SetVisibility(True)
+                
+                
+                # Check if results should be shown (only if field is not None)
+                show_results = self.field_combo.currentText() != "None"
+                if hasattr(self.parent, 'results_actor') and self.parent.results_actor:
+                    self.parent.results_actor.SetVisibility(show_results)
+                
+                if hasattr(self.parent, 'results_mesh_actor') and self.parent.results_mesh_actor:
+                    self.parent.results_mesh_actor.SetVisibility(show_results)
+                    
+                # Show scalar bar if results are visible
+                if hasattr(self.parent, 'scalar_bar') and self.parent.scalar_bar:
+                    self.parent.scalar_bar.SetVisibility(show_results)
+                
+                # Restore state of loads visibility to match checkboxes
+                self.toggle_feature('structural_loads')
+                self.toggle_feature('thermal_loads')
+                self.toggle_feature('topopt_constraints')
+                self.toggle_feature('non_design')
+                
+            else:
+                # For other geometry selections
+                self.parent.display_settings['geometry'] = selected_geometry
+                self.parent.display_settings['show_mesh'] = False
+                
+                # Show geometry, hide mesh
+                if hasattr(self.parent, 'stl_actor') and self.parent.stl_actor:
+                    self.parent.stl_actor.SetVisibility(True)
+                
+                if hasattr(self.parent, 'mesh_actor') and self.parent.mesh_actor:
+                    self.parent.mesh_actor.SetVisibility(False)
+                
+                # Check if results should be shown
+                show_results = self.field_combo.currentText() != "None"
+                
+                # Set visibility of results actors based on results flag
+                if hasattr(self.parent, 'results_actor') and self.parent.results_actor:
+                    self.parent.results_actor.SetVisibility(show_results)
+                
+                if hasattr(self.parent, 'results_mesh_actor') and self.parent.results_mesh_actor:
+                    self.parent.results_mesh_actor.SetVisibility(False)  # Always hide mesh results when showing geometry
+                
+                # Show or hide scalar bar based on results visibility
+                if hasattr(self.parent, 'scalar_bar') and self.parent.scalar_bar:
+                    self.parent.scalar_bar.SetVisibility(show_results)
+                
+                # If showing results and not transparent, hide original geometry
+                if show_results and not self.show_transparent.isChecked() and hasattr(self.parent, 'stl_actor') and self.parent.stl_actor:
+                    self.parent.stl_actor.SetVisibility(False)
+                
+                # Restore state of loads visibility to match checkboxes
+                self.toggle_feature('structural_loads')
+                self.toggle_feature('thermal_loads')
+                self.toggle_feature('topopt_constraints')
+                self.toggle_feature('non_design')
+                
+                # Add message to log
+                if hasattr(self.parent, 'message_text'):
+                    self.parent.message_text.append(f"Showing {selected_geometry}")
+        
+        # Render the changes
+        self.parent.vtkWidget.GetRenderWindow().Render()
+        
+        # Update settings
+        self.update_display()
+
+    def update_field_display(self):
+        """Update the display based on field dropdown selection"""
+        selected_field = self.field_combo.currentText()
+        
+        # Update settings
+        if hasattr(self.parent, 'display_settings'):
+            self.parent.display_settings['field'] = selected_field
+            
+            # Toggle result visibility based on field selection
+            show_results = selected_field != "None"
+            self.parent.display_settings['show_results'] = show_results
+            
+            # Toggle results visibility
+            self.toggle_results_visibility(show_results)
+            
+            # Apply field visualization if a field is selected and results should be shown
+            if show_results:
+                self.apply_field_visualization(selected_field)
+            
+            # If geometry is set to None, keep everything hidden regardless of field selection
+            if self.geom_combo.currentText() == "None":
+                if hasattr(self.parent, 'stl_actor'):
+                    self.parent.stl_actor.SetVisibility(False)
+                if hasattr(self.parent, 'mesh_actor'):
+                    self.parent.mesh_actor.SetVisibility(False)
+                if hasattr(self.parent, 'results_actor'):
+                    self.parent.results_actor.SetVisibility(False)
+                if hasattr(self.parent, 'results_mesh_actor'):
+                    self.parent.results_mesh_actor.SetVisibility(False)
+                if hasattr(self.parent, 'scalar_bar'):
+                    self.parent.scalar_bar.SetVisibility(False)
+            else:
+                # If not showing results but geometry is selected, make sure geometry is visible
+                if not show_results and self.geom_combo.currentText() != "Mesh":
+                    if hasattr(self.parent, 'stl_actor'):
+                        self.parent.stl_actor.SetVisibility(True)
+                elif not show_results and self.geom_combo.currentText() == "Mesh":
+                    if hasattr(self.parent, 'mesh_actor'):
+                        self.parent.mesh_actor.SetVisibility(True)
+        
+        # Render the changes
+        self.parent.vtkWidget.GetRenderWindow().Render()
+        
+        # Add message to log
+        if hasattr(self.parent, 'message_text'):
+            if selected_field == "None":
+                self.parent.message_text.append("Hiding results")
+            else:
+                self.parent.message_text.append(f"Showing {selected_field} field")
 
     def update_display(self):
         """Update the display based on current settings"""
@@ -1386,25 +2151,55 @@ class DisplayOptionsWindow(QtWidgets.QDialog):
             'z_cutting': self.z_cutting_spin.value(),
             'eigen_number': self.eigen_spin.value(),
             'show_bounding_box': self.show_bounding_box.isChecked(),
-            'show_mesh': self.show_mesh.isChecked(),
-            'show_results': self.show_results.isChecked(),
             'show_triangles': self.show_triangles.isChecked(),
             'show_text': self.show_text.isChecked(),
-            'show_geometry': self.show_geometry.isChecked(),
+            'show_mesh': self.geom_combo.currentText() == "Mesh",  # Derive from geometry dropdown
             'scale_deformation': self.scale_deformation.isChecked(),
             'show_transparent': self.show_transparent.isChecked(),
             'show_axis': self.show_axis.isChecked(),
             'show_structural_loads': self.show_structural_loads.isChecked(),
             'show_thermal_loads': self.show_thermal_loads.isChecked(),
             'show_topopt_constraints': self.show_topopt_constraints.isChecked(),
-            'show_non_design': self.show_non_design.isChecked()
+            'show_non_design': self.show_non_design.isChecked(),
+            'show_results': self.field_combo.currentText() != "None"  # Derive from field dropdown
         }
         
         # Save settings to parent
         self.parent.display_settings = settings
         
+        # Update enabled state of controls
+        self.update_controls_enabled_state()
+        
         # Update visualization
         self.update_visualization()
+    
+    def toggle_mesh(self, show):
+        """Toggle mesh visibility - now controlled through geometry dropdown"""
+        if hasattr(self.parent, 'mesh_actor'):
+            # Set mesh visibility based on parameter
+            self.parent.mesh_actor.SetVisibility(show)
+            
+            # IMPORTANT: If showing mesh, explicitly hide geometry
+            if show and hasattr(self.parent, 'stl_actor') and self.parent.stl_actor:
+                self.parent.stl_actor.SetVisibility(False)
+            
+            # Update display settings
+            if hasattr(self.parent, 'display_settings'):
+                self.parent.display_settings['show_mesh'] = show
+            
+            # Update geometry dropdown to reflect mesh state if needed
+            current_selection = self.geom_combo.currentText()
+            if show and current_selection != "Mesh":
+                self.geom_combo.setCurrentText("Mesh")
+            elif not show and current_selection == "Mesh":
+                self.geom_combo.setCurrentText("InitialDesign")
+            
+            # Add message to log
+            if hasattr(self.parent, 'message_text'):
+                self.parent.message_text.append(f"{'Showing mesh only (geometry hidden)' if show else 'Hiding mesh'}")
+            
+            # Render to show changes immediately
+            self.parent.vtkWidget.GetRenderWindow().Render()
 
     def update_cutting_planes(self):
         """Update cutting planes based on spinbox values"""
@@ -1470,54 +2265,59 @@ class DisplayOptionsWindow(QtWidgets.QDialog):
 
     def create_cutting_plane(self, position, normal, x_axis, y_axis):
         """Create a single cutting plane actor"""
-        # Get model bounds
-        points = np.array(self.parent.stl_geom.mesh.points)
-        bounds = [
-            points[:,0].min(), points[:,0].max(),
-            points[:,1].min(), points[:,1].max(),
-            points[:,2].min(), points[:,2].max()
-        ]
-        
-        # Calculate plane size based on model bounds
-        plane_size = max(
-            bounds[1] - bounds[0],
-            bounds[3] - bounds[2],
-            bounds[5] - bounds[4]
-        ) * 1.2  # Make plane slightly larger than model
-        
-        # Create plane
-        plane = vtk.vtkPlaneSource()
-        plane.SetOrigin(
-            position - x_axis[0] * plane_size/2 - y_axis[0] * plane_size/2,
-            position - x_axis[1] * plane_size/2 - y_axis[1] * plane_size/2,
-            position - x_axis[2] * plane_size/2 - y_axis[2] * plane_size/2
-        )
-        plane.SetPoint1(
-            position + x_axis[0] * plane_size/2 - y_axis[0] * plane_size/2,
-            position + x_axis[1] * plane_size/2 - y_axis[1] * plane_size/2,
-            position + x_axis[2] * plane_size/2 - y_axis[2] * plane_size/2
-        )
-        plane.SetPoint2(
-            position - x_axis[0] * plane_size/2 + y_axis[0] * plane_size/2,
-            position - x_axis[1] * plane_size/2 + y_axis[1] * plane_size/2,
-            position - x_axis[2] * plane_size/2 + y_axis[2] * plane_size/2
-        )
-        plane.Update()
-        
-        # Create mapper and actor
-        mapper = vtk.vtkPolyDataMapper()
-        mapper.SetInputConnection(plane.GetOutputPort())
-        
-        actor = vtk.vtkActor()
-        actor.SetMapper(mapper)
-        actor.GetProperty().SetOpacity(0.2)
-        actor.GetProperty().SetColor(0.8, 0.8, 0.9)
-        
-        # Add to renderer and store reference
-        self.parent.renderer.AddActor(actor)
-        self.parent.cutting_plane_actors.append(actor)
-        
-        return actor
+        try:
+            # Get model bounds
+            points = np.array(self.parent.stl_geom.mesh.points)
+            bounds = [
+                points[:,0].min(), points[:,0].max(),
+                points[:,1].min(), points[:,1].max(),
+                points[:,2].min(), points[:,2].max()
+            ]
+            
+            # Calculate plane size based on model bounds
+            plane_size = max(
+                bounds[1] - bounds[0],
+                bounds[3] - bounds[2],
+                bounds[5] - bounds[4]
+            ) * 1.2  # Make plane slightly larger than model
+            
+            # Create plane
+            plane = vtk.vtkPlaneSource()
+            plane.SetOrigin(
+                position - x_axis[0] * plane_size/2 - y_axis[0] * plane_size/2,
+                position - x_axis[1] * plane_size/2 - y_axis[1] * plane_size/2,
+                position - x_axis[2] * plane_size/2 - y_axis[2] * plane_size/2
+            )
+            plane.SetPoint1(
+                position + x_axis[0] * plane_size/2 - y_axis[0] * plane_size/2,
+                position + x_axis[1] * plane_size/2 - y_axis[1] * plane_size/2,
+                position + x_axis[2] * plane_size/2 - y_axis[2] * plane_size/2
+            )
+            plane.SetPoint2(
+                position - x_axis[0] * plane_size/2 + y_axis[0] * plane_size/2,
+                position - x_axis[1] * plane_size/2 + y_axis[1] * plane_size/2,
+                position - x_axis[2] * plane_size/2 + y_axis[2] * plane_size/2
+            )
+            plane.Update()
+            
+            # Create mapper and actor
+            mapper = vtk.vtkPolyDataMapper()
+            mapper.SetInputConnection(plane.GetOutputPort())
+            
+            actor = vtk.vtkActor()
+            actor.SetMapper(mapper)
+            actor.GetProperty().SetOpacity(0.2)
+            actor.GetProperty().SetColor(0.8, 0.8, 0.9)
+            
+            # Add to renderer and store reference
+            self.parent.renderer.AddActor(actor)
+            self.parent.cutting_plane_actors.append(actor)
+            
+            return actor
+        except Exception as e:
+            if hasattr(self.parent, 'message_text'):
+                self.parent.message_text.append(f"Error creating cutting plane: {str(e)}")
+            return None
 
     def toggle_feature(self, feature_name):
         """Toggle visibility of a specific visualization feature"""
@@ -1529,22 +2329,14 @@ class DisplayOptionsWindow(QtWidgets.QDialog):
                     is_checked = self.show_bounding_box.isChecked()
                     self.parent.display_settings[setting_key] = is_checked
                     self.toggle_bounding_box(is_checked)
-                elif feature_name == 'mesh':
-                    is_checked = self.show_mesh.isChecked()
-                    self.parent.display_settings[setting_key] = is_checked
-                    self.toggle_mesh(is_checked)
                 elif feature_name == 'triangles':
                     is_checked = self.show_triangles.isChecked()
                     self.parent.display_settings[setting_key] = is_checked
                     self.toggle_triangles(is_checked)
                 elif feature_name == 'results':
-                    is_checked = self.show_results.isChecked()
+                    is_checked = self.field_combo.currentText() != "None"
                     self.parent.display_settings[setting_key] = is_checked
                     self.toggle_results_visibility(is_checked)
-                elif feature_name == 'geometry':
-                    is_checked = self.show_geometry.isChecked()
-                    self.parent.display_settings[setting_key] = is_checked
-                    self.toggle_geometry_visibility(is_checked)
                 else:
                     # Generic handling for other features
                     checkbox = getattr(self, f'show_{feature_name}', None)
@@ -1572,17 +2364,28 @@ class DisplayOptionsWindow(QtWidgets.QDialog):
         elif feature_name == 'triangles' or feature_name == 'edges':
             if hasattr(self.parent, 'toggle_edges'):
                 self.parent.toggle_edges(self.show_triangles.isChecked())
+            else:
+                self.toggle_triangles(self.show_triangles.isChecked())
         
         elif feature_name == 'transparent':
             if hasattr(self.parent, 'stl_actor'):
-                if self.show_transparent.isChecked():
-                    # Show original geometry with transparency
+                # Get transparency state
+                is_transparent = self.show_transparent.isChecked()
+                
+                # Check if any results are visible
+                has_visible_results = hasattr(self.parent, 'results_actor') and \
+                                    self.parent.results_actor and \
+                                    self.parent.results_actor.GetVisibility()
+                
+                # Only adjust if geometry should be visible
+                if is_transparent:
+                    # Show original geometry with transparency when checkbox is checked
                     self.parent.stl_actor.SetVisibility(True)
                     self.parent.stl_actor.GetProperty().SetOpacity(0.6)
                     self.parent.stl_actor.GetProperty().SetColor(0.78, 0.86, 1.0)
                     
                     # If results are visible, adjust their opacity too
-                    if hasattr(self.parent, 'results_actor') and self.parent.results_actor and self.parent.results_actor.GetVisibility():
+                    if has_visible_results:
                         self.parent.results_actor.GetProperty().SetOpacity(0.8)
                 else:
                     # Return to normal opacity
@@ -1592,17 +2395,14 @@ class DisplayOptionsWindow(QtWidgets.QDialog):
                     self.parent.stl_actor.GetProperty().EdgeVisibilityOff()
                     
                     # If results are being displayed, hide the original geometry
-                    if hasattr(self.parent, 'results_actor') and self.parent.results_actor and self.parent.results_actor.GetVisibility():
+                    if has_visible_results:
                         self.parent.stl_actor.SetVisibility(False)
                     else:
                         self.parent.stl_actor.SetVisibility(True)
                         
                 # Render to show changes immediately
                 self.parent.vtkWidget.GetRenderWindow().Render()
-    
-        elif feature_name == 'mesh':
-            self.toggle_mesh(self.show_mesh.isChecked())
-                    
+        
         elif feature_name == 'bounding_box':
             self.toggle_bounding_box(self.show_bounding_box.isChecked())
                 
@@ -1612,33 +2412,32 @@ class DisplayOptionsWindow(QtWidgets.QDialog):
                 for actor in self.parent.topopt_constraint_actors:
                     actor.SetVisibility(self.show_topopt_constraints.isChecked())
                     
-        elif feature_name == 'thermal_loads':        
-            # Handle all types of thermal load visualization actors        
-            is_checked = self.show_thermal_loads.isChecked()        
-            self.parent.display_settings['show_thermal_loads'] = is_checked        
+        elif feature_name == 'thermal_loads':
+            # Handle all types of thermal load visualization actors
+            is_checked = self.show_thermal_loads.isChecked()
+            self.parent.display_settings['show_thermal_loads'] = is_checked
             
-            # Create a comprehensive list of all thermal load actor lists to check        
-            thermal_actor_lists = [            
-                'fixed_temp_actors',            
-                'heat_flux_actors',            
-                'total_heat_flux_actors',            
-                'heat_source_actors',            
-                'convection_actors',            
-                'radiation_actors',            
-                'internal_heat_actors'        
-                ]        
+            # Create a comprehensive list of all thermal load actor lists to check
+            thermal_actor_lists = [
+                'fixed_temp_actors',
+                'heat_source_actors',
+                'total_heat_actors', 
+                'convection_actors',
+                'radiation_actors',
+                'internal_heat_actors'
+            ]
             
-            # Loop through each thermal actor list and update visibility        
-            for actor_list_name in thermal_actor_lists:            
-                if hasattr(self.parent, actor_list_name):                
-                    actors = getattr(self.parent, actor_list_name)                
-                    if actors and isinstance(actors, list):                    
-                        for actor in actors:                        
-                            if actor:  # Make sure it's not None                            
-                                actor.SetVisibility(is_checked)        
+            # Loop through each thermal actor list and update visibility
+            for actor_list_name in thermal_actor_lists:
+                if hasattr(self.parent, actor_list_name):
+                    actors = getattr(self.parent, actor_list_name)
+                    if actors and isinstance(actors, list):
+                        for actor in actors:
+                            if actor:  # Make sure it's not None
+                                actor.SetVisibility(is_checked)
                                     
-            # Add message to log        
-            if hasattr(self.parent, 'message_text'):            
+            # Add message to log
+            if hasattr(self.parent, 'message_text'):
                 self.parent.message_text.append(f"{'Showing' if is_checked else 'Hiding'} thermal loads")
                     
         elif feature_name == 'non_design':
@@ -1647,30 +2446,28 @@ class DisplayOptionsWindow(QtWidgets.QDialog):
                 for actor in self.parent.non_design_actors:
                     actor.SetVisibility(self.show_non_design.isChecked())
                     
+        elif feature_name == 'scale_deformation':
+            # Handle scale deformation toggle
+            is_checked = self.scale_deformation.isChecked()
+            
+            # Check if we have an active field that can be affected by scale deformation
+            has_displacement_field = self.field_combo.currentText() == "Displacement"
+            
+            # Apply scaling only if we're showing displacement field
+            if has_displacement_field and hasattr(self.parent, 'analysis_results'):
+                if is_checked and hasattr(self.parent, 'apply_displacement_scaling'):
+                    # Call the parent's method to apply scaling
+                    self.parent.apply_displacement_scaling()
+                elif not is_checked and hasattr(self.parent, 'reset_displacement_scaling'):
+                    # Call the parent's method to reset scaling
+                    self.parent.reset_displacement_scaling()
+                    
+            # Update the enable state of the animate button
+            has_results = hasattr(self.parent, 'analysis_results') and self.parent.analysis_results is not None
+            self.animate_button.setEnabled(is_checked and has_results)
+                    
         # Render to show changes
         self.parent.vtkWidget.GetRenderWindow().Render()
-        
-    def toggle_mesh(self, show):
-        """Toggle mesh visibility"""
-        if hasattr(self.parent, 'mesh_actor'):
-            # Set mesh visibility based on checkbox
-            self.parent.mesh_actor.SetVisibility(show)
-            
-            # Update display settings
-            if hasattr(self.parent, 'display_settings'):
-                self.parent.display_settings['show_mesh'] = show
-            
-            # Manage visibility relationships - don't automatically show/hide geometry
-            # Let the geometry toggle handle geometry visibility independently
-            
-            # Update checkbox state to match actual visibility
-            self.show_mesh.setChecked(show)
-            
-            # Add message to log
-            self.parent.message_text.append(f"{'Showing' if show else 'Hiding'} mesh")
-            
-            # Render to show changes immediately
-            self.parent.vtkWidget.GetRenderWindow().Render()
             
     def toggle_triangles(self, show):
         """Toggle triangles/edges visibility"""
@@ -1685,6 +2482,11 @@ class DisplayOptionsWindow(QtWidgets.QDialog):
 
     def toggle_results_visibility(self, show):
         """Toggle visibility of analysis results"""
+        # Check if the geometry selection is "None" - if so, don't show anything
+        if self.geom_combo.currentText() == "None":
+            # Even if results should be shown, don't show them if geometry is set to None
+            show = False
+        
         if hasattr(self.parent, 'results_actor') and self.parent.results_actor:
             self.parent.results_actor.SetVisibility(show)
             
@@ -1697,13 +2499,25 @@ class DisplayOptionsWindow(QtWidgets.QDialog):
                 self.parent.display_settings['show_results'] = show
             
             # Add message to log
-            self.parent.message_text.append(f"{'Showing' if show else 'Hiding'} analysis results")
+            if hasattr(self.parent, 'message_text'):
+                self.parent.message_text.append(f"{'Showing' if show else 'Hiding'} analysis results")
             
+            # If results are shown, hide original geometry unless transparency is enabled
+            if hasattr(self.parent, 'stl_actor') and self.parent.stl_actor:
+                if show and not self.show_transparent.isChecked():
+                    self.parent.stl_actor.SetVisibility(False)
+                elif not show:
+                    self.parent.stl_actor.SetVisibility(True)
+                    
             # Render to show changes immediately
             self.parent.vtkWidget.GetRenderWindow().Render()
     
     def toggle_geometry_visibility(self, show):
         """Toggle geometry visibility"""
+        # Check if the geometry selection is "None" - if so, don't show anything
+        if self.geom_combo.currentText() == "None":
+            show = False
+            
         if hasattr(self.parent, 'stl_actor'):
             self.parent.stl_actor.SetVisibility(show)
             
@@ -1724,7 +2538,8 @@ class DisplayOptionsWindow(QtWidgets.QDialog):
             self.parent.vtkWidget.GetRenderWindow().Render()
             
             # Add message to log
-            self.parent.message_text.append(f"{'Showing' if show else 'Hiding'} geometry")
+            if hasattr(self.parent, 'message_text'):
+                self.parent.message_text.append(f"{'Showing' if show else 'Hiding'} geometry")
     
     def toggle_bounding_box(self, show):
         """Toggle bounding box visibility"""
@@ -1768,57 +2583,146 @@ class DisplayOptionsWindow(QtWidgets.QDialog):
 
     def update_visualization(self):
         """Update all visualization elements based on current settings"""
-        # Apply color field if selected
-        if self.field_combo.currentText() != "None" and hasattr(self.parent, 'analysis_results'):
-            self.apply_field_visualization(self.field_combo.currentText())
-        
+        # Check if geometry is "None" - special case to hide everything
+        if self.geom_combo.currentText() == "None":
+            # Hide all geometry and results
+            if hasattr(self.parent, 'stl_actor') and self.parent.stl_actor:
+                self.parent.stl_actor.SetVisibility(False)
+            if hasattr(self.parent, 'mesh_actor') and self.parent.mesh_actor:
+                self.parent.mesh_actor.SetVisibility(False)
+            if hasattr(self.parent, 'results_actor') and self.parent.results_actor:
+                self.parent.results_actor.SetVisibility(False)
+            if hasattr(self.parent, 'results_mesh_actor') and self.parent.results_mesh_actor:
+                self.parent.results_mesh_actor.SetVisibility(False)
+            if hasattr(self.parent, 'scalar_bar') and self.parent.scalar_bar:
+                self.parent.scalar_bar.SetVisibility(False)
+                    
+            # Add message to log
+            if hasattr(self.parent, 'message_text'):
+                self.parent.message_text.append("Hiding all geometry and results")
+                    
+            # Skip the rest of the visualization updates
+            self.parent.vtkWidget.GetRenderWindow().Render()
+            return
+                
+        # Check if mesh should be shown (based on geometry dropdown)
+        show_mesh = self.geom_combo.currentText() == "Mesh"
+        self.toggle_mesh(show_mesh)
+            
+        # Apply field visualization if selected
+        selected_field = self.field_combo.currentText()
+        if selected_field != "None":
+            self.apply_field_visualization(selected_field)
+        else:
+            # No field selected, hide result actors
+            self.toggle_results_visibility(False)
+            
         # Update all toggleable features
         feature_list = [
             'bounding_box', 'triangles', 'text', 'scale_deformation',
             'transparent', 'axis', 'structural_loads', 'thermal_loads',
-            'topopt_constraints', 'non_design', 'mesh'
+            'topopt_constraints', 'non_design'
         ]
-        
+            
         for feature in feature_list:
             self.toggle_feature(feature)
-            
+                
         # Update cutting planes
         self.update_cutting_planes()
-        
+            
         # Render the changes
         self.parent.vtkWidget.GetRenderWindow().Render()
+        
+    def apply_field_visualization(self, field_name):
+        """Apply a specific field visualization by calling parent visualization method"""
+        try:
+            # Check if we're set to "None" geometry - if so, don't show anything
+            if self.geom_combo.currentText() == "None":
+                return
+            
+            # Get the display mode (geometry or mesh)
+            display_mode = self.display_mode_combo.currentText()
+                
+            # Call the parent's existing visualization method based on field type
+            if field_name == "Displacement" and hasattr(self.parent, 'visualize_displacement'):
+                self.parent.visualize_displacement(display_mode=display_mode)
+                
+            elif field_name == "Von Mises Stress" and hasattr(self.parent, 'visualize_stress'):
+                self.parent.visualize_stress(display_mode=display_mode)
+                
+            elif field_name == "Temperature" and hasattr(self.parent, 'visualize_temperature'):
+                self.parent.visualize_temperature(display_mode=display_mode)
+            else:
+                # Fallback if the parent doesn't have specific visualization methods
+                if field_name == "Displacement" and hasattr(self.parent, 'analysis_results'):
+                    if hasattr(self.parent, 'apply_field_visualization'):
+                        self.parent.apply_field_visualization(field_name, display_mode)
+                    elif hasattr(self.parent, 'update_result_display'):
+                        self.parent.update_result_display(field_name)
+                    else:
+                        if hasattr(self.parent, 'message_text'):
+                            self.parent.message_text.append(f"No visualization method available for {field_name}")
+                
+            # Apply scale deformation if needed
+            if field_name == "Displacement" and self.scale_deformation.isChecked():
+                if hasattr(self.parent, 'apply_displacement_scaling'):
+                    self.parent.apply_displacement_scaling()
+                
+        except Exception as e:
+            if hasattr(self.parent, 'message_text'):
+                self.parent.message_text.append(f"Error applying {field_name} visualization: {str(e)}")
 
     def animate_view(self):
         """Animate the view for 3 cycles"""
-        if hasattr(self.parent, 'analysis_results') and self.parent.analysis_results and self.scale_deformation.isChecked():
-            if hasattr(self.parent, 'message_text'):
-                self.parent.message_text.append("Starting animation...")
-            
-            # Get displacement data
-            u = self.parent.analysis_results['displacements']
-            delta = self.parent.analysis_results['delta']
-            
-            # Basic animation parameters
-            cycles = 3
-            frames_per_cycle = 20
-            total_frames = cycles * frames_per_cycle
-            
-            # Calculate scaling factor based on model size
-            model_size = np.max(self.parent.analysis_mesher.node_xyz.max(axis=0) - 
-                            self.parent.analysis_mesher.node_xyz.min(axis=0))
-            max_disp = np.max(delta)
-            base_scale = 0.1 * model_size / max_disp if max_disp > 0 else 1.0
-            
-            # Create a timer to handle animation frames
-            self.animation_frame = 0
-            self.animation_timer = QtCore.QTimer()
-            self.animation_timer.timeout.connect(lambda: self.update_animation_frame(
-                total_frames, frames_per_cycle, base_scale, u
-            ))
-            self.animation_timer.start(50)  # Update every 50ms
+        # Call the parent's animation method if it exists
+        if hasattr(self.parent, 'animate_results'):
+            self.parent.animate_results(cycles=3)
         else:
-            if hasattr(self.parent, 'message_text'):
-                self.parent.message_text.append("Animation requires analysis results and scale deformation enabled")
+            # Fallback animation implementation
+            if hasattr(self.parent, 'analysis_results') and self.parent.analysis_results and self.scale_deformation.isChecked():
+                if hasattr(self.parent, 'message_text'):
+                    self.parent.message_text.append("Starting animation...")
+                
+                # Get displacement data
+                u = self.parent.analysis_results['displacements']
+                delta = self.parent.analysis_results.get('delta')
+                
+                if delta is None and 'displacements' in self.parent.analysis_results:
+                    # Calculate delta (displacement magnitude) if not provided
+                    u = self.parent.analysis_results['displacements']
+                    delta = []
+                    
+                    for i in range(len(u) // 3):
+                        dx = u[3*i]
+                        dy = u[3*i + 1]
+                        dz = u[3*i + 2]
+                        delta.append(math.sqrt(dx*dx + dy*dy + dz*dz))
+                
+                # Basic animation parameters
+                cycles = 3
+                frames_per_cycle = 20
+                total_frames = cycles * frames_per_cycle
+                
+                # Calculate scaling factor based on model size
+                if hasattr(self.parent, 'analysis_mesher') and self.parent.analysis_mesher:
+                    model_size = np.max(self.parent.analysis_mesher.node_xyz.max(axis=0) - 
+                                    self.parent.analysis_mesher.node_xyz.min(axis=0))
+                    max_disp = np.max(delta) if hasattr(delta, '__iter__') else delta
+                    base_scale = 0.1 * model_size / max_disp if max_disp > 0 else 1.0
+                    
+                    # Create a timer to handle animation frames
+                    self.animation_frame = 0
+                    self.animation_timer = QtCore.QTimer()
+                    self.animation_timer.timeout.connect(lambda: self.update_animation_frame(
+                        total_frames, frames_per_cycle, base_scale, u
+                    ))
+                    self.animation_timer.start(50)  # Update every 50ms
+                else:
+                    if hasattr(self.parent, 'message_text'):
+                        self.parent.message_text.append("Cannot animate: missing mesh data")
+            else:
+                if hasattr(self.parent, 'message_text'):
+                    self.parent.message_text.append("Animation requires analysis results and scale deformation enabled")
 
     def update_animation_frame(self, total_frames, frames_per_cycle, base_scale, u):
         """Update a single animation frame"""
@@ -1855,6 +2759,10 @@ class DisplayOptionsWindow(QtWidgets.QDialog):
                 self.animation_timer.stop()
                 if hasattr(self.parent, 'message_text'):
                     self.parent.message_text.append("Animation completed")
+                
+                # Reset to static scaled deformation if scale_deformation is checked
+                if self.scale_deformation.isChecked() and hasattr(self.parent, 'apply_displacement_scaling'):
+                    self.parent.apply_displacement_scaling()
         except Exception as e:
             self.animation_timer.stop()
             if hasattr(self.parent, 'message_text'):
@@ -1862,387 +2770,203 @@ class DisplayOptionsWindow(QtWidgets.QDialog):
 
     def hide_selected_part(self):
         """Hide the currently selected part"""
-        if hasattr(self.parent, 'stl_geom') and self.parent.stl_geom:
-            selected_indices = [i for i, highlight in enumerate(self.parent.stl_geom.tri_highlight) if highlight]
-            
-            if selected_indices:
-                # Store hidden indices if not already tracking them
-                if not hasattr(self.parent, 'hidden_indices'):
-                    self.parent.hidden_indices = set()
+        if hasattr(self.parent, 'hide_selected_part'):
+            # Call the parent's method if it exists
+            self.parent.hide_selected_part()
+        else:
+            # Fallback implementation
+            if hasattr(self.parent, 'stl_geom') and self.parent.stl_geom:
+                selected_indices = [i for i, highlight in enumerate(self.parent.stl_geom.tri_highlight) if highlight]
+                
+                if selected_indices:
+                    # Store hidden indices if not already tracking them
+                    if not hasattr(self.parent, 'hidden_indices'):
+                        self.parent.hidden_indices = set()
+                        
+                    # Add current selection to hidden set
+                    self.parent.hidden_indices.update(selected_indices)
                     
-                # Add current selection to hidden set
-                self.parent.hidden_indices.update(selected_indices)
-                
-                # Clear selection
-                self.parent.stl_geom.tri_highlight = [False] * len(self.parent.stl_geom.tri_highlight)
-                self.parent.update_highlights()
-                
-                # Update visibility of STL model
-                self.update_stl_visibility()
-                
-                if hasattr(self.parent, 'message_text'):
-                    self.parent.message_text.append(f"Hidden {len(selected_indices)} triangles")
-            else:
-                if hasattr(self.parent, 'message_text'):
-                    self.parent.message_text.append("No selection to hide")
+                    # Clear selection
+                    self.parent.stl_geom.tri_highlight = [False] * len(self.parent.stl_geom.tri_highlight)
+                    if hasattr(self.parent, 'update_highlights'):
+                        self.parent.update_highlights()
+                    
+                    # Update visibility of STL model
+                    self.update_stl_visibility()
+                    
+                    if hasattr(self.parent, 'message_text'):
+                        self.parent.message_text.append(f"Hidden {len(selected_indices)} triangles")
+                else:
+                    if hasattr(self.parent, 'message_text'):
+                        self.parent.message_text.append("No selection to hide")
 
     def update_stl_visibility(self):
         """Update STL visibility based on hidden indices"""
-        if hasattr(self.parent, 'stl_geom') and hasattr(self.parent, 'hidden_indices'):
-            # Create a visibility array for triangles
-            visibility = vtk.vtkUnsignedCharArray()
-            visibility.SetNumberOfComponents(1)
-            visibility.SetName("Visibility")
-            
-            # Set visibility for each triangle
-            for i in range(self.parent.stl_geom.stl_n_triangles):
-                if i in self.parent.hidden_indices:
-                    visibility.InsertNextValue(0)  # Hidden
-                else:
-                    visibility.InsertNextValue(1)  # Visible
-            
-            # Apply visibility to cell data
-            poly_data = self.parent.stl_actor.GetMapper().GetInput()
-            poly_data.GetCellData().AddArray(visibility)
-            poly_data.GetCellData().SetScalars(visibility)
-            
-            # Update visualization
-            self.parent.stl_actor.GetMapper().Update()
-            self.parent.vtkWidget.GetRenderWindow().Render()
+        if hasattr(self.parent, 'update_stl_visibility'):
+            # Call the parent's method if it exists
+            self.parent.update_stl_visibility()
+        else:
+            # Fallback implementation
+            if hasattr(self.parent, 'stl_geom') and hasattr(self.parent, 'hidden_indices'):
+                # Create a visibility array for triangles
+                visibility = vtk.vtkUnsignedCharArray()
+                visibility.SetNumberOfComponents(1)
+                visibility.SetName("Visibility")
+                
+                # Set visibility for each triangle
+                for i in range(self.parent.stl_geom.stl_n_triangles):
+                    if i in self.parent.hidden_indices:
+                        visibility.InsertNextValue(0)  # Hidden
+                    else:
+                        visibility.InsertNextValue(1)  # Visible
+                
+                # Apply visibility to cell data
+                poly_data = self.parent.stl_actor.GetMapper().GetInput()
+                poly_data.GetCellData().AddArray(visibility)
+                poly_data.GetCellData().SetScalars(visibility)
+                
+                # Update visualization
+                self.parent.stl_actor.GetMapper().Update()
+                self.parent.vtkWidget.GetRenderWindow().Render()
 
     def save_image(self):
         """Save current view as an image file"""
-        options = QtWidgets.QFileDialog.Options()
-        file_path, _ = QtWidgets.QFileDialog.getSaveFileName(
-            self,
-            "Save Image",
-            "",
-            "PNG Files (*.png);;JPEG Files (*.jpg);;All Files (*)",
-            options=options
-        )
-        
-        if file_path:
-            # Make sure file has proper extension
-            if not file_path.lower().endswith(('.png', '.jpg', '.jpeg')):
-                file_path += '.png'
-                
-            try:
-                # Create window to image filter
-                window_to_image = vtk.vtkWindowToImageFilter()
-                window_to_image.SetInput(self.parent.vtkWidget.GetRenderWindow())
-                window_to_image.SetInputBufferTypeToRGBA()
-                window_to_image.ReadFrontBufferOff()
-                window_to_image.Update()
-                
-                # Determine writer type based on extension
-                if file_path.lower().endswith('.jpg') or file_path.lower().endswith('.jpeg'):
-                    writer = vtk.vtkJPEGWriter()
-                else:  # Default to PNG
-                    writer = vtk.vtkPNGWriter()
+        if hasattr(self.parent, 'save_image'):
+            # Call the parent's method if it exists
+            self.parent.save_image()
+        else:
+            # Fallback implementation
+            options = QtWidgets.QFileDialog.Options()
+            file_path, _ = QtWidgets.QFileDialog.getSaveFileName(
+                self,
+                "Save Image",
+                "",
+                "PNG Files (*.png);;JPEG Files (*.jpg);;All Files (*)",
+                options=options
+            )
+            
+            if file_path:
+                # Make sure file has proper extension
+                if not file_path.lower().endswith(('.png', '.jpg', '.jpeg')):
+                    file_path += '.png'
                     
-                writer.SetFileName(file_path)
-                writer.SetInputConnection(window_to_image.GetOutputPort())
-                writer.Write()
-                
-                if hasattr(self.parent, 'message_text'):
-                    self.parent.message_text.append(f"Image saved to {file_path}")
-            except Exception as e:
-                QtWidgets.QMessageBox.critical(self, "Error", f"Failed to save image: {str(e)}")
+                try:
+                    # Create window to image filter
+                    window_to_image = vtk.vtkWindowToImageFilter()
+                    window_to_image.SetInput(self.parent.vtkWidget.GetRenderWindow())
+                    window_to_image.SetInputBufferTypeToRGBA()
+                    window_to_image.ReadFrontBufferOff()
+                    window_to_image.Update()
+                    
+                    # Determine writer type based on extension
+                    if file_path.lower().endswith('.jpg') or file_path.lower().endswith('.jpeg'):
+                        writer = vtk.vtkJPEGWriter()
+                    else:  # Default to PNG
+                        writer = vtk.vtkPNGWriter()
+                        
+                    writer.SetFileName(file_path)
+                    writer.SetInputConnection(window_to_image.GetOutputPort())
+                    writer.Write()
+                    
+                    if hasattr(self.parent, 'message_text'):
+                        self.parent.message_text.append(f"Image saved to {file_path}")
+                except Exception as e:
+                    QtWidgets.QMessageBox.critical(self, "Error", f"Failed to save image: {str(e)}")
 
     def reset_view(self):
         """Reset camera and view settings"""
-        # Reset camera position
-        self.parent.renderer.ResetCamera()
-        
-        # Reset cutting planes
-        self.x_cutting_spin.setValue(0)
-        self.y_cutting_spin.setValue(0)
-        self.z_cutting_spin.setValue(0)
-        
-        # Reset hidden parts if any
-        if hasattr(self.parent, 'hidden_indices'):
-            self.parent.hidden_indices = set()
-            self.update_stl_visibility()
-        
-        # Hide any result actors and show original geometry
-        if hasattr(self.parent, 'results_actor') and self.parent.results_actor:
-            self.parent.results_actor.SetVisibility(False)
+        if hasattr(self.parent, 'reset_view'):
+            # Call the parent's method if it exists
+            self.parent.reset_view()
             
-        if hasattr(self.parent, 'results_mesh_actor') and self.parent.results_mesh_actor:
-            self.parent.results_mesh_actor.SetVisibility(False)
-            
-        if hasattr(self.parent, 'stl_actor') and self.parent.stl_actor:
-            self.parent.stl_actor.SetVisibility(True)
-            self.parent.stl_actor.GetProperty().SetOpacity(1.0)
-            
-        # Reset field combo to None to clear any results
-        self.field_combo.setCurrentIndex(0)  # Assuming "None" is the first item
-            
-        # Hide the scalar bar if visible
-        if hasattr(self.parent, 'scalar_bar'):
-            self.parent.scalar_bar.SetVisibility(False)
-            
-        # Reset view 
-        self.parent.vtkWidget.GetRenderWindow().Render()
-        if hasattr(self.parent, 'message_text'):
-            self.parent.message_text.append("View reset to default")
-
-    def apply_field_visualization(self, field_name):
-        """Apply a specific field visualization (like displacement or stress)"""
-        try:
-            if not hasattr(self.parent, 'analysis_results') or not self.parent.analysis_results:
-                return
-                
-            # Get results data
-            u = self.parent.analysis_results['displacements']
-            display_mode = self.display_mode_combo.currentText()
-            
-            # Apply appropriate visualization based on field
-            if field_name == "Displacement":
-                # Visualize displacement magnitude
-                delta = self.parent.analysis_results['delta']
-                self.visualize_scalar_field(delta, "Displacement (m)", 0, np.max(delta), display_mode)
-                
-            elif field_name == "Von Mises Stress":
-                # This would require stress calculation from strain
-                if hasattr(self.parent, 'message_text'):
-                    self.parent.message_text.append("Von Mises stress visualization not implemented yet")
-                
-            elif field_name == "Temperature":
-                # Thermal analysis results would be needed
-                if hasattr(self.parent, 'message_text'):
-                    self.parent.message_text.append("Temperature visualization not implemented yet")
-                
-        except Exception as e:
-            if hasattr(self.parent, 'message_text'):
-                self.parent.message_text.append(f"Error applying field visualization: {str(e)}")
-
-    def visualize_scalar_field(self, scalar_data, title, min_value, max_value, display_mode="Geometry"):
-        """Visualize a scalar field on the mesh or geometry"""
-        # Check if mesh and results exist
-        if not hasattr(self.parent, 'analysis_mesher') or not self.parent.analysis_mesher:
-            return
-        
-        # Determine if we need to create new visualization or update existing
-        create_new = False
-        if not hasattr(self.parent, 'results_actor') or not self.parent.results_actor:
-            create_new = True
-        elif hasattr(self.parent, 'current_display_mode') and self.parent.current_display_mode != display_mode:
-            # If display mode changed, recreate the visualization
-            create_new = True
-            # Remove old actors
-            if hasattr(self.parent, 'results_actor') and self.parent.results_actor:
-                self.parent.renderer.RemoveActor(self.parent.results_actor)
-            if hasattr(self.parent, 'results_mesh_actor') and self.parent.results_mesh_actor:
-                self.parent.renderer.RemoveActor(self.parent.results_mesh_actor)
-            
-        # Store the current display mode
-        self.parent.current_display_mode = display_mode
-            
-        if create_new:
-            # Create visualization based on display mode
-            if display_mode == "Geometry":
-                self.create_geometry_visualization(scalar_data, title, min_value, max_value)
-            else:  # Mesh mode
-                self.create_mesh_visualization(scalar_data, title, min_value, max_value)
+            # Update the controls to match the new state
+            self.blockAllSignals(True)
+            self.load_current_settings(apply_immediately=False)
+            self.blockAllSignals(False)
         else:
-            # Update existing visualization
-            if display_mode == "Geometry":
-                # Update the existing visualization on geometry
-                if hasattr(self.parent, 'results_actor') and self.parent.results_actor:
-                    mesh = self.parent.results_actor.GetMapper().GetInput()
-                    scalars = mesh.GetPointData().GetScalars()
-                    
-                    # Update scalar values
-                    for i, value in enumerate(scalar_data):
-                        scalars.SetValue(i, value)
-                        
-                    scalars.Modified()
-                    
-                    # Update scalar range
-                    self.parent.results_actor.GetMapper().SetScalarRange(min_value, max_value)
-            else:  # Mesh mode
-                # Update the existing visualization on mesh
-                if hasattr(self.parent, 'results_mesh_actor') and self.parent.results_mesh_actor:
-                    mesh = self.parent.results_mesh_actor.GetMapper().GetInput()
-                    scalars = mesh.GetPointData().GetScalars()
-                    
-                    # Update scalar values
-                    for i, value in enumerate(scalar_data):
-                        scalars.SetValue(i, value)
-                        
-                    scalars.Modified()
-                    
-                    # Update scalar range
-                    self.parent.results_mesh_actor.GetMapper().SetScalarRange(min_value, max_value)
+            # Fallback implementation
+            # Block signals during reset
+            self.blockAllSignals(True)
             
-        # Update scalar bar
-        if hasattr(self.parent, 'scalar_bar'):
-            self.parent.scalar_bar.SetTitle(title)
-            self.parent.scalar_bar.SetVisibility(True)
+            # Reset geometry to initial design
+            self.geom_combo.setCurrentText("InitialDesign")
             
-        # Hide original geometry unless transparency is enabled
-        if hasattr(self.parent, 'stl_actor'):
-            if not self.show_transparent.isChecked():
-                self.parent.stl_actor.SetVisibility(False)
-            else:
+            # Reset field to None
+            self.field_combo.setCurrentIndex(0)
+            
+            # Reset camera position
+            self.parent.renderer.ResetCamera()
+            
+            # Reset cutting planes
+            self.x_cutting_spin.setValue(0)
+            self.y_cutting_spin.setValue(0)
+            self.z_cutting_spin.setValue(0)
+            
+            # Reset hidden parts if any
+            if hasattr(self.parent, 'hidden_indices'):
+                self.parent.hidden_indices = set()
+                self.update_stl_visibility()
+            
+            # Hide any result actors and show original geometry
+            if hasattr(self.parent, 'results_actor') and self.parent.results_actor:
+                self.parent.results_actor.SetVisibility(False)
+                
+            if hasattr(self.parent, 'results_mesh_actor') and self.parent.results_mesh_actor:
+                self.parent.results_mesh_actor.SetVisibility(False)
+                
+            if hasattr(self.parent, 'stl_actor') and self.parent.stl_actor:
                 self.parent.stl_actor.SetVisibility(True)
-                self.parent.stl_actor.GetProperty().SetOpacity(0.3)
+                self.parent.stl_actor.GetProperty().SetOpacity(1.0)
+                
+            # Hide the scalar bar if visible
+            if hasattr(self.parent, 'scalar_bar'):
+                self.parent.scalar_bar.SetVisibility(False)
+                
+            # Reset display settings
+            if hasattr(self.parent, 'display_settings'):
+                self.parent.display_settings = {
+                    'geometry': 'InitialDesign',
+                    'field': 'None',
+                    'display_mode': 'Geometry',
+                    'x_cutting': 0,
+                    'y_cutting': 0,
+                    'z_cutting': 0,
+                    'eigen_number': 1,
+                    'show_bounding_box': False,
+                    'show_results': False,
+                    'show_triangles': False,
+                    'show_text': True,
+                    'scale_deformation': True,
+                    'show_transparent': False,
+                    'show_axis': True,
+                    'show_structural_loads': True,
+                    'show_thermal_loads': False,
+                    'show_topopt_constraints': True,
+                    'show_non_design': True,
+                }
+                
+            # Update checkboxes to match reset settings
+            self.show_bounding_box.setChecked(False)
+            self.show_triangles.setChecked(False)
+            self.show_text.setChecked(True)
+            self.scale_deformation.setChecked(True)
+            self.show_transparent.setChecked(False)
+            self.show_axis.setChecked(True)
+            self.show_structural_loads.setChecked(True)
+            self.show_thermal_loads.setChecked(False)
+            self.show_topopt_constraints.setChecked(True)
+            self.show_non_design.setChecked(True)
             
-        # Update the display
-        self.parent.vtkWidget.GetRenderWindow().Render()
+            # Restore signals
+            self.blockAllSignals(False)
+                
+            # Reset view 
+            self.parent.vtkWidget.GetRenderWindow().Render()
+            if hasattr(self.parent, 'message_text'):
+                self.parent.message_text.append("View reset to default")
         
-    def create_geometry_visualization(self, scalar_data, title, min_value, max_value):
-        """Create visualization of scalar field on the smooth geometry"""
-        try:
-            # We need to map the nodal scalar values to the geometry
-            # This would typically involve creating a smooth geometry representation
-            # and projecting the scalar field onto it
-            
-            # This is a simplified implementation - in a real application, you would need
-            # to implement a more sophisticated mapping algorithm
-            
-            # For now, we'll call the original parent's visualization method
-            # but this should be replaced with a proper geometry-based visualization
-            if hasattr(self.parent, 'visualize_results_on_geometry'):
-                self.parent.visualize_results_on_geometry(scalar_data, min_value, max_value)
-            else:
-                # Fall back to mesh visualization with a smoothed representation
-                self.create_smooth_geometry_visualization(scalar_data, title, min_value, max_value)
-                
-        except Exception as e:
-            if hasattr(self.parent, 'message_text'):
-                self.parent.message_text.append(f"Error creating geometry visualization: {str(e)}")
-            
-    def create_smooth_geometry_visualization(self, scalar_data, title, min_value, max_value):
-        """Create a smoothed geometry visualization as fallback"""
-        try:
-            # Create a VTK unstructured grid from the mesh data
-            if not hasattr(self.parent, 'analysis_mesher'):
-                return
-                
-            # Create points for the VTK grid
-            points = vtk.vtkPoints()
-            for i in range(self.parent.analysis_mesher.num_nodes):
-                points.InsertNextPoint(self.parent.analysis_mesher.node_xyz[i])
-            
-            # Create the grid
-            grid = vtk.vtkUnstructuredGrid()
-            grid.SetPoints(points)
-            
-            # Add scalar data to points
-            vtk_scalars = vtk.vtkFloatArray()
-            vtk_scalars.SetName(title)
-            for value in scalar_data:
-                vtk_scalars.InsertNextValue(value)
-            grid.GetPointData().SetScalars(vtk_scalars)
-            
-            # Use vtkGeometryFilter to extract the surface
-            geometry_filter = vtk.vtkGeometryFilter()
-            geometry_filter.SetInputData(grid)
-            
-            # Smooth the surface
-            smooth_filter = vtk.vtkSmoothPolyDataFilter()
-            smooth_filter.SetInputConnection(geometry_filter.GetOutputPort())
-            smooth_filter.SetNumberOfIterations(20)
-            smooth_filter.SetRelaxationFactor(0.1)
-            smooth_filter.Update()
-            
-            # Create mapper and actor
-            mapper = vtk.vtkPolyDataMapper()
-            mapper.SetInputConnection(smooth_filter.GetOutputPort())
-            mapper.SetScalarRange(min_value, max_value)
-            
-            # Store the actor
-            self.parent.results_actor = vtk.vtkActor()
-            self.parent.results_actor.SetMapper(mapper)
-            
-            # Add actor to renderer
-            self.parent.renderer.AddActor(self.parent.results_actor)
-            
-            # Create a scalar bar (color legend)
-            if not hasattr(self.parent, 'scalar_bar'):
-                scalar_bar = vtk.vtkScalarBarActor()
-                scalar_bar.SetTitle(title)
-                scalar_bar.SetNumberOfLabels(5)
-                scalar_bar.SetOrientationToVertical()
-                scalar_bar.SetPosition(0.85, 0.1)
-                scalar_bar.SetWidth(0.12)
-                scalar_bar.SetHeight(0.8)
-                
-                self.parent.scalar_bar = scalar_bar
-                self.parent.renderer.AddActor2D(scalar_bar)
-            
-        except Exception as e:
-            if hasattr(self.parent, 'message_text'):
-                self.parent.message_text.append(f"Error creating smooth geometry visualization: {str(e)}")
-    
-    def create_mesh_visualization(self, scalar_data, title, min_value, max_value):
-        """Create visualization of scalar field on the mesh elements"""
-        try:
-            if not hasattr(self.parent, 'analysis_mesher'):
-                return
-                
-            # Create points
-            points = vtk.vtkPoints()
-            for i in range(self.parent.analysis_mesher.num_nodes):
-                points.InsertNextPoint(self.parent.analysis_mesher.node_xyz[i])
-            
-            # Create the elements (cells)
-            cells = vtk.vtkCellArray()
-            
-            # Create an unstructured grid with elements from the analysis mesh
-            # This is a simplified implementation - adjust based on your actual mesh data
-            grid = vtk.vtkUnstructuredGrid()
-            grid.SetPoints(points)
-            
-            # Add tetrahedra, hexahedra, etc. based on your mesh
-            # This is just a placeholder - you need to fill it with your actual element data
-            if hasattr(self.parent.analysis_mesher, 'elements'):
-                for element in self.parent.analysis_mesher.elements:
-                    # Create cell based on element type (tetra, hexa, etc.)
-                    # Example for tetrahedron:
-                    tetra = vtk.vtkTetra()
-                    for j in range(4):  # Tetrahedron has 4 nodes
-                        tetra.GetPointIds().SetId(j, element[j])
-                    grid.InsertNextCell(tetra.GetCellType(), tetra.GetPointIds())
-            
-            # Add scalar data to points
-            vtk_scalars = vtk.vtkFloatArray()
-            vtk_scalars.SetName(title)
-            for value in scalar_data:
-                vtk_scalars.InsertNextValue(value)
-            grid.GetPointData().SetScalars(vtk_scalars)
-            
-            # Create mapper and actor for the mesh visualization
-            mapper = vtk.vtkDataSetMapper()
-            mapper.SetInputData(grid)
-            mapper.SetScalarRange(min_value, max_value)
-            
-            # Store the mesh actor
-            self.parent.results_mesh_actor = vtk.vtkActor()
-            self.parent.results_mesh_actor.SetMapper(mapper)
-            
-            # Add the actor to the renderer
-            self.parent.renderer.AddActor(self.parent.results_mesh_actor)
-            
-            # Create a scalar bar if it doesn't exist
-            if not hasattr(self.parent, 'scalar_bar'):
-                scalar_bar = vtk.vtkScalarBarActor()
-                scalar_bar.SetTitle(title)
-                scalar_bar.SetNumberOfLabels(5)
-                scalar_bar.SetOrientationToVertical()
-                scalar_bar.SetPosition(0.85, 0.1)
-                scalar_bar.SetWidth(0.12)
-                scalar_bar.SetHeight(0.8)
-                
-                self.parent.scalar_bar = scalar_bar
-                self.parent.renderer.AddActor2D(scalar_bar)
-                
-        except Exception as e:
-            if hasattr(self.parent, 'message_text'):
-                self.parent.message_text.append(f"Error creating mesh visualization: {str(e)}")
 
+    
 #---------------------------------------------------------------------------------
 class MaterialWindow(QtWidgets.QDialog):
     def __init__(self, parent):
@@ -2273,6 +2997,10 @@ class MaterialWindow(QtWidgets.QDialog):
         form_layout = QtWidgets.QFormLayout()
         form_layout.setSpacing(10)
         
+        # Get unit strings based on current settings
+        stress_unit = self.parent.settings.get_stress_unit_string()
+        density_unit = f"kg/m³"  # Density typically stays in SI units
+        
         # Create input fields with units
         self.young_input = QtWidgets.QLineEdit("2.1e+11")
         self.poisson_input = QtWidgets.QLineEdit("0.28")
@@ -2284,10 +3012,10 @@ class MaterialWindow(QtWidgets.QDialog):
         self.price_input = QtWidgets.QLineEdit("2")
         
         # Add rows to form with units
-        form_layout.addRow("Young's Modulus (N/m^2):", self.young_input)
+        form_layout.addRow(f"Young's Modulus ({stress_unit}):", self.young_input)
         form_layout.addRow("Poisson ratio ( - ):", self.poisson_input)
-        form_layout.addRow("Yield Strength (N/m^2):", self.yield_input)
-        form_layout.addRow("Density (kg/m^3):", self.density_input)
+        form_layout.addRow(f"Yield Strength ({stress_unit}):", self.yield_input)
+        form_layout.addRow(f"Density ({density_unit}):", self.density_input)
         form_layout.addRow("Thermal Conductivity (W/m-K):", self.thermal_cond_input)
         form_layout.addRow("Thermal Expansion (m/m-K):", self.thermal_exp_input)
         form_layout.addRow("Spec. Heat Capacity (J/kg-K):", self.spec_heat_input)
@@ -2307,7 +3035,7 @@ class MaterialWindow(QtWidgets.QDialog):
         # Connect material change event
         self.material_combo.currentTextChanged.connect(self.on_material_changed)
         
-        # Material data dictionary
+        # Material data dictionary - store values in base units (MKS/Pascal)
         self.materials_data = {
             "AlloySteel": {
                 "young": "2.1e+11",
@@ -2350,20 +3078,43 @@ class MaterialWindow(QtWidgets.QDialog):
                 "price": "4"
             }
         }
+        
+        # Initialize values for current material with correct unit conversions
+        self.update_material_for_current_units("AlloySteel")
 
     def on_material_changed(self, material_name):
         if material_name != "Custom":
-            material = self.materials_data[material_name]
-            self.young_input.setText(material["young"])
-            self.poisson_input.setText(material["poisson"])
-            self.yield_input.setText(material["yield"])
-            self.density_input.setText(material["density"])
-            self.thermal_cond_input.setText(material["thermal_cond"])
-            self.thermal_exp_input.setText(material["thermal_exp"])
-            self.spec_heat_input.setText(material["spec_heat"])
-            self.price_input.setText(material["price"])
+            self.update_material_for_current_units(material_name)
         else:
             self.clear_inputs()
+    
+    def update_material_for_current_units(self, material_name):
+        """Update material properties with values converted to current unit system"""
+        if material_name not in self.materials_data:
+            return
+            
+        material = self.materials_data[material_name]
+        
+        # Convert material properties from base units (MKS) to current unit system
+        current_unit_system = self.parent.settings.unit_system
+        
+        # Convert Young's modulus and yield strength to display units
+        young_value = float(material["young"])
+        yield_value = float(material["yield"])
+        
+        if current_unit_system != "MKS":
+            young_value = self.parent.settings.convert_stress(young_value, from_system="MKS")
+            yield_value = self.parent.settings.convert_stress(yield_value, from_system="MKS")
+        
+        # Update the input fields with converted values
+        self.young_input.setText(f"{young_value:.2e}")
+        self.poisson_input.setText(material["poisson"])
+        self.yield_input.setText(f"{yield_value:.2e}")
+        self.density_input.setText(material["density"])
+        self.thermal_cond_input.setText(material["thermal_cond"])
+        self.thermal_exp_input.setText(material["thermal_exp"])
+        self.spec_heat_input.setText(material["spec_heat"])
+        self.price_input.setText(material["price"])
 
     def clear_inputs(self):
         self.young_input.clear()
@@ -2377,11 +3128,30 @@ class MaterialWindow(QtWidgets.QDialog):
 
     def apply_material(self):
         try:
+            current_unit_system = self.parent.settings.unit_system
+            
+            # Parse values from input fields
+            young_input_value = float(self.young_input.text())
+            yield_input_value = float(self.yield_input.text())
+            
+            # Convert stress values back to MKS (Pascal) for internal storage
+            if current_unit_system != "MKS":
+                young_modulus = self.parent.settings.convert_stress(young_input_value, 
+                                                               from_system=current_unit_system, 
+                                                               to_system="MKS")
+                yield_strength = self.parent.settings.convert_stress(yield_input_value, 
+                                                                from_system=current_unit_system, 
+                                                                to_system="MKS")
+            else:
+                young_modulus = young_input_value
+                yield_strength = yield_input_value
+            
+            # Create material data dictionary with values in base units
             material_data = {
                 "name": self.material_combo.currentText(),
-                "young_modulus": float(self.young_input.text()),
+                "young_modulus": young_modulus,
                 "poisson_ratio": float(self.poisson_input.text()),
-                "yield_strength": float(self.yield_input.text()),
+                "yield_strength": yield_strength,
                 "density": float(self.density_input.text()),
                 "thermal_conductivity": float(self.thermal_cond_input.text()),
                 "thermal_expansion": float(self.thermal_exp_input.text()),
@@ -2390,13 +3160,25 @@ class MaterialWindow(QtWidgets.QDialog):
                 "do_not_optimize": self.optimize_check.isChecked()
             }
             
+            # Also store display values for UI use
+            material_data["display_young_modulus"] = young_input_value
+            material_data["display_yield_strength"] = yield_input_value
+            material_data["display_unit_system"] = current_unit_system
+            
             # Validate inputs
             if not (0 < material_data["poisson_ratio"] < 0.5):
                 raise ValueError("Poisson's ratio must be between 0 and 0.5")
             
             # Store material data in parent
             self.parent.material_data = material_data
-            self.parent.message_text.append(f"Material applied: {material_data['name']}")
+            
+            # Add appropriate unit to the message
+            stress_unit = self.parent.settings.get_stress_unit_string()
+            self.parent.message_text.append(
+                f"Material applied: {material_data['name']} " + 
+                f"(E={young_input_value:.2e} {stress_unit}, " +
+                f"σ_y={yield_input_value:.2e} {stress_unit})"
+            )
             
             # Change geometry color to indicate material application
             if hasattr(self.parent, 'stl_actor'):
@@ -2458,10 +3240,13 @@ class StructuralLoadsWindow(QtWidgets.QDialog):
         load_type_layout = QtWidgets.QHBoxLayout()
         load_type_label = QtWidgets.QLabel("Load Type")
         self.load_type = QtWidgets.QComboBox()
-        self.load_type.addItems(["Force", "Fixed XYZ", "Fixed X", "Fixed Y", "Fixed Z"])
+        self.load_type.addItems(["Force", "Torque", "Fixed XYZ", "Fixed X", "Fixed Y", "Fixed Z"])
         load_type_layout.addWidget(load_type_label)
         load_type_layout.addWidget(self.load_type)
         layout.addLayout(load_type_layout)
+
+        # Get force unit string
+        force_unit = self.parent.settings.get_force_unit_string()
         
         # Force components
         self.force_group = QtWidgets.QGroupBox()
@@ -2469,7 +3254,7 @@ class StructuralLoadsWindow(QtWidgets.QDialog):
         
         # X Force
         x_force_layout = QtWidgets.QHBoxLayout()
-        x_force_label = QtWidgets.QLabel("X-Force (N)")
+        x_force_label = QtWidgets.QLabel(f"X-Force ({force_unit})")
         self.x_force_spin = QtWidgets.QDoubleSpinBox()
         self.x_force_spin.setRange(-1e6, 1e6)
         self.x_force_spin.setDecimals(1)
@@ -2479,7 +3264,7 @@ class StructuralLoadsWindow(QtWidgets.QDialog):
         
         # Y Force
         y_force_layout = QtWidgets.QHBoxLayout()
-        y_force_label = QtWidgets.QLabel("Y-Force (N)")
+        y_force_label = QtWidgets.QLabel(f"Y-Force ({force_unit})")
         self.y_force_spin = QtWidgets.QDoubleSpinBox()
         self.y_force_spin.setRange(-1e6, 1e6)
         self.y_force_spin.setDecimals(1)
@@ -2489,7 +3274,7 @@ class StructuralLoadsWindow(QtWidgets.QDialog):
         
         # Z Force
         z_force_layout = QtWidgets.QHBoxLayout()
-        z_force_label = QtWidgets.QLabel("Z-Force (N)")
+        z_force_label = QtWidgets.QLabel(f"Z-Force ({force_unit})")
         self.z_force_spin = QtWidgets.QDoubleSpinBox()
         self.z_force_spin.setRange(-1e6, 1e6)
         self.z_force_spin.setDecimals(1)
@@ -2498,6 +3283,29 @@ class StructuralLoadsWindow(QtWidgets.QDialog):
         force_layout.addLayout(z_force_layout)
         
         layout.addWidget(self.force_group)
+
+        # Torque components
+        self.torque_group = QtWidgets.QGroupBox()
+        torque_layout = QtWidgets.QVBoxLayout(self.torque_group)
+        
+        # Torque magnitude
+        torque_magnitude_layout = QtWidgets.QHBoxLayout()
+        torque_magnitude_label = QtWidgets.QLabel(f"Torque Magnitude ({force_unit}·m)")
+        self.torque_magnitude_spin = QtWidgets.QDoubleSpinBox()
+        self.torque_magnitude_spin.setRange(-1e6, 1e6)
+        self.torque_magnitude_spin.setDecimals(1)
+        self.torque_magnitude_spin.setValue(100.0)  # Default value
+        torque_magnitude_layout.addWidget(torque_magnitude_label)
+        torque_magnitude_layout.addWidget(self.torque_magnitude_spin)
+        torque_layout.addLayout(torque_magnitude_layout)
+        
+        # Label for axis information
+        axis_info_label = QtWidgets.QLabel("Torque will be applied around the central axis of the selected cylindrical surface")
+        axis_info_label.setWordWrap(True)
+        torque_layout.addWidget(axis_info_label)
+        
+        layout.addWidget(self.torque_group)
+        self.torque_group.hide()  # Initially hide the torque controls
         
         # Buttons
         button_layout = QtWidgets.QHBoxLayout()
@@ -2515,7 +3323,9 @@ class StructuralLoadsWindow(QtWidgets.QDialog):
     def on_load_type_changed(self, load_type):
         # Show/hide force inputs based on load type
         show_force = load_type == "Force"
+        show_torque = load_type == "Torque"
         self.force_group.setVisible(show_force)
+        self.torque_group.setVisible(show_torque)
         self.adjustSize()
 
     def compute_alignment_matrix(self, normal):
@@ -2570,6 +3380,8 @@ class StructuralLoadsWindow(QtWidgets.QDialog):
         
         if load_type == "Force":
             self.apply_force()
+        elif load_type == "Torque":
+            self.apply_torque()
         elif load_type == "Fixed XYZ":
             self.apply_fixed_constraint()
         elif load_type == "Fixed X":
@@ -2578,18 +3390,315 @@ class StructuralLoadsWindow(QtWidgets.QDialog):
             self.apply_fixed_constraint_y()
         elif load_type == "Fixed Z":
             self.apply_fixed_constraint_z()
-            
-    def apply_force(self):
+
+    def apply_torque(self):
+        """Apply torque to selected cylindrical or planar surfaces with proper unit conversion"""
         if not self.parent.stl_geom:
             return
                 
         try:
-            # Get force components from spinboxes
+            # Get torque magnitude from spinbox in current unit system
+            torque_magnitude = self.torque_magnitude_spin.value()
+            
+            # Convert to base units (Newton-meters) if needed
+            if self.parent.settings.unit_system != "MKS":
+                torque_magnitude = self.parent.settings.convert_force(torque_magnitude, 
+                                                        from_system=self.parent.settings.unit_system,
+                                                        to_system="MKS") * 1.0  # Multiply by 1.0 meter for torque
+            
+            if torque_magnitude == 0:
+                QtWidgets.QMessageBox.warning(self, "Error", "Torque magnitude cannot be zero")
+                return
+                
+            selected_faces = self.parent.stl_geom.store_selected_triangles()
+            if not selected_faces:
+                QtWidgets.QMessageBox.warning(self, "Error", "No faces selected")
+                return
+            
+            
+            # Call the assign_highlighted_triangles_to_group method
+            surface_type, average_normal, area, cylinder_axis, axis_point, cylinder_radius = self.parent.stl_geom.assign_highlighted_triangles_to_group(
+                group=1, stl_verbose=False
+            )
+            
+            # Check if surface is planar or cylindrical
+            if surface_type not in ["PLANAR", "CYLINDER"]:
+                QtWidgets.QMessageBox.warning(self, "Error", "Currently, torque can only be applied on planes or cylinders")
+                return
+            
+            # Calculate the direction vector based on surface type
+            if surface_type == "PLANAR":
+                # For planar surfaces, use the average normal
+                direction = average_normal
+                # Normalize direction
+                norm = np.linalg.norm(direction)
+                if norm < 1e-12:
+                    QtWidgets.QMessageBox.warning(self, "Error", "Invalid normal vector")
+                    return
+                direction = [d / norm for d in direction]
+                
+            elif surface_type == "CYLINDER":
+                # For cylindrical surfaces, use the cylinder axis
+                direction = cylinder_axis
+                # Normalize direction
+                norm = np.linalg.norm(direction)
+                if norm < 1e-12:
+                    QtWidgets.QMessageBox.warning(self, "Error", "Invalid cylinder axis")
+                    return
+                direction = [d / norm for d in direction]
+            
+            # Store selected face data and torque info for later node selection
+            if not hasattr(self.parent, 'torque_faces_groups'):
+                self.parent.torque_faces_groups = []
+                self.parent.torque_values = []
+                self.parent.torque_axis_points = []
+                
+            # Add this group of faces and its torque information
+            self.parent.torque_faces_groups.append(selected_faces)
+            
+            # Store the direction vector multiplied by torque magnitude
+            torque_vector = [torque_magnitude * d for d in direction]
+            self.parent.torque_values.append(torque_vector)
+            self.parent.torque_axis_points.append(axis_point)
+
+            # Get the appropriate force unit string for display
+            force_unit = self.parent.settings.get_force_unit_string()
+            
+            # Display magnitude in current unit system for messages
+            display_magnitude = torque_magnitude
+            if self.parent.settings.unit_system != "MKS":
+                display_magnitude = self.parent.settings.convert_force(torque_magnitude, 
+                                                                from_system="MKS", 
+                                                                to_system=self.parent.settings.unit_system)
+            
+            # Visualization code
+            points = np.array(self.parent.stl_geom.mesh.points)
+            bbox = [points[:,0].min(), points[:,0].max(),
+                    points[:,1].min(), points[:,1].max(),
+                    points[:,2].min(), points[:,2].max()]
+            geom_size = max(bbox[1]-bbox[0], bbox[3]-bbox[2], bbox[5]-bbox[4])
+            scale_factor = 0.15 * geom_size 
+            
+            # Create curved arrow for torque visualization
+            if not hasattr(self.parent, 'torque_actors'):
+                self.parent.torque_actors = []
+                
+            # Create a circle with an arrow tip
+            circle_resolution = 36
+            angle_increment = 270.0 / (circle_resolution - 1)  # 270 degree arc
+            
+            points = vtk.vtkPoints()
+            lines = vtk.vtkCellArray()
+            
+            # # Create a 270-degree arc
+            # radius = 0.24 * scale_factor  # Radius of the circle
+
+            # Create a 270-degree arc
+            if surface_type == "CYLINDER":
+                # For cylindrical surfaces
+                radius = 0.8 * cylinder_radius  # 80% of the cylinder radius
+            else:
+                # For planar surfaces
+                model_size = max(bbox[1]-bbox[0], bbox[3]-bbox[2], bbox[5]-bbox[4])
+                radius = 0.15 * model_size  
+            
+            # Make sure radius is not too small or too large
+            min_radius = 0.05 * scale_factor
+            max_radius = 0.24 * scale_factor
+            radius = max(min_radius, min(radius, max_radius))
+            
+            # Start with the center point
+            center_id = points.InsertNextPoint(axis_point)
+            
+            # Add points for the arc
+            for i in range(circle_resolution):
+                angle = math.radians(i * angle_increment)
+                # Calculate point on circle 
+                x = radius * math.cos(angle)
+                y = radius * math.sin(angle)
+                z = 0.0
+                points.InsertNextPoint([x, y, z])
+            
+            # Create a circle actor
+            circle_poly = vtk.vtkPolyData()
+            circle_poly.SetPoints(points)
+            
+            # Create lines for the arc
+            for i in range(1, circle_resolution):
+                line = vtk.vtkLine()
+                line.GetPointIds().SetId(0, i)
+                line.GetPointIds().SetId(1, i + 1 if i < circle_resolution - 1 else i)
+                lines.InsertNextCell(line)
+                
+            circle_poly.SetLines(lines)
+            
+            # Create arrow tip at end of arc
+            arrow_tip = vtk.vtkConeSource()
+            arrow_tip.SetHeight(0.2 * scale_factor)
+            arrow_tip.SetRadius(0.06 * scale_factor)
+            arrow_tip.SetResolution(10)
+            
+            # align it with the torque axis and position it
+            transform = vtk.vtkTransform()
+            transform.Identity()
+            
+            # Calculate the perpendicular vectors to the torque direction
+            perpendicular1 = [0, 0, 0]
+            perpendicular2 = [0, 0, 0]
+            
+            # Find perpendicular vectors using cross product
+            if abs(direction[2]) < 0.707:
+                perpendicular1[0] = -direction[1]
+                perpendicular1[1] = direction[0]
+                perpendicular1[2] = 0
+            else:
+                perpendicular1[0] = 0
+                perpendicular1[1] = -direction[2]
+                perpendicular1[2] = direction[1]
+                
+            # Normalize perpendicular_1
+            norm = math.sqrt(sum(v*v for v in perpendicular1))
+            if norm > 1e-6:
+                perpendicular1 = [v/norm for v in perpendicular1]
+                
+            # Calculate perpendicular_2 using cross product of direction and perpendicular1
+            perpendicular2[0] = direction[1]*perpendicular1[2] - direction[2]*perpendicular1[1]
+            perpendicular2[1] = direction[2]*perpendicular1[0] - direction[0]*perpendicular1[2]
+            perpendicular2[2] = direction[0]*perpendicular1[1] - direction[1]*perpendicular1[0]
+            
+            # Create transformation matrix
+            matrix = vtk.vtkMatrix4x4()
+            for i in range(3):
+                matrix.SetElement(i, 0, perpendicular1[i])
+                matrix.SetElement(i, 1, perpendicular2[i])
+                matrix.SetElement(i, 2, direction[i])
+                matrix.SetElement(i, 3, axis_point[i])
+            matrix.SetElement(3, 3, 1)
+            
+            transform.SetMatrix(matrix)
+            
+            # Create mapper and actor for the circle
+            circle_mapper = vtk.vtkPolyDataMapper()
+            circle_mapper.SetInputData(circle_poly)
+            
+            circle_actor = vtk.vtkActor()
+            circle_actor.SetMapper(circle_mapper)
+            circle_actor.SetUserTransform(transform)
+            circle_actor.GetProperty().SetColor(0, 0.8, 0)  # Green color for torque
+            circle_actor.GetProperty().SetLineWidth(3)
+            
+            # Add the circle actor to the renderer
+            self.parent.renderer.AddActor(circle_actor)
+            self.parent.torque_actors.append(circle_actor)
+            
+            # Position and orient the arrow tip at the end of the arc
+            arrow_tip_transform = vtk.vtkTransform()
+            arrow_tip_transform.Identity()
+            
+            # Last point on the arc
+            last_angle = math.radians(270.0)
+            tip_x = radius * math.cos(last_angle)
+            tip_y = radius * math.sin(last_angle)
+            
+            # Apply the main transform
+            arrow_tip_transform.Concatenate(transform)
+            
+            # Position at end of arc
+            arrow_tip_transform.Translate(tip_x, tip_y, 0)
+            
+            # Orient in the tangent direction
+            arrow_tip_transform.RotateZ(180)  # Align with tangent direction
+            
+            # Create mapper and actor for arrow tip
+            arrow_tip_mapper = vtk.vtkPolyDataMapper()
+            arrow_tip_mapper.SetInputConnection(arrow_tip.GetOutputPort())
+            
+            arrow_tip_actor = vtk.vtkActor()
+            arrow_tip_actor.SetMapper(arrow_tip_mapper)
+            arrow_tip_actor.SetUserTransform(arrow_tip_transform)
+            arrow_tip_actor.GetProperty().SetColor(0, 0.8, 0)  # Green color matching the arc
+            
+            # Add the arrow tip actor to the renderer
+            self.parent.renderer.AddActor(arrow_tip_actor)
+            self.parent.torque_actors.append(arrow_tip_actor)
+            
+            # Create text label for the torque value
+            text_offset = 0.2 * geom_size 
+            text_pos = [
+                axis_point[0] + text_offset * perpendicular1[0],
+                axis_point[1] + text_offset * perpendicular1[1],
+                axis_point[2] + text_offset * perpendicular1[2]
+            ]
+            
+            # Create a vtkCaptionActor2D for the torque value text
+            caption_actor = vtk.vtkCaptionActor2D()
+            
+            # Format the torque value with proper units
+            torque_text = f"{display_magnitude:.2f} {force_unit}·m"
+            caption_actor.SetCaption(torque_text)
+            caption_actor.SetAttachmentPoint(text_pos)
+            
+            # Customize text appearance
+            caption_actor.BorderOff()
+            caption_actor.LeaderOff()  # No leader line
+            
+            # Set text properties
+            text_prop = caption_actor.GetCaptionTextProperty()
+            text_prop.SetColor(0.0, 0.8, 0.0)  # Green text to match torque arrow
+            text_prop.SetFontSize(5)
+            
+            # Scale the text appropriately
+            caption_actor.SetWidth(0.15)
+            caption_actor.SetHeight(0.05)
+            text_prop.SetBold(True)
+            text_prop.SetShadow(True)
+            
+            # Add to renderer and store
+            self.parent.renderer.AddActor(caption_actor)
+            self.parent.torque_actors.append(caption_actor)
+            
+            # Release faces from selection
+            for triangle in selected_faces:
+                idx = triangle['index']
+                self.parent.stl_geom.tri_highlight[idx] = False
+            self.parent.update_highlights()
+            
+            self.parent.vtkWidget.GetRenderWindow().Render()
+            self.parent.message_text.append(f"Applied torque of {display_magnitude:.2f} {force_unit}·m to {len(selected_faces)} triangles ({surface_type.lower()} surface)")
+            self.parent.update_button_icon("Structural Loads", "check")
+            
+            # Update LivVar state
+            self.parent.update_LivVar('structural_loads.torque_applied', True)
+            self.parent.update_LivVar('structural_loads.applied', True)
+            self.close()
+            
+        except Exception as e:
+            QtWidgets.QMessageBox.warning(self, "Error", str(e))
+            
+    def apply_force(self):
+        """Apply force to selected nodes with proper unit conversion"""
+        if not self.parent.stl_geom:
+            return
+                
+        try:
+            # Get force components from spinboxes in current unit system
             force_x = self.x_force_spin.value()
             force_y = self.y_force_spin.value()
             force_z = self.z_force_spin.value()
             
-            # Calculate magnitude
+            # Convert to base units (Newtons) if needed
+            if self.parent.settings.unit_system != "MKS":
+                force_x = self.parent.settings.convert_force(force_x, 
+                                                         from_system=self.parent.settings.unit_system,
+                                                         to_system="MKS")
+                force_y = self.parent.settings.convert_force(force_y, 
+                                                         from_system=self.parent.settings.unit_system,
+                                                         to_system="MKS")
+                force_z = self.parent.settings.convert_force(force_z, 
+                                                         from_system=self.parent.settings.unit_system,
+                                                         to_system="MKS")
+            
+            # Calculate magnitude in converted units
             magnitude = math.sqrt(force_x**2 + force_y**2 + force_z**2)
             if magnitude == 0:
                 QtWidgets.QMessageBox.warning(self, "Error", "Force magnitude cannot be zero")
@@ -2608,6 +3717,16 @@ class StructuralLoadsWindow(QtWidgets.QDialog):
             # Add this group of faces and its force
             self.parent.load_faces_groups.append(selected_faces)
             self.parent.load_forces.append([force_x, force_y, force_z])
+
+            # Get the appropriate force unit string for display
+            force_unit = self.parent.settings.get_force_unit_string()
+            
+            # Display magnitude in current unit system for messages
+            display_magnitude = magnitude
+            if self.parent.settings.unit_system != "MKS":
+                display_magnitude = self.parent.settings.convert_force(magnitude, 
+                                                                  from_system="MKS", 
+                                                                  to_system=self.parent.settings.unit_system)
             
             # Visualization code
             MAX_MARKERS = 5
@@ -2686,7 +3805,7 @@ class StructuralLoadsWindow(QtWidgets.QDialog):
                 caption_actor = vtk.vtkCaptionActor2D()
                 
                 # Format the force components and magnitude
-                force_text = f"{magnitude:.1f} N"
+                force_text = f"{display_magnitude:.2f} {force_unit}"
                 # if abs(force_x) > 0.01 or abs(force_y) > 0.01 or abs(force_z) > 0.01:
                 #     force_text += f"\n({force_x:.1f}, {force_y:.1f}, {force_z:.1f}) N"
                 
@@ -2756,7 +3875,7 @@ class StructuralLoadsWindow(QtWidgets.QDialog):
             self.parent.update_highlights()
             
             self.parent.vtkWidget.GetRenderWindow().Render()
-            self.parent.message_text.append(f"Applied force of {magnitude:.2f}N to {len(selected_faces)} triangles")
+            self.parent.message_text.append(f"Applied force of {display_magnitude:.2f} {force_unit} to {len(selected_faces)} triangles")
             self.parent.update_button_icon("Structural Loads", "check")
             # Update LivVar state
             self.parent.update_LivVar('structural_loads.forces_applied', True)
@@ -3210,6 +4329,17 @@ class AnalysisWindow(QtWidgets.QDialog):
                     force = self.parent.load_forces[i]
                     self.parent.message_text.append(f"\nLoad group {i+1}: {len(nodes)} nodes with force ({force[0]}, {force[1]}, {force[2]})N")
 
+            #process torque faces
+            torque_nodes_groups = []
+            if hasattr(self.parent, 'torque_faces_groups') and hasattr(self.parent, 'torque_values'):
+                for i, faces_group in enumerate(self.parent.torque_faces_groups):
+                    nodes = find_nodes_for_faces(faces_group)
+                    torque_nodes_groups.append(nodes)
+                    torque = self.parent.torque_values[i]
+                    axis_point = self.parent.torque_axis_points[i]
+                    torque_magnitude = np.linalg.norm(torque)
+                    self.parent.message_text.append(f"\nTorque group {i+1}: {len(nodes)} nodes with torque magnitude {torque_magnitude:.2f}N·m")
+            
             # Process thermal faces
             thermal_nodes = {'fixed_temps': [], 'heat_sources': [], 'convection': []}
             if hasattr(self.parent, 'thermal_loads'):
@@ -3239,6 +4369,7 @@ class AnalysisWindow(QtWidgets.QDialog):
                 'z': fixed_nodes_z
             }
             self.parent.load_nodes_groups = load_nodes_groups
+            self.parent.torque_nodes_groups = torque_nodes_groups
             self.parent.thermal_nodes = thermal_nodes
             
             
@@ -3286,6 +4417,8 @@ class AnalysisWindow(QtWidgets.QDialog):
                     colors.InsertNextTuple3(128, 128, 255)  # Light blue for Z
                 elif any(i in nodes for nodes in load_nodes_groups):
                     colors.InsertNextTuple3(255, 165, 0)  # Orange for loaded nodes
+                elif any(i in nodes for nodes in torque_nodes_groups):
+                    colors.InsertNextTuple3(0, 200, 0)
                 # Check for thermal boundary conditions
                 elif any(i in nodes for nodes, _ in thermal_nodes['fixed_temps']):
                     colors.InsertNextTuple3(0, 0, 255)  # Blue for fixed temperature
@@ -3380,6 +4513,59 @@ class AnalysisWindow(QtWidgets.QDialog):
                     force[3*node:3*node + 3] += force_per_node
                     mesh.node_indices[node, 3] = 5
 
+        # Process loads - initialize with zeros
+        # force = np.zeros(3*mesh.num_nodes)
+        # Process direct forces if they exist
+        # if 'load_nodes_groups' in load_data and 'load_forces' in load_data and load_data['load_nodes_groups'] and load_data['load_forces']:
+        #     for nodes, force_vector in zip(load_data['load_nodes_groups'], load_data['load_forces']):
+        #         if nodes:
+        #             force_per_node = np.array(force_vector) / len(nodes)
+        #             for node in nodes:
+        #                 force[3*node:3*node + 3] += force_per_node
+        #                 mesh.node_indices[node, 3] = 5
+
+        # # Process torque forces
+        # if 'torque_nodes_groups' in load_data and 'torque_values' in load_data and 'torque_axis_points' in load_data:
+        #     for i, nodes in enumerate(load_data['torque_nodes_groups']):
+        #         if nodes:
+        #             # Get the torque parameters
+        #             torque_vector = np.array(load_data['torque_values'][i])
+        #             axis_point = np.array(load_data['torque_axis_points'][i])
+        #             torque_magnitude = np.linalg.norm(torque_vector)
+                    
+        #             # Normalize torque direction
+        #             torque_dir = torque_vector / torque_magnitude if torque_magnitude > 0 else np.array([0, 0, 1])
+                    
+        #             # Process each node in this torque group
+        #             for node in nodes:
+        #                 # Get node position
+        #                 node_pos = mesh.node_xyz[node]
+                        
+        #                 # Vector from axis point to node
+        #                 r_vector = node_pos - axis_point
+                        
+        #                 # Project r_vector onto plane perpendicular to torque axis
+        #                 # by removing the component along the torque direction
+        #                 dot_product = np.dot(r_vector, torque_dir)
+        #                 r_proj = r_vector - dot_product * torque_dir
+        #                 r_norm = np.linalg.norm(r_proj)
+                        
+        #                 if r_norm > 1e-10:  # Only apply force if node is away from axis
+        #                     # Calculate tangential direction (perpendicular to r_proj in the plane)
+        #                     # Cross product of torque_dir and r_proj gives tangential direction
+        #                     tangent_dir = np.cross(torque_dir, r_proj)
+        #                     tangent_dir = tangent_dir / np.linalg.norm(tangent_dir)
+                            
+        #                     # Calculate force magnitude: torque = r × F, so F = torque / r
+        #                     force_magnitude = torque_magnitude / (r_norm * len(nodes))
+                            
+        #                     # Apply force in tangential direction
+        #                     force_vector = force_magnitude * tangent_dir
+        #                     force[3*node:3*node + 3] += force_vector
+                            
+        #                     # Mark as torque node for visualization
+        #                     mesh.node_indices[node, 3] = 6
+
         # Create boundary conditions and material properties
         bc = bound_cond.BC(force=force,
                         fixed_dofs=fixed_dofs,
@@ -3413,32 +4599,32 @@ class AnalysisWindow(QtWidgets.QDialog):
         # Make a copy of node_indices to avoid modifying the original
         node_indices = mesh.node_indices.copy() if hasattr(mesh, 'node_indices') else np.zeros((mesh.num_nodes, 4))
         
-        # Process temperature nodes
+        # Process temperature nodes - temperatures are stored in Kelvin internally
         for nodes, temp in thermal_nodes.get('fixed_temps', []):
             for node in nodes:
-                if 0 <= node < mesh.num_nodes:  # keep it?)
+                if 0 <= node < mesh.num_nodes:
                     fixed_dofs.append(node)
-                    dirichlet_values.append(temp)
+                    dirichlet_values.append(temp)  # temp is already in Kelvin
                     node_indices[node, 3] = 1  # Mark as fixed temperature
         
         # Create heat load vector - explicitly set size to mesh.num_nodes
         force = np.zeros(mesh.num_nodes)
         
-        # Add heat sources
+        # Add heat sources - these values depend on area, but not on temperature units
         for nodes, heat_flux in thermal_nodes.get('heat_sources', []):
             if nodes:
                 heat_per_node = heat_flux / len(nodes)
                 for node in nodes:
-                    if 0 <= node < mesh.num_nodes:  # Safety check (same goes for this refer process temperature nodes)
+                    if 0 <= node < mesh.num_nodes:
                         force[node] += heat_per_node
                         node_indices[node, 3] = 2  # Mark as heat source
         
-        # Add internal heat generation 
+        # Add internal heat generation - these values depend on volume, but not on temperature units
         for nodes, heat_gen in thermal_nodes.get('internal_heat', []):
             if nodes:
                 heat_per_node = heat_gen / len(nodes)
                 for node in nodes:
-                    if 0 <= node < mesh.num_nodes:  # Safety check
+                    if 0 <= node < mesh.num_nodes:
                         force[node] += heat_per_node
                         node_indices[node, 3] = 3  # Mark as internal heat
         
@@ -3454,7 +4640,7 @@ class AnalysisWindow(QtWidgets.QDialog):
             fixed_dofs = np.array([0]).astype(np.int32)
             dirichlet_values = np.array([300.0]).astype(np.float64)  # Default temperature (K)
         
-        # Create boundary conditions and material properties
+        # Create boundary conditions
         bc = bound_cond.BC(
             force=force,
             fixed_dofs=fixed_dofs,
@@ -3569,7 +4755,7 @@ class AnalysisWindow(QtWidgets.QDialog):
                 self.parent.message_text.append('-----------------------------')
                 
                 # Store results and the mesh for visualization
-                self.parent.thermal_analysis_results = {
+                self.parent.thermal_results = {
                     'temperatures': u,  # Store in Kelvin
                     'display_temperatures': display_temps,  # Store in display units
                     'max_temperature': max_temp,
@@ -3600,13 +4786,13 @@ class AnalysisWindow(QtWidgets.QDialog):
     def visualize_thermal_results(self):
         """Visualize thermal analysis results"""
         try:
-            if not hasattr(self.parent, 'thermal_analysis_results'):
+            if not hasattr(self.parent, 'thermal_results'):
                 QtWidgets.QMessageBox.warning(self, "Error", "No thermal analysis results available")
                 return
             
             # Get temperature results in the display units
-            display_temps = self.parent.thermal_analysis_results['display_temperatures']
-            unit_symbol = self.parent.thermal_analysis_results['unit_symbol']
+            display_temps = self.parent.thermal_results['display_temperatures']
+            unit_symbol = self.parent.thermal_results['unit_symbol']
             
             # Create points for visualization
             points = vtk.vtkPoints()
@@ -3720,8 +4906,8 @@ class AnalysisWindow(QtWidgets.QDialog):
             self.parent.vtkWidget.GetRenderWindow().Render()
             
             # Add results summary to message box
-            max_temp = self.parent.thermal_analysis_results['max_temperature']
-            min_temp = self.parent.thermal_analysis_results['min_temperature']
+            max_temp = self.parent.thermal_results['max_temperature']
+            min_temp = self.parent.thermal_results['min_temperature']
             self.parent.message_text.append(f"Temperature range: {min_temp:.2f} to {max_temp:.2f} {unit_symbol}")
             
         except Exception as e:
@@ -3736,7 +4922,7 @@ class AnalysisWindow(QtWidgets.QDialog):
             if not hasattr(self.parent, 'analysis_mesher'):
                 QtWidgets.QMessageBox.warning(self, "Error", "Please generate mesh first")
                 return
-                
+                    
             if not hasattr(self.parent, 'material_props'):
                 # Create material properties if they don't exist but material data is available
                 if hasattr(self.parent, 'material_data'):
@@ -3757,6 +4943,18 @@ class AnalysisWindow(QtWidgets.QDialog):
                         'load_nodes_groups': self.parent.load_nodes_groups,
                         'load_forces': self.parent.load_forces
                     }
+
+                    # # Add torque data if it exists
+                    # if hasattr(self.parent, 'torque_nodes_groups') and self.parent.torque_nodes_groups:
+                    #     load_data['torque_nodes_groups'] = self.parent.torque_nodes_groups
+                    #     load_data['torque_values'] = self.parent.torque_values
+                    #     load_data['torque_axis_points'] = self.parent.torque_axis_points
+
+                    #     # Debug information
+                    # self.parent.message_text.append(f"\nIncluding {len(self.parent.torque_nodes_groups)} torque constraints")
+                    # for i, nodes in enumerate(self.parent.torque_nodes_groups):
+                    #     torque_mag = np.linalg.norm(self.parent.torque_values[i])
+                    #     self.parent.message_text.append(f"  - Torque {i+1}: {len(nodes)} nodes with magnitude {torque_mag:.2f} N·m")
                     
                     # Process mesh and create boundary conditions
                     _, _, self.parent.boundary_conditions = self.ProcessDataforSolver(
@@ -3782,25 +4980,49 @@ class AnalysisWindow(QtWidgets.QDialog):
             self.parent.message_text.append("\nRunning structural analysis...")
             startTime = time.time()
             u = np.asarray(fe_solver.solve())
+
+            # Compute stresses through post-processing
+            fe_solver.postprocess(u)
+            von_mises_stress = np.asarray(fe_solver.vonMisesStress)
+            max_stress = np.max(von_mises_stress)
             
             # Calculate displacements
             delta = np.sqrt(u[0::3]**2 + u[1::3]**2 + u[2::3]**2)
             deltaMax = np.max(delta)
             nDOF = 3*fe_solver.mesh.num_nodes
             
+            # Get the appropriate length unit
+            length_unit = self.parent.settings.get_length_unit_string()
+            stress_unit = self.parent.settings.get_stress_unit_string()
+            
+            # Convert values for display if needed
+            if self.parent.settings.unit_system != "MKS":
+                display_deltaMax = self.parent.settings.convert_length(deltaMax, from_system="MKS")
+                display_maxStress = self.parent.settings.convert_stress(max_stress, from_system="MKS")
+            else:
+                display_deltaMax = deltaMax
+                display_maxStress = max_stress
+                
             # Print results
             self.parent.message_text.append('-----------------------------')
             self.parent.message_text.append(f"nDof: {nDOF}")
             self.parent.message_text.append(f'Solver: {fe_solver.solver.name}')
-            self.parent.message_text.append(f"FEA time: {time.time() - startTime}")
-            self.parent.message_text.append(f'Max displacement: {deltaMax}')
+            self.parent.message_text.append(f"FEA time: {time.time() - startTime:.4f} seconds")
+            self.parent.message_text.append(f'Max displacement: {display_deltaMax:.6f} {length_unit}')
+            self.parent.message_text.append(f'Max von Mises stress: {display_maxStress:.6f} {stress_unit}')
             self.parent.message_text.append('-----------------------------')
             
-            # Store results
+            # Store results in MKS units (for internal use) and display units
             self.parent.analysis_results = {
                 'displacements': u,
                 'max_displacement': deltaMax,
-                'delta': delta
+                'display_max_displacement': display_deltaMax,
+                'delta': delta,
+                'length_unit': length_unit,
+                'von_mises': von_mises_stress,
+                'max_stress': max_stress,
+                'display_max_stress': display_maxStress,
+                'stress_unit': stress_unit
             }
             
             # Update button status
@@ -3814,7 +5036,7 @@ class AnalysisWindow(QtWidgets.QDialog):
 
         except Exception as e:
             QtWidgets.QMessageBox.critical(self, "Error", f"Analysis failed: {str(e)}")
-            print(f"Detailed error: {str(e)}") 
+            print(f"Detailed error: {str(e)}")
 
 
     def visualize_results(self):
@@ -3842,7 +5064,7 @@ class AnalysisWindow(QtWidgets.QDialog):
             for i in range(self.parent.analysis_mesher.num_nodes):
                 original_pos = self.parent.analysis_mesher.node_xyz[i]
                 dx = u[3*i] * scale_factor
-                dy = u[3*i + 1] * scale_factor
+                dy = u[3*i + 1] * scale_factor                             
                 dz = u[3*i + 2] * scale_factor
                 points.InsertNextPoint(
                     original_pos[0] + dx,
@@ -3899,30 +5121,31 @@ class AnalysisWindow(QtWidgets.QDialog):
             if hasattr(self.parent, 'scalar_bar'):
                 self.parent.renderer.RemoveActor(self.parent.scalar_bar)
             
+            # Get unit string for the scalar bar title
+            length_unit = self.parent.settings.get_length_unit_string()
+            
             scalar_bar = vtk.vtkScalarBarActor()
             scalar_bar.SetLookupTable(mapper.GetLookupTable())
-            scalar_bar.SetTitle("Displacement (m)")
+            scalar_bar.SetTitle(f"Displacement ({length_unit})")  # Use the proper length unit
             scalar_bar.SetNumberOfLabels(5)
             scalar_bar.SetPosition(0.85, 0.05)
             scalar_bar.SetWidth(0.1)
             scalar_bar.SetHeight(0.8)
 
             # UNCONSTRAIN FONT SIZES
-            scalar_bar.UnconstrainedFontSizeOn()  # This is CRUCIAL
-            # scalar_bar.GetLabelTextProperty().SetColor(0, 0, 0)
-            # scalar_bar.GetTitleTextProperty().SetColor(0, 0, 0)
-
+            scalar_bar.UnconstrainedFontSizeOn()
+            
             # Create title text property
             title_text_prop = vtk.vtkTextProperty()
             title_text_prop.SetFontFamilyToArial()
-            title_text_prop.SetFontSize(22)  # Much larger
+            title_text_prop.SetFontSize(22)
             title_text_prop.SetBold(True)
             title_text_prop.SetColor(0, 0, 0)
 
             # Create label text property
             label_text_prop = vtk.vtkTextProperty()
             label_text_prop.SetFontFamilyToArial()
-            label_text_prop.SetFontSize(18)  # Smaller than title
+            label_text_prop.SetFontSize(18)
             label_text_prop.SetBold(False)
             label_text_prop.SetColor(0, 0, 0)
 
@@ -3934,9 +5157,6 @@ class AnalysisWindow(QtWidgets.QDialog):
             self.parent.scalar_bar = scalar_bar
             self.parent.renderer.AddActor(scalar_bar)
 
-
-            # self.parent.scalar_bar = scalar_bar
-            
             # Hide original mesh
             if hasattr(self.parent, 'mesh_actor'):
                 self.parent.mesh_actor.SetVisibility(False)
@@ -3949,13 +5169,163 @@ class AnalysisWindow(QtWidgets.QDialog):
             self.parent.renderer.ResetCamera()
             self.parent.vtkWidget.GetRenderWindow().Render()
             
-            # Add results summary
-            max_disp = np.max(delta)
-            self.parent.message_text.append(f"Maximum displacement: {max_disp:.6f} m")
+            # Add results summary with proper units
+            length_unit = self.parent.settings.get_length_unit_string()
+            display_max_disp = self.parent.analysis_results.get('display_max_displacement', np.max(delta))
+            
+            self.parent.message_text.append(f"Maximum displacement: {display_max_disp:.6f} {length_unit}")
             self.parent.message_text.append(f"Scale factor: {scale_factor:.2f}")
             
         except Exception as e:
             QtWidgets.QMessageBox.critical(self, "Error", f"Failed to visualize results: {str(e)}")
+
+    def visualize_stress(self, display_mode="Geometry"):
+        """Visualize von Mises stress from structural analysis"""
+        try:
+            if not hasattr(self, 'analysis_results') or self.analysis_results is None:
+                QtWidgets.QMessageBox.warning(self, "Error", "No analysis results available")
+                return
+                
+            if not hasattr(self, 'analysis_mesher'):
+                QtWidgets.QMessageBox.warning(self, "Error", "No analysis mesh available")
+                return
+                
+            if 'von_mises' not in self.analysis_results:
+                QtWidgets.QMessageBox.warning(self, "Error", "Von Mises stress not computed")
+                return
+                
+            # Get stress results
+            von_mises = self.analysis_results['von_mises']
+            stress_unit = self.analysis_results['stress_unit']
+            
+            # Create points for undeformed mesh (stress visualization typically shown on original mesh)
+            points = vtk.vtkPoints()
+            cells = vtk.vtkCellArray()
+            
+            # Add points
+            for i in range(self.analysis_mesher.num_nodes):
+                points.InsertNextPoint(self.analysis_mesher.node_xyz[i])
+                
+            # Add hex elements
+            for elem in self.analysis_mesher.elemArray:
+                hex_cell = vtk.vtkHexahedron()
+                for i in range(8):
+                    hex_cell.GetPointIds().SetId(i, elem[i])
+                cells.InsertNextCell(hex_cell)
+                
+            # Create mesh structure
+            mesh = vtk.vtkUnstructuredGrid()
+            mesh.SetPoints(points)
+            mesh.SetCells(vtk.VTK_HEXAHEDRON, cells)
+            
+            # Map element-based von Mises stresses to points
+            # We need to convert from element-based values to node-based values
+            scalars = vtk.vtkFloatArray()
+            scalars.SetNumberOfComponents(1)
+            scalars.SetName("Von Mises Stress")
+            
+            # Create node-to-element mapping for averaging
+            node_to_elements = [[] for _ in range(self.analysis_mesher.num_nodes)]
+            for i, elem in enumerate(self.analysis_mesher.elemArray):
+                for node_idx in elem:
+                    node_to_elements[node_idx].append(i)
+            
+            # Compute average stress for each node
+            for i in range(self.analysis_mesher.num_nodes):
+                if node_to_elements[i]:
+                    # Average the stress values from all elements connected to this node
+                    avg_stress = np.mean([von_mises[e] for e in node_to_elements[i]])
+                    scalars.InsertNextValue(avg_stress)
+                else:
+                    scalars.InsertNextValue(0.0)  # For nodes not connected to any element
+            
+            mesh.GetPointData().SetScalars(scalars)
+            
+            # Create mapper with improved color mapping
+            mapper = vtk.vtkDataSetMapper()
+            mapper.SetInputData(mesh)
+            mapper.SetScalarRange(0, np.max(von_mises))
+            
+            # Create custom color lookup table
+            lut = vtk.vtkLookupTable()
+            lut.SetHueRange(0.667, 0.0)  # Blue to red
+            lut.SetSaturationRange(1.0, 1.0)
+            lut.SetValueRange(1.0, 1.0)
+            lut.SetNumberOfTableValues(256)
+            lut.Build()
+            mapper.SetLookupTable(lut)
+            
+            # Create actor for visualization
+            if hasattr(self, 'results_actor'):
+                self.renderer.RemoveActor(self.results_actor)
+                
+            self.results_actor = vtk.vtkActor()
+            self.results_actor.SetMapper(mapper)
+            self.results_actor.GetProperty().EdgeVisibilityOn()
+            self.results_actor.GetProperty().SetEdgeColor(0.1, 0.1, 0.1)
+            self.results_actor.GetProperty().SetLineWidth(1)
+            
+            # Create enhanced scalar bar
+            if hasattr(self, 'scalar_bar'):
+                self.renderer.RemoveActor(self.scalar_bar)
+                
+            scalar_bar = vtk.vtkScalarBarActor()
+            scalar_bar.SetLookupTable(mapper.GetLookupTable())
+            scalar_bar.SetTitle(f"Von Mises Stress ({stress_unit})")
+            scalar_bar.SetNumberOfLabels(5)
+            scalar_bar.SetPosition(0.85, 0.05)
+            scalar_bar.SetWidth(0.1)
+            scalar_bar.SetHeight(0.8)
+
+            # UNCONSTRAIN FONT SIZES
+            scalar_bar.UnconstrainedFontSizeOn()
+            
+            # Create title text property
+            title_text_prop = vtk.vtkTextProperty()
+            title_text_prop.SetFontFamilyToArial()
+            title_text_prop.SetFontSize(22)
+            title_text_prop.SetBold(True)
+            title_text_prop.SetColor(0, 0, 0)
+
+            # Create label text property
+            label_text_prop = vtk.vtkTextProperty()
+            label_text_prop.SetFontFamilyToArial()
+            label_text_prop.SetFontSize(18)
+            label_text_prop.SetBold(False)
+            label_text_prop.SetColor(0, 0, 0)
+
+            # Apply the text properties
+            scalar_bar.SetTitleTextProperty(title_text_prop)
+            scalar_bar.SetLabelTextProperty(label_text_prop)
+
+            # Save and add actor
+            self.scalar_bar = scalar_bar
+            self.renderer.AddActor(scalar_bar)
+            
+            # Hide original mesh
+            if hasattr(self, 'mesh_actor'):
+                self.mesh_actor.SetVisibility(False)
+                
+            # Hide original geometry
+            if hasattr(self, 'stl_actor'):
+                self.stl_actor.SetVisibility(False)
+                
+            # Add actors to renderer
+            self.renderer.AddActor(self.results_actor)
+            self.renderer.AddActor(self.scalar_bar)
+            
+            # Reset camera and render
+            self.renderer.ResetCamera()
+            self.vtkWidget.GetRenderWindow().Render()
+            
+            # Add results summary with proper units
+            max_stress = self.analysis_results.get('display_max_stress', np.max(von_mises))
+            self.message_text.append(f"Maximum von Mises stress: {max_stress:.6f} {stress_unit}")
+            
+        except Exception as e:
+            QtWidgets.QMessageBox.critical(self, "Error", f"Failed to visualize von Mises stress: {str(e)}")
+            print(f"Error visualizing von Mises stress: {str(e)}")
+            traceback.print_exc()
 
 #---------------------------------------------------------------------------------
 class Analysis:
@@ -3969,14 +5339,15 @@ class Analysis:
         self.include_thermal = True
         self.zero_strain_temp = 300
         self.remesh = False
-        
-    
 #---------------------------------------------------------------------------------
 class TopOptConstraintsWindow(QtWidgets.QDialog):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setWindowTitle("Constraints")
         self.resize(300, 500)
+
+        # Set window to be non-modal to maintain interactivity with the viewer
+        self.setWindowModality(Qt.NonModal)
         
         # Main layout
         layout = QtWidgets.QVBoxLayout(self)
@@ -3997,6 +5368,9 @@ class TopOptConstraintsWindow(QtWidgets.QDialog):
         self.extrude_combo = QtWidgets.QComboBox()
         self.extrude_combo.addItems(["XDir", "YDir", "ZDir"])
         self.form_layout.addRow(self.extrude_check, self.extrude_combo)
+        # Connect changes to update visualization
+        self.extrude_check.stateChanged.connect(self.update_extrude_visualization)
+        self.extrude_combo.currentTextChanged.connect(self.update_extrude_visualization)
         
         self.am_build_check = QtWidgets.QCheckBox("AM Build")
         self.am_build_combo = QtWidgets.QComboBox()
@@ -4007,11 +5381,35 @@ class TopOptConstraintsWindow(QtWidgets.QDialog):
         self.draw_direction_combo = QtWidgets.QComboBox()
         self.draw_direction_combo.addItems(["XDir", "YDir", "ZDir"])
         self.form_layout.addRow(self.draw_direction_check, self.draw_direction_combo)
+
+        self.draw_direction_check.stateChanged.connect(self.update_draw_direction_visualization)
+        self.draw_direction_combo.currentTextChanged.connect(self.update_draw_direction_visualization)
         
         self.cyclic_sym_check = QtWidgets.QCheckBox("CyclicSym(Z)")
         self.cyclic_sym_combo = QtWidgets.QComboBox()
-        self.cyclic_sym_combo.addItems(["+90 deg", "-90 deg"])
+        self.cyclic_sym_combo.addItems([
+        "(+)90 deg",
+        "(-)90 deg",
+        "(+)180 deg",
+        "(+)120 deg",
+        "(+)60 deg",
+        "(+)72 deg",
+        "(+)60 deg",
+        "(+)51 deg",
+        "(+)45 deg"
+        ])
         self.form_layout.addRow(self.cyclic_sym_check, self.cyclic_sym_combo)
+        # Then connect the signals:
+        self.cyclic_sym_check.stateChanged.connect(self.update_cyclic_symmetry_visualization)
+        self.cyclic_sym_combo.currentTextChanged.connect(self.update_cyclic_symmetry_visualization)
+
+         
+        # self.connect_grid_pattern_events()
+        
+        # def connect_cyclic_symmetry_events(self):
+        #     """Connect cyclic symmetry checkboxes and comboboxes to visualization updates"""
+        #     self.cyclic_sym_check.stateChanged.connect(self.update_cyclic_symmetry_visualization)
+        #     self.cyclic_sym_combo.currentTextChanged.connect(self.update_cyclic_symmetry_visualization)
         
         # Pattern constraints
         self.x_grid_check = QtWidgets.QCheckBox("XGridPattern")
@@ -4031,6 +5429,17 @@ class TopOptConstraintsWindow(QtWidgets.QDialog):
         self.z_grid_spin.setRange(1, 10)
         self.z_grid_spin.setValue(2)
         self.form_layout.addRow(self.z_grid_check, self.z_grid_spin)
+
+        # def connect_grid_pattern_events(self):
+        """Connect grid pattern checkboxes and spinboxes to visualization updates"""
+        self.x_grid_check.stateChanged.connect(self.update_grid_pattern_visualization)
+        self.x_grid_spin.valueChanged.connect(self.update_grid_pattern_visualization)
+        
+        self.y_grid_check.stateChanged.connect(self.update_grid_pattern_visualization)
+        self.y_grid_spin.valueChanged.connect(self.update_grid_pattern_visualization)
+        
+        self.z_grid_check.stateChanged.connect(self.update_grid_pattern_visualization)
+        self.z_grid_spin.valueChanged.connect(self.update_grid_pattern_visualization)
         
         # Performance constraints
         self.stress_safety_check = QtWidgets.QCheckBox("StressSafety")
@@ -4084,6 +5493,11 @@ class TopOptConstraintsWindow(QtWidgets.QDialog):
         
         self.z_symmetry_check = QtWidgets.QCheckBox("Z-Symmetry")
         self.form_layout.addRow(self.z_symmetry_check)
+
+        """Connect symmetry checkboxes to visualization updates"""
+        self.x_symmetry_check.stateChanged.connect(self.update_symmetry_visualization)
+        self.y_symmetry_check.stateChanged.connect(self.update_symmetry_visualization)
+        self.z_symmetry_check.stateChanged.connect(self.update_symmetry_visualization)
         
         # Other constraints
         self.connected_topology_check = QtWidgets.QCheckBox("Connected Topology")
@@ -4105,7 +5519,7 @@ class TopOptConstraintsWindow(QtWidgets.QDialog):
         self.connected_topology_check.setChecked(True)
         
     def apply_constraints(self):
-        """Gather and apply all constraint settings"""
+        """Gather and apply all constraint settings, keeping visualizations"""
         constraints = {
             'manufacturing': {
                 'extrude': {
@@ -4175,23 +5589,932 @@ class TopOptConstraintsWindow(QtWidgets.QDialog):
                 'keep_fixed_faces': self.keep_fixed_faces_check.isChecked()
             }
         }
-        
-        # Update icon in main window
-        if hasattr(self.parent(), 'update_button_icon'):
-            self.parent().update_button_icon("TopOpt Constraints", "check")
-        
-        # Update LivVar state
-        self.parent().update_LivVar('topopt.constraints_defined', True)
 
         # Store constraints in parent window
         if hasattr(self.parent(), 'topopt_constraints'):
             self.parent().topopt_constraints = constraints
+
+        # Update visualizations based on the new settings
+        self.update_extrude_visualization()
+        self.update_draw_direction_visualization()
+        self.update_cyclic_symmetry_visualization()
+        self.update_grid_pattern_visualization() 
+        self.update_symmetry_visualization()
+
+        # Update icon in main window
+        if hasattr(self.parent(), 'update_button_icon'):
+            self.parent().update_button_icon("TopOpt Constraints", "check")
+
+        # Update LivVar state
+        self.parent().update_LivVar('topopt.constraints_defined', True)
             
         self.parent().message_text.append("TopOpt constraints applied")
-        
 
+
+    def visualize_extrude_direction(self):
+        """Create a large arrow to visualize the extrude direction that persists"""
+        # Check if parent window has geometry loaded
+        if not hasattr(self.parent(), 'stl_geom') or self.parent().stl_geom is None:
+            return
+
+        # Initialize constraint actors if needed
+        if not hasattr(self.parent(), 'topopt_constraint_actors'):
+            self.parent().initialize_constraint_actors()
         
-        self.close()
+        # Get the model bounds to properly size and position the arrow
+        if hasattr(self.parent().stl_geom, 'get_bounding_box'):
+            bbox = self.parent().stl_geom.get_bounding_box()
+        else:
+            # Calculate bounding box manually if get_bounding_box not available
+            vertices = np.array(self.parent().stl_geom.mesh.vectors).reshape(-1, 3)
+            xmin, ymin, zmin = np.min(vertices, axis=0)
+            xmax, ymax, zmax = np.max(vertices, axis=0)
+            bbox = (xmin, xmax, ymin, ymax, zmin, zmax)
+        
+        # Calculate dimensions and center of the model
+        model_size = max(bbox[1]-bbox[0], bbox[3]-bbox[2], bbox[5]-bbox[4])
+        center = [(bbox[0] + bbox[1])/2, (bbox[2] + bbox[3])/2, (bbox[4] + bbox[5])/2]
+        
+        # Arrow dimensions - make it visually significant
+        arrow_length = model_size * 1.26  # % of model size
+        shaft_radius = model_size * 0.015
+        tip_radius = model_size * 0.04
+        tip_length = model_size * 0.09
+
+        start_offset = model_size * 0.1  # 10% of model size for offset
+        
+        # Create arrow source
+        arrow = vtk.vtkArrowSource()
+        arrow.SetShaftRadius(shaft_radius / arrow_length)  # Normalize to arrow length
+        arrow.SetTipRadius(tip_radius / arrow_length)
+        arrow.SetTipLength(tip_length / arrow_length)
+        
+        # Create transform to position and orient the arrow
+        transform = vtk.vtkTransform()
+        
+        # Position at one end of the model based on direction
+        direction = self.extrude_combo.currentText()
+        if direction == "XDir":
+            # Position at minimum X, point to positive X
+            start_pos = [bbox[0] - arrow_length * 0.2 + start_offset, center[1], center[2]]
+            transform.Translate(start_pos)
+            # No rotation needed - arrow points in X direction by default
+        elif direction == "YDir":
+            # Position at minimum Y, point to positive Y
+            start_pos = [center[0], bbox[2] - arrow_length * 0.2 + start_offset, center[2]]
+            transform.Translate(start_pos)
+            transform.RotateZ(90)  # Rotate to point along Y axis
+        elif direction == "ZDir":
+            # Position at minimum Z, point to positive Z
+            start_pos = [center[0], center[1], bbox[4] - arrow_length * 0.2 + start_offset]
+            transform.Translate(start_pos)
+            transform.RotateY(-90)  # Rotate to point along Z axis
+        
+        transform.Scale(arrow_length, arrow_length, arrow_length)
+        
+        # Create the mapper and actor
+        mapper = vtk.vtkPolyDataMapper()
+        mapper.SetInputConnection(arrow.GetOutputPort())
+        
+        # Remove any existing extrude arrow before creating a new one
+        if self.parent().topopt_constraint_actors['extrude']:
+            self.parent().renderer.RemoveActor(self.parent().topopt_constraint_actors['extrude'])
+        
+        # Create and add the new actor
+        extrude_actor = vtk.vtkActor()
+        extrude_actor.SetMapper(mapper)
+        extrude_actor.SetUserTransform(transform)
+        
+        # Set color based on direction
+        if direction == "XDir":
+            extrude_actor.GetProperty().SetColor(1, 0, 0)  # Red for X
+        elif direction == "YDir":
+            extrude_actor.GetProperty().SetColor(0, 1, 0)  # Green for Y
+        elif direction == "ZDir":
+            extrude_actor.GetProperty().SetColor(0, 0, 1)  # Blue for Z
+        
+        # Store the actor in the parent's collection
+        self.parent().topopt_constraint_actors['extrude'] = extrude_actor
+        
+        # Add to renderer
+        self.parent().renderer.AddActor(extrude_actor)
+        self.parent().vtkWidget.GetRenderWindow().Render()
+
+
+        # Fix for the update_extrude_visualization method - remove references to constraints 
+    def update_extrude_visualization(self):
+        """Update the visualization when extrude settings change"""
+        # If extrude is checked, show the arrow
+        if self.extrude_check.isChecked():
+            self.visualize_extrude_direction()
+        else:
+            # If not checked, remove the visualization
+            if hasattr(self.parent(), 'topopt_constraint_actors') and self.parent().topopt_constraint_actors['extrude']:
+                self.parent().renderer.RemoveActor(self.parent().topopt_constraint_actors['extrude'])
+                self.parent().topopt_constraint_actors['extrude'] = None
+                self.parent().vtkWidget.GetRenderWindow().Render()
+
+    def visualize_draw_direction(self):
+        """Create double-sided arrows to visualize the draw direction constraint"""
+        # Check if parent window has geometry loaded
+        if not hasattr(self.parent(), 'stl_geom') or self.parent().stl_geom is None:
+            return
+
+        # Initialize constraint actors if needed
+        if not hasattr(self.parent(), 'topopt_constraint_actors'):
+            self.parent().initialize_constraint_actors()
+        
+        # Get the model bounds to properly size and position the arrows
+        if hasattr(self.parent().stl_geom, 'get_bounding_box'):
+            bbox = self.parent().stl_geom.get_bounding_box()
+        else:
+            # Calculate bounding box manually if get_bounding_box not available
+            vertices = np.array(self.parent().stl_geom.mesh.vectors).reshape(-1, 3)
+            xmin, ymin, zmin = np.min(vertices, axis=0)
+            xmax, ymax, zmax = np.max(vertices, axis=0)
+            bbox = (xmin, xmax, ymin, ymax, zmin, zmax)
+        
+        # Calculate dimensions and center of the model
+        model_size = max(bbox[1]-bbox[0], bbox[3]-bbox[2], bbox[5]-bbox[4])
+        center = [(bbox[0] + bbox[1])/2, (bbox[2] + bbox[3])/2, (bbox[4] + bbox[5])/2]
+        
+        # Arrow dimensions - make it visually significant
+        arrow_length = model_size * 1.26  # 130% of model size
+        shaft_radius = model_size * 0.015
+        tip_radius = model_size * 0.04
+        tip_length = model_size * 0.08
+        
+        # Remove any existing draw direction arrows before creating new ones
+        if self.parent().topopt_constraint_actors['draw_direction']:
+            if isinstance(self.parent().topopt_constraint_actors['draw_direction'], list):
+                for actor in self.parent().topopt_constraint_actors['draw_direction']:
+                    self.parent().renderer.RemoveActor(actor)
+            else:
+                self.parent().renderer.RemoveActor(self.parent().topopt_constraint_actors['draw_direction'])
+            self.parent().topopt_constraint_actors['draw_direction'] = None
+        
+        # Create a list to store the arrow actors
+        arrow_actors = []
+        
+        # Create two arrows (double-sided) for the specified direction
+        direction = self.draw_direction_combo.currentText()
+        
+        # First arrow (pointing in positive direction)
+        arrow1 = vtk.vtkArrowSource()
+        arrow1.SetShaftRadius(shaft_radius / arrow_length)
+        arrow1.SetTipRadius(tip_radius / arrow_length)
+        arrow1.SetTipLength(tip_length / arrow_length)
+        
+        transform1 = vtk.vtkTransform()
+        transform1.Translate(center)
+        
+        if direction == "XDir":
+            # Offset from center in negative X direction
+            transform1.Translate(-arrow_length/2, 0, 0)
+            # No rotation needed - arrow points in X direction by default
+        elif direction == "YDir":
+            # Offset from center in negative Y direction
+            transform1.Translate(0, -arrow_length/2, 0)
+            transform1.RotateZ(90)  # Rotate to point along Y axis
+        elif direction == "ZDir":
+            # Offset from center in negative Z direction
+            transform1.Translate(0, 0, -arrow_length/2)
+            transform1.RotateY(-90)  # Rotate to point along Z axis
+        
+        transform1.Scale(arrow_length, arrow_length, arrow_length)
+        
+        mapper1 = vtk.vtkPolyDataMapper()
+        mapper1.SetInputConnection(arrow1.GetOutputPort())
+        
+        actor1 = vtk.vtkActor()
+        actor1.SetMapper(mapper1)
+        actor1.SetUserTransform(transform1)
+        actor1.GetProperty().SetColor(0, 1, 0)  # Green for all draw direction arrows
+        
+        self.parent().renderer.AddActor(actor1)
+        arrow_actors.append(actor1)
+        
+        # Second arrow (pointing in negative direction)
+        arrow2 = vtk.vtkArrowSource()
+        arrow2.SetShaftRadius(shaft_radius / arrow_length)
+        arrow2.SetTipRadius(tip_radius / arrow_length)
+        arrow2.SetTipLength(tip_length / arrow_length)
+        
+        transform2 = vtk.vtkTransform()
+        transform2.Translate(center)
+        
+        if direction == "XDir":
+            # Offset from center in positive X direction
+            transform2.Translate(arrow_length/2, 0, 0)
+            transform2.RotateZ(180)  # Rotate to point in negative X direction
+        elif direction == "YDir":
+            # Offset from center in positive Y direction
+            transform2.Translate(0, arrow_length/2, 0)
+            transform2.RotateZ(-90)  # Rotate to point in negative Y direction
+        elif direction == "ZDir":
+            # Offset from center in positive Z direction
+            transform2.Translate(0, 0, arrow_length/2)
+            transform2.RotateY(90)  # Rotate to point in negative Z direction
+        
+        transform2.Scale(arrow_length, arrow_length, arrow_length)
+        
+        mapper2 = vtk.vtkPolyDataMapper()
+        mapper2.SetInputConnection(arrow2.GetOutputPort())
+        
+        actor2 = vtk.vtkActor()
+        actor2.SetMapper(mapper2)
+        actor2.SetUserTransform(transform2)
+        actor2.GetProperty().SetColor(0, 1, 0)  # Green for all draw direction arrows
+        
+        self.parent().renderer.AddActor(actor2)
+        arrow_actors.append(actor2)
+        
+        # Store the actors in the parent's collection
+        self.parent().topopt_constraint_actors['draw_direction'] = arrow_actors
+        
+        # Render the changes
+        self.parent().vtkWidget.GetRenderWindow().Render()
+
+    def update_draw_direction_visualization(self):
+        """Update the visualization when draw direction settings change"""
+        # If draw direction is checked, show the arrows
+        if self.draw_direction_check.isChecked():
+            self.visualize_draw_direction()
+        else:
+            # If not checked, remove the visualization
+            if hasattr(self.parent(), 'topopt_constraint_actors') and self.parent().topopt_constraint_actors['draw_direction']:
+                if isinstance(self.parent().topopt_constraint_actors['draw_direction'], list):
+                    for actor in self.parent().topopt_constraint_actors['draw_direction']:
+                        self.parent().renderer.RemoveActor(actor)
+                else:
+                    self.parent().renderer.RemoveActor(self.parent().topopt_constraint_actors['draw_direction'])
+                self.parent().topopt_constraint_actors['draw_direction'] = None
+                self.parent().vtkWidget.GetRenderWindow().Render()
+
+    def visualize_cyclic_symmetry(self):
+        """Visualize the cyclic symmetry planes"""
+        # Check if parent window has geometry loaded
+        if not hasattr(self.parent(), 'stl_geom') or self.parent().stl_geom is None:
+            return
+
+        # Initialize constraint actors if needed
+        if not hasattr(self.parent(), 'topopt_constraint_actors'):
+            self.parent().initialize_constraint_actors()
+        
+        # Get the model bounds to properly size and position the planes
+        if hasattr(self.parent().stl_geom, 'get_bounding_box'):
+            bbox = self.parent().stl_geom.get_bounding_box()
+        else:
+            # Calculate bounding box manually if get_bounding_box not available
+            vertices = np.array(self.parent().stl_geom.mesh.vectors).reshape(-1, 3)
+            xmin, ymin, zmin = np.min(vertices, axis=0)
+            xmax, ymax, zmax = np.max(vertices, axis=0)
+            bbox = (xmin, xmax, ymin, ymax, zmin, zmax)
+        
+        # Calculate dimensions and center of the model
+        model_size = max(bbox[1]-bbox[0], bbox[3]-bbox[2], bbox[5]-bbox[4])
+        center = [(bbox[0] + bbox[1])/2, (bbox[2] + bbox[3])/2, (bbox[4] + bbox[5])/2]
+        
+        # Parse the angle from the combobox selection
+        angle_text = self.cyclic_sym_combo.currentText()
+        
+        # Extract numeric value from the text (e.g., "+90 deg" becomes 90)
+        if angle_text.startswith("+"):
+            angle = float(angle_text[1:].split()[0])
+        elif angle_text.startswith("-"):
+            angle = -float(angle_text[1:].split()[0])
+        else:
+            # Handle case where no sign is present, extract first number from string
+            import re
+            angle_text = self.cyclic_sym_combo.currentText()
+            match = re.search(r'\d+', angle_text)
+            if match:
+                angle = float(match.group())
+                if "(-)" in angle_text:
+                    angle = -angle
+            else:
+                angle = 90  # Default
+        
+        # Remove any existing cyclic symmetry visualization
+        if self.parent().topopt_constraint_actors['cyclic_symmetry']:
+            # It could be a list of actors for multiple planes
+            if isinstance(self.parent().topopt_constraint_actors['cyclic_symmetry'], list):
+                for actor in self.parent().topopt_constraint_actors['cyclic_symmetry']:
+                    self.parent().renderer.RemoveActor(actor)
+            else:
+                self.parent().renderer.RemoveActor(self.parent().topopt_constraint_actors['cyclic_symmetry'])
+            
+            self.parent().topopt_constraint_actors['cyclic_symmetry'] = None
+        
+        # Store all actors for this constraint in a list
+        cyclic_actors = []
+        
+        # Create planes that show the cyclic symmetry boundaries
+        # For Z-axis rotation, we'll create vertical planes
+        
+        # Calculate plane size based on model
+        plane_size = model_size * 1.5
+        
+        # Determine how many planes to create based on angle
+        num_planes = int(360 / abs(angle))
+        if num_planes > 10:  # Limit to 10 planes to avoid clutter
+            num_planes = 10
+        
+        for i in range(num_planes):
+            # Create a plane
+            plane_source = vtk.vtkPlaneSource()
+            
+            # For Z-axis symmetry, planes are vertical along Z axis
+            plane_source.SetOrigin(-plane_size/2, 0, bbox[4] - plane_size/4)
+            plane_source.SetPoint1(plane_size/2, 0, bbox[4] - plane_size/4)
+            plane_source.SetPoint2(-plane_size/2, 0, bbox[5] + plane_size/4)
+            plane_source.Update()
+            
+            # Create a transform to position and rotate the plane
+            transform = vtk.vtkTransform()
+            
+            # Position at center of model
+            transform.Translate(center[0], center[1], center[2])
+            
+            # Rotate around Z axis by angle * i
+            current_angle = angle * i
+            transform.RotateZ(current_angle)
+            
+            # Apply transform to the plane
+            transform_filter = vtk.vtkTransformPolyDataFilter()
+            transform_filter.SetInputConnection(plane_source.GetOutputPort())
+            transform_filter.SetTransform(transform)
+            transform_filter.Update()
+            
+            # Create mapper and actor
+            mapper = vtk.vtkPolyDataMapper()
+            mapper.SetInputConnection(transform_filter.GetOutputPort())
+            
+            plane_actor = vtk.vtkActor()
+            plane_actor.SetMapper(mapper)
+            
+            # Set appearance properties
+            plane_actor.GetProperty().SetColor(0.8, 0.2, 0.8)  # Purple for cyclic symmetry
+            plane_actor.GetProperty().SetOpacity(0.5)  # Semi-transparent
+            plane_actor.GetProperty().SetLineWidth(2)
+            plane_actor.GetProperty().SetRepresentationToWireframe()  # Only show outline
+            
+            # Add to renderer
+            self.parent().renderer.AddActor(plane_actor)
+            cyclic_actors.append(plane_actor)
+        
+        # Store the actors in the parent's collection
+        self.parent().topopt_constraint_actors['cyclic_symmetry'] = cyclic_actors
+        
+        # Render the changes
+        self.parent().vtkWidget.GetRenderWindow().Render()
+
+    def update_cyclic_symmetry_visualization(self):
+        """Update the visualization when cyclic symmetry settings change"""
+        # If cyclic symmetry is checked, show the planes
+        if self.cyclic_sym_check.isChecked():
+            self.visualize_cyclic_symmetry()
+        else:
+            # If not checked, remove the visualization
+            if hasattr(self.parent(), 'topopt_constraint_actors') and self.parent().topopt_constraint_actors['cyclic_symmetry']:
+                # It could be a list of actors for multiple planes
+                if isinstance(self.parent().topopt_constraint_actors['cyclic_symmetry'], list):
+                    for actor in self.parent().topopt_constraint_actors['cyclic_symmetry']:
+                        self.parent().renderer.RemoveActor(actor)
+                else:
+                    self.parent().renderer.RemoveActor(self.parent().topopt_constraint_actors['cyclic_symmetry'])
+                
+                self.parent().topopt_constraint_actors['cyclic_symmetry'] = None
+                self.parent().vtkWidget.GetRenderWindow().Render()
+
+    def visualize_grid_patterns(self):
+        """
+        Visualize the grid patterns (X, Y, Z) within the bounding box of the model.
+        Creates planes at regular intervals based on the number of grid divisions.
+        """
+        # Check if parent window has geometry loaded
+        if not hasattr(self.parent(), 'stl_geom') or self.parent().stl_geom is None:
+            return
+
+        # Initialize constraint actors if needed
+        if not hasattr(self.parent(), 'topopt_constraint_actors'):
+            self.parent().initialize_constraint_actors()
+        
+        # Get the model bounds
+        if hasattr(self.parent().stl_geom, 'get_bounding_box'):
+            bbox = self.parent().stl_geom.get_bounding_box()
+        else:
+            # Calculate bounding box manually if get_bounding_box not available
+            vertices = np.array(self.parent().stl_geom.mesh.vectors).reshape(-1, 3)
+            xmin, ymin, zmin = np.min(vertices, axis=0)
+            xmax, ymax, zmax = np.max(vertices, axis=0)
+            bbox = (xmin, xmax, ymin, ymax, zmin, zmax)
+        
+        # Visualize the bounding box first
+        self.visualize_bounding_box(bbox)
+        
+        # Create grid planes for each enabled direction
+        grid_planes = {
+            'x_grid': [],
+            'y_grid': [],
+            'z_grid': []
+        }
+        
+        # Create X grid planes if enabled
+        if self.x_grid_check.isChecked():
+            num_x_divisions = self.x_grid_spin.value()
+            grid_planes['x_grid'] = self.create_grid_planes(bbox, 'x', num_x_divisions)
+        
+        # Create Y grid planes if enabled
+        if self.y_grid_check.isChecked():
+            num_y_divisions = self.y_grid_spin.value()
+            grid_planes['y_grid'] = self.create_grid_planes(bbox, 'y', num_y_divisions)
+        
+        # Create Z grid planes if enabled
+        if self.z_grid_check.isChecked():
+            num_z_divisions = self.z_grid_spin.value()
+            grid_planes['z_grid'] = self.create_grid_planes(bbox, 'z', num_z_divisions)
+        
+        # Store the planes in the parent's constraint actors
+        self.parent().topopt_constraint_actors['grid_patterns'] = grid_planes
+        
+        # Render the scene
+        self.parent().vtkWidget.GetRenderWindow().Render()
+
+    def create_grid_planes(self, bbox, axis, num_divisions):
+        """
+        Create a set of grid border lines along the specified axis with the given number of divisions.
+        
+        Parameters:
+        - bbox: Tuple containing (xmin, xmax, ymin, ymax, zmin, zmax)
+        - axis: 'x', 'y', or 'z'
+        - num_divisions: Number of divisions (minimum 2)
+        
+        Returns:
+        - List of vtkActor objects representing the grid borders
+        """
+        if num_divisions < 2:
+            num_divisions = 2  # Ensure at least 2 divisions
+        
+        border_actors = []
+        
+        # Extract bounds for the given axis
+        if axis == 'x':
+            min_val, max_val = bbox[0], bbox[1]
+            width = bbox[3] - bbox[2]
+            height = bbox[5] - bbox[4]
+            min_y, max_y = bbox[2], bbox[3]
+            min_z, max_z = bbox[4], bbox[5]
+            color = (1.0, 0.3, 0.3)  # Reddish for X grid lines
+        elif axis == 'y':
+            min_val, max_val = bbox[2], bbox[3]
+            width = bbox[1] - bbox[0]
+            height = bbox[5] - bbox[4]
+            min_x, max_x = bbox[0], bbox[1]
+            min_z, max_z = bbox[4], bbox[5]
+            color = (0.3, 1.0, 0.3)  # Greenish for Y grid lines
+        else:  # z
+            min_val, max_val = bbox[4], bbox[5]
+            width = bbox[1] - bbox[0]
+            height = bbox[3] - bbox[2]
+            min_x, max_x = bbox[0], bbox[1]
+            min_y, max_y = bbox[2], bbox[3]
+            color = (0.3, 0.3, 1.0)  # Bluish for Z grid lines
+        
+        # Calculate spacing between planes
+        axis_length = max_val - min_val
+        spacing = axis_length / (num_divisions - 1) if num_divisions > 1 else axis_length
+        
+        # Create grid border lines
+        for i in range(num_divisions):
+            position = min_val + i * spacing
+            
+            # Create points and lines for the grid boundary
+            points = vtk.vtkPoints()
+            lines = vtk.vtkCellArray()
+            
+            # Set points and lines based on the axis
+            if axis == 'x':
+                # YZ plane border at position
+                points.InsertNextPoint(position, min_y, min_z)  # 0
+                points.InsertNextPoint(position, max_y, min_z)  # 1
+                points.InsertNextPoint(position, max_y, max_z)  # 2
+                points.InsertNextPoint(position, min_y, max_z)  # 3
+                
+            elif axis == 'y':
+                # XZ plane border at position
+                points.InsertNextPoint(min_x, position, min_z)  # 0
+                points.InsertNextPoint(max_x, position, min_z)  # 1
+                points.InsertNextPoint(max_x, position, max_z)  # 2
+                points.InsertNextPoint(min_x, position, max_z)  # 3
+                
+            else:  # z
+                # XY plane border at position
+                points.InsertNextPoint(min_x, min_y, position)  # 0
+                points.InsertNextPoint(max_x, min_y, position)  # 1
+                points.InsertNextPoint(max_x, max_y, position)  # 2
+                points.InsertNextPoint(min_x, max_y, position)  # 3
+            
+            # Create the four line segments (rectangle edges)
+            for j in range(4):
+                line = vtk.vtkLine()
+                line.GetPointIds().SetId(0, j)
+                line.GetPointIds().SetId(1, (j+1) % 4)
+                lines.InsertNextCell(line)
+            
+            # Create a polydata object
+            polyData = vtk.vtkPolyData()
+            polyData.SetPoints(points)
+            polyData.SetLines(lines)
+            
+            # Create the mapper
+            mapper = vtk.vtkPolyDataMapper()
+            mapper.SetInputData(polyData)
+            
+            # Create and add the new actor
+            actor = vtk.vtkActor()
+            actor.SetMapper(mapper)
+            
+            # Set appearance properties
+            actor.GetProperty().SetColor(*color)
+            actor.GetProperty().SetLineWidth(2)  # Slightly thinner than symmetry lines
+            
+            # Add to renderer
+            self.parent().renderer.AddActor(actor)
+            border_actors.append(actor)
+        
+        return border_actors
+
+    def visualize_bounding_box(self, bbox):
+        """
+        Create a wireframe visualization of the bounding box.
+        
+        Parameters:
+        - bbox: Tuple containing (xmin, xmax, ymin, ymax, zmin, zmax)
+        """
+        # Remove any existing bounding box visualization
+        if 'bounding_box' in self.parent().topopt_constraint_actors:
+            if self.parent().topopt_constraint_actors['bounding_box']:
+                self.parent().renderer.RemoveActor(self.parent().topopt_constraint_actors['bounding_box'])
+        
+        # Extract bounds
+        xmin, xmax, ymin, ymax, zmin, zmax = bbox
+        
+        # Create points for the 8 corners of the cube
+        points = vtk.vtkPoints()
+        points.InsertNextPoint(xmin, ymin, zmin)  # 0
+        points.InsertNextPoint(xmax, ymin, zmin)  # 1
+        points.InsertNextPoint(xmax, ymax, zmin)  # 2
+        points.InsertNextPoint(xmin, ymax, zmin)  # 3
+        points.InsertNextPoint(xmin, ymin, zmax)  # 4
+        points.InsertNextPoint(xmax, ymin, zmax)  # 5
+        points.InsertNextPoint(xmax, ymax, zmax)  # 6
+        points.InsertNextPoint(xmin, ymax, zmax)  # 7
+        
+        # Create the 12 edges of the cube
+        lines = vtk.vtkCellArray()
+        
+        # Bottom face (z=zmin)
+        for i in range(4):
+            line = vtk.vtkLine()
+            line.GetPointIds().SetId(0, i)
+            line.GetPointIds().SetId(1, (i+1) % 4)
+            lines.InsertNextCell(line)
+        
+        # Top face (z=zmax)
+        for i in range(4):
+            line = vtk.vtkLine()
+            line.GetPointIds().SetId(0, i+4)
+            line.GetPointIds().SetId(1, ((i+1) % 4) + 4)
+            lines.InsertNextCell(line)
+        
+        # Connecting edges between top and bottom faces
+        for i in range(4):
+            line = vtk.vtkLine()
+            line.GetPointIds().SetId(0, i)
+            line.GetPointIds().SetId(1, i+4)
+            lines.InsertNextCell(line)
+        
+        # Create a polydata object
+        polyData = vtk.vtkPolyData()
+        polyData.SetPoints(points)
+        polyData.SetLines(lines)
+        
+        # Create mapper and actor
+        mapper = vtk.vtkPolyDataMapper()
+        mapper.SetInputData(polyData)
+        
+        actor = vtk.vtkActor()
+        actor.SetMapper(mapper)
+        
+        # Set appearance
+        actor.GetProperty().SetColor(0.7, 0.7, 0.7)  # Light gray
+        actor.GetProperty().SetLineWidth(1.5)  # Slightly thicker than default
+        
+        # Add to renderer
+        self.parent().renderer.AddActor(actor)
+        
+        # Store the actor
+        self.parent().topopt_constraint_actors['bounding_box'] = actor
+
+    def update_grid_pattern_visualization(self):
+        """
+        Update the grid pattern visualization when any grid pattern settings change.
+        Should be connected to the checkbox and spinbox signals.
+        """
+
+        if not hasattr(self.parent(), 'topopt_constraint_actors'):
+            self.parent().initialize_constraint_actors()
+
+        # Remove any existing grid pattern visualization
+        if 'grid_patterns' in self.parent().topopt_constraint_actors:
+            grid_patterns = self.parent().topopt_constraint_actors['grid_patterns']
+            
+            if grid_patterns:
+                for axis, actors in grid_patterns.items():
+                    for actor in actors:
+                        self.parent().renderer.RemoveActor(actor)
+        
+        # Create new visualization if any grid pattern is checked
+        if (self.x_grid_check.isChecked() or 
+            self.y_grid_check.isChecked() or 
+            self.z_grid_check.isChecked()):
+            self.visualize_grid_patterns()
+        else:
+            # If none are checked, also remove the bounding box
+            if 'bounding_box' in self.parent().topopt_constraint_actors:
+                if self.parent().topopt_constraint_actors['bounding_box']:
+                    self.parent().renderer.RemoveActor(self.parent().topopt_constraint_actors['bounding_box'])
+                    self.parent().topopt_constraint_actors['bounding_box'] = None
+            
+            # Clear the grid patterns entry
+            self.parent().topopt_constraint_actors['grid_patterns'] = {
+                'x_grid': [],
+                'y_grid': [],
+                'z_grid': []
+            }
+        
+        # Update the render window
+        self.parent().vtkWidget.GetRenderWindow().Render()
+
+    def visualize_symmetry_planes(self):
+        """
+        Visualize symmetry planes (X, Y, Z) with a slight scale offset beyond the bounding box.
+        """
+        # Check if parent window has geometry loaded
+        if not hasattr(self.parent(), 'stl_geom') or self.parent().stl_geom is None:
+            return
+
+        # Initialize constraint actors if needed
+        if not hasattr(self.parent(), 'topopt_constraint_actors'):
+            self.parent().initialize_constraint_actors()
+        
+        # Get the model bounds
+        if hasattr(self.parent().stl_geom, 'get_bounding_box'):
+            bbox = self.parent().stl_geom.get_bounding_box()
+        else:
+            # Calculate bounding box manually if get_bounding_box not available
+            vertices = np.array(self.parent().stl_geom.mesh.vectors).reshape(-1, 3)
+            xmin, ymin, zmin = np.min(vertices, axis=0)
+            xmax, ymax, zmax = np.max(vertices, axis=0)
+            bbox = (xmin, xmax, ymin, ymax, zmin, zmax)
+        
+        # Scale factor to make planes slightly larger than bounding box
+        scale_offset = 1.15  # 15% larger than bounding box
+        
+        # Create symmetry planes for each enabled direction
+        if self.x_symmetry_check.isChecked():
+            self.create_symmetry_plane(bbox, 'x', scale_offset)
+        
+        if self.y_symmetry_check.isChecked():
+            self.create_symmetry_plane(bbox, 'y', scale_offset)
+        
+        if self.z_symmetry_check.isChecked():
+            self.create_symmetry_plane(bbox, 'z', scale_offset)
+        
+        # Render the scene
+        self.parent().vtkWidget.GetRenderWindow().Render()
+
+    def create_symmetry_plane(self, bbox, axis, scale_offset=1.15):
+        """
+        Create a symmetry plane border (outline only) along the specified axis with a scale offset.
+        
+        Parameters:
+        - bbox: Tuple containing (xmin, xmax, ymin, ymax, zmin, zmax)
+        - axis: 'x', 'y', or 'z'
+        - scale_offset: Factor to scale the border beyond the bounding box
+        """
+        # Extract bounds and center for the given axis
+        xmin, xmax, ymin, ymax, zmin, zmax = bbox
+        center_x = (xmin + xmax) / 2
+        center_y = (ymin + ymax) / 2
+        center_z = (zmin + zmax) / 2
+        
+        # Calculate dimensions
+        width_x = (xmax - xmin) * scale_offset
+        width_y = (ymax - ymin) * scale_offset
+        width_z = (zmax - zmin) * scale_offset
+        
+        # Create line segments for the border instead of a full plane
+        points = vtk.vtkPoints()
+        lines = vtk.vtkCellArray()
+        
+        # Set points and lines based on the axis
+        if axis == 'x':
+            # YZ plane border at center_x
+            half_height = width_z / 2
+            half_width = width_y / 2
+            
+            # Four corners of the rectangle
+            points.InsertNextPoint(center_x, center_y - half_width, center_z - half_height)  # 0
+            points.InsertNextPoint(center_x, center_y + half_width, center_z - half_height)  # 1
+            points.InsertNextPoint(center_x, center_y + half_width, center_z + half_height)  # 2
+            points.InsertNextPoint(center_x, center_y - half_width, center_z + half_height)  # 3
+            
+            color = (1.0, 0.0, 0.0)  # Bright red for X plane
+            
+        elif axis == 'y':
+            # XZ plane border at center_y
+            half_height = width_z / 2
+            half_width = width_x / 2
+            
+            # Four corners of the rectangle
+            points.InsertNextPoint(center_x - half_width, center_y, center_z - half_height)  # 0
+            points.InsertNextPoint(center_x + half_width, center_y, center_z - half_height)  # 1
+            points.InsertNextPoint(center_x + half_width, center_y, center_z + half_height)  # 2
+            points.InsertNextPoint(center_x - half_width, center_y, center_z + half_height)  # 3
+            
+            color = (0.0, 1.0, 0.0)  # Bright green for Y plane
+            
+        else:  # z
+            # XY plane border at center_z
+            half_height = width_y / 2
+            half_width = width_x / 2
+            
+            # Four corners of the rectangle
+            points.InsertNextPoint(center_x - half_width, center_y - half_height, center_z)  # 0
+            points.InsertNextPoint(center_x + half_width, center_y - half_height, center_z)  # 1
+            points.InsertNextPoint(center_x + half_width, center_y + half_height, center_z)  # 2
+            points.InsertNextPoint(center_x - half_width, center_y + half_height, center_z)  # 3
+            
+            color = (0.0, 0.0, 1.0)  # Bright blue for Z plane
+        
+        # Create the four line segments (rectangle edges)
+        line1 = vtk.vtkLine()
+        line1.GetPointIds().SetId(0, 0)
+        line1.GetPointIds().SetId(1, 1)
+        lines.InsertNextCell(line1)
+        
+        line2 = vtk.vtkLine()
+        line2.GetPointIds().SetId(0, 1)
+        line2.GetPointIds().SetId(1, 2)
+        lines.InsertNextCell(line2)
+        
+        line3 = vtk.vtkLine()
+        line3.GetPointIds().SetId(0, 2)
+        line3.GetPointIds().SetId(1, 3)
+        lines.InsertNextCell(line3)
+        
+        line4 = vtk.vtkLine()
+        line4.GetPointIds().SetId(0, 3)
+        line4.GetPointIds().SetId(1, 0)
+        lines.InsertNextCell(line4)
+        
+        # Create a polydata object
+        polyData = vtk.vtkPolyData()
+        polyData.SetPoints(points)
+        polyData.SetLines(lines)
+        
+        # Create the mapper
+        mapper = vtk.vtkPolyDataMapper()
+        mapper.SetInputData(polyData)
+        
+        # Remove any existing symmetry plane for this axis
+        if self.parent().topopt_constraint_actors['symmetry'][f'{axis}_symmetry']:
+            self.parent().renderer.RemoveActor(self.parent().topopt_constraint_actors['symmetry'][f'{axis}_symmetry'])
+        
+        # Create and add the new actor
+        actor = vtk.vtkActor()
+        actor.SetMapper(mapper)
+        
+        # Set appearance properties
+        actor.GetProperty().SetColor(*color)
+        actor.GetProperty().SetLineWidth(3)  # Thicker line for better visibility
+        
+        # Add to renderer
+        self.parent().renderer.AddActor(actor)
+        
+        # Store the actor in the parent's collection
+        self.parent().topopt_constraint_actors['symmetry'][f'{axis}_symmetry'] = actor
+
+    def update_symmetry_visualization(self):
+        """
+        Update the symmetry plane visualizations when checkboxes change.
+        """
+        # Check if parent has topopt_constraint_actors initialized
+        if not hasattr(self.parent(), 'topopt_constraint_actors'):
+            self.parent().initialize_constraint_actors()
+        
+        # Visualize symmetry planes if they're checked
+        self.visualize_symmetry_planes()
+        
+        # Remove planes that are unchecked
+        if not self.x_symmetry_check.isChecked() and self.parent().topopt_constraint_actors['symmetry']['x_symmetry']:
+            self.parent().renderer.RemoveActor(self.parent().topopt_constraint_actors['symmetry']['x_symmetry'])
+            self.parent().topopt_constraint_actors['symmetry']['x_symmetry'] = None
+        
+        if not self.y_symmetry_check.isChecked() and self.parent().topopt_constraint_actors['symmetry']['y_symmetry']:
+            self.parent().renderer.RemoveActor(self.parent().topopt_constraint_actors['symmetry']['y_symmetry'])
+            self.parent().topopt_constraint_actors['symmetry']['y_symmetry'] = None
+        
+        if not self.z_symmetry_check.isChecked() and self.parent().topopt_constraint_actors['symmetry']['z_symmetry']:
+            self.parent().renderer.RemoveActor(self.parent().topopt_constraint_actors['symmetry']['z_symmetry'])
+            self.parent().topopt_constraint_actors['symmetry']['z_symmetry'] = None
+        
+        # Update the render window
+        self.parent().vtkWidget.GetRenderWindow().Render()
+
+    # def apply_non_visual_constraints(self):
+    #     """
+    #     Apply non-visual constraints and store their values in the parent window.
+    #     These include performance constraints (stress, displacement, etc.) and 
+    #     other constraints like connected topology and fixed faces.
+    #     """
+    #     # Get performance constraints
+    #     performance_constraints = {
+    #         'stress_safety': {
+    #             'enabled': self.stress_safety_check.isChecked(),
+    #             'value': self.stress_safety_spin.value()
+    #         },
+    #         'max_displacement': {
+    #             'enabled': self.max_disp_check.isChecked(),
+    #             'value': self.max_disp_spin.value()
+    #         },
+    #         'min_frequency': {
+    #             'enabled': self.min_freq_check.isChecked(),
+    #             'value': self.min_freq_spin.value()
+    #         },
+    #         'max_temperature': {
+    #             'enabled': self.max_temp_check.isChecked(),
+    #             'value': self.max_temp_spin.value()
+    #         },
+    #         'min_feature': {
+    #             'enabled': self.min_feat_check.isChecked(),
+    #             'value': self.min_feat_spin.value()
+    #         },
+    #         'max_feature': {
+    #             'enabled': self.max_feat_check.isChecked(),
+    #             'value': self.max_feat_spin.value()
+    #         }
+    #     }
+        
+    #     # Get other constraints
+    #     other_constraints = {
+    #         'connected_topology': self.connected_topology_check.isChecked(),
+    #         'keep_fixed_faces': self.keep_fixed_faces_check.isChecked()
+    #     }
+        
+    #     # Create a log message for all applied non-visual constraints
+    #     log_message = "Applied non-visual constraints:\n"
+        
+    #     # Add performance constraints to log
+    #     for constraint_name, constraint_data in performance_constraints.items():
+    #         if constraint_data['enabled']:
+    #             display_name = self.get_display_name(constraint_name)
+    #             log_message += f"- {display_name}: {constraint_data['value']}\n"
+        
+    #     # Add other constraints to log
+    #     for constraint_name, enabled in other_constraints.items():
+    #         if enabled:
+    #             display_name = self.get_display_name(constraint_name)
+    #             log_message += f"- {display_name}\n"
+        
+    #     # Log the applied constraints
+    #     if hasattr(self.parent(), 'log_message'):
+    #         self.parent().log_message(log_message)
+    #     else:
+    #         self.parent().message_text.append(log_message)
+        
+    #     # Return the constraints in case needed elsewhere
+    #     return {
+    #         'performance': performance_constraints,
+    #         'other': other_constraints
+    #     }
+
+    # # Helper method to convert constraint names to user-friendly display names
+    # def get_display_name(self, constraint_name):
+    #     """Convert internal constraint names to user-friendly display names."""
+    #     name_map = {
+    #         'stress_safety': 'Stress Safety Factor',
+    #         'max_displacement': 'Maximum Displacement',
+    #         'min_frequency': 'Minimum Frequency',
+    #         'max_temperature': 'Maximum Temperature',
+    #         'min_feature': 'Minimum Feature Size',
+    #         'max_feature': 'Maximum Feature Size',
+    #         'connected_topology': 'Connected Topology',
+    #         'keep_fixed_faces': 'Keep Fixed Faces'
+    #     }
+    #     return name_map.get(constraint_name, constraint_name.replace('_', ' ').title())
 
 #---------------------------------------------------------------------------------
 class OptimizeTopologyWindow(QtWidgets.QDialog):
@@ -4200,6 +6523,9 @@ class OptimizeTopologyWindow(QtWidgets.QDialog):
         self.setWindowTitle("Optimize Topology")
         self.resize(300, 400)
         self.parent = parent
+        
+        # Initialize optimization state
+        self.optimization_running = False
         
         # Main layout
         layout = QtWidgets.QVBoxLayout(self)
@@ -4214,13 +6540,19 @@ class OptimizeTopologyWindow(QtWidgets.QDialog):
         obj_layout.addWidget(self.obj_combo)
         layout.addLayout(obj_layout)
         
+        # Method selection
+        method_layout = QtWidgets.QHBoxLayout()
+        method_label = QtWidgets.QLabel("Method")
+        self.method_combo = QtWidgets.QComboBox()
+        self.method_combo.addItems(["DENSITY-OC", "DENSITY-MMA", "PARETO", "Levelset"])
+        method_layout.addWidget(method_label)
+        method_layout.addWidget(self.method_combo)
+        layout.addLayout(method_layout)
+        
         # Checkboxes
         self.use_all_loads = QtWidgets.QCheckBox("Use all Loads?")
         self.use_all_loads.setChecked(True)
         layout.addWidget(self.use_all_loads)
-        
-        self.use_simp = QtWidgets.QCheckBox("Use SIMP Method?")
-        layout.addWidget(self.use_simp)
         
         self.smooth_surface = QtWidgets.QCheckBox("Smooth surface?")
         self.smooth_surface.setChecked(True)
@@ -4235,30 +6567,6 @@ class OptimizeTopologyWindow(QtWidgets.QDialog):
         load_set_layout.addWidget(load_set_label)
         load_set_layout.addWidget(self.load_set_spin)
         layout.addLayout(load_set_layout)
-        
-        # Volume Fraction
-        vol_frac_layout = QtWidgets.QHBoxLayout()
-        vol_frac_label = QtWidgets.QLabel("Desired Vol.Frac.")
-        self.vol_frac_spin = QtWidgets.QDoubleSpinBox()
-        self.vol_frac_spin.setRange(0.1, 1.0)
-        self.vol_frac_spin.setValue(0.50)
-        self.vol_frac_spin.setDecimals(2)
-        self.vol_frac_spin.setSingleStep(0.05)
-        vol_frac_layout.addWidget(vol_frac_label)
-        vol_frac_layout.addWidget(self.vol_frac_spin)
-        layout.addLayout(vol_frac_layout)
-        
-        # Volume Step
-        vol_step_layout = QtWidgets.QHBoxLayout()
-        vol_step_label = QtWidgets.QLabel("Volume Step")
-        self.vol_step_spin = QtWidgets.QDoubleSpinBox()
-        self.vol_step_spin.setRange(0.001, 0.1)
-        self.vol_step_spin.setValue(0.02500)
-        self.vol_step_spin.setDecimals(5)
-        self.vol_step_spin.setSingleStep(0.005)
-        vol_step_layout.addWidget(vol_step_label)
-        vol_step_layout.addWidget(self.vol_step_spin)
-        layout.addLayout(vol_step_layout)
         
         # Save Intermediate
         self.save_intermediate = QtWidgets.QCheckBox("Save Intermediate?")
@@ -4277,22 +6585,20 @@ class OptimizeTopologyWindow(QtWidgets.QDialog):
         # Add stretch to push everything up
         layout.addStretch()
         
-        # Initialize optimization state
-        self.optimization_running = False
-        
     def start_optimization(self):
         """Start the topology optimization process"""
         if not self.check_prerequisites():
             return
             
+        # Get optimization parameters
         optimization_params = {
             'objective': self.obj_combo.currentText(),
+            'method': self.method_combo.currentText(),
             'use_all_loads': self.use_all_loads.isChecked(),
-            'use_simp': self.use_simp.isChecked(),
             'smooth_surface': self.smooth_surface.isChecked(),
             'load_set': self.load_set_spin.value(),
-            'volume_fraction': self.vol_frac_spin.value(),
-            'volume_step': self.vol_step_spin.value(),
+            'volume_fraction': 0.50,  # Default value preserved in backend
+            'volume_step': 0.02500,   # Default value preserved in backend
             'save_intermediate': self.save_intermediate.isChecked()
         }
         
@@ -4305,19 +6611,193 @@ class OptimizeTopologyWindow(QtWidgets.QDialog):
         if hasattr(self.parent, 'optimization_params'):
             self.parent.optimization_params = optimization_params
             
+        # Log start of optimization
         self.parent.message_text.append("Starting topology optimization...")
         
-        # Update sidebar button icon
+        # Update sidebar button icon if available
         if hasattr(self.parent, 'update_button_icon'):
             self.parent.update_button_icon("Structural TopOpt", "check")
         
-         # Update LivVar state
+        # Update LivVar state if available
         self.parent.update_LivVar('topopt.structural_performed', True)
 
-
+        # Log parameters
         self.parent.message_text.append(f"Optimization parameters set:")
         self.parent.message_text.append(f"Objective: {optimization_params['objective']}")
-        self.parent.message_text.append(f"Volume Fraction: {optimization_params['volume_fraction']}")
+        self.parent.message_text.append(f"Method: {optimization_params['method']}")
+        
+        try:
+            # Import necessary modules
+            from topopt_common import MaterialModel, TO_METHODS
+            from topopt_common import TOParams
+            
+            # Configure JAX for high precision
+            jax.config.update("jax_enable_x64", True)
+            
+            # Get mesh, material, BC and other required data from parent
+            mesh = self.parent.analysis_mesher if hasattr(self.parent, 'analysis_mesher') else None
+            mat_prop = self.parent.material_data
+            bc = self.parent.stl_geom.bc if hasattr(self.parent.stl_geom, 'bc') else None
+            elem_body_force = self.parent.stl_geom.body_force if hasattr(self.parent.stl_geom, 'body_force') else None
+            
+            # Setup topology optimization constraints
+            from topopt_common import TOParams
+            to_constraints = TOParams()
+            
+            # Map UI constraints to TO constraints
+            if hasattr(self.parent, 'topopt_constraints'):
+                constraints = self.parent.topopt_constraints
+                
+                # Map symmetry constraints
+                if 'symmetry' in constraints:
+                    to_constraints.XSymmetry = constraints['symmetry'].get('x_symmetry', False)
+                    to_constraints.YSymmetry = constraints['symmetry'].get('y_symmetry', False)
+                    to_constraints.ZSymmetry = constraints['symmetry'].get('z_symmetry', False)
+                
+                # Map manufacturing constraints
+                if 'manufacturing' in constraints:
+                    manufacturing = constraints['manufacturing']
+                    
+                    # Map cyclic symmetry
+                    if 'cyclic_symmetry' in manufacturing:
+                        cyclic_sym = manufacturing['cyclic_symmetry']
+                        if cyclic_sym.get('enabled', False) and 'angle' in cyclic_sym:
+                            angle_text = cyclic_sym['angle']
+                            try:
+                                match = re.search(r'\d+', angle_text)
+                                if match:
+                                    angle = int(match.group())
+                                    to_constraints.ZAxisAngularSymmetry = int(360 / angle) if angle > 0 else 0
+                            except:
+                                to_constraints.ZAxisAngularSymmetry = 0
+                    
+                    # Map extrusion constraints
+                    if 'extrude' in manufacturing:
+                        extrude = manufacturing['extrude']
+                        if extrude.get('enabled', False):
+                            direction = extrude['direction']
+                            to_constraints.ExtrudeX = direction == "XDir"
+                            to_constraints.ExtrudeY = direction == "YDir"
+                            to_constraints.ExtrudeZ = direction == "ZDir"
+                    
+                    # Map AM build constraint
+                    if 'am_build' in manufacturing:
+                        am_build = manufacturing['am_build']
+                        to_constraints.AMBuildConstraint = am_build.get('enabled', False)
+                
+                # Map other constraints
+                if 'other' in constraints:
+                    other = constraints['other']
+                    to_constraints.KeepFixedElems = other.get('keep_fixed_faces', False)
+                    to_constraints.RemoveHangingElems = other.get('connected_topology', False)
+            
+            # Setup TO params
+            to_params = TOParams()
+            to_params.desiredVolFraction = optimization_params['volume_fraction']
+            to_params.volStep = optimization_params['volume_step']
+            
+            # Setup solver
+            solver = lin_solv.Solvers.PARDISO
+            
+            # Setup material model
+            material_model = MaterialModel.SIMP
+            if elem_body_force is not None and np.linalg.norm(elem_body_force) > 0:
+                material_model = MaterialModel.SIMPPLUS
+            
+            # Initialize the FE solver
+            self.parent.message_text.append("Initializing FEA solver...")
+            fe_solver = fea.StructFEA(
+                mesh=mesh,
+                mat_prop=mat_prop,
+                bc=bc,
+                solver=solver,
+                rtol=1e-8,
+                elem_body_force=elem_body_force
+            )
+            
+            # Choose optimization method based on objective
+            opt_method = TO_METHODS.DENSITYMMA  # Default
+
+            if optimization_params['objective'] == "Min. Compliance":
+                pass
+            elif optimization_params['objective'] == "Min. Mass":
+                pass
+            elif optimization_params['objective'] == "Min. Stress":
+                pass
+            
+            # Start optimization in a separate thread
+            self.optimization_thread = threading.Thread(
+                target=self.run_optimization,
+                args=(fe_solver, opt_method, material_model, to_constraints, to_params)
+            )
+            self.optimization_thread.daemon = True
+            self.optimization_thread.start()
+            
+        except Exception as e:
+            self.parent.message_text.append(f"Error initializing optimization: {str(e)}")
+            self.stop_optimization()
+
+    def run_optimization(self, fe_solver, opt_method, material_model, to_constraints, to_params):
+        """Run the optimization process in a separate thread"""
+        import topopt_common,topopt_density_oc,topopt_density_mma,topopt_pareto,topopt_levelset
+        
+        start_time = time.time()
+        self.parent.message_text.append(f"Starting {opt_method.name} optimization...")
+        
+        try:
+            # Call the appropriate optimization function based on the selected method
+            if opt_method == topopt_common.TO_METHODS.DENSITYOC:
+                u, history = topopt_density_oc.topopt_optimality_criteria(
+                    fe_solver=fe_solver,
+                    volfrac=to_params.desiredVolFraction,
+                    material_model=material_model,
+                    to_constraints=to_constraints
+                )
+            elif opt_method == topopt_common.TO_METHODS.DENSITYMMA:
+                u, history = topopt_density_mma.topopt_mma(
+                    fe_solver=fe_solver,
+                    volfrac=to_params.desiredVolFraction,
+                    material_model=material_model,
+                    to_constraints=to_constraints
+                )
+            elif opt_method == topopt_common.TO_METHODS.PARETO:
+                u, history = topopt_pareto.topopt_pareto(
+                    fe_solver=fe_solver,
+                    desiredVolFrac=to_params.desiredVolFraction,
+                    to_constraints=to_constraints
+                )
+            elif opt_method == topopt_common.TO_METHODS.LEVELSET:
+                u, history = topopt_levelset.topopt_levelset (
+                    fe_solver=fe_solver,
+                    desiredVolFrac=to_params.desiredVolFraction,
+                    to_constraints=to_constraints
+                )
+            else:
+                self.parent.message_text.append(f"Unsupported optimization method: {opt_method.name}")
+                return
+            
+            # Calculate elapsed time
+            elapsed_time = time.time() - start_time
+            
+            # Update UI with results
+            QMetaObject.invokeMethod(
+                self.parent, 
+                "update_optimization_results",
+                Qt.QueuedConnection,
+                Q_ARG(QObject, self),
+                Q_ARG(object, u),
+                Q_ARG(object, history),
+                Q_ARG(float, elapsed_time)
+            )
+            
+        except Exception as e:
+            # Log error and stop optimization
+            self.parent.message_text.append(f"Error during optimization: {str(e)}")
+            QMetaObject.invokeMethod(
+                self, 
+                "stop_optimization",
+                Qt.QueuedConnection
+            )
         
     def stop_optimization(self):
         """Stop the ongoing optimization process"""
@@ -4342,6 +6822,7 @@ class OptimizeTopologyWindow(QtWidgets.QDialog):
             return False
             
         return True
+    
     
 # ---------------------------------------------------------------------------------
 
@@ -4389,6 +6870,10 @@ class ThermalLoadsWindow(QtWidgets.QDialog):
     def setup_ui(self):
         layout = QtWidgets.QVBoxLayout(self)
         layout.setSpacing(10)
+
+        # Get temperature unit symbol
+        temp_unit = self.parent.settings.get_temperature_unit_symbol()
+        length_unit = self.parent.settings.get_length_unit_string()
         
         # Selection dropdown
         selection_layout = QtWidgets.QHBoxLayout()
@@ -4414,10 +6899,20 @@ class ThermalLoadsWindow(QtWidgets.QDialog):
         
         # Temperature value
         temp_value_layout = QtWidgets.QHBoxLayout()
-        temp_value_label = QtWidgets.QLabel("Temperature (°C)")
+        temp_value_label = QtWidgets.QLabel(f"Temperature ({temp_unit})")
         self.temp_value_spin = QtWidgets.QDoubleSpinBox()
-        self.temp_value_spin.setRange(-273.15, 10000)
-        self.temp_value_spin.setValue(300)
+        
+        # Set range based on temperature unit
+        if self.parent.settings.temperature_unit == "Kelvin":
+            self.temp_value_spin.setRange(0, 10000)
+            self.temp_value_spin.setValue(300)
+        elif self.parent.settings.temperature_unit == "Celsius":
+            self.temp_value_spin.setRange(-273.15, 10000)
+            self.temp_value_spin.setValue(25)
+        else:  # Fahrenheit
+            self.temp_value_spin.setRange(-459.67, 18000)
+            self.temp_value_spin.setValue(77)
+            
         self.temp_value_spin.setDecimals(1)
         temp_value_layout.addWidget(temp_value_label)
         temp_value_layout.addWidget(self.temp_value_spin)
@@ -4429,13 +6924,21 @@ class ThermalLoadsWindow(QtWidgets.QDialog):
         self.heat_flux_group = QtWidgets.QGroupBox()
         heat_flux_layout = QtWidgets.QVBoxLayout(self.heat_flux_group)
         
-        # Heat Flux value
+       # Heat Flux value with unit based on current unit system
         heat_flux_value_layout = QtWidgets.QHBoxLayout()
-        heat_flux_value_label = QtWidgets.QLabel("Heat Flux (W/m²)")
+        heat_flux_value_label = QtWidgets.QLabel(f"Heat Flux (W/{length_unit}²)")
         self.heat_flux_value_spin = QtWidgets.QDoubleSpinBox()
         self.heat_flux_value_spin.setRange(-1e6, 1e6)
-        self.heat_flux_value_spin.setValue(1000)
-        self.heat_flux_value_spin.setDecimals(1)
+        
+        # Adjust default value based on unit system
+        if self.parent.settings.unit_system == "MKS":
+            self.heat_flux_value_spin.setValue(1000)  # W/m²
+        elif self.parent.settings.unit_system == "mmKS":
+            self.heat_flux_value_spin.setValue(0.001)  # W/mm²
+        else:  # IPS
+            self.heat_flux_value_spin.setValue(0.645)  # W/in²
+            
+        self.heat_flux_value_spin.setDecimals(6)
         heat_flux_value_layout.addWidget(heat_flux_value_label)
         heat_flux_value_layout.addWidget(self.heat_flux_value_spin)
         heat_flux_layout.addLayout(heat_flux_value_layout)
@@ -4448,11 +6951,19 @@ class ThermalLoadsWindow(QtWidgets.QDialog):
         
         # Internal Heat Generation value
         internal_heat_value_layout = QtWidgets.QHBoxLayout()
-        internal_heat_value_label = QtWidgets.QLabel("Heat Generation (W/m³)")
+        internal_heat_value_label = QtWidgets.QLabel(f"Heat Generation (W/{length_unit}³)")
         self.internal_heat_value_spin = QtWidgets.QDoubleSpinBox()
         self.internal_heat_value_spin.setRange(0, 1e8)
-        self.internal_heat_value_spin.setValue(10000)
-        self.internal_heat_value_spin.setDecimals(1)
+        
+        # Adjust default value based on unit system
+        if self.parent.settings.unit_system == "MKS":
+            self.internal_heat_value_spin.setValue(10000)  # W/m³
+        elif self.parent.settings.unit_system == "mmKS":
+            self.internal_heat_value_spin.setValue(1e-5)   # W/mm³
+        else:  # IPS
+            self.internal_heat_value_spin.setValue(0.016)  # W/in³
+            
+        self.internal_heat_value_spin.setDecimals(6)
         internal_heat_value_layout.addWidget(internal_heat_value_label)
         internal_heat_value_layout.addWidget(self.internal_heat_value_spin)
         internal_heat_layout.addLayout(internal_heat_value_layout)
@@ -4482,21 +6993,31 @@ class ThermalLoadsWindow(QtWidgets.QDialog):
         
         # Convection coefficient
         conv_coeff_layout = QtWidgets.QHBoxLayout()
-        conv_coeff_label = QtWidgets.QLabel("Convection Coeff. (W/m²K)")
+        conv_coeff_label = QtWidgets.QLabel(f"Convection Coeff. (W/{length_unit}²·{temp_unit})")
         self.conv_coeff_spin = QtWidgets.QDoubleSpinBox()
         self.conv_coeff_spin.setRange(0, 10000)
         self.conv_coeff_spin.setValue(25)
-        self.conv_coeff_spin.setDecimals(1)
+        self.conv_coeff_spin.setDecimals(3)
         conv_coeff_layout.addWidget(conv_coeff_label)
         conv_coeff_layout.addWidget(self.conv_coeff_spin)
         convection_layout.addLayout(conv_coeff_layout)
         
         # Ambient temperature
         ambient_temp_layout = QtWidgets.QHBoxLayout()
-        ambient_temp_label = QtWidgets.QLabel("Ambient Temp. (°C)")
+        ambient_temp_label = QtWidgets.QLabel(f"Ambient Temp. ({temp_unit})")
         self.ambient_temp_spin = QtWidgets.QDoubleSpinBox()
-        self.ambient_temp_spin.setRange(-273.15, 10000)
-        self.ambient_temp_spin.setValue(25)
+        
+        # Set range based on temperature unit
+        if self.parent.settings.temperature_unit == "Kelvin":
+            self.ambient_temp_spin.setRange(0, 10000)
+            self.ambient_temp_spin.setValue(300)
+        elif self.parent.settings.temperature_unit == "Celsius":
+            self.ambient_temp_spin.setRange(-273.15, 10000)
+            self.ambient_temp_spin.setValue(25)
+        else:  # Fahrenheit
+            self.ambient_temp_spin.setRange(-459.67, 18000)
+            self.ambient_temp_spin.setValue(77)
+            
         self.ambient_temp_spin.setDecimals(1)
         ambient_temp_layout.addWidget(ambient_temp_label)
         ambient_temp_layout.addWidget(self.ambient_temp_spin)
@@ -4522,10 +7043,20 @@ class ThermalLoadsWindow(QtWidgets.QDialog):
         
         # Radiation ambient temperature
         rad_ambient_temp_layout = QtWidgets.QHBoxLayout()
-        rad_ambient_temp_label = QtWidgets.QLabel("Ambient Temp. (°C)")
+        rad_ambient_temp_label = QtWidgets.QLabel(f"Ambient Temp. ({temp_unit})")
         self.rad_ambient_temp_spin = QtWidgets.QDoubleSpinBox()
-        self.rad_ambient_temp_spin.setRange(-273.15, 10000)
-        self.rad_ambient_temp_spin.setValue(25)
+        
+        # Set range based on temperature unit
+        if self.parent.settings.temperature_unit == "Kelvin":
+            self.rad_ambient_temp_spin.setRange(0, 10000)
+            self.rad_ambient_temp_spin.setValue(300)
+        elif self.parent.settings.temperature_unit == "Celsius":
+            self.rad_ambient_temp_spin.setRange(-273.15, 10000)
+            self.rad_ambient_temp_spin.setValue(25)
+        else:  # Fahrenheit
+            self.rad_ambient_temp_spin.setRange(-459.67, 18000)
+            self.rad_ambient_temp_spin.setValue(77)
+            
         self.rad_ambient_temp_spin.setDecimals(1)
         rad_ambient_temp_layout.addWidget(rad_ambient_temp_label)
         rad_ambient_temp_layout.addWidget(self.rad_ambient_temp_spin)
@@ -5658,11 +8189,15 @@ class ProjectData:
         self.stl_file_path = None
         self.settings = None
         self.material_data = None
+        self.structuralBC = None
+        self.thermalBC = None
+        self.topopt_constraints = None
+        self.optimization_params = None
         self.analysis_settings = {
             "n_elements": 10000,  # Default value
             "solver_type": "PARDISO"  # Default solver
         }
-
+    
     def to_dict(self):
         return {
             'version': self.version,
@@ -5675,11 +8210,11 @@ class ProjectData:
             'material_data': self.material_data,
             'structuralBC': self.structuralBC,
             'thermalBC': self.thermalBC,
-            'topopt_constraints': getattr(self, 'topopt_constraints', None),
-            'optimization_params': getattr(self, 'optimization_params', None),
+            'topopt_constraints': self.topopt_constraints,
+            'optimization_params': self.optimization_params,
             'analysis_settings': self.analysis_settings
         }
-
+    
     @classmethod
     def from_dict(cls, data):
         project = cls()
@@ -5710,6 +8245,10 @@ class ProjectData:
         
         project.thermalBC = thermalBC
         project.material_data = data.get('material_data')
+        
+        # Load topopt constraints and optimization parameters
+        project.topopt_constraints = data.get('topopt_constraints')
+        project.optimization_params = data.get('optimization_params')
         
         # Load analysis settings with defaults if not present
         if data.get('analysis_settings'):
@@ -5973,6 +8512,17 @@ class ProjectsWindow(QtWidgets.QDialog):
                 # Load settings
                 if project.settings:
                     self.parent.settings = project.settings
+
+                # Load TopOpt constraints if present
+                if project.topopt_constraints:
+                    self.parent.topopt_constraints = project.topopt_constraints
+                    self.restore_topopt_constraints(project.topopt_constraints)
+                    self.parent.message_text.append(f"Loaded topology optimization constraints")
+
+                # Also ensure the optimization parameters are loaded if present
+                if project.optimization_params:
+                    self.parent.optimization_params = project.optimization_params
+                    self.parent.message_text.append(f"Loaded optimization parameters")
                     
                 # Restore structural boundary conditions if STL is loaded
                 if self.parent.stl_geom and project.structuralBC:
@@ -6371,6 +8921,171 @@ class ProjectsWindow(QtWidgets.QDialog):
                 self.parent.update_LivVar('thermal_loads.convection_applied', True)
                 
             self.parent.update_button_icon("Thermal Loads", "check")
+
+    def restore_topopt_constraints(self, constraints):
+        """Restore topology optimization constraints and visualization from saved data"""
+        if not hasattr(self.parent, 'stl_geom') or self.parent.stl_geom is None:
+            return
+            
+        # Initialize constraint actors if needed
+        if not hasattr(self.parent, 'topopt_constraint_actors'):
+            self.parent.initialize_constraint_actors()
+            
+        # Create a temporary TopOptConstraintsWindow to use its methods
+        try:
+            temp_window = TopOptConstraintsWindow(self.parent)
+            
+            # Set the UI elements based on the saved constraints
+            if 'manufacturing' in constraints:
+                manufacturing = constraints['manufacturing']
+                
+                # Set extrude constraints
+                if 'extrude' in manufacturing:
+                    extrude_data = manufacturing['extrude']
+                    temp_window.extrude_check.setChecked(extrude_data.get('enabled', False))
+                    if 'direction' in extrude_data:
+                        index = temp_window.extrude_combo.findText(extrude_data['direction'])
+                        if index >= 0:
+                            temp_window.extrude_combo.setCurrentIndex(index)
+                
+                # Set AM build constraints
+                if 'am_build' in manufacturing:
+                    am_build_data = manufacturing['am_build']
+                    temp_window.am_build_check.setChecked(am_build_data.get('enabled', False))
+                    if 'direction' in am_build_data:
+                        index = temp_window.am_build_combo.findText(am_build_data['direction'])
+                        if index >= 0:
+                            temp_window.am_build_combo.setCurrentIndex(index)
+                
+                # Set draw direction constraints
+                if 'draw_direction' in manufacturing:
+                    draw_dir_data = manufacturing['draw_direction']
+                    temp_window.draw_direction_check.setChecked(draw_dir_data.get('enabled', False))
+                    if 'direction' in draw_dir_data:
+                        index = temp_window.draw_direction_combo.findText(draw_dir_data['direction'])
+                        if index >= 0:
+                            temp_window.draw_direction_combo.setCurrentIndex(index)
+                
+                # Set cyclic symmetry constraints
+                if 'cyclic_symmetry' in manufacturing:
+                    cyclic_sym_data = manufacturing['cyclic_symmetry']
+                    temp_window.cyclic_sym_check.setChecked(cyclic_sym_data.get('enabled', False))
+                    if 'angle' in cyclic_sym_data:
+                        index = temp_window.cyclic_sym_combo.findText(cyclic_sym_data['angle'])
+                        if index >= 0:
+                            temp_window.cyclic_sym_combo.setCurrentIndex(index)
+            
+            # Set pattern constraints
+            if 'patterns' in constraints:
+                patterns = constraints['patterns']
+                
+                # Set X grid pattern
+                if 'x_grid' in patterns:
+                    x_grid_data = patterns['x_grid']
+                    temp_window.x_grid_check.setChecked(x_grid_data.get('enabled', False))
+                    if 'value' in x_grid_data:
+                        temp_window.x_grid_spin.setValue(x_grid_data['value'])
+                
+                # Set Y grid pattern
+                if 'y_grid' in patterns:
+                    y_grid_data = patterns['y_grid']
+                    temp_window.y_grid_check.setChecked(y_grid_data.get('enabled', False))
+                    if 'value' in y_grid_data:
+                        temp_window.y_grid_spin.setValue(y_grid_data['value'])
+                
+                # Set Z grid pattern
+                if 'z_grid' in patterns:
+                    z_grid_data = patterns['z_grid']
+                    temp_window.z_grid_check.setChecked(z_grid_data.get('enabled', False))
+                    if 'value' in z_grid_data:
+                        temp_window.z_grid_spin.setValue(z_grid_data['value'])
+            
+            # Set performance constraints
+            if 'performance' in constraints:
+                performance = constraints['performance']
+                
+                # Set stress safety
+                if 'stress_safety' in performance:
+                    stress_data = performance['stress_safety']
+                    temp_window.stress_safety_check.setChecked(stress_data.get('enabled', False))
+                    if 'value' in stress_data:
+                        temp_window.stress_safety_spin.setValue(stress_data['value'])
+                
+                # Set max displacement
+                if 'max_displacement' in performance:
+                    disp_data = performance['max_displacement']
+                    temp_window.max_disp_check.setChecked(disp_data.get('enabled', False))
+                    if 'value' in disp_data:
+                        temp_window.max_disp_spin.setValue(disp_data['value'])
+                
+                # Set min frequency
+                if 'min_frequency' in performance:
+                    freq_data = performance['min_frequency']
+                    temp_window.min_freq_check.setChecked(freq_data.get('enabled', False))
+                    if 'value' in freq_data:
+                        temp_window.min_freq_spin.setValue(freq_data['value'])
+                
+                # Set max temperature
+                if 'max_temperature' in performance:
+                    temp_data = performance['max_temperature']
+                    temp_window.max_temp_check.setChecked(temp_data.get('enabled', False))
+                    if 'value' in temp_data:
+                        temp_window.max_temp_spin.setValue(temp_data['value'])
+                
+                # Set min feature
+                if 'min_feature' in performance:
+                    min_feat_data = performance['min_feature']
+                    temp_window.min_feat_check.setChecked(min_feat_data.get('enabled', False))
+                    if 'value' in min_feat_data:
+                        temp_window.min_feat_spin.setValue(min_feat_data['value'])
+                
+                # Set max feature
+                if 'max_feature' in performance:
+                    max_feat_data = performance['max_feature']
+                    temp_window.max_feat_check.setChecked(max_feat_data.get('enabled', False))
+                    if 'value' in max_feat_data:
+                        temp_window.max_feat_spin.setValue(max_feat_data['value'])
+            
+            # Set symmetry constraints
+            if 'symmetry' in constraints:
+                symmetry = constraints['symmetry']
+                
+                # Set X symmetry
+                if 'x_symmetry' in symmetry:
+                    temp_window.x_symmetry_check.setChecked(symmetry['x_symmetry'])
+                
+                # Set Y symmetry
+                if 'y_symmetry' in symmetry:
+                    temp_window.y_symmetry_check.setChecked(symmetry['y_symmetry'])
+                
+                # Set Z symmetry
+                if 'z_symmetry' in symmetry:
+                    temp_window.z_symmetry_check.setChecked(symmetry['z_symmetry'])
+            
+            # Set other constraints
+            if 'other' in constraints:
+                other = constraints['other']
+                
+                # Set connected topology
+                if 'connected_topology' in other:
+                    temp_window.connected_topology_check.setChecked(other['connected_topology'])
+                
+                # Set keep fixed faces
+                if 'keep_fixed_faces' in other:
+                    temp_window.keep_fixed_faces_check.setChecked(other['keep_fixed_faces'])
+            
+            # Apply the constraints to update visualizations
+            temp_window.apply_constraints()
+            
+            # Clean up
+            temp_window.close()
+            
+            # Update UI indicators
+            self.parent.update_button_icon("TopOpt Constraints", "check")
+            self.parent.update_LivVar('topopt.constraints_defined', True)
+            
+        except Exception as e:
+            self.parent.message_text.append(f"Warning: Error loading topology optimization constraints: {str(e)}")
 
     def visualize_fixed_temp(self, nodes, temperature):
         """Visualize fixed temperature on the model with arrows"""

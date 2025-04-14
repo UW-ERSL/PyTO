@@ -8,7 +8,7 @@ import matplotlib.pyplot as plt # pip install matplotlib
 import struct_fea as fea
 import deflation
 import linear_solvers as lin_solv
-import topopt as topopt
+import topopt_common as topopt_common
 import os
 import plots
 from examples_structural import *
@@ -52,30 +52,30 @@ def run_fea(fe_solver: fea.StructFEA,
 
 def run_topopt(fe_solver: fea.StructFEA,
 							volfrac: float,
-							optimizationMethod = topopt.Optimizers):
+							optimizationMethod = topopt_common.Optimizers):
 
 	print('Solver: ', fe_solver.solver.name)
 	print("nDof: ", 3*fe_solver.mesh.num_nodes)
 	print("optimizationMethod: ", optimizationMethod.name)
 
-	if optimizationMethod == topopt.Optimizers.MMA:
-		u, history = topopt.topopt_mma(fe_solver = fe_solver,
+	if optimizationMethod == topopt_common.Optimizers.MMA:
+		u, history = topopt_common.topopt_mma(fe_solver = fe_solver,
 										maxMMAIterations = cfg_opt['num_iter'],
 										volfrac = volfrac
 										)
 		J = fe_solver.bc.force.T @ u
 		title = f'MMA: vol: {volfrac}, J: {J:.2e}'
 
-	elif optimizationMethod == topopt.Optimizers.OC:
-		u, history = topopt.topopt_optimality_criteria(fe_solver = fe_solver,
+	elif optimizationMethod == topopt_common.Optimizers.OC:
+		u, history = topopt_common.topopt_optimality_criteria(fe_solver = fe_solver,
 														maxIterations= cfg_opt['num_iter'],
 														volfrac = volfrac
 														)
 		J = fe_solver.bc.force.T @ u
 		title = f'OC: vol: {volfrac}, J: {J:.2e}'
 
-	elif optimizationMethod == topopt.Optimizers.PARETO:
-		u, history = topopt.topopt_pareto(fe_solver = fe_solver,
+	elif optimizationMethod == topopt_common.Optimizers.PARETO:
+		u, history = topopt_common.topopt_pareto(fe_solver = fe_solver,
 										desiredVolFrac =  volfrac)
 		J = fe_solver.bc.force.T @ u
 		title = f'Pareto: vol: {volfrac}, J: {J:.3e}'
@@ -106,5 +106,5 @@ fe_solver = fea.StructFEA(mesh = mesh,
                           rtol = 1e-8,
                           verbose = False,plot = False)
 
-run_topopt(fe_solver, volfrac=0.5, optimizationMethod = topopt.Optimizers.PARETO)
+run_topopt(fe_solver, volfrac=0.5, optimizationMethod = topopt_common.Optimizers.PARETO)
 

@@ -255,7 +255,7 @@ def hex8_stiffness_matrix_structural(
       b[4, 3 * l + 2] = dn_dy[l]
       b[5, 3 * l] = dn_dz[l]
       b[5, 3 * l + 2] = dn_dx[l]
-
+ 
     ke += b.T @ c @ b * np.linalg.det(jac) *gauss_wts[ctr]
   return ke
 

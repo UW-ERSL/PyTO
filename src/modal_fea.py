@@ -155,7 +155,7 @@ if __name__ == "__main__":
   from examples_structural import *
 
 
-  problem = StructuralExamples.KnuckleAssembly
+  problem = StructuralExamples.LBracket
   nDOFDesired = 50000
   mesh, mat_prop, bc,elem_body_force = getStructuralProblem(problem,nDOFDesired = nDOFDesired)
   solver = lin_solv.Solvers.PARDISO 
