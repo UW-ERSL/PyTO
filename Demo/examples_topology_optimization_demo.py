@@ -2,7 +2,7 @@ import sys
 sys.path.append('../PyTO-1/src') #assuming the PyTO is in the parent directory
 import enum
 #from examples_structural import *
-from topopt_examples import *
+from topopt_benchmarks import *	
 from examples_structural_demo import *
 import struct_fea as sfea
 
