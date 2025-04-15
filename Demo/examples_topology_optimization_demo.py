@@ -161,10 +161,8 @@ def getStructuralTOProblem(to_problem: StructuralTOExamplesDemo, **kwargs):
 
     if to_problem == StructuralTOExamplesDemo.LongBeamDemo:
         if (to_params.KeepFixedElems):
-            nodesX = mesh.getNodesOnBoundingBoxPlane(0,False) # x = xMax plane 
             nodesY = mesh.getNodesOnBoundingBoxPlane(1,False) # y = yMax plane 
-            nodes_to_find = np.union1d(nodesX, nodesY)
-            to_params.ElemsToKeep = find_elements_with_nodes(mesh, nodes_to_find)
+            to_params.ElemsToKeep = find_elements_with_nodes(mesh, nodesY)
     if to_problem == StructuralTOExamples.BliskWithBlade:
         centerPt = [0,0,0]
         axis = [0,0,1]

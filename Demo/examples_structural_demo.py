@@ -323,10 +323,10 @@ def createBasePlateAssemblyProblem(nDOFDesired: int = 10000,  youngs_modulus = [
                                poissons_ratio = [0.28,0.3], totalLoad =  1000):
  
   # Read the STL model, create a mesh of desired size, and a structural problem is posed on it.
-  stl_file = '../Models/Rocket/PayLoadBaseAssemblyWHole.STL'
-  #stl_file = '../Models/Rocket/PayLoadBaseAssemblyWHoleinZ.STL'
+  #stl_file = '../Models/Rocket/PayLoadBaseAssemblyWHole.STL'
+  stl_file = '../Models/Rocket/PayLoadBaseAssemblyWHoleinZ.STL'
   
-  plots_demo.plot_stl(stl_file)
+  #plots_demo.plot_stl(stl_file)
   nElemsDesired = nDOFDesired/3    # estimate
   mesh = mesher.Mesher()
   
@@ -336,15 +336,15 @@ def createBasePlateAssemblyProblem(nDOFDesired: int = 10000,  youngs_modulus = [
   node_pts = mesh.node_xyz
 
   # fix inner radius
-  centerPt = [0,52.5,54]
-  axis = [1,0,0]
+  centerPt = [15.77,51.7,37.9]
+  axis = [0,0,1]
   innerRadius = 20  # 20 mm
   outerRadius = 65  # 65 mm
-  outerBottomRadius = 60  # 60 mm
-  fixed_nodes = mesh.get_nodes_within_annular_region(centerPt,axis,outerBottomRadius-mesh.elem_size[0]*3,
-                                                     outerBottomRadius+mesh.elem_size[0]*0.907)  
+  outerBottomRadius = 53  # 60 mm
+  fixed_nodes = mesh.get_nodes_within_annular_region(centerPt,axis,outerBottomRadius-mesh.elem_size[0]*0.9707,
+                                                     outerBottomRadius+mesh.elem_size[0]*3)  
   
-  nodes_to_optimize = np.where(node_pts[:, 0] >= 10)[0]       
+  nodes_to_optimize = np.where(node_pts[:, 2] >= 10+centerPt[2])[0]       
   
   fixed_nodes = np.setdiff1d(fixed_nodes, nodes_to_optimize)
 
@@ -355,10 +355,10 @@ def createBasePlateAssemblyProblem(nDOFDesired: int = 10000,  youngs_modulus = [
   mesh.node_indices[fixed_nodes, 3] = 1 # for plotting
   
   # line defined by x = xMax
-  load_nodes = mesh.getNodesOnBoundingBoxPlane(0,False) # x = xMax plane 
+  load_nodes = mesh.getNodesOnBoundingBoxPlane(2,False) # x = xMax plane 
   if load_nodes.shape[0] == 0:
-    load_nodes = np.where(mesh.node_indices[:, 0] == mesh.grid[0]-1)[0]
-  load_dofs = 3 * load_nodes  # x direction
+    load_nodes = np.where(mesh.node_indices[:, 2] == mesh.grid[2]-1)[0]
+  load_dofs = 3 * load_nodes + 2 # z direction
   mesh.node_indices[load_nodes, 3] = 2
   load_per_dof = -totalLoad/len(load_nodes)
 
@@ -584,11 +584,7 @@ def createLongBeamDemoProblem(nDOFDesired: int = 10000, L: float = [0.4, 0.2, 0.
   bc = bound_cond.BC(force = force,
             fixed_dofs = fixed_dofs,
             dirichlet_values = dirichlet_values) 
-  # Get material data from XML if it exists
-  fp_materialXML = os.path.join(script_dir, './material.xml')
-  if fp_materialXML is not None and os.path.isfile(fp_materialXML):
-      youngs_modulus, poissons_ratio = parse_material_properties(fp_materialXML)
-
+ 
   mat_prop = mat_lib.StructuralMaterial(youngs_modulus=youngs_modulus,
                       poissons_ratio=poissons_ratio)
   elem_body_force = None
