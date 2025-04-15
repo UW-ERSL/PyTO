@@ -227,7 +227,7 @@ def combine_results():
 
 if __name__ == "__main__":    
 	jax.config.update("jax_enable_x64", True)
-	from topopt_examples import *
+	from topopt_benchmarks import *
 	optimizationMethods = [TO_METHODS.DENSITYMMA, TO_METHODS.DENSITYOC, TO_METHODS.PARETO]
 
 	for optimizationMethod in optimizationMethods:
