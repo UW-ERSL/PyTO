@@ -34,29 +34,9 @@ from examples_structural import *
 
 '''
 
-recent updates in pyTO:
-1) Corrected the Units for all 
-2) Added the GUI for TopOpt Constraints(Cyclic constraints are wrong but correcting it) 
-3) Topology Optimization yet to be implemented (Please can you give me the direction or some hints on how to implement it)
-4) Saves the topology optimization constraints in the project file
-
-pyTOGUI To do:
-1. Main buttons state (blue, green, red)  (implemented)
-2. Hide/show mesh option under Display  (implemented) (will carefully look at this option because others are getting messed up sometimes)
-3. Show thermal heat arrows and dirichlet BC (similar to structural) (implemented)
-4. Add Total Heat option (in addition to Heat Flux) (implemented)
-5. Remove bottom left text in GUI window. Instead, can you show that next to arrows in the scene? (removed)
-6. Save topopt constraints in project (remaining)
-
-
-issues
-torque
-make arrow smaaller for top opt constraint
-method drop down
-mmc pareto level
-remove simp mthod
-remove volume step
-
+To do:
+1. Topopt fails
+2. 
 
 '''
 #---------------------------------------------------------------------------------
@@ -6636,13 +6616,16 @@ class OptimizeTopologyWindow(QtWidgets.QDialog):
             
             # Get mesh, material, BC and other required data from parent
             mesh = self.parent.analysis_mesher if hasattr(self.parent, 'analysis_mesher') else None
-            mat_prop = self.parent.material_data
+            mat_prop = mat_lib.StructuralMaterial(
+                        youngs_modulus=self.parent.material_data['young_modulus'],
+                        poissons_ratio=self.parent.material_data['poisson_ratio']
+                    )
             bc = self.parent.stl_geom.bc if hasattr(self.parent.stl_geom, 'bc') else None
             elem_body_force = self.parent.stl_geom.body_force if hasattr(self.parent.stl_geom, 'body_force') else None
-            
+           
             # Setup topology optimization constraints
             from topopt_common import TOParams
-            to_constraints = TOParams()
+            to_params = TOParams()
             
             # Map UI constraints to TO constraints
             if hasattr(self.parent, 'topopt_constraints'):
@@ -6650,9 +6633,9 @@ class OptimizeTopologyWindow(QtWidgets.QDialog):
                 
                 # Map symmetry constraints
                 if 'symmetry' in constraints:
-                    to_constraints.XSymmetry = constraints['symmetry'].get('x_symmetry', False)
-                    to_constraints.YSymmetry = constraints['symmetry'].get('y_symmetry', False)
-                    to_constraints.ZSymmetry = constraints['symmetry'].get('z_symmetry', False)
+                    to_params.XSymmetry = constraints['symmetry'].get('x_symmetry', False)
+                    to_params.YSymmetry = constraints['symmetry'].get('y_symmetry', False)
+                    to_params.ZSymmetry = constraints['symmetry'].get('z_symmetry', False)
                 
                 # Map manufacturing constraints
                 if 'manufacturing' in constraints:
@@ -6667,45 +6650,40 @@ class OptimizeTopologyWindow(QtWidgets.QDialog):
                                 match = re.search(r'\d+', angle_text)
                                 if match:
                                     angle = int(match.group())
-                                    to_constraints.ZAxisAngularSymmetry = int(360 / angle) if angle > 0 else 0
+                                    to_params.ZAxisAngularSymmetry = int(360 / angle) if angle > 0 else 0
                             except:
-                                to_constraints.ZAxisAngularSymmetry = 0
+                                to_params.ZAxisAngularSymmetry = 0
                     
                     # Map extrusion constraints
                     if 'extrude' in manufacturing:
                         extrude = manufacturing['extrude']
                         if extrude.get('enabled', False):
                             direction = extrude['direction']
-                            to_constraints.ExtrudeX = direction == "XDir"
-                            to_constraints.ExtrudeY = direction == "YDir"
-                            to_constraints.ExtrudeZ = direction == "ZDir"
+                            to_params.ExtrudeX = direction == "XDir"
+                            to_params.ExtrudeY = direction == "YDir"
+                            to_params.ExtrudeZ = direction == "ZDir"
                     
                     # Map AM build constraint
                     if 'am_build' in manufacturing:
                         am_build = manufacturing['am_build']
-                        to_constraints.AMBuildConstraint = am_build.get('enabled', False)
+                        to_params.AMBuildConstraint = am_build.get('enabled', False)
                 
                 # Map other constraints
                 if 'other' in constraints:
                     other = constraints['other']
-                    to_constraints.KeepFixedElems = other.get('keep_fixed_faces', False)
-                    to_constraints.RemoveHangingElems = other.get('connected_topology', False)
+                    to_params.KeepFixedElems = other.get('keep_fixed_faces', False)
+                    to_params.RemoveHangingElems = other.get('connected_topology', False)
             
             # Setup TO params
-            to_params = TOParams()
-            to_params.desiredVolFraction = optimization_params['volume_fraction']
-            to_params.volStep = optimization_params['volume_step']
-            
+
+            to_params.DesiredVolFraction = optimization_params['volume_fraction']
+          
             # Setup solver
             solver = lin_solv.Solvers.PARDISO
             
-            # Setup material model
-            material_model = MaterialModel.SIMP
-            if elem_body_force is not None and np.linalg.norm(elem_body_force) > 0:
-                material_model = MaterialModel.SIMPPLUS
-            
             # Initialize the FE solver
             self.parent.message_text.append("Initializing FEA solver...")
+            print(mat_prop)
             fe_solver = fea.StructFEA(
                 mesh=mesh,
                 mat_prop=mat_prop,
@@ -6714,7 +6692,7 @@ class OptimizeTopologyWindow(QtWidgets.QDialog):
                 rtol=1e-8,
                 elem_body_force=elem_body_force
             )
-            
+        
             # Choose optimization method based on objective
             opt_method = TO_METHODS.DENSITYMMA  # Default
 
@@ -6728,16 +6706,16 @@ class OptimizeTopologyWindow(QtWidgets.QDialog):
             # Start optimization in a separate thread
             self.optimization_thread = threading.Thread(
                 target=self.run_optimization,
-                args=(fe_solver, opt_method, material_model, to_constraints, to_params)
+                args=(to_params, fe_solver, opt_method )
             )
             self.optimization_thread.daemon = True
             self.optimization_thread.start()
-            
+      
         except Exception as e:
             self.parent.message_text.append(f"Error initializing optimization: {str(e)}")
             self.stop_optimization()
 
-    def run_optimization(self, fe_solver, opt_method, material_model, to_constraints, to_params):
+    def run_optimization(self,to_params, fe_solver, opt_method ):
         """Run the optimization process in a separate thread"""
         import topopt_common,topopt_density_oc,topopt_density_mma,topopt_pareto,topopt_levelset
         
@@ -6748,29 +6726,23 @@ class OptimizeTopologyWindow(QtWidgets.QDialog):
             # Call the appropriate optimization function based on the selected method
             if opt_method == topopt_common.TO_METHODS.DENSITYOC:
                 u, history = topopt_density_oc.topopt_optimality_criteria(
-                    fe_solver=fe_solver,
-                    volfrac=to_params.desiredVolFraction,
-                    material_model=material_model,
-                    to_constraints=to_constraints
+                    to_params,
+                    fe_solver=fe_solver
                 )
             elif opt_method == topopt_common.TO_METHODS.DENSITYMMA:
                 u, history = topopt_density_mma.topopt_mma(
-                    fe_solver=fe_solver,
-                    volfrac=to_params.desiredVolFraction,
-                    material_model=material_model,
-                    to_constraints=to_constraints
+                    to_params,
+                    fe_solver=fe_solver
                 )
             elif opt_method == topopt_common.TO_METHODS.PARETO:
                 u, history = topopt_pareto.topopt_pareto(
-                    fe_solver=fe_solver,
-                    desiredVolFrac=to_params.desiredVolFraction,
-                    to_constraints=to_constraints
+                    to_params,
+                    fe_solver=fe_solver
                 )
             elif opt_method == topopt_common.TO_METHODS.LEVELSET:
                 u, history = topopt_levelset.topopt_levelset (
+                    to_params,
                     fe_solver=fe_solver,
-                    desiredVolFrac=to_params.desiredVolFraction,
-                    to_constraints=to_constraints
                 )
             else:
                 self.parent.message_text.append(f"Unsupported optimization method: {opt_method.name}")

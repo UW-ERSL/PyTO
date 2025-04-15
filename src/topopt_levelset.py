@@ -99,7 +99,7 @@ def topopt_levelset(fe_solver: sfea.StructFEA,
 
 if __name__ == "__main__":    
 	
-	from topopt_examples import *
+	from topopt_benchmarks import *
 	jax.config.update("jax_enable_x64", True)
 	
 	print("-" * 50)
