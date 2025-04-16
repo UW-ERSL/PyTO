@@ -1,5 +1,6 @@
 """Plot functions for visualization of mesh and results."""
-
+import sys
+sys.path.append('../PyTO-1/src') #assuming the PyTO is in the parent directory
 import numpy as np
 import pyvista as pv
 import matplotlib.pyplot as plt
@@ -152,7 +153,7 @@ def retainOuterGeomUsingIsoSurf(mesh: mesher.Mesher,
 
   # Optionally, visualize these low-density elements:
   #low_density_elements.plot(show_edges=True, color='red')
-  fp_outputstlpath = 'final_retained_geom.STL'
+  fp_outputstlpath = 'final_retained_geom.stl'
   getRetainedOuterGeomSTL(fp_original_stl,
                    low_density_elements,
                    fp_outputstlpath, isovalue = 0.5)
@@ -160,42 +161,39 @@ def retainOuterGeomUsingIsoSurf(mesh: mesher.Mesher,
 
 def getRetainedOuterGeomSTL(fp_original_stl: str,
                    low_density_elements: pv.PolyData,
-                   fp_outputstlpath: str, isovalue: float = 0.5
+                   fp_outputstlpath: str, getOnlyLargestPatchDiff = False,
 ):               
+  
+  low_density_elements.plot(show_edges=True, color='red')
+  # Extract cells with density less than 0.5
+  low_density_elements = low_density_elements.threshold([-np.inf, 0.5], scalars='density')
+  low_density_elements.plot(show_edges=True, color='red')
   # Split into connected bodies (patches)
   patches = low_density_elements.split_bodies()
-
+  min_cells = 100
+  filtered_patches = [patch for patch in patches if patch.n_cells > min_cells]
+  patches_list = list(filtered_patches)
+  
   # Check if the result is a MultiBlock
   if isinstance(patches, pv.MultiBlock):
-      largest_patch = None
-      max_cells = -1
-      # Iterate over each patch in the MultiBlock
-      for patch in patches:
-          if patch is not None and patch.n_cells > max_cells:
-              max_cells = patch.n_cells
-              largest_patch = patch
-  else:
-      # If split_bodies() returns a single mesh, then that's our patch
-      largest_patch = patches
-
-  # # If largest_patch is already PolyData, assign density if available:
-  # if 'density' in largest_patch.cell_data:
-  #     # Optionally, convert cell data to point data
-  #     mesh_with_point_data = largest_patch.cell_data_to_point_data()
-  # else:
-  #     mesh_with_point_data = largest_patch
-
-  # # Now compute the isosurface (using contour, if there's a scalar 'density')
-  # if 'density' in mesh_with_point_data.point_data:
-  #     isosurface = mesh_with_point_data.contour(scalars='density')
-  #     isosurface.plot(show_edges=True, color='red')
-  # else:
-  #     print("No density scalar found for contouring.")
-
-  ###
-  # Extract the outer surface of these low-density elements
-  low_density_surface = largest_patch.triangulate().extract_surface().clean()
-  low_density_surface = low_density_surface.smooth(n_iter=25)
+    for patch in patches_list:
+          print(f"Patch: {patch.n_cells}")
+    if getOnlyLargestPatchDiff:
+      # Get the largest patch
+      largest_patch = max(patches_list, key=lambda p: p.n_cells)
+      print(f"Largest Patch: {largest_patch.n_cells}")
+      removePatchFromSTL(fp_original_stl, largest_patch, fp_outputstlpath)
+    else:
+        # Iterate over each patch in the MultiBlock
+        for patch in patches_list:
+          print(f"Patch: {patch.n_cells}")
+          removePatchFromSTL(fp_original_stl, patch, fp_outputstlpath)
+        
+        
+ 
+def removePatchFromSTL(fp_original_stl: str, patch: pv.PolyData, fp_outputstlpath: str):
+  low_density_surface = patch.triangulate().extract_surface().clean()
+  low_density_surface = low_density_surface.smooth(n_iter=100)
 
   # Save the resulting surface as an STL file (STL requires PolyData)
   fp_low_density_surface = 'low_density_elements_isosurface.stl'
@@ -203,7 +201,7 @@ def getRetainedOuterGeomSTL(fp_original_stl: str,
 
   original_stl = pv.read(fp_original_stl).clean().extract_surface().triangulate()
   #original_stl.plot(show_edges=True, color='lightblue')
-  original_stl.plot(color='lightblue')
+  #original_stl.plot(color='lightblue')
   # Compute normals if not available
   if 'Normals' not in original_stl.point_data:
       original_stl.compute_normals(inplace=True)
@@ -216,6 +214,7 @@ def getRetainedOuterGeomSTL(fp_original_stl: str,
   dilation_factor = 0.001 * diag_length
   inflated_points = low_density_surface.points + dilation_factor * low_density_surface.point_data['Normals']
   inflated_low_density_surface = pv.PolyData(inflated_points, faces=low_density_surface.faces)
+  #inflated_low_density_surface.plot(show_edges=True, color='lightblue')
 
   plotter = pv.Plotter()
   _ = plotter.add_mesh(inflated_low_density_surface, color='red', show_edges=True)
@@ -226,10 +225,9 @@ def getRetainedOuterGeomSTL(fp_original_stl: str,
   
   mesh_diff = original_stl.boolean_difference(inflated_low_density_surface).clean()
   mesh_diff.plot(show_edges=True, color='lightblue')
-  mesh_diff.plot(color='lightblue')
+  #mesh_diff.plot(color='lightblue')
   
-  mesh_diff.save(fp_outputstlpath, binary=True)
- 
+  #mesh_diff.save(fp_outputstlpath, binary=True)
 
 def plot_stl(stl_file: str, color = 'lightskyblue', show_edges = False):
   plotter = pv.Plotter()
@@ -240,3 +238,18 @@ def plot_stl(stl_file: str, color = 'lightskyblue', show_edges = False):
   plotter.add_axes()
   plotter.show_grid()
   plotter.show()
+
+
+# Example usage
+if __name__ == "__main__":
+    
+  fp_org_stl = "C:/Users/pthombre/Downloads/RocketPy_PyTO/Models/Saketh/BliskSectionWithBlade2.STL"
+  fp_vtu_mesh = "C:/Users/pthombre/Downloads/RocketPy_PyTO/Models/Saketh/test1.vtu"
+  outputstlpath = "./BliskSectionWithBlade2Recovered.stl"
+
+  vtu_mesh = pv.read(fp_vtu_mesh)
+  
+
+  getRetainedOuterGeomSTL(fp_org_stl,
+                  vtu_mesh,
+                  outputstlpath, getOnlyLargestPatchDiff = True)
