@@ -3,6 +3,7 @@ import sys
 sys.path.append('../PyTO-1/src') #assuming the PyTO is in the parent directory
 import numpy as np
 import pyvista as pv
+import vtk
 import matplotlib.pyplot as plt
 
 import mesher
@@ -167,10 +168,10 @@ def getRetainedOuterGeomSTL(fp_original_stl: str,
   low_density_elements.plot(show_edges=True, color='red')
   # Extract cells with density less than 0.5
   low_density_elements = low_density_elements.threshold([-np.inf, 0.5], scalars='density')
-  low_density_elements.plot(show_edges=True, color='red')
+  #low_density_elements.plot(show_edges=True, color='red')
   # Split into connected bodies (patches)
   patches = low_density_elements.split_bodies()
-  min_cells = 100
+  min_cells = 100 #ToDo: get top 90percent of the patches wrt to the largest patch
   filtered_patches = [patch for patch in patches if patch.n_cells > min_cells]
   patches_list = list(filtered_patches)
   
@@ -188,21 +189,47 @@ def getRetainedOuterGeomSTL(fp_original_stl: str,
         for patch in patches_list:
           print(f"Patch: {patch.n_cells}")
           removePatchFromSTL(fp_original_stl, patch, fp_outputstlpath)
-        
-        
- 
+          fp_original_stl = fp_outputstlpath
+
+# 2. Clean + triangulate + normals on *both* meshes
+def preprocess(pd: pv.PolyData) -> pv.PolyData:
+    # a) Clean coincident points, degenerate cells, etc.
+    cleaner = vtk.vtkCleanPolyData()
+    cleaner.SetInputData(pd)
+    cleaner.Update()
+    pd_clean = pv.wrap(cleaner.GetOutput())                              # :contentReference[oaicite:0]{index=0}
+
+    # b) Ensure only triangles
+    tri = vtk.vtkTriangleFilter()
+    tri.SetInputData(pd_clean)
+    tri.Update()
+    pd_tri = pv.wrap(tri.GetOutput())                                    # :contentReference[oaicite:1]{index=1}
+
+    # c) Recompute normals (consistent, no splits)
+    norms = vtk.vtkPolyDataNormals()
+    norms.SetInputData(pd_tri)
+    norms.ConsistencyOn()
+    norms.SplittingOff()
+    norms.Update()
+    pd_norm = pv.wrap(norms.GetOutput())                                 # :contentReference[oaicite:2]{index=2}
+
+    return pd_norm
+
+
 def removePatchFromSTL(fp_original_stl: str, patch: pv.PolyData, fp_outputstlpath: str):
   low_density_surface = patch.triangulate().extract_surface().clean()
-  low_density_surface = low_density_surface.smooth(n_iter=100)
+  # Volume preserving smoothing
+  #pass_band=0.05 # varies betn 0 to 2. if 2, more of the original shape is retained
+  low_density_surface = low_density_surface.smooth_taubin(n_iter=100, pass_band=0.05, non_manifold_smoothing=True) 
 
   # Save the resulting surface as an STL file (STL requires PolyData)
   fp_low_density_surface = 'low_density_elements_isosurface.stl'
   low_density_surface.save(fp_low_density_surface, binary=True)
-
   original_stl = pv.read(fp_original_stl).clean().extract_surface().triangulate()
-  #original_stl.plot(show_edges=True, color='lightblue')
-  #original_stl.plot(color='lightblue')
-  # Compute normals if not available
+  #original_stl = original_stl.subdivide_adaptive()
+  original_stl.plot(show_edges=True, color='lightblue')
+
+  #Compute normals if not available
   if 'Normals' not in original_stl.point_data:
       original_stl.compute_normals(inplace=True)
 
@@ -211,23 +238,23 @@ def removePatchFromSTL(fp_original_stl: str, patch: pv.PolyData, fp_outputstlpat
   diag_length = np.sqrt((bounds[1]-bounds[0])**2 +
                         (bounds[3]-bounds[2])**2 +
                         (bounds[5]-bounds[4])**2)
-  dilation_factor = 0.001 * diag_length
+  dilation_factor = 0.005 * diag_length
   inflated_points = low_density_surface.points + dilation_factor * low_density_surface.point_data['Normals']
   inflated_low_density_surface = pv.PolyData(inflated_points, faces=low_density_surface.faces)
-  #inflated_low_density_surface.plot(show_edges=True, color='lightblue')
-
+  
   plotter = pv.Plotter()
-  _ = plotter.add_mesh(inflated_low_density_surface, color='red', show_edges=True)
+  _ = plotter.add_mesh(inflated_low_density_surface, color='red', show_edges=True, style='wireframe')
   _ = plotter.add_mesh(original_stl, color='green', show_edges=True, style='wireframe')
   plotter.show_axes()
   plotter.show()
+  #inflated_low_density_surface.plot(show_edges=True, color='lightblue')
 
-  
   mesh_diff = original_stl.boolean_difference(inflated_low_density_surface).clean()
-  mesh_diff.plot(show_edges=True, color='lightblue')
-  #mesh_diff.plot(color='lightblue')
-  
-  #mesh_diff.save(fp_outputstlpath, binary=True)
+  cleaned_mesh = mesh_diff.connectivity('largest')
+  #mesh_diff.triangulate(inplace=True).subdivide(2)
+  cleaned_mesh = preprocess(cleaned_mesh)
+  cleaned_mesh.plot(show_edges=True, color='lightblue')
+  cleaned_mesh.save(fp_outputstlpath, binary=True)
 
 def plot_stl(stl_file: str, color = 'lightskyblue', show_edges = False):
   plotter = pv.Plotter()
@@ -243,7 +270,7 @@ def plot_stl(stl_file: str, color = 'lightskyblue', show_edges = False):
 # Example usage
 if __name__ == "__main__":
     
-  fp_org_stl = "C:/Users/pthombre/Downloads/RocketPy_PyTO/Models/Saketh/BliskSectionWithBlade2.STL"
+  fp_org_stl = "C:/Users/pthombre/Downloads/RocketPy_PyTO/Models/Saketh/BliskSectionWithBlade2test.STL"
   fp_vtu_mesh = "C:/Users/pthombre/Downloads/RocketPy_PyTO/Models/Saketh/test1.vtu"
   outputstlpath = "./BliskSectionWithBlade2Recovered.stl"
 
@@ -252,4 +279,4 @@ if __name__ == "__main__":
 
   getRetainedOuterGeomSTL(fp_org_stl,
                   vtu_mesh,
-                  outputstlpath, getOnlyLargestPatchDiff = True)
+                  outputstlpath, getOnlyLargestPatchDiff = False)
