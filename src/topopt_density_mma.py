@@ -261,15 +261,21 @@ if __name__ == "__main__":
 	print("nElem: ", fe_solver.mesh.num_elems)	
 	
 	title = f'nDOF: {3*fe_solver.mesh.num_nodes}, nElem: {fe_solver.mesh.num_elems}'
-	#plots.plotMesh(mesh, bc,title = title)
-
-
+	fe_solver.plot_mesh(title = title, save_path = None)
 	startTime = time.time()
 	print("OptimizationMethod: MMA")
 	u, history,success,errorMsg,nFEAs = topopt_mma(fe_solver = fe_solver,
 								to_params = to_params,
 								debug = debug)
 	timeTaken = time.time() - startTime
+	print(f"Time taken: {timeTaken:.0f} s")
+	if not success:
+		print(f"Error: {errorMsg}")
+
+	title = f"MMA: nDOF: {3*fe_solver.mesh.num_nodes}, vol: {history['volume'][-1]:0.2f}, J: {history['compliance'][-1]:.3g}, time: {timeTaken:.0f} s"
+	fe_solver.plot_mesh(title = title, plot_bc = False, save_path = None)
+
+
 	fig, ax1 = plt.subplots()
 
 	# Plot compliance on left y-axis
@@ -295,12 +301,8 @@ if __name__ == "__main__":
 	plt.grid(True)
 	plt.show(block=False)
 
-	title = f"MMA: nDOF: {3*fe_solver.mesh.num_nodes}, vol: {history['volume'][-1]:0.2f}, J: {history['compliance'][-1]:.3g}, time: {timeTaken:.0f} s"
 
-	print(f"Time taken: {timeTaken:.0f} s")
-	if not success:
-		print(f"Error: {errorMsg}")
-	plots.plotMesh(fe_solver.mesh, bc = None, u=None, title = title)
-
-	#plots.plotIsocontour(fe_solver.mesh, title = title, save_path = None)
-	# Save the mesh and results
+	# plot other quantities over the optimized mesh
+	fe_solver.plot_deformation()
+	fe_solver.postprocess()
+	fe_solver.plot_vonMisesStress()

@@ -1279,7 +1279,7 @@ def createBeamSurfaceLoadProblem(nDOFDesired: int = 20000, L: float = [0.1, 0.01
   return mesh, mat_prop, bc, elem_body_force
   # ----------------------------------------
   
-def createFilletedBeamProblem(nDOFDesired=50000, youngs_modulus = 2.1e5, poissons_ratio = 0.3,totalLoad = 1000):
+def createFilletedBeamProblem(nDOFDesired=50000, youngs_modulus = 2.1e5, poissons_ratio = 0.3,totalLoad = 1):
   stl_file = os.path.join(script_dir, '../Models/FilletedBeam/FilletedBeam.STL')
 
   mesh = mesher.Mesher()
@@ -1287,7 +1287,7 @@ def createFilletedBeamProblem(nDOFDesired=50000, youngs_modulus = 2.1e5, poisson
   mesh.createMeshFromSTLFile(stl_file, nElemsDesired=nElemsDesired)
   mesh.createEdofMatStructural()
 
-  node_indices = mesh.node_indices
+
   fixed_nodes = mesh.getNodesOnBoundingBoxPlane(0,True) # x = 0 plane
   fixed_dofs = np.array([3 * fixed_nodes,
               3 * fixed_nodes + 1,
@@ -1295,12 +1295,32 @@ def createFilletedBeamProblem(nDOFDesired=50000, youngs_modulus = 2.1e5, poisson
   dirichlet_values = 0*np.ones_like(fixed_dofs, dtype = float)
   mesh.node_indices[fixed_nodes, 3] = 1 # for plotting
 
-  load_nodes = mesh.getNodesOnBoundingBoxPlane(0,False) # x = 0 plane     
-  load_dofs = 3 * load_nodes + 2  # z direction
+  load_nodes = mesh.getNodesOnBoundingBoxPlane(0,False) # x = xMax plane    
+  # Get node coordinates
+  node_centers = mesh.node_xyz[load_nodes]
+
+  # Calculate center of face 
+  face_center = np.mean(node_centers, axis=0)
+
+  # Calculate torque vector for each node
+  load_dofs = []
+  force_values = []
+
+  for node in load_nodes:
+    node_pos = mesh.node_xyz[node] - face_center
+    # Cross product with [1,0,0] to get perpendicular direction
+    torque_dir = np.cross([1,0,0], node_pos)
+    # Normalize
+    if np.linalg.norm(torque_dir) > 0:
+      torque_dir = torque_dir / np.linalg.norm(torque_dir)
+      # Add force components
+      load_dofs.extend([3*node + i for i in range(3)])
+      force_values.extend(totalLoad/len(load_nodes) * torque_dir)
+ 
   mesh.node_indices[load_nodes, 3] = 2 # for plotting
-  load_per_dof = -totalLoad/len(load_nodes)
+  
   force = np.zeros(3*mesh.num_nodes)
-  force[load_dofs] = load_per_dof
+  force[load_dofs] = force_values
 
   bc = bound_cond.BC(force = force,fixed_dofs = fixed_dofs,dirichlet_values = dirichlet_values) 
 

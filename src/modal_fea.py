@@ -14,6 +14,7 @@ import mat_lib
 import os
 import scipy.sparse
 from scipy.sparse.linalg import eigsh
+import pyvista as pv
 script_dir = os.path.dirname(os.path.abspath(__file__))
 
 
@@ -144,9 +145,138 @@ class ModalFEA:
     # Update eigenvecs to include all DOFs
     eigenvecs = full_eigenvecs
     
+    self.eigenvals = eigenvals
+    self.eigenvecs = eigenvecs
     return eigenvals, eigenvecs
 
   
+  def plot_eigenmode(self, mode = 0):
+    # Return if no solution exists yet
+    if not hasattr(self, 'eigenvecs'):
+      return None
+
+    # Create vertices array
+    vertices = self.mesh.node_xyz
+     # Create vertices array
+    vertices = self.mesh.node_xyz
+  
+    sol = self.eigenvecs[:,mode].copy()
+    sol = sol.reshape((-1, 3))
+   
+    deltaMax = np.max(np.abs(sol))
+    scale = float(0.1*self.mesh.bbox.diag_length/deltaMax)
+    vertices += scale*sol
+    
+ 
+
+
+    # Match plotMeshOld exactly
+    faceIndex = np.array([[0,4,7,3],
+                          [0,1,5,4],
+                          [0,3,2,1],
+                          [1,2,6,5],
+                          [2,3,7,6],
+                          [4,5,6,7]], dtype=np.uint32)
+    nFacesPerHex = 6
+    faces = []
+    face_densities = []
+    
+    for e in range(self.mesh.num_elems):
+      if self.mesh.elemPseudoDensity[e] < 0.5:
+        continue
+      elif (self.mesh.elemPseudoDensity[e] > 0.5 and 
+            np.all(self.mesh.elemNeighborsArray[e] > 0) and 
+            np.all(self.mesh.elemPseudoDensity[[int(elem) for elem in 
+                                      self.mesh.elemNeighborsArray[e]]] > 0.5)):
+        continue
+
+      # Add all faces for this element
+      for j in range(nFacesPerHex):
+        faces.append(self.mesh.elemArray[e,faceIndex[j,:]])
+        face_densities.append(self.mesh.elemPseudoDensity[e])
+
+    # Convert to numpy arrays
+    faces = np.array(faces)
+    face_densities = np.array(face_densities)
+    
+    if len(faces) == 0:
+      print("No faces to plot after filtering")
+      return None
+
+    # Create cells array for PyVista
+    n_faces = len(faces)
+    cells = np.hstack((
+                      np.full((n_faces, 1), 4),  # 4 vertices per face
+                      faces
+                      ))
+
+    pv_mesh = pv.UnstructuredGrid(cells, np.full(len(cells), pv.CellType.QUAD), vertices) # 9 is VTK_QUAD
+
+    # Add scalar values
+    pv_mesh.point_data['values'] = sol
+    
+    # Add density values to cells
+    pv_mesh.cell_data['density'] = face_densities
+
+    # Create plotter
+    save_path = None
+    if save_path is  None:
+      plotter = pv.Plotter(window_size=(500, 400))
+    else:
+      plotter = pv.Plotter(off_screen=True)
+    
+    plotter.add_title(f'Eigenmode: {mode}; freq: {self.eigenvals[mode]:0.3g} Hz', font_size=8)
+    # Add mesh to plotter
+    nDOF = 3*self.mesh.num_nodes
+    plotter.add_mesh(
+                    pv_mesh,
+                    scalars='values',
+                    show_edges=True,
+                    cmap='jet',
+                    edge_color='black',
+                    line_width=1,
+                    scalar_bar_args={
+                            'title': '',
+                            'vertical': True,
+                            'position_x': 0.8,
+                            'position_y': 0.3,
+                            'width': 0.06
+                            }
+                  )
+
+    # Add coordinate axes widget
+    plotter.add_axes(
+                    xlabel='X',
+                    ylabel='Y',
+                    zlabel='Z',
+                    line_width=2,
+                    labels_off=False,  # Show axis labels
+                    color='black'
+                    )
+
+    # Set camera position for left-bottom-forward view
+    view_distance = 2.5 * self.mesh.bbox.diag_length
+    offset = 0.2 * view_distance  # Offset for object position
+    plotter.camera_position = [
+                    (view_distance*0.5, -view_distance*0.3, view_distance),
+                    (offset, offset, 0),   # Focus point - right and bottom
+                    (0, 0.8, 0.4)]         # Up vector - Y axis up
+
+    # Reset camera and zoom out slightly
+    plotter.camera.zoom(0.8)
+    
+    # Enable anti-aliasing for better quality
+    plotter.enable_anti_aliasing()
+    
+    # Save image if path is provided
+    if save_path:
+      #plotter.show(screenshot = save_path)
+      plotter.screenshot(save_path)
+      plotter.close()
+    else:
+      plotter.show() 
+    
+    return 
   
 if __name__ == "__main__":    
   jax.config.update("jax_enable_x64", True)
@@ -162,7 +292,7 @@ if __name__ == "__main__":
 
   startTime = time.time()
 
-  fe_solver = fea.ModalFEA(mesh = mesh,
+  modal_solver = fea.ModalFEA(mesh = mesh,
         mat_prop = mat_prop,
         bc = bc,
         solver = solver,
@@ -170,12 +300,11 @@ if __name__ == "__main__":
         elem_body_force = elem_body_force)
 
   nEigenModes = 3
-  eigenvals, eigenvecs = fe_solver.computeEigenModes(nEigenModes = nEigenModes)
+  eigenvals, eigenvecs = modal_solver.computeEigenModes(nEigenModes = nEigenModes)
  
   print('-----------------------------')
   print("FEA time: ", time.time() - startTime)
   print('Eigenvalues: ', eigenvals)
   print('-----------------------------')
   for i in range(nEigenModes):
-            plots.plotMesh(fe_solver.mesh, bc=None, u=eigenvecs[:,i], 
-                        title=f'Eigenmode {i+1}, freq = {eigenvals[i]:.2f} Hz')
+        modal_solver.plot_eigenmode(i)

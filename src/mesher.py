@@ -1008,8 +1008,10 @@ class Mesher:
 		self.elemPseudoDensity = rho.copy()
 
 
-	def plot(self):
-		plotter = pv.Plotter()
+	def plot(self,title="Voxelized Mesh"):
+		plotter = pv.Plotter()	
+		plotter.add_title(title)
+		
 		# Add voxelized mesh with component colors
 		if self.num_components == 1:
 			# Simple case - just plot the voxels
@@ -1026,15 +1028,16 @@ class Mesher:
 		plotter.add_axes()
 		plotter.show_grid()
 		plotter.show()
+	
+	
 if __name__ == "__main__":
     import os
     import time
     mesh = Mesher()
     script_dir = os.path.dirname(os.path.abspath(__file__))
     stlFileName = os.path.join(script_dir, '../Models/LBracket/LBracket.STL')
-    stlFileName = os.path.join(script_dir, '../Models/Overhang/Overhang.STL')
-    #stlFileName = os.path.join(script_dir, '../Models/AlcoaGrabCAD/AlcoaGrabCAD.STL')
-    #stlFileName = os.path.join(script_dir, '../Models/KnuckleAssembly/KnuckleAssembly.STL')
-    #stlFileName = os.path.join(script_dir, '../Models/SwingArmAssembly/SwingArmAssembly.STL')
-    mesh.createMeshFromSTLFile(stlFileName, nElemsDesired=28358)
+    stlFileName = os.path.join(script_dir, '../Models/FilletedBeam/FilletedBeam.STL')
+    mesh.createMeshFromSTLFile(stlFileName, nElemsDesired=10000)
     mesh.plot()
+
+

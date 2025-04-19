@@ -26,7 +26,10 @@ jax.config.update("jax_enable_x64", True)
 script_dir = os.path.dirname(os.path.abspath(__file__))
 sys.path.append(script_dir)
 
-
+# Configuration paths
+PROJECTS_DIR = "C:\\Semester_5\\Research\\Test\\projects"
+MODELS_DIR = "C:\\Semester_5\\Research\\Test\\models"
+RESULTS_DIR = "C:\\Semester_5\\Research\\Test\\results"
 
 
 # ======================================================== Validation utility functions =========================================================
@@ -674,7 +677,6 @@ class ThermalAnalysis(BaseAnalysis):
             self.log_print(f"Error saving thermal results: {e}")
 #==================================================================================================================================
 
-
 #==================================================================================================================================
 class AnalysisManager:
     """Class to manage analysis selection and execution."""
@@ -719,144 +721,248 @@ class AnalysisManager:
             return False, False
     
     @staticmethod
-    def run_analysis(project_file, n_elements=None, output_dir=None, analysis_type='auto', solver=None):
-        """Run appropriate analysis based on project file data and requested type."""
-        # Load project data to get settings
-        try:
-            with open(project_file, 'r') as f:
-                project_data = json.load(f)
+    def get_user_analysis_choice(project_file):
+        """Selection of analysis type."""
+        has_structural, has_thermal = AnalysisManager.determine_analysis_type(project_file)
+        
+        available_types = []
+        if has_structural:
+            available_types.append("structural")
+        if has_thermal:
+            available_types.append("thermal")
+        
+        if not available_types:
+            print("\nNo valid analysis types found in the project file.")
+            return None
             
-            # Log source and value for number of elements
-            original_n_elements = n_elements
-            
-            # Get analysis settings from project file if available and not overridden
-            if n_elements is None and 'analysis_settings' in project_data and 'n_elements' in project_data['analysis_settings']:
-                n_elements = project_data['analysis_settings']['n_elements']
-                print(f"Using number of elements from project file: {n_elements}")
-            else:
-                if n_elements is None:
-                    n_elements = 10000  # Default if not specified
-                    print(f"Using default number of elements: {n_elements}")
+        print("\n" + "="*60)
+        print("ANALYSIS TYPE SELECTION")
+        print("="*60)
+        print("\nAvailable analysis types for this project:")
+        
+        # Always ask for analysis type even if only one is available
+        for i, a_type in enumerate(available_types):
+            print(f"{i+1}. {a_type.capitalize()} Analysis")
+        
+        while True:
+            try:
+                choice = input("\nSelect analysis type (number): ")
+                choice_idx = int(choice) - 1
+                if 0 <= choice_idx < len(available_types):
+                    selected_type = available_types[choice_idx]
+                    print(f"\nSelected: {selected_type.capitalize()} Analysis")
+                    return selected_type
                 else:
-                    print(f"Using command-line specified number of elements: {n_elements}")
-                
-            # Get solver from project file if available and not overridden
-            solver_source = "default"
-            if solver is None and 'analysis_settings' in project_data and 'solver_type' in project_data['analysis_settings']:
-                solver_type = project_data['analysis_settings']['solver_type']
-                solver_source = f"project file ({solver_type})"
-                # Convert string to solver enum
-                if solver_type == "PARDISO":
-                    solver = lin_solv.Solvers.PARDISO
-                elif solver_type == "DPCG":
-                    solver = lin_solv.Solvers.DPCG
-                elif solver_type == "CG":
-                    solver = lin_solv.Solvers.CG
-                elif solver_type == "PYAMG":
-                    solver = lin_solv.Solvers.PYAMG
-                elif solver_type == "SPSOLVE":
-                    solver = lin_solv.Solvers.SPSOLVE
-            
-            if solver is None:
-                solver = lin_solv.Solvers.PARDISO
-                
-            print(f"Using solver from {solver_source}: {solver.name}")
-                
-        except Exception as e:
-            print(f"Could not read analysis settings from project file: {e}")
-            # Use default values
-            if n_elements is None:
-                n_elements = 10000
-                print(f"Using default number of elements due to error: {n_elements}")
-            solver = solver or lin_solv.Solvers.PARDISO
-            print(f"Using default solver due to error: {solver.name}")
-        
-        has_valid_structural, has_valid_thermal = AnalysisManager.determine_analysis_type(project_file)
-        
-        if analysis_type == 'auto':
-            if has_valid_structural:
-                print(f"Auto-detected structural analysis for: {os.path.basename(project_file)}")
-                analyzer = StructuralAnalysis(project_file, n_elements, output_dir)
-                if solver:
-                    analyzer.solver = solver
-                return analyzer.execute()
-            elif has_valid_thermal:
-                print(f"Auto-detected thermal analysis for: {os.path.basename(project_file)}")
-                analyzer = ThermalAnalysis(project_file, n_elements, output_dir)
-                if solver:
-                    analyzer.solver = solver
-                return analyzer.execute()
-            else:
-                print(f"No valid analysis data found in: {os.path.basename(project_file)}")
-                return False
-        elif analysis_type == 'structural':
-            if has_valid_structural:
-                analyzer = StructuralAnalysis(project_file, n_elements, output_dir)
-                if solver:
-                    analyzer.solver = solver
-                return analyzer.execute()
-            else:
-                print(f"No structural data found in: {os.path.basename(project_file)}")
-                return False
-        elif analysis_type == 'thermal':
-            if has_valid_thermal:
-                analyzer = ThermalAnalysis(project_file, n_elements, output_dir)
-                if solver:
-                    analyzer.solver = solver
-                return analyzer.execute()
-            else:
-                print(f"No thermal data found in: {os.path.basename(project_file)}")
-                return False
-        
-        return False
+                    print(f"Please enter a number between 1 and {len(available_types)}")
+            except ValueError:
+                print("Please enter a valid number")
     
     @staticmethod
-    def batch_run_all_projects(n_elements=None, analysis_type='auto'):
-        """Run analysis on all project files in the PROJECTS_DIR directory."""
-        project_files = glob(os.path.join(PROJECTS_DIR, "*.pyto"))
+    def get_user_mesh_elements():
+        """Selection of mesh element count."""
+        print("\n" + "="*60)
+        print("MESH SETTINGS")
+        print("="*60)
         
-        if not project_files:
-            print(f"No .pyto files found in {PROJECTS_DIR}")
+        while True:
+            try:
+                elements_input = input("\nEnter number of mesh elements (default: 10000): ")
+                if elements_input.strip() == "":
+                    return 10000
+                else:
+                    n_elements = int(elements_input)
+                    if n_elements > 0:
+                        return n_elements
+                    else:
+                        print("Number of elements must be positive")
+            except ValueError:
+                print("Please enter a valid number")
+    
+    @staticmethod
+    def get_user_solver_choice():
+        """Selection of solver type."""
+        print("\n" + "="*60)
+        print("SOLVER SELECTION")
+        print("="*60)
+        
+        solvers = [
+            ("PARDISO", lin_solv.Solvers.PARDISO, "PARDISO Direct Solver"),
+            ("DPCG", lin_solv.Solvers.DPCG, "Diagonal Preconditioned Conjugate Gradient"),
+            ("CG", lin_solv.Solvers.CG, "Conjugate Gradient"),
+            ("PYAMG", lin_solv.Solvers.PYAMG, "Algebraic Multigrid"),
+            ("SPSOLVE", lin_solv.Solvers.SPSOLVE, "SciPy Sparse Direct Solver")
+        ]
+        
+        print("\nAvailable solvers:")
+        for i, (name, _, desc) in enumerate(solvers):
+            print(f"{i+1}. {name}: {desc}")
+        
+        while True:
+            try:
+                choice = input("\nSelect solver (number, default is 1 for PARDISO): ")
+                if choice.strip() == "":
+                    return solvers[0][1]  # Return PARDISO enum
+                
+                choice_idx = int(choice) - 1
+                if 0 <= choice_idx < len(solvers):
+                    selected_solver = solvers[choice_idx][1]
+                    print(f"\nSelected solver: {solvers[choice_idx][0]}")
+                    return selected_solver
+                else:
+                    print(f"Please enter a number between 1 and {len(solvers)}")
+            except ValueError:
+                print("Please enter a valid number")
+    
+    @staticmethod
+    def run_interactive_analysis(project_file, output_dir=None):
+        """Run analysis with interactive user input for all parameters."""
+        # Make sure directories exist
+        os.makedirs(PROJECTS_DIR, exist_ok=True)
+        os.makedirs(MODELS_DIR, exist_ok=True)
+        os.makedirs(RESULTS_DIR, exist_ok=True)
+        
+        # Standardize path if not absolute
+        if not os.path.isabs(project_file):
+            project_file = os.path.join(PROJECTS_DIR, project_file)
+            
+        if not os.path.exists(project_file):
+            print(f"Error: Project file not found: {project_file}")
             return False
-        
-        print(f"Found {len(project_files)} project files to process")
-        
-        success_count = 0
-        for i, project_file in enumerate(project_files):
-            print(f"\n{'='*60}")
-            print(f"Processing project {i+1} of {len(project_files)}: {os.path.basename(project_file)}")
-            print(f"{'='*60}")
             
-            success = AnalysisManager.run_analysis(
-                project_file,
-                n_elements=None,
-                output_dir=os.path.join(RESULTS_DIR, os.path.splitext(os.path.basename(project_file))[0]),
-                analysis_type=analysis_type
-            )
-            
-            if success:
-                success_count += 1
-            else:
-                print(f"Failed to process project: {os.path.basename(project_file)}")
-                error_dir = os.path.join(RESULTS_DIR, "errors")
-                os.makedirs(error_dir, exist_ok=True)
-                with open(os.path.join(error_dir, f"{os.path.splitext(os.path.basename(project_file))[0]}_error.txt"), 'w') as f:
-                    f.write(f"Failed to process project: {project_file}\n")
-                    f.write(f"Analysis type: {analysis_type}\n")
-                    f.write(f"Timestamp: {time.strftime('%Y-%m-%d %H:%M:%S')}\n")
-                    f.write("This file was automatically generated by the FEA automation script.\n")
+        # Set output directory
+        if not output_dir:
+            output_dir = os.path.join(RESULTS_DIR, os.path.splitext(os.path.basename(project_file))[0])
         
-        print(f"\nBatch processing completed: {success_count}/{len(project_files)} projects processed successfully")
-        return success_count > 0
+        # Print project information
+        print(f"\n{'='*60}")
+        print(f"PROJECT: {os.path.basename(project_file)}")
+        print(f"{'='*60}")
+        
+        # Get user selections
+        analysis_type = AnalysisManager.get_user_analysis_choice(project_file)
+        if not analysis_type:
+            return False
+            
+        n_elements = AnalysisManager.get_user_mesh_elements()
+        solver = AnalysisManager.get_user_solver_choice()
+        
+        # Confirm selections
+        print("\n" + "="*60)
+        print("ANALYSIS CONFIGURATION:")
+        print(f"Project: {os.path.basename(project_file)}")
+        print(f"Analysis Type: {analysis_type.capitalize()}")
+        print(f"Mesh Elements: {n_elements}")
+        print(f"Solver: {solver.name}")
+        print("="*60)
+        
+        confirm = input("\nProceed with analysis? (Y/n): ")
+        if confirm.lower() == 'n':
+            print("Analysis cancelled by user")
+            return False
+            
+        # Run analysis with selected parameters
+        if analysis_type == 'structural':
+            analyzer = StructuralAnalysis(project_file, n_elements, output_dir)
+            analyzer.solver = solver
+            return analyzer.execute()
+        elif analysis_type == 'thermal':
+            analyzer = ThermalAnalysis(project_file, n_elements, output_dir)
+            analyzer.solver = solver
+            return analyzer.execute()
+        
+        return False
 #==================================================================================================================================
 
 
+#==================================================================================================================================
+def main():
+    """Parse command line arguments and run the analysis"""
+    parser = argparse.ArgumentParser(description='Run FEA from PyTO project files')
+    parser.add_argument('-p', '--project', 
+                        help='Path to .pyto project file')
+    parser.add_argument('-o', '--output', default=None,
+                        help='Output directory for results (if omitted, uses RESULTS_DIR)')
+    parser.add_argument('-l', '--list', action='store_true',
+                        help='List all available project files')
+    
+    args = parser.parse_args()
+    
+    # Make sure directories exist
+    os.makedirs(PROJECTS_DIR, exist_ok=True)
+    os.makedirs(MODELS_DIR, exist_ok=True)
+    os.makedirs(RESULTS_DIR, exist_ok=True)
+    
+    # List projects if requested
+    if args.list:
+        project_files = glob(os.path.join(PROJECTS_DIR, "*.pyto"))
+        if not project_files:
+            print(f"No .pyto files found in {PROJECTS_DIR}")
+        else:
+            print(f"\nAvailable project files ({len(project_files)}):")
+            for i, pfile in enumerate(project_files):
+                print(f"{i+1}. {os.path.basename(pfile)}")
+        return 0
+    
+    # Interactive selection of project if no specific project provided
+    if not args.project:
+        project_files = glob(os.path.join(PROJECTS_DIR, "*.pyto"))
+        if not project_files:
+            print(f"No .pyto files found in {PROJECTS_DIR}")
+            return 1
+            
+        print(f"\nAvailable project files ({len(project_files)}):")
+        for i, pfile in enumerate(project_files):
+            print(f"{i+1}. {os.path.basename(pfile)}")
+            
+        while True:
+            try:
+                choice = input("\nSelect project to analyze (number): ")
+                choice_idx = int(choice) - 1
+                if 0 <= choice_idx < len(project_files):
+                    selected_project = project_files[choice_idx]
+                    print(f"\nSelected project: {os.path.basename(selected_project)}")
+                    
+                    # Run interactive analysis on selected project
+                    return 0 if AnalysisManager.run_interactive_analysis(
+                        selected_project, 
+                        output_dir=args.output
+                    ) else 1
+                else:
+                    print(f"Please enter a number between 1 and {len(project_files)}")
+            except ValueError:
+                print("Please enter a valid number")
+    
+    # Process specified project
+    else:
+        project_path = args.project
+        if not os.path.isabs(project_path):
+            project_path = os.path.join(PROJECTS_DIR, project_path)
+            
+        if not os.path.exists(project_path):
+            print(f"Error: Project file not found: {project_path}")
+            return 1
+            
+        # Always run in interactive mode
+        return 0 if AnalysisManager.run_interactive_analysis(
+            project_path, 
+            output_dir=args.output
+        ) else 1
+
+
 if __name__ == "__main__":
-    # Example usage of the AnalysisManager class
-    project_file = "../Models/CantileverBeam/CantileverBeamStructural.pyto"
-    output_dir = "../Models/CantileverBeam/Results"
-    
-    # Run structural analysis
-    AnalysisManager.run_analysis(project_file, output_dir, analysis_type='structural')
-    
-    
+    if len(sys.argv) == 1:
+        print("FEA Automation - Run structural and thermal analysis from PyTO project files")
+        print("\nUsage options:")
+        print("  1. Run interactively (select from available projects):")
+        print(f"     python {os.path.basename(__file__)}")
+        print("\n  2. Analyze a specific project:")
+        print(f"     python {os.path.basename(__file__)} -p project_name.pyto")
+        print("\n  3. List available project files:")
+        print(f"     python {os.path.basename(__file__)} -l")
+        print("\n  4. Show help message:")
+        print(f"     python {os.path.basename(__file__)} -h")
+        print("\nOptions:")
+        print("  -p, --project FILE        Path to specific .pyto project file")
+        print("  -l, --list                List all available project files")
+        print("  -o, --output DIR          Directory to save results")
+    sys.exit(main())

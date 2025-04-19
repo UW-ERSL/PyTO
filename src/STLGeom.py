@@ -3,7 +3,7 @@ from stl import mesh #pip install numpy-stl
 from collections import defaultdict
 from queue import Queue
 import numpy as np
-
+import pyvista as pv
 
 
 class STLGeom:
@@ -676,7 +676,7 @@ class STLGeom:
    
 if __name__ == "__main__":
     import os
-    import pyvista as pv
+
     script_dir = os.path.dirname(os.path.abspath(__file__))
 
     stl_file = os.path.join(script_dir, '../Models/CantileverBeam/CantileverBeam.STL')
@@ -691,6 +691,7 @@ if __name__ == "__main__":
     stl_file =  os.path.join(script_dir, '../Models/KnuckleAssembly/KnuckleAssembly.STL')
     stl_file =  os.path.join(script_dir, '../Models/Table/Table.STL')
     stl_file = os.path.join(script_dir, '../Models/LBracket/LBracket.STL')
+    stl_file = os.path.join(script_dir, '../Models/FilletedBeam/FilletedBeam.STL')
     #stl_file = os.path.join(script_dir, '../Models/Nosecone/HollowNosecone.STL')
     stl_geom = STLGeom(stl_file)
 

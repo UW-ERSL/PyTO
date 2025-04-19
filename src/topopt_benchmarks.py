@@ -144,7 +144,7 @@ def getStructuralTOProblem(to_problem: StructuralTOExamples, **kwargs):
         to_params.Comment = "Benchmark 3D"
         to_params.YSymmetry = True
         to_params.nDOFDesired = 50000
-        to_params.DesiredVolFraction = 0.5
+        to_params.DesiredVolFraction = 0.50
     elif to_problem == StructuralTOExamples.ThreeHoleBracket:
         structural_problem = StructuralExamples.ThreeHoleBracket
         to_params.Comment  = "Retaining Material"

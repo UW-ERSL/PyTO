@@ -122,8 +122,8 @@ def runTOTests(optimizationMethod):
 
 def combine_results():
 	# Get the latest results directory
-	results_dir = sorted(glob.glob("./Results/Results_*"))[-1]
-	
+	results_dir = sorted(glob.glob(f"./Results/Results_{time.strftime('%Y-%m-%d')}"))[-1]
+	print(f"Combining results from {results_dir}")
 	# Read all CSV files
 	dataframes = {}
 	for method in TO_METHODS:
@@ -229,7 +229,7 @@ if __name__ == "__main__":
 	jax.config.update("jax_enable_x64", True)
 	from topopt_benchmarks import *
 	optimizationMethods = [TO_METHODS.DENSITYMMA, TO_METHODS.DENSITYOC, TO_METHODS.PARETO]
-
+	optimizationMethods = [TO_METHODS.PARETO]
 	for optimizationMethod in optimizationMethods:
 		runTOTests(optimizationMethod)
 		print(f"Finished {optimizationMethod.name} tests.")

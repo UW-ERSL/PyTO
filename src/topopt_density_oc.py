@@ -196,7 +196,7 @@ if __name__ == "__main__":
 	from topopt_benchmarks import *
 
 	print("-" * 50)
-	to_problem = StructuralTOExamples.DistributedLoad # Choose the TO problem
+	to_problem = StructuralTOExamples.EdgeCantilever # Choose the TO problem
 	print(f"Running {to_problem.name}...") 
 	print("-" * 50)
 	solver = lin_solv.Solvers.PARDISO # # Choose solver. Typically PARDISO, but DPCG for DOF > 200,000
@@ -227,16 +227,19 @@ if __name__ == "__main__":
 	print("nElem: ", fe_solver.mesh.num_elems)	
 	
 	title = f'nDOF: {3*fe_solver.mesh.num_nodes}, nElem: {fe_solver.mesh.num_elems}'
-	#plots.plotMesh(mesh, bc,title = title)
+	fe_solver.plot_mesh(title = title, save_path = None)
 
-
-	startTime = time.time()
+	startTime = time.time()		
 	
 	print("OptimizationMethod: OC")
 	u, history, success,errorMsg,nFEAs = topopt_optimality_criteria(fe_solver = fe_solver,
 											to_params = to_params,
 											debug = debug)
 	timeTaken = time.time() - startTime
+	print(f"Time taken: {timeTaken:.0f} s")
+	if not success:
+		print(f"Error: {errorMsg}")
+
 	title = f"OC: nDOF: {3*fe_solver.mesh.num_nodes}, vol: {history['volume'][-1]:0.2f}, J: {history['compliance'][-1]:.3g}, time: {timeTaken:.0f} s"
 
 	fig, ax1 = plt.subplots()
@@ -265,10 +268,7 @@ if __name__ == "__main__":
 	plt.show(block=False)
 
 
-	print(f"Time taken: {timeTaken:.0f} s")
-	if not success:
-		print(f"Error: {errorMsg}")
-	plots.plotMesh(fe_solver.mesh, bc = None, u=None, title = title)
-
-	#plots.plotIsocontour(fe_solver.mesh, title = title, save_path = None)
-	# Save the mesh and results
+	# plot other quantities over the optimized mesh
+	fe_solver.plot_deformation()
+	fe_solver.postprocess()
+	fe_solver.plot_vonMisesStress()

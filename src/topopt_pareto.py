@@ -65,7 +65,7 @@ def topopt_pareto(fe_solver: sfea.StructFEA,
 	# Store initial compliance
 	history['compliance'].append(fe_solver.total_force.T @ u)
 	history['volume'].append(volfrac)
-	fe_solver.postprocess(u) # compute stresses and strains for the initial design
+	fe_solver.postprocess() # compute stresses and strains for the initial design
 	# Compute initial topological sensitivity
 	T = computeTopologicalSensitivity(fe_solver.mat_prop,fe_solver.strainComponents,fe_solver.stressComponents,x)
 	
@@ -157,7 +157,7 @@ def topopt_pareto(fe_solver: sfea.StructFEA,
 			JTemp = float(fe_solver.total_force.T @ u)
 			#plots.plotMesh(fe_solver.mesh, bc = None, u=u, title = title)
 			# Update sensitivity
-			fe_solver.postprocess(u)
+			fe_solver.postprocess()
 			T = computeTopologicalSensitivity(fe_solver.mat_prop,fe_solver.strainComponents,fe_solver.stressComponents,x)
 		
 			# Add contribution from body force to topological sensitivity if present
@@ -208,10 +208,10 @@ if __name__ == "__main__":
 	from topopt_benchmarks import *
 	
 	print("-" * 50)
-	to_problem = StructuralTOExamples.DistributedLoad # Choose the TO problem
+	to_problem = StructuralTOExamples.EdgeCantilever # Choose the TO problem
 	print(f"Running {to_problem.name}...") 
 	print("-" * 50)
-	solver = lin_solv.Solvers.PARDISO # # Choose solver. Typically PARDISO, but DPCG for DOF > 200,000
+	solver = lin_solv.Solvers.DPCG # # Choose solver. Typically PARDISO, but DPCG for DOF > 200,000
 	debug = False
 
 	# Get the structural problem
@@ -239,8 +239,7 @@ if __name__ == "__main__":
 	print("nElem: ", fe_solver.mesh.num_elems)	
 	
 	title = f'nDOF: {3*fe_solver.mesh.num_nodes}, nElem: {fe_solver.mesh.num_elems}'
-	#plots.plotMesh(mesh, bc,title = title)
-
+	fe_solver.plot_mesh(title = title, save_path = None)
 
 	startTime = time.time()
 
@@ -250,8 +249,13 @@ if __name__ == "__main__":
 									debug = debug)
 	
 	timeTaken = time.time() - startTime
+	print(f"Time taken: {timeTaken:.0f} s")
+	if not success:
+		print(f"Error: {errorMsg}")
+
 	title = f"Pareto: nDOF: {3*fe_solver.mesh.num_nodes}, vol: {history['volume'][-1]:0.2f}, J: {history['compliance'][-1]:.3g}, time: {timeTaken:.0f} s"
-	
+	fe_solver.plot_mesh(title = title, save_path = None)
+
 	# Plot volume vs compliance history
 	plt.figure()
 	plt.plot(history['volume'], history['compliance'], marker='o')
@@ -261,10 +265,8 @@ if __name__ == "__main__":
 	plt.grid(True)
 	plt.show(block=False)
 	
-	print(f"Time taken: {timeTaken:.0f} s")
-	if not success:
-		print(f"Error: {errorMsg}")
-	plots.plotMesh(fe_solver.mesh, bc = None, u=None, title = title)
-
-	#plots.plotIsocontour(fe_solver.mesh, title = title, save_path = None)
-	# Save the mesh and results
+	
+	
+	# plot other quantities over the optimized mesh
+	fe_solver.plot_deformation()
+	fe_solver.plot_vonMisesStress()

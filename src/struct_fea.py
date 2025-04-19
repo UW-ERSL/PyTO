@@ -15,6 +15,7 @@ import linear_solvers as lin_solv
 import mat_lib
 import os
 import deflation 
+import pyvista as pv
 script_dir = os.path.dirname(os.path.abspath(__file__))
 
 
@@ -49,7 +50,7 @@ class StructFEA:
             ).T.astype(int)
     self.elem_body_force = elem_body_force
 
-
+#################################################################
   def solve(self,
             x: jnp.ndarray = None,
             elasticity_material_model: dict = None) -> jnp.ndarray:
@@ -114,14 +115,17 @@ class StructFEA:
       node_forces[1::3] = self.mesh.elem_to_node_field_mapping* elem_force[1::3] 
       node_forces[2::3] = self.mesh.elem_to_node_field_mapping* elem_force[2::3] 
       self.total_force += node_forces
-    u =  lin_sol.solve(stiff_mtrx,
+    sol =  lin_sol.solve(stiff_mtrx,
                       self.total_force,
                       self.solver,
                       self.bc,
                       **self.kwargs)
-    return u
-
-  def postprocess(self, u: jnp.ndarray) -> jnp.ndarray:
+    self.sol = sol
+    self.deformation = jnp.sqrt(sol[0::3]**2 + sol[1::3]**2 + sol[2::3]**2)
+    self.max_deformation = jnp.max(self.deformation)
+    return sol
+#################################################################
+  def postprocess(self):
       """Computes the stresses at the center of each element.
 
       Args:
@@ -143,9 +147,9 @@ class StructFEA:
       edof = self.mesh.edofMat
       
       # Compute displacement gradients
-      uGrad = gradN @ u[edof[:, ::3]].T
-      vGrad = gradN @ u[edof[:, 1::3]].T
-      wGrad = gradN @ u[edof[:, 2::3]].T
+      uGrad = gradN @ self.sol[edof[:, ::3]].T
+      vGrad = gradN @ self.sol[edof[:, 1::3]].T
+      wGrad = gradN @ self.sol[edof[:, 2::3]].T
       
       # Compute Engineering strains
       strain = np.stack([
@@ -196,11 +200,390 @@ class StructFEA:
                 3*(element_stress[:,3]**2 + element_stress[:,4]**2 +
                    element_stress[:,5]**2))
       return 
+#################################################################
+  def plot_mesh(self, title = None,plot_bc = True, save_path=None):
+    
+    if (title is None):
+      title = f'DOF: {3*self.mesh.num_nodes}'
+
+    vertices = self.mesh.node_xyz
+    # We only plot the boundary faces to save on memory
+    faceIndex = np.array([[0,4,7,3],
+                          [0,1,5,4],
+                          [0,3,2,1],
+                          [1,2,6,5],
+                          [2,3,7,6],
+                          [4,5,6,7]], dtype=np.uint32)
+    nFacesPerHex = 6
+    faces = []
+    face_densities = []
+    
+    for e in range(self.mesh.num_elems):
+      if self.mesh.elemPseudoDensity[e] < 0.5:
+        continue
+      elif (self.mesh.elemPseudoDensity[e] > 0.5 and 
+            np.all(self.mesh.elemNeighborsArray[e] > 0) and 
+            np.all(self.mesh.elemPseudoDensity[[int(elem) for elem in 
+                                      self.mesh.elemNeighborsArray[e]]] > 0.5)):
+        continue
+
+      # Add all faces for this element
+      for j in range(nFacesPerHex):
+        faces.append(self.mesh.elemArray[e,faceIndex[j,:]])
+        face_densities.append(self.mesh.elemPseudoDensity[e])
+
+    # Convert to numpy arrays
+    faces = np.array(faces)
+    face_densities = np.array(face_densities)
+    
+    if len(faces) == 0:
+      print("No faces to plot after filtering")
+      return None
+
+    # Create cells array for PyVista
+    n_faces = len(faces)
+    cells = np.hstack((
+                      np.full((n_faces, 1), 4),  # 4 vertices per face
+                      faces
+                      ))
+
+    pv_mesh = pv.UnstructuredGrid(cells, np.full(len(cells), pv.CellType.QUAD), vertices) # 9 is VTK_QUAD
+    
+    # Add density values to cells
+    pv_mesh.cell_data['density'] = face_densities
+
+    # Create plotter
+    save_path = None
+    if save_path is  None:
+      plotter = pv.Plotter(window_size=(500, 400))
+    else:
+      plotter = pv.Plotter(off_screen=True)
+    
+    plotter.add_title(title, font_size=8)
   
+    plotter.add_mesh(
+                    pv_mesh,
+                    color='lightgreen',
+                    show_edges=True,
+                    edge_color='black',
+                    line_width=1
+                  )
+
+
+    # Add coordinate axes widget
+    plotter.add_axes(
+                    xlabel='X',
+                    ylabel='Y',
+                    zlabel='Z',
+                    line_width=2,
+                    labels_off=False,  # Show axis labels
+                    color='black'
+                    )
+    
+    if (plot_bc):
+      # Add dots and force arrows for labeled nodes
+      point_size = 10  # Size of dots in pixels
+
+      # Add black dots for label 1 (fixed nodes)
+      label1_nodes = np.where(self.mesh.node_indices[:, 3] == 1)[0]
+      if len(label1_nodes) > 0 and self.bc is not None:
+        points1 = vertices[label1_nodes]
+        dots1 = pv.PolyData(points1)
+        plotter.add_points(dots1,
+                          color='black',
+                          point_size=point_size,
+                          render_points_as_spheres=True)
+
+      # Add force arrows for label 2 (without red dots)
+      label2_nodes = np.where(self.mesh.node_indices[:, 3] == 2)[0]
+      if len(label2_nodes) > 0  and self.bc is not None: #structural
+        # Add force arrows
+        arrow_scale = 0.1 * self.mesh.bbox.diag_length
+        for node in label2_nodes:
+          # Get force components for this node
+          fx = self.bc.force[3*node]
+          fy = self.bc.force[3*node + 1]
+          fz = self.bc.force[3*node + 2]
+          force_vec = np.array([fx, fy, fz])
+          
+          # Only add arrow if force is non-zero
+          if np.linalg.norm(force_vec) > 0:
+            # Normalize and scale force vector
+            force_vec = force_vec / np.linalg.norm(force_vec) * arrow_scale
+            
+            # Create arrow
+            start_point = vertices[node]
+      
+            # Add arrow to plot
+            arrow = pv.Arrow(start = start_point,
+                            direction = force_vec,
+                            scale = arrow_scale)
+            plotter.add_mesh(arrow, color='red')
+    
+    # Set camera position for left-bottom-forward view
+    view_distance = 2.5 * self.mesh.bbox.diag_length
+    offset = 0.2 * view_distance  # Offset for object position
+    plotter.camera_position = [
+                    (view_distance*0.5, -view_distance*0.3, view_distance),
+                    (offset, offset, 0),   # Focus point - right and bottom
+                    (0, 0.8, 0.4)]         # Up vector - Y axis up
+
+    # Reset camera and zoom out slightly
+    plotter.camera.zoom(0.8)
+    
+    # Enable anti-aliasing for better quality
+    plotter.enable_anti_aliasing()
+    
+    # Save image if path is provided
+    if save_path:
+      #plotter.show(screenshot = save_path)
+      plotter.screenshot(save_path)
+      plotter.close()
+    else:
+      plotter.show() 
+    return
+################################################################# 
+  def plot_deformation(self):
+    # Return if no solution exists yet
+    if not hasattr(self, 'sol'):
+      return None
+
+    # Create vertices array
+    vertices = self.mesh.node_xyz
+  
+    sol = self.sol.copy()
+    sol = sol.reshape((-1, 3))
+    delta = self.deformation
+    deltaMax = self.max_deformation
+    scale = float(0.1*self.mesh.bbox.diag_length/deltaMax)
+    vertices += scale*sol
+
+
+    # Match plotMeshOld exactly
+    faceIndex = np.array([[0,4,7,3],
+                          [0,1,5,4],
+                          [0,3,2,1],
+                          [1,2,6,5],
+                          [2,3,7,6],
+                          [4,5,6,7]], dtype=np.uint32)
+    nFacesPerHex = 6
+    faces = []
+    face_densities = []
+    
+    for e in range(self.mesh.num_elems):
+      if self.mesh.elemPseudoDensity[e] < 0.5:
+        continue
+      elif (self.mesh.elemPseudoDensity[e] > 0.5 and 
+            np.all(self.mesh.elemNeighborsArray[e] > 0) and 
+            np.all(self.mesh.elemPseudoDensity[[int(elem) for elem in 
+                                      self.mesh.elemNeighborsArray[e]]] > 0.5)):
+        continue
+
+      # Add all faces for this element
+      for j in range(nFacesPerHex):
+        faces.append(self.mesh.elemArray[e,faceIndex[j,:]])
+        face_densities.append(self.mesh.elemPseudoDensity[e])
+
+    # Convert to numpy arrays
+    faces = np.array(faces)
+    face_densities = np.array(face_densities)
+    
+    if len(faces) == 0:
+      print("No faces to plot after filtering")
+      return None
+
+    # Create cells array for PyVista
+    n_faces = len(faces)
+    cells = np.hstack((
+                      np.full((n_faces, 1), 4),  # 4 vertices per face
+                      faces
+                      ))
+
+    pv_mesh = pv.UnstructuredGrid(cells, np.full(len(cells), pv.CellType.QUAD), vertices) # 9 is VTK_QUAD
+
+    # Add scalar values
+    pv_mesh.point_data['values'] = delta
+    
+    # Add density values to cells
+    pv_mesh.cell_data['density'] = face_densities
+
+    # Create plotter
+    save_path = None
+    if save_path is  None:
+      plotter = pv.Plotter(window_size=(500, 400))
+    else:
+      plotter = pv.Plotter(off_screen=True)
+    
+    plotter.add_title(f'Deformation scale: {scale:.2g}', font_size=8)
+    # Add mesh to plotter
+    nDOF = 3*self.mesh.num_nodes
+    plotter.add_mesh(
+                    pv_mesh,
+                    scalars='values' if delta is not None else 'density',
+                    show_edges=True,
+                    cmap='jet',
+                    edge_color='black',
+                    line_width=1,
+                    scalar_bar_args={
+                            'title': '',
+                            'vertical': True,
+                            'position_x': 0.8,
+                            'position_y': 0.3,
+                            'width': 0.06
+                            }
+                  )
+
+    # Add coordinate axes widget
+    plotter.add_axes(
+                    xlabel='X',
+                    ylabel='Y',
+                    zlabel='Z',
+                    line_width=2,
+                    labels_off=False,  # Show axis labels
+                    color='black'
+                    )
+
+    # Set camera position for left-bottom-forward view
+    view_distance = 2.5 * self.mesh.bbox.diag_length
+    offset = 0.2 * view_distance  # Offset for object position
+    plotter.camera_position = [
+                    (view_distance*0.5, -view_distance*0.3, view_distance),
+                    (offset, offset, 0),   # Focus point - right and bottom
+                    (0, 0.8, 0.4)]         # Up vector - Y axis up
+
+    # Reset camera and zoom out slightly
+    plotter.camera.zoom(0.8)
+    
+    # Enable anti-aliasing for better quality
+    plotter.enable_anti_aliasing()
+    
+    # Save image if path is provided
+    if save_path:
+      #plotter.show(screenshot = save_path)
+      plotter.screenshot(save_path)
+      plotter.close()
+    else:
+      plotter.show() 
+    
+    return 
+
+#################################################################
+  def plot_elem_field(self,
+            elem_field,
+            title = '',
+            save_path=None,
+            fontsize=10):
+    """Plot element field on the mesh.
+    """
+    # Filter elements based on pseudo_density
+    mask = self.mesh.elemPseudoDensity > 0.5
+    filtered_elems = self.mesh.elemArray[mask]
+    filtered_field = elem_field[mask]
+
+    if len(filtered_elems) == 0:
+        print("No elements to plot after filtering")
+        return None
+
+    # Create vertices array
+    vertices = self.mesh.node_xyz
+
+    # Create cells array for PyVista
+    cells = np.hstack((
+              np.full((len(filtered_elems), 1), 8),  # 8 vertices per hexahedron
+              filtered_elems
+            ))
+
+    # Create PyVista mesh
+    pv_mesh = pv.UnstructuredGrid({12: cells[:, 1:]}, vertices)  # 12 is VTK_HEXAHEDRON
+
+    # Add field data to cell data
+    pv_mesh.cell_data['field'] = filtered_field
+
+    # Create plotter
+    if save_path is None:
+      plotter = pv.Plotter(window_size=(500, 400))
+    else:
+      plotter = pv.Plotter( off_screen=True)
+
+    # Add mesh to plotter
+    plotter.add_mesh(
+            pv_mesh,
+            scalars='field',
+            cmap='jet',
+            show_edges=True,
+            edge_color='black',
+            line_width=1,
+            scalar_bar_args={
+              'title': '',
+              'vertical': True,
+              'position_x': 0.8,
+              'position_y': 0.3,
+              'width': 0.06
+            }
+          )
+
+    # Add title
+    plotter.add_title(title, font_size=8)
+
+    # Add coordinate axes widget
+    plotter.add_axes(
+            xlabel='X',
+            ylabel='Y',
+            zlabel='Z',
+            line_width=2,
+            labels_off=False,  # Show axis labels
+            color='black'
+            )
+
+    # Set camera position for left-bottom-forward view
+    view_distance = 2.5 * self.mesh.bbox.diag_length
+    offset = 0.2 * view_distance  # Offset for object position
+    plotter.camera_position = [
+            (view_distance*0.5, -view_distance*0.3, view_distance),
+            (offset, offset, 0),   # Focus point - right and bottom
+            (0, 0.8, 0.4)]         # Up vector - Y axis up
+
+    # Reset camera and zoom out slightly
+    plotter.camera.zoom(0.8)
+
+    # Enable anti-aliasing for better quality
+    plotter.enable_anti_aliasing()
+
+    # Save image if path is provided
+    if save_path:
+      plotter.screenshot(save_path)
+      plotter.close()
+    else:
+      plotter.show()
+
+    return 
+
+#################################################################
+  def plot_vonMisesStress(self,
+            save_path=None,
+            fontsize=10):
+    self.plot_elem_field(self.vonMisesStress, title = f'vonMises stress; max: {np.max(self.vonMisesStress):.2e} ',
+                          save_path=save_path, fontsize=fontsize)
+
+#################################################################    
+  def plot_strain_component(self,strainComponent = 0,
+            save_path=None,
+            fontsize=10):
+    self.plot_elem_field(self.strainComponents[:,strainComponent], title = f'Strain component: {strainComponent} ',
+                          save_path=save_path, fontsize=fontsize)
+
+
+#################################################################
+  def plot_stress_component(self,stressComponent = 0,
+            save_path=None,
+            fontsize=10):
+
+    self.plot_elem_field(self.stressComponents[:,stressComponent], title = f'Stress component: {stressComponent} ',
+                          save_path=save_path, fontsize=fontsize)
+#################################################################
 if __name__ == "__main__":    
   jax.config.update("jax_enable_x64", True)
-  import plots
-  from examples_structural import *
+  from examples_structural import StructuralExamples,getStructuralProblem
 
   problem = StructuralExamples.TwoBar
   nDOFDesired = 50000
@@ -223,31 +606,11 @@ if __name__ == "__main__":
         rtol = 1e-8,
         elem_body_force = elem_body_force)
 
-  plots.plotMesh(fe_solver.mesh, bc=bc)
+  fe_solver.plot_mesh()
   u = np.asarray(fe_solver.solve())
-  delta = np.sqrt(u[0::3]**2 +  u[1::3]**2 +  u[2::3]**2)
-  deltaMax = np.max(delta)
-  nDOF = 3*fe_solver.mesh.num_nodes
-  fe_solver.postprocess(u)
-  maxStress = np.max(fe_solver.vonMisesStress)
- 
-  print('-----------------------------')
-  print("nDof: ", nDOF)
-  print('Solver: ', fe_solver.solver.name)
-  print("FEA time: ", time.time() - startTime)
-  print('Max displacement: ', f"{deltaMax:.2g}")
-  print("Max von Mises stress: ", f"{maxStress:.2g}")
-  print('-----------------------------')
+  fe_solver.postprocess()
+  fe_solver.plot_deformation()
+  fe_solver.plot_vonMisesStress()
+  fe_solver.plot_stress_component(0)
   
- 
-  plots.plotMesh(fe_solver.mesh, bc=None, u=u, 
-                 title=f'dof = {nDOF}, Max deformation: {deltaMax:.3e}')
-
-  plots.plotElementField(fe_solver.mesh, fe_solver.vonMisesStress,
-                        title='von Mises stress', cmap='jet')
-  
-
-  #plots.plotElementField(fe_solver.mesh, fe_solver.strainComponents[:,3], title=f'Strain component: {'γxy'}', cmap='jet')
-  
- 
   

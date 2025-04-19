@@ -23,7 +23,7 @@ class ThermalFEATet:
     self.solver, self.kwargs = solver, kwargs
    
   
-  def tet4_stiffness_matrix_thermal(
+  def tet4_stiffness_matrix_thermal(self,
           mat_prop: mat_lib.ThermalMaterial,
           xyz_nodes: jnp.ndarray,
         ) -> jnp.ndarray:
@@ -67,7 +67,7 @@ class ThermalFEATet:
     return ke
 
   
-  def tet4_specific_heat_matrix(
+  def tet4_specific_heat_matrix(self,
           mat_prop: mat_lib.ThermalMaterial,
           xyz_nodes: jnp.ndarray,
         ) -> jnp.ndarray:
@@ -154,7 +154,7 @@ if __name__ == "__main__":
     dofs = []
     u_maxs = []
     timing = []
-    example = 2
+    example = 1
     for nDOFDesired in dof_range:
       if example == 1:
         tetmesh, mat_prop, bc = createThickPlateThermalProblemTet(nDOFDesired=nDOFDesired)
