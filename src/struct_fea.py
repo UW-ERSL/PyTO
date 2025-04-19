@@ -16,6 +16,7 @@ import mat_lib
 import os
 import deflation 
 import pyvista as pv
+from mpl_toolkits.mplot3d import Axes3D
 script_dir = os.path.dirname(os.path.abspath(__file__))
 
 
@@ -49,6 +50,23 @@ class StructFEA:
             np.kron(self.mesh.edofMat, np.ones((1, 24))).flatten())
             ).T.astype(int)
     self.elem_body_force = elem_body_force
+
+    #default camera position
+    view_distance = 2.5 * self.mesh.bbox.diag_length
+    offset = 0.2 * view_distance  # Offset for object position
+    self.camera_position =  [
+                    (view_distance*0.5, -view_distance*0.3, view_distance),
+                    (offset, offset, 0),   # Focus point - right and bottom
+                    (0, 0.8, 0.4)]         # Up vector - Y axis up
+    self.create_pyvista_plotter()
+
+#################################################################
+  def create_pyvista_plotter(self):
+    self.pyVistaPlotter = pv.Plotter(window_size=(500, 400))
+    self.pyVistaPlotter.camera_position =self.camera_position
+    # Enable anti-aliasing for better quality
+    self.pyVistaPlotter.enable_anti_aliasing()
+    
 
 #################################################################
   def solve(self,
@@ -201,8 +219,9 @@ class StructFEA:
                    element_stress[:,5]**2))
       return 
 #################################################################
-  def plot_mesh(self, title = None,plot_bc = True, save_path=None):
+  def plot_mesh(self, title = None,plot_bc = True,auto_close = True, save_path=None):
     
+    self.pyVistaPlotter.clear()
     if (title is None):
       title = f'DOF: {3*self.mesh.num_nodes}'
 
@@ -242,10 +261,8 @@ class StructFEA:
 
     # Create cells array for PyVista
     n_faces = len(faces)
-    cells = np.hstack((
-                      np.full((n_faces, 1), 4),  # 4 vertices per face
-                      faces
-                      ))
+    cells = np.hstack(( np.full((n_faces, 1), 4),  # 4 vertices per face
+                      faces))
 
     pv_mesh = pv.UnstructuredGrid(cells, np.full(len(cells), pv.CellType.QUAD), vertices) # 9 is VTK_QUAD
     
@@ -255,9 +272,13 @@ class StructFEA:
     # Create plotter
     save_path = None
     if save_path is  None:
-      plotter = pv.Plotter(window_size=(500, 400))
+      plotter = self.pyVistaPlotter 
+      if plotter.iren is None:
+        self.create_pyvista_plotter()
+        plotter = self.pyVistaPlotter 
+        plotter.show(interactive_update=True, auto_close=False)
     else:
-      plotter = pv.Plotter(off_screen=True)
+      plotter = pv.Plotter(off_screen=True) # for saving images
     
     plotter.add_title(title, font_size=8)
   
@@ -320,30 +341,17 @@ class StructFEA:
                             scale = arrow_scale)
             plotter.add_mesh(arrow, color='red')
     
-    # Set camera position for left-bottom-forward view
-    view_distance = 2.5 * self.mesh.bbox.diag_length
-    offset = 0.2 * view_distance  # Offset for object position
-    plotter.camera_position = [
-                    (view_distance*0.5, -view_distance*0.3, view_distance),
-                    (offset, offset, 0),   # Focus point - right and bottom
-                    (0, 0.8, 0.4)]         # Up vector - Y axis up
-
-    # Reset camera and zoom out slightly
-    plotter.camera.zoom(0.8)
-    
-    # Enable anti-aliasing for better quality
-    plotter.enable_anti_aliasing()
-    
     # Save image if path is provided
     if save_path:
-      #plotter.show(screenshot = save_path)
       plotter.screenshot(save_path)
       plotter.close()
     else:
-      plotter.show() 
+      plotter.show(interactive_update=not auto_close, auto_close=auto_close) 
+    self.camera_position = plotter.camera_position # For all future displays
     return
 ################################################################# 
-  def plot_deformation(self):
+  def plot_deformation(self,auto_close = True, save_path=None):
+    """Plot the deformed mesh with the deformation scaled by a factor."""
     # Return if no solution exists yet
     if not hasattr(self, 'sol'):
       return None
@@ -410,7 +418,11 @@ class StructFEA:
     # Create plotter
     save_path = None
     if save_path is  None:
-      plotter = pv.Plotter(window_size=(500, 400))
+      plotter = self.pyVistaPlotter 
+      if plotter.iren is None:
+        self.create_pyvista_plotter()
+        plotter = self.pyVistaPlotter 
+        plotter.show(interactive_update=True, auto_close=False)
     else:
       plotter = pv.Plotter(off_screen=True)
     
@@ -443,28 +455,15 @@ class StructFEA:
                     color='black'
                     )
 
-    # Set camera position for left-bottom-forward view
-    view_distance = 2.5 * self.mesh.bbox.diag_length
-    offset = 0.2 * view_distance  # Offset for object position
-    plotter.camera_position = [
-                    (view_distance*0.5, -view_distance*0.3, view_distance),
-                    (offset, offset, 0),   # Focus point - right and bottom
-                    (0, 0.8, 0.4)]         # Up vector - Y axis up
 
-    # Reset camera and zoom out slightly
-    plotter.camera.zoom(0.8)
-    
-    # Enable anti-aliasing for better quality
-    plotter.enable_anti_aliasing()
-    
     # Save image if path is provided
     if save_path:
       #plotter.show(screenshot = save_path)
       plotter.screenshot(save_path)
       plotter.close()
     else:
-      plotter.show() 
-    
+      plotter.show(interactive_update=not auto_close, auto_close=auto_close)
+    self.camera_position = plotter.camera_position # For all future displays
     return 
 
 #################################################################
@@ -473,6 +472,8 @@ class StructFEA:
             mask_low_pseudodensity = True,
             title = '',
             save_path=None,
+            colormap = 'jet',
+            auto_close = True,
             fontsize=10):
     """Plot element field on the mesh.
     """
@@ -508,7 +509,11 @@ class StructFEA:
 
     # Create plotter
     if save_path is None:
-      plotter = pv.Plotter(window_size=(500, 400))
+      plotter = self.pyVistaPlotter 
+      if plotter.iren is None:
+        self.create_pyvista_plotter()
+        plotter = self.pyVistaPlotter
+
     else:
       plotter = pv.Plotter( off_screen=True)
 
@@ -516,7 +521,7 @@ class StructFEA:
     plotter.add_mesh(
             pv_mesh,
             scalars='field',
-            cmap='jet',
+            cmap=colormap,
             show_edges=True,
             edge_color='black',
             line_width=1,
@@ -541,58 +546,52 @@ class StructFEA:
             labels_off=False,  # Show axis labels
             color='black'
             )
-
-    # Set camera position for left-bottom-forward view
-    view_distance = 2.5 * self.mesh.bbox.diag_length
-    offset = 0.2 * view_distance  # Offset for object position
-    plotter.camera_position = [
-            (view_distance*0.5, -view_distance*0.3, view_distance),
-            (offset, offset, 0),   # Focus point - right and bottom
-            (0, 0.8, 0.4)]         # Up vector - Y axis up
-
-    # Reset camera and zoom out slightly
-    plotter.camera.zoom(0.8)
-
-    # Enable anti-aliasing for better quality
-    plotter.enable_anti_aliasing()
-
     # Save image if path is provided
     if save_path:
       plotter.screenshot(save_path)
       plotter.close()
     else:
-      plotter.show()
-
+      plotter.show(interactive_update=not auto_close, auto_close=auto_close)
+    self.camera_position = plotter.camera_position # For all future displays
     return 
-
 #################################################################
   def plot_vonMisesStress(self,
             save_path=None,
-            fontsize=10):
+            fontsize=8):
+    self.pyVistaPlotter.clear()
     self.plot_elem_field(self.vonMisesStress, title = f'vonMises stress; max: {np.max(self.vonMisesStress):.2e} ',
                           save_path=save_path, fontsize=fontsize)
 
 #################################################################    
   def plot_strain_component(self,strainComponent = 0,
             save_path=None,
-            fontsize=10):
+            fontsize=8):
+    self.pyVistaPlotter.clear()
     self.plot_elem_field(self.strainComponents[:,strainComponent], title = f'Strain component: {strainComponent} ',
-                          save_path=save_path, fontsize=fontsize)
-
-
+                          save_path=save_path,fontsize=fontsize)
 #################################################################
   def plot_stress_component(self,stressComponent = 0,
             save_path=None,
             fontsize=10):
-
+    self.pyVistaPlotter.clear()
     self.plot_elem_field(self.stressComponents[:,stressComponent], title = f'Stress component: {stressComponent} ',
                           save_path=save_path, fontsize=fontsize)
-
+#################################################################
+  def plot_pseudo_density(self,
+            save_path=None,
+            auto_close = True,
+            title = 'Pseudo density',
+            fontsize=10):
+    self.pyVistaPlotter.clear()
+    self.plot_elem_field(1-self.mesh.elemPseudoDensity, colormap='gray', auto_close = auto_close,
+                         mask_low_pseudodensity=False, title= title,
+                save_path=save_path, fontsize=fontsize)
     
 #################################################################
 if __name__ == "__main__":    
   jax.config.update("jax_enable_x64", True)
   from examples_structural import StructuralExamples,getStructuralProblem
+
 
   problem = StructuralExamples.TorsionBar
   nDOFDesired = 5000

@@ -125,7 +125,7 @@ while True:
     elif demo == pyTODemos.StructuralFEA_Voxel_DPCG:# DPCG solver for large scale problems
         # This example uses the Knuckle assembly problem from the StructuralExamples module.
         problem = StructuralExamples.KnuckleAssembly 
-        nDOFDesired = 200000 
+        nDOFDesired = 500000 
         mesh, mat_prop, bc,elem_body_force = getStructuralProblem(problem,nDOFDesired = nDOFDesired)
         solver = Solvers.DPCG
         dsolver = DeflationSolver()
@@ -186,9 +186,17 @@ while True:
         fe_solver.plot_mesh(title = title)
 
         startTime = time.time()
-        u, history,success,errorMsg,nFEAs = topopt_mma(fe_solver = fe_solver,
+        u, history,success,errorMsg,nFEAs = topopt_mma(fe_solver = fe_solver,plot_progress=True,
                                     to_params = to_params)
         timeTaken = time.time() - startTime
+
+        print(f"Time taken: {timeTaken:.0f} s")
+        title = f"MMA: nDOF: {3*fe_solver.mesh.num_nodes}, vol: {history['volume'][-1]:0.2f}, J: {history['compliance'][-1]:.3g}, time: {timeTaken:.0f} s"
+    
+        if not success:
+            print(f"Error: {errorMsg}")
+        fe_solver.plot_mesh(title = title,plot_bc= False)
+
         fig, ax1 = plt.subplots()
 
         # Plot compliance on left y-axis
@@ -212,15 +220,7 @@ while True:
         ax1.legend(lines1 + lines2, labels1 + labels2)
 
         plt.grid(True)
-        plt.show(block=False)
-
-        title = f"MMA: nDOF: {3*fe_solver.mesh.num_nodes}, vol: {history['volume'][-1]:0.2f}, J: {history['compliance'][-1]:.3g}, time: {timeTaken:.0f} s"
-    
-        print(f"Time taken: {timeTaken:.0f} s")
-        if not success:
-            print(f"Error: {errorMsg}")
-        fe_solver.plot_mesh(title = title)
-
+        plt.show()
 
         # Save the mesh and results
     elif demo == pyTODemos.StructuralTO_Voxel_DensityOC:
@@ -237,7 +237,7 @@ while True:
         title = f'nDOF: {3*fe_solver.mesh.num_nodes}, nElem: {fe_solver.mesh.num_elems}'
         fe_solver.plot_mesh(title = title)
         startTime = time.time()
-        u, history, success,errorMsg,nFEAs = topopt_optimality_criteria(fe_solver = fe_solver,
+        u, history, success,errorMsg,nFEAs = topopt_optimality_criteria(fe_solver = fe_solver,plot_progress=True,
                                                 to_params = to_params)
         timeTaken = time.time() - startTime
         title = f"OC: nDOF: {3*fe_solver.mesh.num_nodes}, vol: {history['volume'][-1]:0.2f}, J: {history['compliance'][-1]:.3g}, time: {timeTaken:.0f} s"
@@ -277,14 +277,14 @@ while True:
         mesh, mat_prop, bc,elem_body_force, to_params = getStructuralTOProblem(to_problem)
         fe_solver.plot_mesh(title = title)
         fe_solver = StructFEA(mesh=mesh, mat_prop=mat_prop, solver= Solvers.PARDISO, bc=bc)
-        u, history, success,errorMsg,nFEAs = topopt_pareto(fe_solver=fe_solver,to_params=to_params)
+        u, history, success,errorMsg,nFEAs = topopt_pareto(fe_solver=fe_solver,to_params=to_params,plot_progress=True)
         plt.figure()
         plt.plot(history['volume'], history['compliance'], marker='o')
         plt.xlabel('Volume Fraction')
         plt.ylabel('Compliance')
         plt.title('Pareto: Volume vs Compliance History')
         plt.grid(True)
-        plt.show(block=False)
+        plt.show()
         if not success:
             print(f"Error: {errorMsg}")
         fe_solver.plot_mesh(title = title)

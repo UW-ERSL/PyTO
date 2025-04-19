@@ -12,7 +12,7 @@ def topopt_optimality_criteria(
 							move_tol: float = 0.025,
 							rel_conv_tol: float = 1.e-3,
 							directLagrangeMethod: bool = False,
-							plotIntermediateTopologies: bool = False,
+							plot_progress: bool = False,
 							debug: bool = False,
 							) -> tuple[np.ndarray, dict]:
 	"""Optimality Criteria based topology optimization for minimum compliance.
@@ -73,6 +73,9 @@ def topopt_optimality_criteria(
 	errorMsg = ""
 	for iter in range(maxIterations):
 		x = np.array(x)
+		if (plot_progress):
+			fe_solver.mesh.setPseudoDensity(x)
+			fe_solver.plot_pseudo_density(auto_close = False, title = f"Iteration {iter}")
 		obj,u = compliance(x, fe_solver,material_model_dict)
 		ce = (np.dot(u[fe_solver.mesh.edofMat].reshape(num_elems, 24), KE) * u[fe_solver.mesh.edofMat].reshape(num_elems, 24)).sum(1)
 		if material_model == MaterialModel.SIMP:
@@ -234,6 +237,7 @@ if __name__ == "__main__":
 	print("OptimizationMethod: OC")
 	u, history, success,errorMsg,nFEAs = topopt_optimality_criteria(fe_solver = fe_solver,
 											to_params = to_params,
+											plot_progress = True,
 											debug = debug)
 	timeTaken = time.time() - startTime
 	print(f"Time taken: {timeTaken:.0f} s")
@@ -241,6 +245,15 @@ if __name__ == "__main__":
 		print(f"Error: {errorMsg}")
 
 	title = f"OC: nDOF: {3*fe_solver.mesh.num_nodes}, vol: {history['volume'][-1]:0.2f}, J: {history['compliance'][-1]:.3g}, time: {timeTaken:.0f} s"
+
+	
+	# plot the optimized mesh
+	fe_solver.plot_mesh(title = title, plot_bc = False, save_path = None)
+
+	# plot other quantities over the optimized mesh
+	fe_solver.plot_deformation()
+	fe_solver.postprocess()
+	fe_solver.plot_vonMisesStress()
 
 	fig, ax1 = plt.subplots()
 
@@ -265,10 +278,4 @@ if __name__ == "__main__":
 	ax1.legend(lines1 + lines2, labels1 + labels2)
 
 	plt.grid(True)
-	plt.show(block=False)
-
-
-	# plot other quantities over the optimized mesh
-	fe_solver.plot_deformation()
-	fe_solver.postprocess()
-	fe_solver.plot_vonMisesStress()
+	plt.show()

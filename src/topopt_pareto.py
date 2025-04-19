@@ -9,7 +9,7 @@ def topopt_pareto(fe_solver: sfea.StructFEA,
 							min_local_iters: int = 2,
 							max_local_iters: int = 5,
 							xVoid: float = 0,
-							plotIntermediateTopologies: bool = False,
+							plot_progress: bool = False,
 							debug: bool = False
 							)-> tuple[np.ndarray, dict]:
 	"""Pareto method for Topology Optimization.
@@ -93,7 +93,8 @@ def topopt_pareto(fe_solver: sfea.StructFEA,
 	wtDamping = 0.25 # 0 means full wt to current T values, else previous T values are damped in
 
 	while volfrac > to_params.DesiredVolFraction:
-		
+		if (plot_progress):
+			fe_solver.plot_mesh(plot_bc = False,auto_close = False, title = f'Volfrac: {volfrac:0.3f}')
 		# Move to next volume fraction
 		volfrac = max(to_params.DesiredVolFraction, volfrac - vol_decr)
 		if (debug):
@@ -246,6 +247,7 @@ if __name__ == "__main__":
 	print("OptimizationMethod: Pareto")
 	u, history, success,errorMsg,nFEAs = topopt_pareto(fe_solver = fe_solver,
 									to_params = to_params,
+									plot_progress= True,
 									debug = debug)
 	
 	timeTaken = time.time() - startTime
@@ -255,6 +257,11 @@ if __name__ == "__main__":
 
 	title = f"Pareto: nDOF: {3*fe_solver.mesh.num_nodes}, vol: {history['volume'][-1]:0.2f}, J: {history['compliance'][-1]:.3g}, time: {timeTaken:.0f} s"
 	fe_solver.plot_mesh(title = title, save_path = None)
+
+		
+	# plot other quantities over the optimized mesh
+	fe_solver.plot_deformation()
+	fe_solver.plot_vonMisesStress()
 
 	# Plot volume vs compliance history
 	plt.figure()
@@ -266,7 +273,3 @@ if __name__ == "__main__":
 	plt.show(block=False)
 	
 	
-	
-	# plot other quantities over the optimized mesh
-	fe_solver.plot_deformation()
-	fe_solver.plot_vonMisesStress()

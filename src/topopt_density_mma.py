@@ -92,6 +92,9 @@ def topopt_mma(fe_solver: sfea.StructFEA,
 	nFEAs = 0
 	while not mma_state.is_converged:
 		x = mma_state.x.reshape(-1)
+		if (plot_progress):
+			fe_solver.mesh.setPseudoDensity(x)
+			fe_solver.plot_pseudo_density(auto_close = False, title = f"Iteration {mma_state.epoch+1}")
 		timeFEAStart = time.time()
 		obj,u = compliance(x, fe_solver, material_model_dict)
 		nFEAs += 1
@@ -257,7 +260,6 @@ if __name__ == "__main__":
 				rtol = 1e-8,
         		elem_body_force = elem_body_force)
 	
-
 	print('Solver: ', fe_solver.solver.name)
 	print("nDof: ", 3*fe_solver.mesh.num_nodes)
 	print("nElem: ", fe_solver.mesh.num_elems)	
@@ -277,7 +279,11 @@ if __name__ == "__main__":
 
 	title = f"MMA: nDOF: {3*fe_solver.mesh.num_nodes}, vol: {history['volume'][-1]:0.2f}, J: {history['compliance'][-1]:.3g}, time: {timeTaken:.0f} s"
 	fe_solver.plot_mesh(title = title, plot_bc = False, save_path = None)
-
+	
+	# plot other quantities over the optimized mesh
+	fe_solver.plot_deformation()
+	fe_solver.postprocess()
+	fe_solver.plot_vonMisesStress()
 
 	fig, ax1 = plt.subplots()
 
@@ -302,10 +308,4 @@ if __name__ == "__main__":
 	ax1.legend(lines1 + lines2, labels1 + labels2)
 
 	plt.grid(True)
-	plt.show(block=False)
-
-
-	# plot other quantities over the optimized mesh
-	fe_solver.plot_deformation()
-	fe_solver.postprocess()
-	fe_solver.plot_vonMisesStress()
+	plt.show()
