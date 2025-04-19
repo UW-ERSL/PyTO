@@ -48,7 +48,7 @@ class largeDeformationFEA:
             print('Solver not implemented')
 
 
-    def solve_nonlinear_fem_force_control(self,verbose = True, n_steps = 5,max_iter = 30,tol = 1e-9):
+    def solve_nonlinear_fem_force_control(self,verbose = True, n_steps = 5,max_iter = 30,tol = 1e-8):
         """
         Solve nonlinear finite element problem using Newton-Raphson method.
         """
@@ -625,7 +625,8 @@ def compute_K_global(n_elements, elemArray, node_xyz, sol, grad_n, dof_per_elem,
         k_elem, f_elem = compute_element_stiffness_finite_strain_spatial_conf(grad_n, dof_per_elem, wt, nodes_per_element, sol_elem, position_nodes, material_model, shearModulus, bulkModulus)
         
         if (k_elem is None):
-            break
+            print(f'Element {elem}: det(F) < 0')
+            continue
         dof = np.vstack((3*elem_nodes, 3*elem_nodes + 1, 3*elem_nodes + 2))
         #dof = dof.reshape(-1, order='F')
         dof = dof.T.flatten()
@@ -695,14 +696,13 @@ def compute_k_elem(num_gq, grad_n_cell, wt_gq, position_nodes, sol, nodes, k_mat
 
         J_F = np.linalg.det(F)
         if J_F < 0:
-            print('Determinant of F negative')
+            #print('Determinant of elem F negative')
+            return None
             
         stress = kirchhoff_stress(material_model, shearModulus, bulkModulus, b, J_F)
 
         C = compute_elasticity_tensor_generalized_neo_hookean(material_model, shearModulus, bulkModulus, b, J_F)
         dJ = abs(np.linalg.det(j_total))
-
-       
 
         compute_K_material_geometric(nodes, g, dJ, grad_ndxs, wt_gq, stress, C, k_material, k_geometric, f_elem)
 
@@ -994,18 +994,22 @@ if __name__ == "__main__":
         nDOFDesired= 2000
         totalLoad = 100000
         nForceSteps = max(1,int(totalLoad/20000))
+    elif (problem == StructuralExamples.TorsionBar): 
+        nDOFDesired= 2000
+        totalLoad = 45000
+        nForceSteps = 2
     elif (problem == StructuralExamples.FilletedBeam): 
-        nDOFDesired=10000
-        totalLoad = 500
-        nForceSteps = 1
-    else:
+        nDOFDesired= 500
+        totalLoad = 7000# 7000 leads to negative det(F)
+        nForceSteps = 2
+    elif (problem == StructuralExamples.ArrowHead):
         nDOFDesired= 100000
         totalLoad = 1000000
 
     
     mesh, mat_prop, bc,elem_body_force = getStructuralProblem(problem,totalLoad = totalLoad,nDOFDesired = nDOFDesired)
     if control == ControlType.ForceControl:
-        print(f'Force Control')
+        pass
     else:
         print(f'Displacement Control')
         if (problem == 0):    

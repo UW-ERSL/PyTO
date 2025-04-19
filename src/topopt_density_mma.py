@@ -10,7 +10,7 @@ def topopt_mma(fe_solver: sfea.StructFEA,
 							 kkt_tol: float = 1.e-6,
 							 move_tol: float = 0.025,
 							 rel_conv_tol: float = 1.e-3,
-							plotIntermediateTopologies: bool = False,
+							plot_progress: bool = False,
 							 grey_tol: float = 0.2,
 							 debug: bool = False,
 							 ) -> tuple[np.ndarray, dict]:
@@ -166,6 +166,8 @@ def topopt_mma(fe_solver: sfea.StructFEA,
 																jnp.array([cons]).reshape((1, 1)),
 																grad_cons.reshape((1, num_elems))
 																)
+			
+
 		timeMMA += time.time() - timeMMAStart
 
 		change = np.max(np.abs(x - x_old))
@@ -230,7 +232,7 @@ if __name__ == "__main__":
 	from topopt_benchmarks import *
 	
 	print("-" * 50)
-	to_problem = StructuralTOExamples.DistributedLoad # Choose the TO problem
+	to_problem = StructuralTOExamples.Mitchell_1 # Choose the TO problem
 	print(f"Running {to_problem.name}...") 
 	print("-" * 50)
 	solver = lin_solv.Solvers.PARDISO # # Choose solver. Typically PARDISO, but DPCG for DOF > 200,000
@@ -266,6 +268,7 @@ if __name__ == "__main__":
 	print("OptimizationMethod: MMA")
 	u, history,success,errorMsg,nFEAs = topopt_mma(fe_solver = fe_solver,
 								to_params = to_params,
+								plot_progress = True,
 								debug = debug)
 	timeTaken = time.time() - startTime
 	print(f"Time taken: {timeTaken:.0f} s")

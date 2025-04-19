@@ -470,15 +470,22 @@ class StructFEA:
 #################################################################
   def plot_elem_field(self,
             elem_field,
+            mask_low_pseudodensity = True,
             title = '',
             save_path=None,
             fontsize=10):
     """Plot element field on the mesh.
     """
     # Filter elements based on pseudo_density
-    mask = self.mesh.elemPseudoDensity > 0.5
-    filtered_elems = self.mesh.elemArray[mask]
-    filtered_field = elem_field[mask]
+    if (mask_low_pseudodensity):
+      mask = self.mesh.elemPseudoDensity > 0.5
+      mask = self.mesh.elemPseudoDensity > 0.5
+      filtered_elems = self.mesh.elemArray[mask]
+      filtered_field = elem_field[mask]
+
+    else:
+      filtered_elems = self.mesh.elemArray
+      filtered_field = elem_field
 
     if len(filtered_elems) == 0:
         print("No elements to plot after filtering")
@@ -580,13 +587,15 @@ class StructFEA:
 
     self.plot_elem_field(self.stressComponents[:,stressComponent], title = f'Stress component: {stressComponent} ',
                           save_path=save_path, fontsize=fontsize)
+
+    
 #################################################################
 if __name__ == "__main__":    
   jax.config.update("jax_enable_x64", True)
   from examples_structural import StructuralExamples,getStructuralProblem
 
-  problem = StructuralExamples.TwoBar
-  nDOFDesired = 50000
+  problem = StructuralExamples.TorsionBar
+  nDOFDesired = 5000
   mesh, mat_prop, bc,elem_body_force = getStructuralProblem(problem,nDOFDesired = nDOFDesired)
   solver = lin_solv.Solvers.PARDISO # typically DPCG or PARDISO
   
