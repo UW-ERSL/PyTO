@@ -29,7 +29,8 @@ def runTOMethodOnBenchmarks(optimizationMethod):
 						 StructuralTOExamples.Multiload,	
 						StructuralTOExamples.KnuckleAssembly, 
 						StructuralTOExamples.Table]
-	
+	# Set subfolder name based on which benchmark list we're using
+
 	for to_problem in benchmarks_2_5D_problems:
 		print("-" * 50)
 		print(f"Running {to_problem.name} using {optimizationMethod.name} method")

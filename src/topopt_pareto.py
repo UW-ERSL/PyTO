@@ -92,7 +92,8 @@ def topopt_pareto(fe_solver: sfea.StructFEA,
 	success = True
 	terminatePareto = False
 	errorMsg = ""
-	wtDamping = 0.25 # 0 means full wt to current T values, else previous T values are damped in
+	# Observation: Damping using the previous sensitivity values avoids getting trapped in local minima
+	wtDamping = 0.5 # 0 means full wt to current T values, else previous T values are damped in
 
 	while volfrac > to_params.DesiredVolFraction:
 		if (plot_progress):
@@ -212,22 +213,31 @@ if __name__ == "__main__":
 	from topopt_benchmarks import *
 	
 	print("-" * 50)
-	to_problem = StructuralTOExamples.DistributedLoad # Choose the TO problem
+	to_problem = StructuralTOExamples.Table # Choose the TO problem
 	print(f"Running {to_problem.name}...") 
 	print("-" * 50)
-	solver = lin_solv.Solvers.PARDISO # # Choose solver. Typically PARDISO, but DPCG for DOF > 200,000
+	
+	
 	debug = False
 
 	# Get the structural problem
 	mesh, mat_prop, bc,elem_body_force, to_params = getStructuralTOProblem(to_problem)
 
 	dsolver = deflation.DeflationSolver()
-	# initialize the fe solver 
-	if (solver == lin_solv.Solvers.DPCG):
+	if (to_params.nDOFDesired < 50000):#  # Choose solver. Typically PARDISO, but DPCG for large DOF problems
+		print("Solver: Pardiso")
+		solver = lin_solv.Solvers.PARDISO
+	else:
+		print("Solver: DPCG")
+		# DPCG solver is used for large DOF problems
+		# Create deflation solver object
+		dsolver = deflation.DeflationSolver()
 		nGroups =  min(dsolver.maxGroups,max(dsolver.minGroups,round(3*mesh.num_nodes/dsolver.dofPerGroup)))
 		dsolver.create_deflation_groups(mesh, nGroups)
 		dsolver.create_delfation_matrix(mesh)
 		dsolver.W = dsolver.W[bc.free_dofs, :]
+	 
+	
 
 	fe_solver = fea.StructFEA(mesh = mesh,
 				mat_prop = mat_prop,
