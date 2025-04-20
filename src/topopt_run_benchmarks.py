@@ -246,7 +246,7 @@ def combine_results():
 
 if __name__ == "__main__":    
 	jax.config.update("jax_enable_x64", True)
-	
+	  
 	optimizationMethods = [TO_METHODS.DENSITYMMA, TO_METHODS.DENSITYOC, TO_METHODS.PARETO]
 	for optimizationMethod in optimizationMethods:
 		runTOMethodOnBenchmarks(optimizationMethod)
