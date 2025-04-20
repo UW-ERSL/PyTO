@@ -69,8 +69,8 @@ class Mesher:
 				(dx, dy, dz).
 		"""
 		startTime = time.time()
-		print(f"Mesher: Grid size: {num_elems[0]} x {num_elems[1]} x {num_elems[2]}")
-		print(f"Mesher: Element size: {elem_size[0]:.2e} x {elem_size[1]:.2e} x {elem_size[2]:.2e}")
+		#print(f"Mesher: Grid size: {num_elems[0]} x {num_elems[1]} x {num_elems[2]}")
+		#print(f"Mesher: Element size: {elem_size[0]:.2e} x {elem_size[1]:.2e} x {elem_size[2]:.2e}")
 		nelx, nely, nelz = num_elems
 		self.bbox = BoundingBox(x=Extent(0.0, nelx*elem_size[0]),
 														y=Extent(0.0, nely*elem_size[1]),
@@ -152,9 +152,10 @@ class Mesher:
 		voxel_volume = self.num_elems * np.prod(self.elem_size)
 		box_volume = self.bbox.lx * self.bbox.ly * self.bbox.lz
 		volume_error = np.abs(voxel_volume - box_volume) / box_volume * 100
-
-		print(f"Time taken to create mesh: {endTime - startTime:.2f} seconds")
-		print(f"Meshing Volume Error: {volume_error:.2f}%")
+		self.volume_error = volume_error
+		self.meshing_time = endTime - startTime
+		#print(f"Time taken to create mesh: {endTime - startTime:.2f} seconds")
+		#print(f"Meshing Volume Error: {volume_error:.2f}%")
 	
 	def translate(self, dx: float, dy: float, dz: float):
 		"""Translate mesh by specified amounts.
@@ -266,8 +267,8 @@ class Mesher:
 		self.grid = [nx, ny, nz]
 		self.elem_size= [Lx/nx, Ly/ny, Lz/nz]
 		
-		print(f"Mesher: Grid size: {nx} x {ny} x {nz}")
-		print(f"Mesher: Element size: {self.elem_size[0]:.2e} x {self.elem_size[1]:.2e} x {self.elem_size[2]:.2e}")	
+		#print(f"Mesher: Grid size: {nx} x {ny} x {nz}")
+		#print(f"Mesher: Element size: {self.elem_size[0]:.2e} x {self.elem_size[1]:.2e} x {self.elem_size[2]:.2e}")	
 		# Voxels near the boundary are being removed. So scale the stl geometry slightly
 		scale = 1.001
 		# Scale the stl  about its center
@@ -282,8 +283,8 @@ class Mesher:
 		#extract the data
 		self.num_elems = self.voxels.n_cells
 		self.num_nodes = self.voxels.n_points 
-		print(f"Mesher: #Elements: {self.num_elems}")
-		print(f"Mesher: #Nodes: {self.num_nodes}")
+		#print(f"Mesher: #Elements: {self.num_elems}")
+		#print(f"Mesher: #Nodes: {self.num_nodes}")
 		self.origin = [self.voxels.bounds[0], self.voxels.bounds[2], self.voxels.bounds[4]]
 
 		self.node_indices = np.zeros((self.num_nodes, 4), dtype = np.int32)
@@ -340,11 +341,13 @@ class Mesher:
 		voxel_volume = self.num_elems * np.prod(self.elem_size)
 		volume_error = np.abs(voxel_volume - stlVolume) / stlVolume * 100
 		endTime = time.time()
-		print(f"Time taken to create mesh: {endTime - startTime:.2f} seconds")
-		print(f"Meshing Volume Error: {volume_error:.2f}%")
+		self.meshing_time = endTime - startTime
+		self.volume_error = volume_error
+		#print(f"Time taken to create mesh: {endTime - startTime:.2f} seconds")
+		#print(f"Meshing Volume Error: {volume_error:.2f}%")
 
 	def createMeshFromSTLFile(self, stlFileName: str,nElemsDesired: int):
-		print("Creating mesh from STL file...")
+		#print("Creating mesh from STL file...")
 		startTime = time.time()
 		self.stlMesh = pv.read(stlFileName)
 
@@ -353,7 +356,7 @@ class Mesher:
 
 		# Get the number of components
 		num_components = components["RegionId"].max() + 1
-		print(f"Number of connected components: {num_components}")
+		#print(f"Number of connected components: {num_components}")
 		self.num_components = num_components
 		if (num_components == 1):
 			self.createMeshFromSTLFileSingleComponent(stlFileName, nElemsDesired)
@@ -376,8 +379,8 @@ class Mesher:
 		nz = max(round(alpha*Lz), self.minVoxelsPerAxis)
 		self.grid = [nx, ny, nz]
 		self.elem_size= [Lx/nx, Ly/ny, Lz/nz]
-		print(f"Mesher: Grid size: {nx} x {ny} x {nz}")
-		print(f"Mesher: Element size: {self.elem_size[0]:.2e} x {self.elem_size[1]:.2e} x {self.elem_size[2]:.2e}")
+		#print(f"Mesher: Grid size: {nx} x {ny} x {nz}")
+		#print(f"Mesher: Element size: {self.elem_size[0]:.2e} x {self.elem_size[1]:.2e} x {self.elem_size[2]:.2e}")
 
 
 		n_open_edges = self.stlMesh.n_open_edges
@@ -433,8 +436,8 @@ class Mesher:
 		self.num_elems = self.voxels.n_cells
 		self.num_nodes = self.voxels.n_points 
 		
-		print(f"Mesher: #Elements: {self.num_elems}")
-		print(f"Mesher: #Nodes: {self.num_nodes}")
+		#print(f"Mesher: #Elements: {self.num_elems}")
+		#print(f"Mesher: #Nodes: {self.num_nodes}")
 		self.origin = [self.voxels.bounds[0], self.voxels.bounds[2], self.voxels.bounds[4]]
 
 		self.node_indices = np.zeros((self.num_nodes, 4), dtype = np.int32)
@@ -521,10 +524,12 @@ class Mesher:
 		volume_error = np.abs(voxel_volume - stlVolume) / stlVolume * 100
 		self.createElementToNodeFieldMapping()
 		endTime = time.time()
-		print(f"Time taken to create mesh: {endTime - startTime:.2f} seconds")
-		print(f"STL Volume: {stlVolume:.2e}")
-		print(f"Voxelized Mesh Volume: {voxel_volume:.2e}")
-		print(f"Meshing Volume Error: {volume_error:.2f}%")
+		#print(f"Time taken to create mesh: {endTime - startTime:.2f} seconds")
+		#print(f"STL Volume: {stlVolume:.2e}")
+		#print(f"Voxelized Mesh Volume: {voxel_volume:.2e}")
+		#print(f"Meshing Volume Error: {volume_error:.2f}%")
+		self.volume_error = volume_error
+		self.meshing_time = endTime - startTime
 
 	def get_nodes_within_radius(self, pt: np.ndarray, r: float) -> np.ndarray:
 		"""Find nodes within a given radius from a point.

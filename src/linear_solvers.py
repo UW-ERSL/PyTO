@@ -125,7 +125,7 @@ def solve(A: spy_sprs.coo_matrix,
       # Smoothed Aggregation solver gives the wrong result
       #ml = pyamg.smoothed_aggregation_solver(A, B=b, smooth='energy')
       #x = ml.solve(b, tol=kwargs['rtol'])
-      x = pyamg.solve(A, b,tol= kwargs['rtol'], verb = kwargs['verbose'])
+      x = pyamg.solve(A, b,tol= kwargs['rtol'], verb = False)
 
     elif solver == Solvers.DPCG:
       dsolver = kwargs['dsolver']

@@ -206,7 +206,7 @@ class DeflationSolver:
 			print('Invalid assignment of nodes to groups. Technical bug.')
 			return False
 
-		print("Number of deflation groups: ", self.ws_nGroups)
+		#print("Number of deflation groups: ", self.ws_nGroups)
 		return True
 
 	def create_deflation_groups_connectivity(self, meshData, nGroupsDesired: int):

@@ -109,7 +109,7 @@ def getStructuralTOProblem(to_problem: StructuralTOExamples, **kwargs):
         to_params.XSymmetry = True 
         to_params.ExtrudeZ = True
         to_params.nDOFDesired = 60000
-        to_params.DesiredVolFraction = 0.25
+        to_params.DesiredVolFraction = 0.5
     elif to_problem == StructuralTOExamples.LBracketTopLoad:
         structural_problem = StructuralExamples.LBracket
         kwargs['topload'] = 1.5e4
@@ -205,7 +205,7 @@ def getStructuralTOProblem(to_problem: StructuralTOExamples, **kwargs):
     else:
         raise ValueError(f"Unknown problem: {to_problem}")
     
-    mesh, mat_prop, bc, elem_body_force = getStructuralProblem(structural_problem,nDOFDesired = to_params.nDOFDesired, **kwargs)
+    mesh, mat_prop, bc, elem_body_force = getStructuralProblem(structural_problem, nDOFDesired = to_params.nDOFDesired, **kwargs)
 
     # Add  elements to keep
     to_params.ElemsToKeep  = None # default value

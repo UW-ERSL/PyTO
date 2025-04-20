@@ -1,20 +1,18 @@
 from topopt_common import *
-
 from topopt_density_mma import topopt_mma
 from topopt_density_oc import topopt_optimality_criteria	
 from topopt_pareto import topopt_pareto
 from topopt_levelset import topopt_levelset	
+from topopt_benchmarks import *
 import glob
 
-def runTOTests(optimizationMethod):
-	
-
+def runTOMethodOnBenchmarks(optimizationMethod):
 	# Create a list to store results
 	results_list = []
 	dsolver = deflation.DeflationSolver()
 
 
-	benchmarks_2D_problems = [StructuralTOExamples.Mitchell_1, StructuralTOExamples.Mitchell_2,
+	benchmarks_2_5D_problems = [StructuralTOExamples.Mitchell_1, StructuralTOExamples.Mitchell_2,
 						StructuralTOExamples.Mitchell_3, 
 						StructuralTOExamples.CantileverTipLoad, StructuralTOExamples.CantileverMidLoad,
 						StructuralTOExamples.MBBB,
@@ -23,19 +21,22 @@ def runTOTests(optimizationMethod):
 						StructuralTOExamples.DistributedLoad,
 						StructuralTOExamples.TorquePlate]
 	
+	benchmarks_bodyforce_problems = [StructuralTOExamples.GravityPlate,
+						StructuralTOExamples.CentrifugalPlate]
+	
 	benchmarks_3D_problems = [StructuralTOExamples.EdgeCantilever, 
 						StructuralTOExamples.ThreeHoleBracket, 
 						 StructuralTOExamples.Multiload,	
 						StructuralTOExamples.KnuckleAssembly, 
 						StructuralTOExamples.Table]
 	
-	for to_problem in benchmarks_2D_problems:
+	for to_problem in benchmarks_2_5D_problems:
 		print("-" * 50)
 		print(f"Running {to_problem.name} using {optimizationMethod.name} method")
 		print("-" * 50)
-
+		print_progress = False
 		mesh, mat_prop, bc,elem_body_force, to_params = getStructuralTOProblem(to_problem)
-
+		startTime = time.time()
 		if (to_params.nDOFDesired < 100000):#  PARDISO 
 			print("Solver: Pardiso")
 			solver = lin_solv.Solvers.PARDISO
@@ -55,16 +56,16 @@ def runTOTests(optimizationMethod):
 					dsolver = dsolver,
 					rtol = 1e-8,
 					elem_body_force = elem_body_force)
-		startTime = time.time()
+		
 		if optimizationMethod == TO_METHODS.DENSITYMMA:
 			u, history,success,errorMsg,nFEAs = topopt_mma(fe_solver = fe_solver,
-									to_params = to_params)
+									to_params = to_params,print_progress = print_progress)
 		elif optimizationMethod == TO_METHODS.DENSITYOC:
 			u, history, success,errorMsg,nFEAs = topopt_optimality_criteria(fe_solver = fe_solver,
-											to_params = to_params)
+											to_params = to_params,print_progress = print_progress)
 		elif optimizationMethod == TO_METHODS.PARETO:
 			u, history, success,errorMsg,nFEAs = topopt_pareto(fe_solver = fe_solver,
-													to_params = to_params)
+													to_params = to_params,print_progress = print_progress)
 		elif optimizationMethod == TO_METHODS.LEVELSET:
 			u, history, success,errorMsg,nFEAs = topopt_levelset(fe_solver = fe_solver,
 													to_params = to_params)
@@ -225,13 +226,30 @@ def combine_results():
 	plt.savefig(f"{results_dir}/fea_comparison.png", dpi=300, bbox_inches='tight')
 	plt.close()
 
+	# Create and plot normalized volume fraction summary
+	volume_data = {}
+	for method, df in dataframes.items():
+		volume_data[method] = [float(vol) for vol in df['volume']]
+	
+	volume_df = pd.DataFrame(volume_data, index=problems)
+	
+	plt.figure(figsize=(10, 6))
+	volume_df.plot(kind='bar', width=0.8)
+	plt.title('Volume Fraction', fontsize=12, fontweight='bold')
+	plt.ylabel('Volume Fraction', fontsize=10)
+	plt.xticks(rotation=45, fontsize=8, ha='right')
+	plt.legend(title='Method', fontsize=8, bbox_to_anchor=(1.05, 1), loc='upper left')
+	plt.grid(True, alpha=0.3)
+	plt.tight_layout()
+	plt.savefig(f"{results_dir}/volume_comparison.png", dpi=300, bbox_inches='tight')
+	plt.close()
+
 if __name__ == "__main__":    
 	jax.config.update("jax_enable_x64", True)
-	from topopt_benchmarks import *
+	
 	optimizationMethods = [TO_METHODS.DENSITYMMA, TO_METHODS.DENSITYOC, TO_METHODS.PARETO]
-	optimizationMethods = [TO_METHODS.PARETO]
 	for optimizationMethod in optimizationMethods:
-		runTOTests(optimizationMethod)
+		runTOMethodOnBenchmarks(optimizationMethod)
 		print(f"Finished {optimizationMethod.name} tests.")
 		print("-" * 50)
 		print("\n")

@@ -1,6 +1,4 @@
 # %%
-import itertools
-import yaml # pip install pyyaml
 import time
 import jax # pip install jax jaxlib
 import numpy as np # pip install numpy
@@ -8,103 +6,107 @@ import matplotlib.pyplot as plt # pip install matplotlib
 import struct_fea as fea
 import deflation
 import linear_solvers as lin_solv
-import topopt_common as topopt_common
 import os
-import plots
+from topopt_density_mma import topopt_mma
+from topopt_density_oc import topopt_optimality_criteria	
+from topopt_pareto import topopt_pareto
 from examples_structural import *
+from topopt_common import *
+from topopt_benchmarks import *
+import itertools
+
 jax.config.update("jax_enable_x64", True)
 dsolver = deflation.DeflationSolver()
 
 script_dir = os.path.dirname(os.path.abspath(__file__))
-settings_path = os.path.join(script_dir, 'settings.yaml')
-with open(settings_path, 'r') as file:
-  settings = yaml.safe_load(file)
+to_params = TOParams()
+kwargs=	{}
+structural_problem = StructuralExamples.DistributedLoad
+kwargs['topload'] = 1.5e4
+kwargs['midload'] = 0
+to_params.ExtrudeZ = True
+to_params.nDOFDesired = 25000
+to_params.DesiredVolFraction = 0.5
 
-cfg_mat = settings['MATERIAL']
-cfg_opt = settings['OPTIMIZATION']
-cfg_defl = settings['DEFLATION']
 
-# Load fea and topopt routines
-def run_fea(fe_solver: fea.StructFEA,
-						plot: bool = True,
-						verbose: bool = True):
+linearSolvers = [lin_solv.Solvers.CG, lin_solv.Solvers.PARDISO, lin_solv.Solvers.DPCG]
 
-	nDOF = 3*fe_solver.mesh.num_nodes
+optimizationMethod = TO_METHODS.PARETO
+dofs = [1000,5000,10000,25000,50000,100000,250000,500000,1e6,1.5e6,2e6,3e6]
+# Set the time limit
+timeLimit = 60*5 # seconds
+dofList = []
+solverTime = dict(zip(linearSolvers, [None]*len(linearSolvers)))
+for linearSolver in linearSolvers:
+	solverTime[linearSolver] = []
 
-	startTime = time.time()
-	youngs_modulus = np.ones((fe_solver.mesh.num_elems,)) * fe_solver.mat_prop.youngs_modulus
-	u = np.asarray(fe_solver.solve(elem_youngs_modulus= youngs_modulus))
-	delta = np.sqrt(u[0::3]**2 +  u[1::3]**2 +  u[2::3]**2)
-	deltaMax = np.max(delta)
-	nDOF = 3*fe_solver.mesh.num_nodes
+continueMeshing = True # set to false to skip to solving the FEA problems
+dsolver = deflation.DeflationSolver()
+title = f"{structural_problem.name} - {optimizationMethod.name}"
+print_progress = False
+for dofDesired in dofs:
+	print("    ")
+	if (not continueMeshing):
+		break
+	print('**************************')
+	print("dofDesired: ", dofDesired)
+	mesh, mat_prop, bc,elem_body_force = getStructuralProblem(structural_problem,nDOFDesired = dofDesired)
+	dofActual = 3 * mesh.num_nodes
+	print("dofActual: ",dofActual)
+	dofList.append(dofActual)
+	continueMeshing = False
+	
+	for linearSolver in linearSolvers:
+		print('-----------------------')
+		print(linearSolver)
+		# assuming increasing time with increasing DOF, skip if previous time was too long
+		if len(solverTime[linearSolver]) > 0 and solverTime[linearSolver][-1] > timeLimit: 
+			print( ' ... skipping')
+			continue
+		continueMeshing = True
+		startTime = time.time()
+		if (linearSolver == lin_solv.Solvers.DPCG):
+			nGroups =  min(dsolver.maxGroups,max(dsolver.minGroups,round(3*mesh.num_nodes/dsolver.dofPerGroup)))
+			dsolver.create_deflation_groups(mesh, nGroups)
+			dsolver.create_delfation_matrix(mesh)
+			dsolver.W = dsolver.W[bc.free_dofs, :]
 
-	if verbose:
-		print("nDof: ", nDOF)
-		print('-----------------------------')
-		print('Solver: ', fe_solver.solver.name)
-		print("FEA time: ", time.time() - startTime)
-		print('Max displacement: ', deltaMax)
-		print('-----------------------------')
-	if plot:
-		plots.plotMesh(fe_solver.mesh, fe_solver.bc, title=f'Cantilever; dof = {nDOF}')
-		plots.plotMesh(fe_solver.mesh, fe_solver.bc, u,
-									title=f'Max deformation: {deltaMax:.3e}')
+		fe_solver = fea.StructFEA(mesh = mesh,
+								mat_prop = mat_prop,
+								bc = bc,
+								solver = linearSolver,
+								dsolver = dsolver,
+								rtol = 1e-8,
+								verbose = False)
+		nDOF = 3*fe_solver.mesh.num_nodes
+		if optimizationMethod == TO_METHODS.DENSITYMMA:
+			topopt_mma(fe_solver = fe_solver,to_params = to_params,print_progress = print_progress)
+		elif optimizationMethod == TO_METHODS.DENSITYOC:
+			topopt_optimality_criteria(fe_solver = fe_solver,
+										to_params = to_params,print_progress = print_progress)
+		elif optimizationMethod == TO_METHODS.PARETO:
+			topopt_pareto(fe_solver = fe_solver,to_params = to_params,print_progress = print_progress)
 
-def run_topopt(fe_solver: fea.StructFEA,
-							volfrac: float,
-							optimizationMethod = topopt_common.Optimizers):
+		totalTime = time.time() - startTime
+		
+		print('Time: {:.2f}'.format(totalTime))
+		solverTime[linearSolver].append(totalTime)
+		
+marker = itertools.cycle(('dk', '+b','xm', '*g', 'or')) 
+colors = itertools.cycle(('k', 'b','m', 'g', 'r')) 
+for linearSolver in linearSolvers:
+	timing = solverTime[linearSolver]
+	plt.loglog(dofList[0:len(timing)],timing,next(marker))
+plt.legend(linearSolvers,loc = 'upper left')
 
-	print('Solver: ', fe_solver.solver.name)
-	print("nDof: ", 3*fe_solver.mesh.num_nodes)
-	print("optimizationMethod: ", optimizationMethod.name)
+for linearSolver in linearSolvers:
+	timing = solverTime[linearSolver]
+	plt.loglog(dofList[0:len(timing)],timing,next(colors))
 
-	if optimizationMethod == topopt_common.Optimizers.MMA:
-		u, history = topopt_common.topopt_mma(fe_solver = fe_solver,
-										maxMMAIterations = cfg_opt['num_iter'],
-										volfrac = volfrac
-										)
-		J = fe_solver.bc.force.T @ u
-		title = f'MMA: vol: {volfrac}, J: {J:.2e}'
-
-	elif optimizationMethod == topopt_common.Optimizers.OC:
-		u, history = topopt_common.topopt_optimality_criteria(fe_solver = fe_solver,
-														maxIterations= cfg_opt['num_iter'],
-														volfrac = volfrac
-														)
-		J = fe_solver.bc.force.T @ u
-		title = f'OC: vol: {volfrac}, J: {J:.2e}'
-
-	elif optimizationMethod == topopt_common.Optimizers.PARETO:
-		u, history = topopt_common.topopt_pareto(fe_solver = fe_solver,
-										desiredVolFrac =  volfrac)
-		J = fe_solver.bc.force.T @ u
-		title = f'Pareto: vol: {volfrac}, J: {J:.3e}'
-
-	plots.plotMesh(fe_solver.mesh, fe_solver.bc, u, title = title)
-	plots.plotIsocontour(fe_solver.mesh, u, title = title)
-
-	for key in history:
-		plt.plot(history[key], label=key)
-		plt.xlabel('iter')
-		plt.ylabel(key)
-		plt.show()
-
-problem = StructuralExamples.EdgeCantilever
-mesh, mat_prop, bc,elem_body_force,symmetry = getStructuralProblem(problem,nDOFDesired = 10000)
-num_deflation_groups =  cfg_defl['num_groups']
-timeStart = time.time()
-dsolver.create_deflation_groups(mesh,nGroupsDesired=num_deflation_groups)
-dsolver.create_delfation_matrix(mesh)
-dsolver.W = dsolver.W[bc.free_dofs, :]
-print('Deflation matrix time: ', time.time() - timeStart)
-
-fe_solver = fea.StructFEA(mesh = mesh,
-                          mat_prop = mat_prop,
-                          bc = bc,
-                          solver = lin_solv.Solvers.DPCG,
-                          dsolver = dsolver,
-                          rtol = 1e-8,
-                          verbose = False,plot = False)
-
-run_topopt(fe_solver, volfrac=0.5, optimizationMethod = topopt_common.Optimizers.PARETO)
+plt.axhline(y=timeLimit, color='black', linestyle=':', label='Time limit')
+plt.title(title)
+plt.xlabel('DOF')
+plt.ylabel('Time (secs)')
+plt.grid(True)
+plt.show()
 

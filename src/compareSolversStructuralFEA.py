@@ -66,7 +66,7 @@ for dofDesired in dofs:
 	print("dofActual: ",dofActual)
 	dofList.append(dofActual)
 	continueMeshing = False
-	title = f"{problem.name} - {dofActual} DOF"
+	title = f"{problem.name}"
 	for linearSolver in linearSolvers:
 		# assuming increasing time with increasing DOF, skip if previous time was too long
 		if len(solverTime[linearSolver]) > 0 and solverTime[linearSolver][-1] > timeLimit: 

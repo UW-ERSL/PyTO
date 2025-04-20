@@ -12,6 +12,7 @@ def topopt_optimality_criteria(
 							move_tol: float = 0.025,
 							rel_conv_tol: float = 1.e-3,
 							directLagrangeMethod: bool = False,
+							print_progress: bool = True,
 							plot_progress: bool = False,
 							debug: bool = False,
 							) -> tuple[np.ndarray, dict]:
@@ -154,7 +155,8 @@ def topopt_optimality_criteria(
 		# Estimate the percentage of grey elements
 		grey_elements = np.sum((x > 0.05) & (x < 0.95))
 		fraction_grey = (grey_elements / num_elems) 
-		print(f"it.: {iter+1:d}, obj.: {obj:.5g}, "
+		if (print_progress):
+			print(f"it.: {iter+1:d}, obj.: {obj:.5g}, "
 				  	f"vol.: {np.mean(xPhys):.3g}, grey: {fraction_grey:.3f}")
 		if np.isnan(obj):
 			print("Objective function became NaN. Exiting optimization.")
@@ -173,8 +175,11 @@ def topopt_optimality_criteria(
 		print(errorMsg)
 		success = False
 	totalTime = time.time() - tStart
-	# extract binary topology
-	x = np.where(x < 0.5, 0.0, 1.0)
+	# extract binary topology while preserving volume fraction
+	target_vf = to_params.DesiredVolFraction
+	x_sorted = np.sort(x)
+	threshold = x_sorted[int((1-target_vf)*len(x))]
+	x = np.where(x < threshold, 0.0, 1.0)
 	volfrac = np.mean(x)
 	fe_solver.mesh.setPseudoDensity(x)
 	obj,u = compliance(x, fe_solver, material_model_dict)

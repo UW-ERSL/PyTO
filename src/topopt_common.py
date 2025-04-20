@@ -125,7 +125,6 @@ def compliance(x: jnp.ndarray,
 
 def createFilters(fe_solver: sfea.StructFEA,to_params):
 	# Create  filters
-	print("Computing filters...")
 	H, Hs = createSmoothingFilter(fe_solver.mesh, rel_filter_radius=to_params.RelativeFilterRadius)
 	# Accumulate all other filters
 	if to_params.XSymmetry:

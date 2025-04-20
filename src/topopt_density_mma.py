@@ -10,6 +10,7 @@ def topopt_mma(fe_solver: sfea.StructFEA,
 							 kkt_tol: float = 1.e-6,
 							 move_tol: float = 0.025,
 							 rel_conv_tol: float = 1.e-3,
+							 print_progress: bool = True,
 							plot_progress: bool = False,
 							 grey_tol: float = 0.2,
 							 debug: bool = False,
@@ -178,7 +179,8 @@ def topopt_mma(fe_solver: sfea.StructFEA,
 		# Estimate the percentage of grey elements
 		grey_elements = np.sum((x > 0.05) & (x < 0.95))
 		fraction_grey = (grey_elements / num_elems) 
-		print(f"it.: {mma_state.epoch}, obj.: {obj[0]:.4g}, vf: {vf:.3f}, change: {change: 0.3f}, grey: {fraction_grey:.3f}")
+		if (print_progress):
+			print(f"it.: {mma_state.epoch}, obj.: {obj[0]:.4g}, vf: {vf:.3f}, change: {change: 0.3f}, grey: {fraction_grey:.3f}")
 		history['compliance'].append(obj[0])
 		history['volume'].append(np.mean(x))
 		history['change'].append(change)
@@ -203,8 +205,11 @@ def topopt_mma(fe_solver: sfea.StructFEA,
 		errorMsg = "Maximum iterations reached."
 		success = False
 	
-	# extract binary topology
-	x = np.where(x < 0.5, 0.0, 1.0)
+	# Find threshold that preserves volume fraction
+	target_vf = to_params.DesiredVolFraction
+	x_sorted = np.sort(x)
+	threshold = x_sorted[int((1-target_vf)*len(x))]
+	x = np.where(x < threshold, 0.0, 1.0)
 	volfrac = np.mean(x)
 	fe_solver.mesh.setPseudoDensity(x)
 	meshComponents = fe_solver.mesh.find_connected_components()

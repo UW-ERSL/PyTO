@@ -9,6 +9,7 @@ def topopt_pareto(fe_solver: sfea.StructFEA,
 							min_local_iters: int = 2,
 							max_local_iters: int = 5,
 							xVoid: float = 0,
+							print_progress: bool = True,
 							plot_progress: bool = False,
 							debug: bool = False
 							)-> tuple[np.ndarray, dict]:
@@ -43,9 +44,11 @@ def topopt_pareto(fe_solver: sfea.StructFEA,
 	volfrac = 1.0
 	
 	history = {'compliance': [], 'volume': []}
+	if (print_progress):
+		print("Computing Filters ...")
 	[H,Hs] = createFilters(fe_solver, to_params)
 
-	print("Computing element with forces ...")
+	
 	elemsWithForces = find_elements_with_forces(fe_solver.mesh, fe_solver.bc.force)
 
 	if (fe_solver.elem_body_force is not None):
@@ -58,7 +61,6 @@ def topopt_pareto(fe_solver: sfea.StructFEA,
 	else:
 		nodal_body_force = None
 
-	print("Initial FEA...")
 	
 	u = np.asarray(fe_solver.solve(x))
 	nFEAs = 1
@@ -83,8 +85,8 @@ def topopt_pareto(fe_solver: sfea.StructFEA,
 		T[to_params.ElemsToKeep] = np.max(T)
 	T = (H * T) / Hs
 
-
-	print(f"vf={history['volume'][-1]:.3f}, J={history['compliance'][-1]:.3g}, #FEA={totalIter:2d}")
+	if (print_progress):
+		print(f"vf={history['volume'][-1]:.3f}, J={history['compliance'][-1]:.3g}, #FEA={totalIter:2d}")
 	vol_decr = vol_decr_max
 	
 	success = True
@@ -195,7 +197,8 @@ def topopt_pareto(fe_solver: sfea.StructFEA,
 			history['volume'].append(volfrac)
 			scale = history['compliance'][-1] / history['compliance'][0]
 			vol_decr = max(vol_decr_min,min(vol_decr,vol_decr_max/scale)) # Reduce volume increment for steep increase in compliance
-			print(f"vf={history['volume'][-1]:.3f}, J={history['compliance'][-1]:.3g}, #FEA={nFEAs:2d}")
+			if (print_progress):
+				print(f"vf={history['volume'][-1]:.3f}, J={history['compliance'][-1]:.3g}, #FEA={nFEAs:2d}")
 			fe_solver.mesh.setPseudoDensity(x.flatten())
 	totalTime = time.time() - tStart
 
@@ -209,10 +212,10 @@ if __name__ == "__main__":
 	from topopt_benchmarks import *
 	
 	print("-" * 50)
-	to_problem = StructuralTOExamples.EdgeCantilever # Choose the TO problem
+	to_problem = StructuralTOExamples.DistributedLoad # Choose the TO problem
 	print(f"Running {to_problem.name}...") 
 	print("-" * 50)
-	solver = lin_solv.Solvers.DPCG # # Choose solver. Typically PARDISO, but DPCG for DOF > 200,000
+	solver = lin_solv.Solvers.PARDISO # # Choose solver. Typically PARDISO, but DPCG for DOF > 200,000
 	debug = False
 
 	# Get the structural problem
