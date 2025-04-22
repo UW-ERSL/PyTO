@@ -33,12 +33,12 @@ import time
 import jax # pip install jax jaxlib
 import numpy as np # pip install numpy
 import matplotlib.pyplot as plt # pip install matplotlib
-import struct_fea as fea
+import hex_structural_fea as fea
 import deflation
 import linear_solvers as lin_solv
 import topopt_common as topopt_common
 import os
-from examples_structural import *
+from hex_structural_examples import *
 jax.config.update("jax_enable_x64", True)
 
 

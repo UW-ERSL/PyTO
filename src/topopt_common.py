@@ -4,15 +4,15 @@ import enum
 import numpy as np
 import jax
 import jax.numpy as jnp
-import element_stiffness as elem_stiff
-import mesher
-import struct_fea as sfea
+import hex_element_stiffness as elem_stiff
+import hex_mesher
+import hex_structural_fea as sfea
 import mma
 import deflation
-from to_filters import *
+from topopt_filters import *
 import time
 import matplotlib.pyplot as plt
-import struct_fea as fea
+import hex_structural_fea as fea
 import linear_solvers as lin_solv
 import time
 import matplotlib.pyplot as plt
@@ -54,7 +54,7 @@ class TOParams: # These are the default parameters
     AMBuildConstraint = False
     ElemsToKeep = None
 
-def find_elements_with_forces(mesh: mesher.Mesher, force) -> np.ndarray:
+def find_elements_with_forces(mesh: hex_mesher.Mesher, force) -> np.ndarray:
 	"""Find all elements that have nodes on which force has been applied.
 	
 	Args:

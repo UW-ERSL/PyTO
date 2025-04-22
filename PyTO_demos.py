@@ -14,15 +14,15 @@ import matplotlib.pyplot as plt
 
 # PyTO files
 sys.path.append('./src') #assumes PyTO src files are in this directory
-from STLGeom import STLGeom
-from mesher import Mesher
+from stl_reader import STLGeom
+from hex_mesher import Mesher
 from linear_solvers import Solvers
 from deflation import DeflationSolver
-from struct_fea import StructFEA
-from modal_fea import ModalFEA
+from hex_structural_fea import StructFEA
+from hex_modal_fea import ModalFEA
 from thermal_fea import ThermalFEA
-from examples_structural import StructuralExamples, getStructuralProblem
-from examples_thermal import ThermalExamples, getThermalProblem
+from hex_structural_examples import StructuralExamples, getStructuralProblem
+from hex_thermal_examples import ThermalExamples, getThermalProblem
 from topopt_benchmarks import StructuralTOExamples, getStructuralTOProblem
 from topopt_density_mma import topopt_mma
 from topopt_pareto import topopt_pareto

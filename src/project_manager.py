@@ -11,11 +11,11 @@ from glob import glob
 import traceback 
 import scipy.sparse as scipy_sparse
 import linear_solvers as lin_solv
-import struct_fea as fea
+import hex_structural_fea as fea
 import mat_lib
 import bound_cond
-from STLGeom import STLGeom
-from mesher import Mesher
+from stl_reader import STLGeom
+from hex_mesher import Mesher
 import plots
 import thermal_fea
 

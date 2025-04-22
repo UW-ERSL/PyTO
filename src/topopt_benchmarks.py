@@ -1,6 +1,6 @@
 import enum
-from examples_structural import *
-import struct_fea as sfea
+from hex_structural_examples import *
+import hex_structural_fea as sfea
 from topopt_common import TOParams
 
 class StructuralTOExamples(enum.Enum):

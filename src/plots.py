@@ -5,11 +5,11 @@ import pyvista as pv
 import matplotlib.pyplot as plt
 
 import deflation
-import mesher
+import hex_mesher
 
 
 
-def plotMesh(mesh: mesher.Mesher,
+def plotMesh(mesh: hex_mesher.Mesher,
              bc = None,
              u = None,
              uLimits = None,
@@ -229,7 +229,7 @@ def plotMesh(mesh: mesher.Mesher,
   
   return plotter
 
-def plotElementField(mesh: mesher.Mesher,
+def plotElementField(mesh: hex_mesher.Mesher,
             field,
             cmap='jet',
             show_edges=True,
@@ -329,7 +329,7 @@ def plotElementField(mesh: mesher.Mesher,
 
     return plotter
 
-def plotIsocontour(mesh: mesher.Mesher,
+def plotIsocontour(mesh: hex_mesher.Mesher,
                    u=None,
                    Binarization = False,
                    isovalue=0.5,
@@ -490,7 +490,7 @@ def plotIsocontour(mesh: mesher.Mesher,
 
 
 def plot_deflation_groups(deflation: deflation.DeflationSolver,
-                          mesh: mesher.Mesher):
+                          mesh: hex_mesher.Mesher):
   # Create vertices array
   vertices = np.zeros((mesh.num_nodes,3))
   vertices = mesh.origin + mesh.elem_size * mesh.node_indices[:,:3]

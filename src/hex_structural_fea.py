@@ -6,11 +6,11 @@ import jax
 import jax.numpy as jnp
 import jax.experimental.sparse as jax_sprs
 import linear_solvers as lin_sol
-import element_stiffness as elem_stiff
+import hex_element_stiffness as elem_stiff
 import mat_lib
 import bound_cond
 
-import struct_fea as fea
+import hex_structural_fea as fea
 import linear_solvers as lin_solv
 import mat_lib
 import os
@@ -590,7 +590,7 @@ class StructFEA:
 #################################################################
 if __name__ == "__main__":    
   jax.config.update("jax_enable_x64", True)
-  from examples_structural import StructuralExamples,getStructuralProblem
+  from hex_structural_examples import StructuralExamples,getStructuralProblem
 
 
   problem = StructuralExamples.TorsionBar

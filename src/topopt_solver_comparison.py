@@ -3,14 +3,14 @@ import time
 import jax # pip install jax jaxlib
 import numpy as np # pip install numpy
 import matplotlib.pyplot as plt # pip install matplotlib
-import struct_fea as fea
+import hex_structural_fea as fea
 import deflation
 import linear_solvers as lin_solv
 import os
 from topopt_density_mma import topopt_mma
 from topopt_density_oc import topopt_optimality_criteria	
 from topopt_pareto import topopt_pareto
-from examples_structural import *
+from hex_structural_examples import *
 from topopt_common import *
 from topopt_benchmarks import *
 import itertools

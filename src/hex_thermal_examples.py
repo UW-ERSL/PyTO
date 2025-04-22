@@ -1,7 +1,7 @@
 import numpy as np
 import mat_lib
 import bound_cond
-import mesher
+import hex_mesher
 import mat_lib
 import os
 import enum
@@ -69,7 +69,7 @@ def createThickPlateThermalProblem(nDOFDesired: int = 10000,thermal_conductivity
 	# Read the STL model, create a mesh of desired size, and a structural problem is posed on it.
     stl_file = os.path.join(script_dir, '../Models/ThickPlate/ThickPlate.STL')
     nElemsDesired = nDOFDesired	# estimate
-    mesh = mesher.Mesher()
+    mesh = hex_mesher.Mesher()
 	
     mesh.createMeshFromSTLFile(stl_file, nElemsDesired=nElemsDesired)
     
@@ -123,7 +123,7 @@ def createAnnularPlateThermalProblem(nDOFDesired: int = 10000,thermal_conductivi
 	# Read the STL model, create a mesh of desired size, and a structural problem is posed on it.
     stl_file = os.path.join(script_dir, '../Models/CircularPlateHole/CircularPlateHole.STL')
     nElemsDesired = nDOFDesired	# estimate
-    mesh = mesher.Mesher()
+    mesh = hex_mesher.Mesher()
 	
     mesh.createMeshFromSTLFile(stl_file, nElemsDesired=nElemsDesired)
     
@@ -180,7 +180,7 @@ def createLBracketThermalProblem(nDOFDesired: int = 10000,thermal_conductivity =
 	# Read the STL model, create a mesh of desired size, and a structural problem is posed on it.
     stl_file = os.path.join(script_dir, '../Models/LBracket/LBracket.STL')
     nElemsDesired = nDOFDesired	# estimate
-    mesh = mesher.Mesher()
+    mesh = hex_mesher.Mesher()
 	
     mesh.createMeshFromSTLFile(stl_file, nElemsDesired=nElemsDesired)
 
@@ -213,7 +213,7 @@ def createBliskWithBladeProblem(nDOFDesired: int = 10000,thermal_conductivity = 
   stl_file = os.path.join(script_dir, '../Models/BliskModel/BliskSectionWithBlade.STL')
 
   nElemsDesired = nDOFDesired    # estimate
-  mesh = mesher.Mesher()
+  mesh = hex_mesher.Mesher()
 
   mesh.createMeshFromSTLFile(stl_file, nElemsDesired=nElemsDesired)
   mesh.createEdofMatThermal()
@@ -251,7 +251,7 @@ def createMoranBenchMark(nDOFDesired: int = 10000,T0 = 23):
 	nelx = round(alpha*L[0])
 	nely = round(alpha*L[1])
 	nelz = round(alpha*L[2])
-	mesh = mesher.Mesher()
+	mesh = hex_mesher.Mesher()
 	mesh.grid_mesh(num_elems = (nelx, nely, nelz),
 								 elem_size = (L[0]/nelx, L[1]/nely, L[2]/nelz))
 	mesh.createEdofMatThermal()

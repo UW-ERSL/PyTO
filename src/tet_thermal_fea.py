@@ -123,9 +123,7 @@ class ThermalFEATet:
     # Create the sparse global stiffness matrix
     self.K = jax_sprs.BCOO((ke_stacked, self.node_idx),
                   shape=(self.bc.num_dofs, self.bc.num_dofs))
-    
-    
-
+  
     
   def solve(self) -> jnp.ndarray:
     """Solve the thermal finite element problem.

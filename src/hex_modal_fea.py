@@ -6,7 +6,7 @@ import jax
 import jax.numpy as jnp
 import jax.experimental.sparse as jax_sprs
 import linear_solvers as lin_sol
-import element_stiffness as elem_stiff
+import hex_element_stiffness as elem_stiff
 import mat_lib
 import bound_cond
 import linear_solvers as lin_solv
@@ -280,9 +280,9 @@ class ModalFEA:
   
 if __name__ == "__main__":    
   jax.config.update("jax_enable_x64", True)
-  import modal_fea as fea
+  import hex_modal_fea as fea
   import plots
-  from examples_structural import *
+  from hex_structural_examples import *
 
 
   problem = StructuralExamples.LBracket

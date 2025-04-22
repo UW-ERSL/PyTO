@@ -6,7 +6,7 @@ import jax
 import jax.numpy as jnp
 import jax.experimental.sparse as jax_sprs
 import linear_solvers as lin_sol
-import element_stiffness as elem_stiff
+import hex_element_stiffness as elem_stiff
 import mat_lib
 import bound_cond
 import os
@@ -240,7 +240,7 @@ if __name__ == "__main__":
     import linear_solvers as lin_solv
     import jax # import jax to enable 64 bit precision
     import time	
-    from examples_thermal import *
+    from hex_thermal_examples import *
     jax.config.update("jax_enable_x64", True)
 
     problem = ThermalExamples.ThickPlate

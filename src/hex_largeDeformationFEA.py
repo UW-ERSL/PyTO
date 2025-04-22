@@ -983,7 +983,7 @@ def get_cnodes_for_symmetryBC() -> np.ndarray:
 if __name__ == "__main__":
     import jax
     jax.config.update("jax_enable_x64", True)
-    from examples_structural import StructuralExamples,getStructuralProblem
+    from hex_structural_examples import StructuralExamples,getStructuralProblem
 
     problem = StructuralExamples.FilletedBeam
     control = ControlType.ForceControl 

@@ -1,7 +1,7 @@
 import numpy as np
 import mat_lib
 import bound_cond
-import mesher
+import hex_mesher
 import mat_lib
 import os
 import enum
@@ -147,7 +147,7 @@ def createTensileBarProblem(nDOFDesired: int = 10000, L: float = [10, 1, 1],youn
   nelx = round(alpha*L[0])
   nely = round(alpha*L[1])
   nelz = round(alpha*L[2])
-  mesh = mesher.Mesher()
+  mesh = hex_mesher.Mesher()
   mesh.grid_mesh(num_elems = (nelx, nely, nelz),
                   elem_size = (L[0]/nelx, L[1]/nely, L[2]/nelz))
   mesh.createEdofMatStructural()
@@ -242,7 +242,7 @@ def createTorsionBarProblem(nDOFDesired: int = 10000, L: float = [1, 0.2, 0.2],
     nelx = round(alpha*L[0])
     nely = round(alpha*L[1])
     nelz = round(alpha*L[2])
-    mesh = mesher.Mesher()
+    mesh = hex_mesher.Mesher()
     mesh.grid_mesh(num_elems = (nelx, nely, nelz),
             elem_size = (L[0]/nelx, L[1]/nely, L[2]/nelz))
     mesh.createEdofMatStructural()
@@ -332,7 +332,7 @@ def createBeamBendingProblem(nDOFDesired: int = 10000, L: float = [10, 1, 1],you
   nelx = round(alpha*L[0])
   nely = round(alpha*L[1])
   nelz = round(alpha*L[2])
-  mesh = mesher.Mesher()
+  mesh = hex_mesher.Mesher()
   mesh.grid_mesh(num_elems = (nelx, nely, nelz),
                   elem_size = (L[0]/nelx, L[1]/nely, L[2]/nelz))
   mesh.createEdofMatStructural()
@@ -428,7 +428,7 @@ def createShearBlockProblem(nDOFDesired: int = 10000, L: float = [1, 1, 1],young
   nelx = round(alpha*L[0])
   nely = round(alpha*L[1])
   nelz = round(alpha*L[2])
-  mesh = mesher.Mesher()
+  mesh = hex_mesher.Mesher()
   mesh.grid_mesh(num_elems = (nelx, nely, nelz),
                   elem_size = (L[0]/nelx, L[1]/nely, L[2]/nelz))
   mesh.createEdofMatStructural()
@@ -498,7 +498,7 @@ S. Ivvan Valdez, et al. Arch Computat Methods Eng (2017) 24:803–839, DOI 10.10
   nelx = round(alpha*L[0])
   nely = round(alpha*L[1])
   nelz = round(alpha*L[2])
-  mesh = mesher.Mesher()
+  mesh = hex_mesher.Mesher()
   mesh.grid_mesh(num_elems = (nelx, nely, nelz),
                   elem_size = (L[0]/nelx, L[1]/nely, L[2]/nelz))
   mesh.createEdofMatStructural()
@@ -578,7 +578,7 @@ def createEdgeCantileverProblem(nDOFDesired: int = 10000, L: float = [0.4, 0.2, 
   nelx = round(alpha*L[0])
   nely = round(alpha*L[1])
   nelz = round(alpha*L[2])
-  mesh = mesher.Mesher()
+  mesh = hex_mesher.Mesher()
   mesh.grid_mesh(num_elems = (nelx, nely, nelz),
                   elem_size = (L[0]/nelx, L[1]/nely, L[2]/nelz))
   mesh.createEdofMatStructural()
@@ -641,7 +641,7 @@ def createMidCantileverProblem(nDOFDesired: int = 10000, L: float = [0.4, 0.2, 0
   nelx = round(alpha*L[0])
   nely = round(alpha*L[1])
   nelz = round(alpha*L[2])
-  mesh = mesher.Mesher()
+  mesh = hex_mesher.Mesher()
   mesh.grid_mesh(num_elems = (nelx, nely, nelz),
                   elem_size = (L[0]/nelx, L[1]/nely, L[2]/nelz))
   mesh.createEdofMatStructural()
@@ -711,7 +711,7 @@ def createCantileverMidLoadProblem(nDOFDesired: int = 10000, L: float = [1, 1, 0
   nelx = round(alpha*L[0])
   nely = round(alpha*L[1])
   nelz = round(alpha*L[2])
-  mesh = mesher.Mesher()
+  mesh = hex_mesher.Mesher()
   mesh.grid_mesh(num_elems = (nelx, nely, nelz),
                   elem_size = (L[0]/nelx, L[1]/nely, L[2]/nelz))
   mesh.createEdofMatStructural()
@@ -781,7 +781,7 @@ def createCantileverTipLoadProblem(nDOFDesired: int = 10000, L: float = [1, 1, 0
   nelx = round(alpha*L[0])
   nely = round(alpha*L[1])
   nelz = round(alpha*L[2])
-  mesh = mesher.Mesher()
+  mesh = hex_mesher.Mesher()
   mesh.grid_mesh(num_elems = (nelx, nely, nelz),
                   elem_size = (L[0]/nelx, L[1]/nely, L[2]/nelz))
   mesh.createEdofMatStructural()
@@ -850,7 +850,7 @@ def createTwoBarProblem(nDOFDesired: int = 10000, L: float = [1, 2, 0.1],
   nelx = round(alpha*L[0])
   nely = round(alpha*L[1])
   nelz = round(alpha*L[2])
-  mesh = mesher.Mesher()
+  mesh = hex_mesher.Mesher()
   mesh.grid_mesh(num_elems = (nelx, nely, nelz),
                   elem_size = (L[0]/nelx, L[1]/nely, L[2]/nelz))
   mesh.createEdofMatStructural()
@@ -904,7 +904,7 @@ def createMBBBProblem(nDOFDesired: int = 10000, L: float = [3, 1, 0.1],youngs_mo
   nelx = round(alpha*L[0])
   nely = round(alpha*L[1])
   nelz = round(alpha*L[2])
-  mesh = mesher.Mesher()
+  mesh = hex_mesher.Mesher()
   mesh.grid_mesh(num_elems = (nelx, nely, nelz),
                   elem_size = (L[0]/nelx, L[1]/nely, L[2]/nelz))
   mesh.createEdofMatStructural()
@@ -949,7 +949,7 @@ def createDistributedLoadProblem(nDOFDesired: int = 10000, L: float = [1.0, 0.5,
   nelx = round(alpha*L[0])
   nely = round(alpha*L[1])
   nelz = round(alpha*L[2])
-  mesh = mesher.Mesher()
+  mesh = hex_mesher.Mesher()
   mesh.grid_mesh(num_elems = (nelx, nely, nelz),
                   elem_size = (L[0]/nelx, L[1]/nely, L[2]/nelz))
   mesh.createEdofMatStructural()
@@ -996,7 +996,7 @@ def createMultiloadProblem(nDOFDesired: int = 10000, L: float = [0.4, 0.2, 0.1],
   nelx = round(alpha*L[0])
   nely = round(alpha*L[1])
   nelz = round(alpha*L[2])
-  mesh = mesher.Mesher()
+  mesh = hex_mesher.Mesher()
   mesh.grid_mesh(num_elems = (nelx, nely, nelz),
                   elem_size = (L[0]/nelx, L[1]/nely, L[2]/nelz))
   mesh.createEdofMatStructural()
@@ -1055,7 +1055,7 @@ def createLBracketProblem(nDOFDesired: int = 10000, youngs_modulus = 2.1e11, poi
   # Read the STL model, create a mesh of desired size, and a structural problem is posed on it.
   stl_file = os.path.join(script_dir, '../Models/LBracket/LBracket.STL')
   nElemsDesired = nDOFDesired/3    # estimate
-  mesh = mesher.Mesher()
+  mesh = hex_mesher.Mesher()
   
   mesh.createMeshFromSTLFile(stl_file, nElemsDesired=nElemsDesired)
   mesh.createEdofMatStructural()
@@ -1129,7 +1129,7 @@ def createGravityBarProblem(nDOFDesired: int = 10000, youngs_modulus = 2.1e11, p
   stl_file = os.path.join(script_dir, '../Models/VerticalBar/VerticalBar.STL')
   print("SolidWorks maximum displacement: 1.7906e-9 m")
   nElemsDesired = nDOFDesired/3    # estimate
-  mesh = mesher.Mesher()
+  mesh = hex_mesher.Mesher()
   
   mesh.createMeshFromSTLFile(stl_file, nElemsDesired=nElemsDesired)
   mesh.createEdofMatStructural()
@@ -1162,7 +1162,7 @@ def createGravityPlateProblem(nDOFDesired: int = 10000, L: float = [1.0, 0.5, 0.
   nelx = round(alpha*L[0])
   nely = round(alpha*L[1])
   nelz = round(alpha*L[2])
-  mesh = mesher.Mesher()
+  mesh = hex_mesher.Mesher()
   mesh.grid_mesh(num_elems = (nelx, nely, nelz),
                   elem_size = (L[0]/nelx, L[1]/nely, L[2]/nelz))
   mesh.createEdofMatStructural()
@@ -1236,7 +1236,7 @@ def createArrowHeadProblem(nDOFDesired: int = 10000, youngs_modulus = 2.1e11, po
   # Read the STL model, create a mesh of desired size, and a structural problem is posed on it.
   stl_file = os.path.join(script_dir, '../Models/ArrowHead/ArrowHead3x3.STL')
   nElemsDesired = nDOFDesired/3    # estimate
-  mesh = mesher.Mesher()
+  mesh = hex_mesher.Mesher()
   
   mesh.createMeshFromSTLFile(stl_file, nElemsDesired=nElemsDesired)
   mesh.createEdofMatStructural()
@@ -1288,7 +1288,7 @@ def createCompliantMechanismProblem(nDOFDesired: int = 10000, youngs_modulus = 2
   # Read the STL model, create a mesh of desired size, and a structural problem is posed on it.
   stl_file = os.path.join(script_dir, '../Models/CompliantMechanism/CompliantMechanism.STL')
   nElemsDesired = nDOFDesired/3    # estimate
-  mesh = mesher.Mesher()
+  mesh = hex_mesher.Mesher()
   
   mesh.createMeshFromSTLFile(stl_file, nElemsDesired=nElemsDesired)
   mesh.createEdofMatStructural()
@@ -1330,7 +1330,7 @@ def createBeamSurfaceLoadProblem(nDOFDesired: int = 20000, L: float = [0.1, 0.01
   nelx = round(alpha*L[0])+1
   nely = round(alpha*L[1])
   nelz = round(alpha*L[2])
-  mesh = mesher.Mesher()
+  mesh = hex_mesher.Mesher()
   mesh.grid_mesh(num_elems = (nelx, nely, nelz),
                   elem_size = (L[0]/nelx, L[1]/nely, L[2]/nelz))
 
@@ -1366,7 +1366,7 @@ def createBeamSurfaceLoadProblem(nDOFDesired: int = 20000, L: float = [0.1, 0.01
 def createFilletedBeamProblem(nDOFDesired=50000, youngs_modulus = 2.1e5, poissons_ratio = 0.3,totalLoad = 1):
   stl_file = os.path.join(script_dir, '../Models/FilletedBeam/FilletedBeam.STL')
 
-  mesh = mesher.Mesher()
+  mesh = hex_mesher.Mesher()
   nElemsDesired = round(nDOFDesired/3)    # estimate
   mesh.createMeshFromSTLFile(stl_file, nElemsDesired=nElemsDesired)
   mesh.createEdofMatStructural()
@@ -1424,7 +1424,7 @@ def createCentrifugalPlateProblem(nDOFDesired: int = 10000, youngs_modulus = 2e1
   stl_file = os.path.join(script_dir, '../Models/CircularPlateHole/CircularPlateHole.STL')
 
   nElemsDesired = nDOFDesired/3    # estimate
-  mesh = mesher.Mesher()
+  mesh = hex_mesher.Mesher()
   
   mesh.createMeshFromSTLFile(stl_file, nElemsDesired=nElemsDesired)
   mesh.createEdofMatStructural()
@@ -1478,7 +1478,7 @@ def createTorquePlateProblem(nDOFDesired: int = 10000, youngs_modulus = 2e11,
   stl_file = os.path.join(script_dir, '../Models/CircularPlateHole/CircularPlateHole.STL')
 
   nElemsDesired = nDOFDesired/3    # estimate
-  mesh = mesher.Mesher()
+  mesh = hex_mesher.Mesher()
   
   mesh.createMeshFromSTLFile(stl_file, nElemsDesired=nElemsDesired)
   mesh.createEdofMatStructural()
@@ -1531,7 +1531,7 @@ def createThreeHoleBracketProblem(nDOFDesired: int = 10000, youngs_modulus = 2e1
   stl_file = os.path.join(script_dir, '../Models/ThreeHoleBracket/ThreeHoleBracket.STL')
 
   nElemsDesired = nDOFDesired/3    # estimate
-  mesh = mesher.Mesher()
+  mesh = hex_mesher.Mesher()
   
   mesh.createMeshFromSTLFile(stl_file, nElemsDesired=nElemsDesired)
   mesh.createEdofMatStructural()
@@ -1591,7 +1591,7 @@ def createBliskQuarterProblem(nDOFDesired: int = 10000, youngs_modulus = 2.1e11,
 
 
   nElemsDesired = nDOFDesired/3    # estimate
-  mesh = mesher.Mesher()
+  mesh = hex_mesher.Mesher()
 
   mesh.createMeshFromSTLFile(stl_file, nElemsDesired=nElemsDesired)
   mesh.createEdofMatStructural()
@@ -1653,7 +1653,7 @@ def createBliskSectionWithBlade(nDOFDesired: int = 10000, youngs_modulus = 2.1e1
 
 
   nElemsDesired = nDOFDesired/3    # estimate
-  mesh = mesher.Mesher()
+  mesh = hex_mesher.Mesher()
 
   mesh.createMeshFromSTLFile(stl_file, nElemsDesired=nElemsDesired)
   mesh.createEdofMatStructural()
@@ -1714,7 +1714,7 @@ def createKnuckleAssemblyProblem(nDOFDesired: int = 10000, youngs_modulus = [2e1
   stl_file = os.path.join(script_dir, '../Models/KnuckleAssembly/KnuckleAssembly.STL')
 
   nElemsDesired = nDOFDesired/3    # estimate
-  mesh = mesher.Mesher()
+  mesh = hex_mesher.Mesher()
   
   mesh.createMeshFromSTLFile(stl_file, nElemsDesired=nElemsDesired)
   mesh.createEdofMatStructural()
@@ -1757,7 +1757,7 @@ def createTableProblem(nDOFDesired: int = 10000, youngs_modulus = 1e7,
   stl_file = os.path.join(script_dir, '../Models/Table/Table.STL')
 
   nElemsDesired = nDOFDesired/3    # estimate
-  mesh = mesher.Mesher()
+  mesh = hex_mesher.Mesher()
   
   mesh.createMeshFromSTLFile(stl_file, nElemsDesired=nElemsDesired)
   mesh.createEdofMatStructural()
@@ -1796,7 +1796,7 @@ def createNoseconeProblem(nDOFDesired: int = 10000, youngs_modulus = 1e7,
   stl_file = os.path.join(script_dir, '../Models/Nosecone/HollowNoseCone.STL')
 
   nElemsDesired = nDOFDesired/3    # estimate
-  mesh = mesher.Mesher()
+  mesh = hex_mesher.Mesher()
   
   mesh.createMeshFromSTLFile(stl_file, nElemsDesired=nElemsDesired)
   mesh.createEdofMatStructural()

@@ -18,9 +18,9 @@ from PyQt5.QtCore import QSize, Qt
 from queue import Queue
 from PyQt5.QtGui import QIcon
 from PyQt5.QtCore import QSize, Qt
-from STLGeom import STLGeom
-from mesher import Mesher
-import struct_fea as fea
+from stl_reader import STLGeom
+from hex_mesher import Mesher
+import hex_structural_fea as fea
 import linear_solvers as lin_solv
 import jax
 import thermal_fea
@@ -30,7 +30,7 @@ import re
 # Enable double precision
 jax.config.update("jax_enable_x64", True)
             
-from examples_structural import *
+from hex_structural_examples import *
 
 '''
 

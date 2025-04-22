@@ -1,5 +1,5 @@
 from topopt_common import *
-from to_filters import imposeZCastFilter
+from topopt_filters import imposeZCastFilter
 
 def topopt_pareto(fe_solver: sfea.StructFEA,
 				  to_params,
