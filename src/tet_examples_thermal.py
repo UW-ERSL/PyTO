@@ -35,7 +35,6 @@ def createThickPlateThermalProblemTet(nDOFDesired: int = 10000,thermal_conductiv
 	
     tetmesh.createTetMeshFromSTLFile(stl_file, nElemsDesired=nElemsDesired)
     
-    tetmesh.createEdofMatThermal()
 
     fixed_nodes = np.where(tetmesh.nodes[:, 0] == np.min(tetmesh.nodes[:, 0]) )[0] # x = xMin plane
     fixed_dofs = np.array([fixed_nodes]).flatten().astype(int)
@@ -81,7 +80,7 @@ def createAnnularPlateThermalProblemTet(nDOFDesired: int = 10000,thermal_conduct
     tetmesh = TetMesher()
 	
     tetmesh.createTetMeshFromSTLFile(stl_file, nElemsDesired=nElemsDesired)
-    tetmesh.createEdofMatThermal()
+
     centerPt = [0,0,0]
     axis = [0,0,1]
     innerRadius = 0.01
@@ -134,7 +133,6 @@ def createLBracketThermalProblemTet(nDOFDesired = 10000,thermal_conductivity = 5
     nElemsDesired = 3*nDOFDesired # estimate
     tetmesh.createTetMeshFromSTLFile(stl_file, nElemsDesired)
     #tetmesh.plot()
-    tetmesh.createEdofMatThermal()
 
     yMax = np.max(tetmesh.nodes[:, 1])
     fixed_nodes = np.where(tetmesh.nodes[:, 1] == yMax )[0] 

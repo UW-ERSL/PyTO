@@ -136,9 +136,21 @@ def createFilters(fe_solver: sfea.StructFEA,to_params):
 	if to_params.ZSymmetry:
 		HZ = createZSymmetryFilter(fe_solver.mesh)
 		H = H*HZ
+	if to_params.XAxisAngularSymmetry > 0:
+		HAAX = createXAngularSymmetryFilter(fe_solver.mesh, to_params.XAxisAngularSymmetry)
+		H = H*HAAX
+	if to_params.YAxisAngularSymmetry > 0:
+		HAAY = createYAngularSymmetryFilter(fe_solver.mesh, to_params.YAxisAngularSymmetry)
+		H = H*HAAY
 	if to_params.ZAxisAngularSymmetry >	0:
 		HAZ = createZAngularSymmetryFilter(fe_solver.mesh, to_params.ZAxisAngularSymmetry)
 		H = H*HAZ
+	if (to_params.ExtrudeY):
+		HEY = createYExtrudeFilter(fe_solver.mesh)
+		H = H*HEY
+	if (to_params.ExtrudeX):
+		HEX = createXExtrudeFilter(fe_solver.mesh)
+		H = H*HEX
 	if (to_params.ExtrudeZ):
 		HEZ = createZExtrudeFilter(fe_solver.mesh)
 		H = H*HEZ

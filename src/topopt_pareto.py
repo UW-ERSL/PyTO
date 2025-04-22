@@ -1,5 +1,5 @@
 from topopt_common import *
-
+from to_filters import imposeZCastFilter
 
 def topopt_pareto(fe_solver: sfea.StructFEA,
 				  to_params,
@@ -173,6 +173,7 @@ def topopt_pareto(fe_solver: sfea.StructFEA,
 				T += 2*T_body
 
 			T = (H * T) / Hs
+			
 			T = ((1-wtDamping)*T + wtDamping*TPrev)  # Damping
 
 			if (elemsWithForces.size > 0):
@@ -213,10 +214,9 @@ if __name__ == "__main__":
 	from topopt_benchmarks import *
 	
 	print("-" * 50)
-	to_problem = StructuralTOExamples.Table # Choose the TO problem
+	to_problem = StructuralTOExamples.EdgeCantilever # Choose the TO problem
 	print(f"Running {to_problem.name}...") 
 	print("-" * 50)
-	
 	
 	debug = False
 
@@ -229,9 +229,9 @@ if __name__ == "__main__":
 		solver = lin_solv.Solvers.PARDISO
 	else:
 		print("Solver: DPCG")
+		solver = lin_solv.Solvers.DPCG
 		# DPCG solver is used for large DOF problems
 		# Create deflation solver object
-		dsolver = deflation.DeflationSolver()
 		nGroups =  min(dsolver.maxGroups,max(dsolver.minGroups,round(3*mesh.num_nodes/dsolver.dofPerGroup)))
 		dsolver.create_deflation_groups(mesh, nGroups)
 		dsolver.create_delfation_matrix(mesh)

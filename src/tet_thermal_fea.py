@@ -4,10 +4,8 @@ import jax
 import jax.numpy as jnp
 import jax.experimental.sparse as jax_sprs
 import linear_solvers as lin_sol
-import element_stiffness as elem_stiff
 import mat_lib
 import bound_cond
-import os
 
 class ThermalFEATet:
   """Linear Thermal Finite Element Analysis using linear tet elements."""
@@ -21,8 +19,12 @@ class ThermalFEATet:
 
     self.mesh, self.mat_prop, self.bc = mesh, mat_prop, bc
     self.solver, self.kwargs = solver, kwargs
+
+    self.createEdofMatThermal()
    
-  
+  def createEdofMatThermal(self):
+        self.edofMat = np.array(self.mesh.elems[:, :4], dtype=int)
+
   def tet4_stiffness_matrix_thermal(self,
           mat_prop: mat_lib.ThermalMaterial,
           xyz_nodes: jnp.ndarray,
@@ -109,12 +111,12 @@ class ThermalFEATet:
     # Initialize the global stiffness matrix in COO format
     data = []
     for i in range(self.mesh.num_elems):
-      ke = self.tet4_stiffness_matrix_thermal(self.mat_prop, self.mesh.nodes[self.mesh.edofMat[i, :]])
+      ke = self.tet4_stiffness_matrix_thermal(self.mat_prop, self.mesh.nodes[self.edofMat[i, :]])
       data.append(ke.flatten())
 
     self.node_idx = jnp.stack((
-              np.kron(self.mesh.edofMat, np.ones((4, 1))).flatten(),
-              np.kron(self.mesh.edofMat, np.ones((1, 4))).flatten())
+              np.kron(self.edofMat, np.ones((4, 1))).flatten(),
+              np.kron(self.edofMat, np.ones((1, 4))).flatten())
               ).T.astype(int)
   
     ke_stacked = jnp.concatenate(data)
@@ -140,6 +142,8 @@ class ThermalFEATet:
                       self.solver,
                       self.bc,
                       **self.kwargs)
+    
+    self.sol = u.copy()
     return u
 
 if __name__ == "__main__":
@@ -154,7 +158,7 @@ if __name__ == "__main__":
     dofs = []
     u_maxs = []
     timing = []
-    example = 1
+    example = 3
     for nDOFDesired in dof_range:
       if example == 1:
         tetmesh, mat_prop, bc = createThickPlateThermalProblemTet(nDOFDesired=nDOFDesired)

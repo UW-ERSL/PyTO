@@ -49,7 +49,7 @@ def find_elements_with_fixedDOF(mesh, bc) -> np.ndarray:
 
 	return np.array(elements_with_fixed_dofs)
 
-def getStructuralTOProblem(to_problem: StructuralTOExamples, **kwargs):
+def getStructuralTOProblem(to_problem: StructuralTOExamples,nDOFDesired = None, **kwargs):
     """Get the structural topology optimization problem based on the specified example.
 
     Args:
@@ -67,7 +67,7 @@ def getStructuralTOProblem(to_problem: StructuralTOExamples, **kwargs):
         kwargs['load2'] = 0
         to_params.Comment = "Benchmark 2.5D"
         to_params.ExtrudeZ = True
-        to_params.nDOFDesired = 25000
+        to_params.nDOFDesired = 25000 if nDOFDesired is None else nDOFDesired
         to_params.DesiredVolFraction = 0.5
     elif to_problem == StructuralTOExamples.Mitchell_2:
         structural_problem = StructuralExamples.Mitchell
@@ -75,7 +75,7 @@ def getStructuralTOProblem(to_problem: StructuralTOExamples, **kwargs):
         kwargs['load2'] = 2.8e4
         to_params.Comment = "Benchmark 2.5D"
         to_params.ExtrudeZ = True
-        to_params.nDOFDesired = 25000
+        to_params.nDOFDesired = 25000 if nDOFDesired is None else nDOFDesired
         to_params.DesiredVolFraction = 0.5
     elif to_problem == StructuralTOExamples.Mitchell_3:
         structural_problem = StructuralExamples.Mitchell
@@ -83,32 +83,32 @@ def getStructuralTOProblem(to_problem: StructuralTOExamples, **kwargs):
         kwargs['load2'] = 1.86e4
         to_params.Comment = "Benchmark 2.5D"
         to_params.ExtrudeZ = True
-        to_params.nDOFDesired = 25000
+        to_params.nDOFDesired = 25000 if nDOFDesired is None else nDOFDesired
         to_params.DesiredVolFraction = 0.5
     elif to_problem == StructuralTOExamples.CantileverTipLoad:
         structural_problem = StructuralExamples.CantileverTipLoad
         to_params.Comment  = "Benchmark 2.5D"
         to_params.ExtrudeZ = True
-        to_params.nDOFDesired = 25000
+        to_params.nDOFDesired = 25000 if nDOFDesired is None else nDOFDesired
         to_params.DesiredVolFraction = 0.5
     elif to_problem == StructuralTOExamples.CantileverMidLoad:
         structural_problem = StructuralExamples.CantileverMidLoad
         to_params.Comment  = "Benchmark 2.5D"
         to_params.YSymmetry = True  # Symmetry about the Y-axis
         to_params.ExtrudeZ = True
-        to_params.nDOFDesired = 25000
+        to_params.nDOFDesired = 25000 if nDOFDesired is None else nDOFDesired
         to_params.DesiredVolFraction = 0.5
     elif to_problem == StructuralTOExamples.MBBB:
         structural_problem = StructuralExamples.MBBB
         to_params.Comment  = "Benchmark 2.5D"
-        to_params.nDOFDesired = 50000
+        to_params.nDOFDesired = 50000 if nDOFDesired is None else nDOFDesired
         to_params.DesiredVolFraction = 0.25
     elif to_problem == StructuralTOExamples.DistributedLoad:
         structural_problem = StructuralExamples.DistributedLoad
         to_params.Comment  = "Benchmark 2.5D"
         to_params.XSymmetry = True 
         to_params.ExtrudeZ = True
-        to_params.nDOFDesired = 60000
+        to_params.nDOFDesired = 60000 if nDOFDesired is None else nDOFDesired
         to_params.DesiredVolFraction = 0.5
     elif to_problem == StructuralTOExamples.LBracketTopLoad:
         structural_problem = StructuralExamples.LBracket
@@ -116,7 +116,7 @@ def getStructuralTOProblem(to_problem: StructuralTOExamples, **kwargs):
         kwargs['midload'] = 0
         to_params.Comment  = "Benchmark 2.5D"
         to_params.ExtrudeZ = True
-        to_params.nDOFDesired = 25000
+        to_params.nDOFDesired = 25000 if nDOFDesired is None else nDOFDesired
         to_params.DesiredVolFraction = 0.5
     elif to_problem == StructuralTOExamples.LBracketMidLoad:
         structural_problem = StructuralExamples.LBracket
@@ -124,33 +124,33 @@ def getStructuralTOProblem(to_problem: StructuralTOExamples, **kwargs):
         kwargs['midload'] = 0
         to_params.Comment  = "Benchmark 2.5D"
         to_params.ExtrudeZ = True
-        to_params.nDOFDesired = 25000
+        to_params.nDOFDesired = 25000 if nDOFDesired is None else nDOFDesired
         to_params.DesiredVolFraction = 0.5
     elif to_problem == StructuralTOExamples.TwoBar:
         structural_problem = StructuralExamples.TwoBar
         to_params.Comment  = "Benchmark 2.5D"
         to_params.ExtrudeZ = True
-        to_params.nDOFDesired = 25000
+        to_params.nDOFDesired = 25000 if nDOFDesired is None else nDOFDesired
         to_params.DesiredVolFraction = 0.25
     elif to_problem == StructuralTOExamples.TorquePlate:
         structural_problem = StructuralExamples.TorquePlate
         to_params.Comment  = "Benchmark 2.5D"
         to_params.ZAxisAngularSymmetry = 6
         to_params.ExtrudeZ = True
-        to_params.nDOFDesired = 40000
+        to_params.nDOFDesired = 40000 if nDOFDesired is None else nDOFDesired
         to_params.DesiredVolFraction = 0.75
     elif to_problem == StructuralTOExamples.EdgeCantilever:
         structural_problem = StructuralExamples.EdgeCantilever
         to_params.Comment = "Benchmark 3D"
         to_params.YSymmetry = True
-        to_params.nDOFDesired = 50000
+        to_params.nDOFDesired = 50000 if nDOFDesired is None else nDOFDesired
         to_params.DesiredVolFraction = 0.50
     elif to_problem == StructuralTOExamples.ThreeHoleBracket:
         structural_problem = StructuralExamples.ThreeHoleBracket
         to_params.Comment  = "Retaining Material"
         to_params.ZSymmetry = True
         to_params.KeepFixedElems = True
-        to_params.nDOFDesired = 40000
+        to_params.nDOFDesired = 40000 if nDOFDesired is None else nDOFDesired
         to_params.DesiredVolFraction = 0.35
     elif to_problem == StructuralTOExamples.Multiload:
         structural_problem = StructuralExamples.Multiload
@@ -163,7 +163,7 @@ def getStructuralTOProblem(to_problem: StructuralTOExamples, **kwargs):
         to_params.Comment  = "Body Force"
         to_params.XSymmetry = True
         to_params.ExactVolumeFraction = True
-        to_params.nDOFDesired = 20000
+        to_params.nDOFDesired = 20000 if nDOFDesired is None else nDOFDesired
         to_params.DesiredVolFraction = 0.25
     elif to_problem == StructuralTOExamples.CentrifugalPlate:
         structural_problem = StructuralExamples.CentrifugalPlate
@@ -171,7 +171,7 @@ def getStructuralTOProblem(to_problem: StructuralTOExamples, **kwargs):
         to_params.ExtrudeZ = True
         to_params.ExactVolumeFraction = True
         to_params.ZAxisAngularSymmetry = 4
-        to_params.nDOFDesired = 50000
+        to_params.nDOFDesired = 50000 if nDOFDesired is None else nDOFDesired
         to_params.DesiredVolFraction = 0.5
         to_params.KeepFixedElems = True  # Keep elements that are fixed in the centrifugal plate example
     elif to_problem == StructuralTOExamples.KnuckleAssembly:
@@ -179,28 +179,28 @@ def getStructuralTOProblem(to_problem: StructuralTOExamples, **kwargs):
         to_params.Comment = "Retaining Components"
         to_params.XSymmetry = True
         to_params.ZSymmetry = True
-        to_params.nDOFDesired = 60000
+        to_params.nDOFDesired = 60000 if nDOFDesired is None else nDOFDesired
         to_params.DesiredVolFraction = 0.5
     elif to_problem == StructuralTOExamples.Table:
         structural_problem = StructuralExamples.Table
         to_params.Comment = "Thin Structure"
         to_params.XSymmetry = True
         to_params.ZSymmetry = True
-        to_params.nDOFDesired = 100000
+        to_params.nDOFDesired = 100000 if nDOFDesired is None else nDOFDesired
         to_params.DesiredVolFraction = 0.1
     elif to_problem == StructuralTOExamples.BliskWithBlade:
         structural_problem = StructuralExamples.BliskWithBlade
         to_params.Comment  = "Large DOF"
         to_params.KeepFixedElems = True
         to_params.RemoveHangingElems = False
-        to_params.nDOFDesired = 100000
+        to_params.nDOFDesired = 100000 if nDOFDesired is None else nDOFDesired
         to_params.DesiredVolFraction = 0.5
     elif to_problem == StructuralTOExamples.NoseCone:
         structural_problem = StructuralExamples.NoseCone
         to_params.Comment  = "Large DOF"
         to_params.KeepFixedElems = True
         to_params.RemoveHangingElems = False
-        to_params.nDOFDesired = 100000
+        to_params.nDOFDesired = 100000 if nDOFDesired is None else nDOFDesired
         to_params.DesiredVolFraction = 0.95
     else:
         raise ValueError(f"Unknown problem: {to_problem}")

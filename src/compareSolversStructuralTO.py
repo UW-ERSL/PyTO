@@ -19,30 +19,22 @@ jax.config.update("jax_enable_x64", True)
 dsolver = deflation.DeflationSolver()
 
 script_dir = os.path.dirname(os.path.abspath(__file__))
-to_params = TOParams()
-kwargs=	{}
-structural_problem = StructuralExamples.DistributedLoad
-kwargs['topload'] = 1.5e4
-kwargs['midload'] = 0
-to_params.ExtrudeZ = True
-to_params.nDOFDesired = 25000
-to_params.DesiredVolFraction = 0.5
 
+to_problem = StructuralTOExamples.EdgeCantilever
+linearSolvers = [lin_solv.Solvers.PYAMG, lin_solv.Solvers.CG, lin_solv.Solvers.PARDISO, lin_solv.Solvers.DPCG]
 
-linearSolvers = [lin_solv.Solvers.CG, lin_solv.Solvers.PARDISO, lin_solv.Solvers.DPCG]
-
-optimizationMethod = TO_METHODS.PARETO
-dofs = [1000,5000,10000,25000,50000,100000,250000,500000,1e6,1.5e6,2e6,3e6]
+optimizationMethod = TO_METHODS.DENSITYMMA
+dofs = [25000,50000,75000,100000,150000,250000,500000,1e6,1.5e6,2e6,3e6]
 # Set the time limit
 timeLimit = 60*5 # seconds
-dofList = []
+dofActualList = []
 solverTime = dict(zip(linearSolvers, [None]*len(linearSolvers)))
 for linearSolver in linearSolvers:
 	solverTime[linearSolver] = []
 
 continueMeshing = True # set to false to skip to solving the FEA problems
 dsolver = deflation.DeflationSolver()
-title = f"{structural_problem.name} - {optimizationMethod.name}"
+title = f"{to_problem.name} - {optimizationMethod.name}"
 print_progress = False
 for dofDesired in dofs:
 	print("    ")
@@ -50,10 +42,10 @@ for dofDesired in dofs:
 		break
 	print('**************************')
 	print("dofDesired: ", dofDesired)
-	mesh, mat_prop, bc,elem_body_force = getStructuralProblem(structural_problem,nDOFDesired = dofDesired)
+	mesh, mat_prop, bc,elem_body_force, to_params = getStructuralTOProblem(to_problem,nDOFDesired = dofDesired)
 	dofActual = 3 * mesh.num_nodes
 	print("dofActual: ",dofActual)
-	dofList.append(dofActual)
+	dofActualList.append(dofActual)
 	continueMeshing = False
 	
 	for linearSolver in linearSolvers:
@@ -96,12 +88,12 @@ marker = itertools.cycle(('dk', '+b','xm', '*g', 'or'))
 colors = itertools.cycle(('k', 'b','m', 'g', 'r')) 
 for linearSolver in linearSolvers:
 	timing = solverTime[linearSolver]
-	plt.loglog(dofList[0:len(timing)],timing,next(marker))
+	plt.loglog(dofActualList[0:len(timing)],timing,next(marker))
 plt.legend(linearSolvers,loc = 'upper left')
 
 for linearSolver in linearSolvers:
 	timing = solverTime[linearSolver]
-	plt.loglog(dofList[0:len(timing)],timing,next(colors))
+	plt.loglog(dofActualList[0:len(timing)],timing,next(colors))
 
 plt.axhline(y=timeLimit, color='black', linestyle=':', label='Time limit')
 plt.title(title)
