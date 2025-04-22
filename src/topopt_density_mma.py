@@ -43,7 +43,8 @@ def topopt_mma(fe_solver: sfea.StructFEA,
 	tStart = time.time()
 	num_elems= fe_solver.mesh.num_elems
 	history = {'compliance': [], 'volume': [], 'change': []}
-	
+	if (print_progress):
+		print("Computing Filters ...")
 	[H,Hs] = createFilters(fe_solver, to_params)
 
 	elemsWithForces = find_elements_with_forces(fe_solver.mesh, fe_solver.bc.force)

@@ -25,12 +25,19 @@ import linear_solvers as lin_solv
 import jax
 import thermal_fea
 import traceback
-import re
-            
-# Enable double precision
+from topopt_density_mma import topopt_mma
+from topopt_density_oc import topopt_optimality_criteria
+from topopt_pareto import topopt_pareto
+from topopt_levelset import topopt_levelset
+from topopt_common import TOParams
+from hex_structural_fea import StructFEA
+from hex_structural_examples import *    
+import linear_solvers as lin_solv
+import jax
+   
+# Enable JAX double precision
 jax.config.update("jax_enable_x64", True)
             
-from hex_structural_examples import *
 
 '''
 
@@ -990,6 +997,35 @@ class MainWindow(QtWidgets.QMainWindow):
         else:
             QtWidgets.QMessageBox.warning(self, "Workflow Error", message)
 
+    def update_optimization_results(self, optimizer_window, u, history, elapsed_time):
+        """Update UI with topology optimization results."""
+        # Update progress bar to 100%
+        if hasattr(optimizer_window, 'progress_bar'):
+            optimizer_window.progress_bar.setValue(100)
+        
+        # Enable the optimizer window buttons again
+        optimizer_window.optimize_button.setEnabled(True)
+        optimizer_window.stop_button.setEnabled(False)
+        optimizer_window.export_button.setEnabled(True)
+        
+        # Update optimization state
+        optimizer_window.optimization_running = False
+        
+        # Display results in the 3D view
+        if hasattr(self, 'stl_geom') and self.stl_geom and hasattr(self.stl_geom, 'mesh'):
+            # Update densities in the mesh
+            self.stl_geom.mesh.densities = u
+            
+            # Display the optimized result
+            optimizer_window.visualization.display_results(
+                fe_solver=self.stl_geom.mesh, 
+                history=history, 
+                elapsed_time=elapsed_time
+            )
+        
+        # Log completion
+        self.message_text.append(f"Topology optimization completed in {elapsed_time:.2f} seconds")
+    
     def open_thermal_topopt_window(self):
         ready, message = self.check_workflow_readiness('topopt')
         if ready:
@@ -4249,6 +4285,8 @@ class AnalysisWindow(QtWidgets.QDialog):
                 self.parent.message_text.append(f"Fixed node indices: {sorted(list(self.parent.fixed_nodes))}")
             else:
                 self.parent.message_text.append("No fixed nodes found")
+
+            self.parent.mesh = self.parent.analysis_mesher
                 
             self.parent.update_button_icon("Analysis", "check")
 
@@ -4962,7 +5000,7 @@ class AnalysisWindow(QtWidgets.QDialog):
             u = np.asarray(fe_solver.solve())
 
             # Compute stresses through post-processing
-            fe_solver.postprocess(u)
+            fe_solver.postprocess()
             von_mises_stress = np.asarray(fe_solver.vonMisesStress)
             max_stress = np.max(von_mises_stress)
             
@@ -5368,15 +5406,13 @@ class TopOptConstraintsWindow(QtWidgets.QDialog):
         self.cyclic_sym_check = QtWidgets.QCheckBox("CyclicSym(Z)")
         self.cyclic_sym_combo = QtWidgets.QComboBox()
         self.cyclic_sym_combo.addItems([
-        "(+)90 deg",
-        "(-)90 deg",
-        "(+)180 deg",
-        "(+)120 deg",
-        "(+)60 deg",
-        "(+)72 deg",
-        "(+)60 deg",
-        "(+)51 deg",
-        "(+)45 deg"
+            "(2) 180 deg",  # 360/2 = 180°
+            "(3) 120 deg",  # 360/3 = 120°
+            "(4) 90 deg",   # 360/4 = 90°
+            "(5) 72 deg",   # 360/5 = 72°
+            "(6) 60 deg",   # 360/6 = 60°
+            "(7) 51 deg",   # 360/7 ≈ 51.4°
+            "(8) 45 deg"    # 360/8 = 45°
         ])
         self.form_layout.addRow(self.cyclic_sym_check, self.cyclic_sym_combo)
         # Then connect the signals:
@@ -5851,74 +5887,52 @@ class TopOptConstraintsWindow(QtWidgets.QDialog):
             xmax, ymax, zmax = np.max(vertices, axis=0)
             bbox = (xmin, xmax, ymin, ymax, zmin, zmax)
         
-        # Calculate dimensions and center of the model
-        model_size = max(bbox[1]-bbox[0], bbox[3]-bbox[2], bbox[5]-bbox[4])
-        center = [(bbox[0] + bbox[1])/2, (bbox[2] + bbox[3])/2, (bbox[4] + bbox[5])/2]
-        
-        # Parse the angle from the combobox selection
+        # Extract the cyclic symmetry pattern from the dropdown
         angle_text = self.cyclic_sym_combo.currentText()
-        
-        # Extract numeric value from the text (e.g., "+90 deg" becomes 90)
-        if angle_text.startswith("+"):
-            angle = float(angle_text[1:].split()[0])
-        elif angle_text.startswith("-"):
-            angle = -float(angle_text[1:].split()[0])
-        else:
-            # Handle case where no sign is present, extract first number from string
-            import re
-            angle_text = self.cyclic_sym_combo.currentText()
-            match = re.search(r'\d+', angle_text)
-            if match:
-                angle = float(match.group())
-                if "(-)" in angle_text:
-                    angle = -angle
-            else:
-                angle = 90  # Default
+        import re
+        planes_match = re.search(r'\((\d+)\)', angle_text)
+        num_planes = int(planes_match.group(1)) if planes_match else 4
         
         # Remove any existing cyclic symmetry visualization
         if self.parent().topopt_constraint_actors['cyclic_symmetry']:
-            # It could be a list of actors for multiple planes
             if isinstance(self.parent().topopt_constraint_actors['cyclic_symmetry'], list):
                 for actor in self.parent().topopt_constraint_actors['cyclic_symmetry']:
                     self.parent().renderer.RemoveActor(actor)
             else:
                 self.parent().renderer.RemoveActor(self.parent().topopt_constraint_actors['cyclic_symmetry'])
-            
             self.parent().topopt_constraint_actors['cyclic_symmetry'] = None
         
-        # Store all actors for this constraint in a list
-        cyclic_actors = []
-        
-        # Create planes that show the cyclic symmetry boundaries
-        # For Z-axis rotation, we'll create vertical planes
+        # Calculate dimensions and center of the model
+        model_size = max(bbox[1]-bbox[0], bbox[3]-bbox[2], bbox[5]-bbox[4])
+        center = [(bbox[0] + bbox[1])/2, (bbox[2] + bbox[3])/2, (bbox[4] + bbox[5])/2]
         
         # Calculate plane size based on model
         plane_size = model_size * 1.5
         
-        # Determine how many planes to create based on angle
-        num_planes = int(360 / abs(angle))
-        if num_planes > 10:  # Limit to 10 planes to avoid clutter
-            num_planes = 10
+        # Store all actors for this constraint in a list
+        cyclic_actors = []
         
+        # Create exactly num_planes planes
         for i in range(num_planes):
-            # Create a plane
+            # Create a plane source
             plane_source = vtk.vtkPlaneSource()
             
             # For Z-axis symmetry, planes are vertical along Z axis
-            plane_source.SetOrigin(-plane_size/2, 0, bbox[4] - plane_size/4)
-            plane_source.SetPoint1(plane_size/2, 0, bbox[4] - plane_size/4)
-            plane_source.SetPoint2(-plane_size/2, 0, bbox[5] + plane_size/4)
+            # Set up the plane with proper dimensions
+            half_size = plane_size / 2
+            plane_source.SetOrigin(-half_size, 0, bbox[4] - plane_size/4)
+            plane_source.SetPoint1(half_size, 0, bbox[4] - plane_size/4)
+            plane_source.SetPoint2(-half_size, 0, bbox[5] + plane_size/4)
             plane_source.Update()
             
-            # Create a transform to position and rotate the plane
+            # Create a transform for positioning and rotating the plane
             transform = vtk.vtkTransform()
-            
-            # Position at center of model
+            transform.Identity()
             transform.Translate(center[0], center[1], center[2])
             
-            # Rotate around Z axis by angle * i
-            current_angle = angle * i
-            transform.RotateZ(current_angle)
+            # Calculate angle for this plane - distribute planes evenly
+            angle = i * (360.0 / num_planes)
+            transform.RotateZ(angle)
             
             # Apply transform to the plane
             transform_filter = vtk.vtkTransformPolyDataFilter()
@@ -5939,7 +5953,7 @@ class TopOptConstraintsWindow(QtWidgets.QDialog):
             plane_actor.GetProperty().SetLineWidth(2)
             plane_actor.GetProperty().SetRepresentationToWireframe()  # Only show outline
             
-            # Add to renderer
+            # Add to renderer and store in actors list
             self.parent().renderer.AddActor(plane_actor)
             cyclic_actors.append(plane_actor)
         
@@ -6506,19 +6520,11 @@ class OptimizeTopologyWindow(QtWidgets.QDialog):
         
         # Initialize optimization state
         self.optimization_running = False
+        self.optimization_thread = None
         
         # Main layout
         layout = QtWidgets.QVBoxLayout(self)
         layout.setSpacing(10)
-        
-        # Objective selection
-        obj_layout = QtWidgets.QHBoxLayout()
-        obj_label = QtWidgets.QLabel("Objective")
-        self.obj_combo = QtWidgets.QComboBox()
-        self.obj_combo.addItems(["Min. Compliance", "Min. Mass", "Min. Stress"])
-        obj_layout.addWidget(obj_label)
-        obj_layout.addWidget(self.obj_combo)
-        layout.addLayout(obj_layout)
         
         # Method selection
         method_layout = QtWidgets.QHBoxLayout()
@@ -6529,26 +6535,23 @@ class OptimizeTopologyWindow(QtWidgets.QDialog):
         method_layout.addWidget(self.method_combo)
         layout.addLayout(method_layout)
         
-        # Checkboxes
+        # Volume fraction
+        vol_layout = QtWidgets.QHBoxLayout()
+        vol_label = QtWidgets.QLabel("Volume Fraction")
+        self.vol_spinbox = QtWidgets.QDoubleSpinBox()
+        self.vol_spinbox.setRange(0.1, 0.9)
+        self.vol_spinbox.setSingleStep(0.05)
+        self.vol_spinbox.setValue(0.5)
+        vol_layout.addWidget(vol_label)
+        vol_layout.addWidget(self.vol_spinbox)
+        layout.addLayout(vol_layout)
+        
+        # Use all loads checkbox
         self.use_all_loads = QtWidgets.QCheckBox("Use all Loads?")
         self.use_all_loads.setChecked(True)
         layout.addWidget(self.use_all_loads)
         
-        self.smooth_surface = QtWidgets.QCheckBox("Smooth surface?")
-        self.smooth_surface.setChecked(True)
-        layout.addWidget(self.smooth_surface)
-        
-        # Load Set
-        load_set_layout = QtWidgets.QHBoxLayout()
-        load_set_label = QtWidgets.QLabel("Use Load Set")
-        self.load_set_spin = QtWidgets.QSpinBox()
-        self.load_set_spin.setRange(0, 100)
-        self.load_set_spin.setValue(0)
-        load_set_layout.addWidget(load_set_label)
-        load_set_layout.addWidget(self.load_set_spin)
-        layout.addLayout(load_set_layout)
-        
-        # Save Intermediate
+        # Save Intermediate checkbox
         self.save_intermediate = QtWidgets.QCheckBox("Save Intermediate?")
         layout.addWidget(self.save_intermediate)
         
@@ -6561,240 +6564,1021 @@ class OptimizeTopologyWindow(QtWidgets.QDialog):
         self.stop_button.clicked.connect(self.stop_optimization)
         self.stop_button.setEnabled(False)  # Initially disabled
         layout.addWidget(self.stop_button)
+
+        # Progress bar
+        self.progress_bar = QtWidgets.QProgressBar()
+        self.progress_bar.setRange(0, 100)
+        self.progress_bar.setValue(0)
+        layout.addWidget(self.progress_bar)
+        
+        # Results display
+        self.results_label = QtWidgets.QLabel("Results will appear here")
+        layout.addWidget(self.results_label)
         
         # Add stretch to push everything up
         layout.addStretch()
+    
+    def log_message(self, message):
+        """Log a message to the parent's message text widget"""
+        if hasattr(self.parent, 'message_text'):
+            self.parent.message_text.append(message)
+
+    def apply_topopt_constraints(self, to_params, constraints):
+        """
+        Apply the constraints from the TopOptConstraintsWindow to TOParams
         
+        Parameters:
+        -----------
+        to_params : TOParams
+            Topology optimization parameters to update
+        constraints : dict
+            Constraints dictionary from TopOptConstraintsWindow
+        """
+        # Apply manufacturing constraints
+        manufacturing = constraints.get('manufacturing', {})
+        
+        # Extrude constraints
+        extrude = manufacturing.get('extrude', {})
+        if extrude.get('enabled', False):
+            direction = extrude.get('direction', 'XDir')
+            if direction == 'XDir':
+                to_params.ExtrudeX = True
+                to_params.ExtrudeY = False
+                to_params.ExtrudeZ = False
+            elif direction == 'YDir':
+                to_params.ExtrudeX = False
+                to_params.ExtrudeY = True
+                to_params.ExtrudeZ = False
+            elif direction == 'ZDir':
+                to_params.ExtrudeX = False
+                to_params.ExtrudeY = False
+                to_params.ExtrudeZ = True
+        
+        # AM Build constraint
+        am_build = manufacturing.get('am_build', {})
+        if am_build.get('enabled', False):
+            to_params.AMBuildConstraint = True
+            # Set build direction
+            direction = am_build.get('direction', '+ZDir')
+            if direction == "+XDir":
+                to_params.AMBuildDir = [1, 0, 0]
+            elif direction == "-XDir":
+                to_params.AMBuildDir = [-1, 0, 0]
+            elif direction == "+YDir":
+                to_params.AMBuildDir = [0, 1, 0]
+            elif direction == "-YDir":
+                to_params.AMBuildDir = [0, -1, 0]
+            elif direction == "+ZDir":
+                to_params.AMBuildDir = [0, 0, 1]
+            elif direction == "-ZDir":
+                to_params.AMBuildDir = [0, 0, -1]
+        else:
+            to_params.AMBuildConstraint = False
+        
+        # Draw direction constraint
+        draw_dir = manufacturing.get('draw_direction', {})
+        if draw_dir.get('enabled', False):
+            to_params.DrawDirConstraint = True
+            direction = draw_dir.get('direction', 'ZDir')
+            if direction == 'XDir':
+                to_params.DrawDirection = [1, 0, 0]
+            elif direction == 'YDir':
+                to_params.DrawDirection = [0, 1, 0]
+            elif direction == 'ZDir':
+                to_params.DrawDirection = [0, 0, 1]
+        else:
+            to_params.DrawDirConstraint = False
+        
+        # Cyclic symmetry
+        cyclic_symmetry = manufacturing.get('cyclic_symmetry', {})
+        if cyclic_symmetry.get('enabled', False):
+            angle_text = cyclic_symmetry.get('angle', '(6) 60 deg')
+            
+            import re
+            # Extract the number of planes from the parentheses
+            planes_match = re.search(r'\((\d+)\)', angle_text)
+            if planes_match:
+                try:
+                    # Number of planes
+                    num_planes = int(planes_match.group(1))
+                    
+                    # Check if it's the problematic 4 planes (90° symmetry)
+                    if num_planes == 4:
+                        self.log_message(f"Warning: 4-plane (90°) symmetry is known to cause filter issues. Using 6-plane (60°) symmetry instead.")
+                        to_params.ZAxisAngularSymmetry = 6
+                    else:
+                        to_params.ZAxisAngularSymmetry = num_planes
+                        self.log_message(f"Applied Z-axis angular symmetry with {num_planes} planes")
+                except (ValueError, TypeError):
+                    self.log_message(f"Warning: Could not parse number of planes from '{angle_text}'. Disabling constraint.")
+                    to_params.ZAxisAngularSymmetry = 0
+            else:
+                # No valid number of planes found in text
+                self.log_message(f"Warning: No valid number of planes found in '{angle_text}'. Disabling cyclic symmetry constraint.")
+                to_params.ZAxisAngularSymmetry = 0
+        else:
+            # Constraint not enabled
+            to_params.ZAxisAngularSymmetry = 0
+        
+        # Grid patterns
+        patterns = constraints.get('patterns', {})
+        
+        x_grid = patterns.get('x_grid', {})
+        if x_grid.get('enabled', False):
+            to_params.XGridPattern = True
+            to_params.XGridCount = x_grid.get('value', 2)
+        else:
+            to_params.XGridPattern = False
+            
+        y_grid = patterns.get('y_grid', {})
+        if y_grid.get('enabled', False):
+            to_params.YGridPattern = True
+            to_params.YGridCount = y_grid.get('value', 2)
+        else:
+            to_params.YGridPattern = False
+            
+        z_grid = patterns.get('z_grid', {})
+        if z_grid.get('enabled', False):
+            to_params.ZGridPattern = True
+            to_params.ZGridCount = z_grid.get('value', 2)
+        else:
+            to_params.ZGridPattern = False
+        
+        # Symmetry constraints
+        symmetry = constraints.get('symmetry', {})
+        to_params.XSymmetry = symmetry.get('x_symmetry', False)
+        to_params.YSymmetry = symmetry.get('y_symmetry', False)
+        to_params.ZSymmetry = symmetry.get('z_symmetry', False)
+        
+        # Performance constraints
+        performance = constraints.get('performance', {})
+        
+        stress_safety = performance.get('stress_safety', {})
+        if stress_safety.get('enabled', False):
+            to_params.StressConstraint = True
+            to_params.StressSafetyFactor = stress_safety.get('value', 1.0)
+        else:
+            to_params.StressConstraint = False
+            
+        max_disp = performance.get('max_displacement', {})
+        if max_disp.get('enabled', False):
+            to_params.DisplacementConstraint = True
+            to_params.MaxDisplacement = max_disp.get('value', 0.01)
+        else:
+            to_params.DisplacementConstraint = False
+            
+        min_freq = performance.get('min_frequency', {})
+        if min_freq.get('enabled', False):
+            to_params.FrequencyConstraint = True
+            to_params.MinFrequency = min_freq.get('value', 100.0)
+        else:
+            to_params.FrequencyConstraint = False
+            
+        max_temp = performance.get('max_temperature', {})
+        if max_temp.get('enabled', False):
+            to_params.TemperatureConstraint = True
+            to_params.MaxTemperature = max_temp.get('value', 373.0)  # 373K = 100C
+        else:
+            to_params.TemperatureConstraint = False
+            
+        min_feature = performance.get('min_feature', {})
+        if min_feature.get('enabled', False):
+            to_params.MinFeatureConstraint = True
+            to_params.MinFeatureSize = min_feature.get('value', 0.0)
+        else:
+            to_params.MinFeatureConstraint = False
+            
+        max_feature = performance.get('max_feature', {})
+        if max_feature.get('enabled', False):
+            to_params.MaxFeatureConstraint = True
+            to_params.MaxFeatureSize = max_feature.get('value', 1.0)
+        else:
+            to_params.MaxFeatureConstraint = False
+        
+        # Other constraints
+        other = constraints.get('other', {})
+        to_params.RemoveHangingElems = other.get('connected_topology', True)
+        to_params.KeepFixedElems = other.get('keep_fixed_faces', False)
+        
+        return to_params
+    
+    @staticmethod
+    def ProcessDataforTopOpt(existing_mesh, fixed_nodes, load_data, youngs_modulus, poissons_ratio, to_params):
+        """
+        Process data specifically for topology optimization
+        
+        Parameters:
+        -----------
+        existing_mesh : Mesher object
+            Pre-generated mesh from GUI
+        fixed_nodes : dict
+            Dictionary of fixed nodes {'xyz': set(), 'x': set(), 'y': set(), 'z': set()}
+        load_data : dict
+            Dictionary containing load_nodes_groups and load_forces
+        youngs_modulus : float
+            Young's modulus from material selection
+        poissons_ratio : float
+            Poisson's ratio from material selection
+        to_params : TOParams
+            Topology optimization parameters
+        
+        Returns:
+        --------
+        mesh : Mesher object
+            Processed mesh 
+        mat_prop : StructuralMaterial
+            Material properties
+        bc : BC
+            Boundary conditions
+        """
+        import mat_lib
+        import bound_cond
+        import numpy as np
+        
+        mesh = existing_mesh
+        
+        # Process fixed nodes
+        fixed_dofs = []
+        for node in fixed_nodes['xyz']:
+            fixed_dofs.extend([3*node, 3*node + 1, 3*node + 2])
+            mesh.node_indices[node, 3] = 1
+            
+        for node in fixed_nodes['x']:
+            fixed_dofs.append(3*node)
+            mesh.node_indices[node, 3] = 2
+            
+        for node in fixed_nodes['y']:
+            fixed_dofs.append(3*node + 1)
+            mesh.node_indices[node, 3] = 3
+            
+        for node in fixed_nodes['z']:
+            fixed_dofs.append(3*node + 2)
+            mesh.node_indices[node, 3] = 4
+            
+        fixed_dofs = np.array(fixed_dofs).astype(int)
+        dirichlet_values = np.zeros_like(fixed_dofs, dtype=float)
+        
+        # Process loads
+        force = np.zeros(3*mesh.num_nodes)
+        
+        # Process direct forces if they exist
+        if 'load_nodes_groups' in load_data and 'load_forces' in load_data:
+            for nodes, force_vector in zip(load_data['load_nodes_groups'], load_data['load_forces']):
+                if nodes:
+                    force_per_node = np.array(force_vector) / len(nodes)
+                    for node in nodes:
+                        force[3*node:3*node + 3] += force_per_node
+                        mesh.node_indices[node, 3] = 5
+
+        # Process torque forces if they exist
+        if 'torque_nodes_groups' in load_data and 'torque_values' in load_data and 'torque_axis_points' in load_data:
+            for i, nodes in enumerate(load_data['torque_nodes_groups']):
+                if nodes and i < len(load_data['torque_values']):
+                    torque_vector = np.array(load_data['torque_values'][i])
+                    axis_point = np.array(load_data['torque_axis_points'][i])
+                    torque_magnitude = np.linalg.norm(torque_vector)
+                    
+                    # Skip if magnitude is too small
+                    if torque_magnitude < 1e-10:
+                        continue
+                    
+                    # Process each node in this torque group
+                    if torque_magnitude > 0:
+                        torque_dir = torque_vector / torque_magnitude
+                        
+                        for node in nodes:
+                            # Get node position
+                            if 0 <= node < len(mesh.node_xyz):
+                                node_pos = mesh.node_xyz[node]
+                                
+                                # Vector from axis point to node
+                                r_vector = node_pos - axis_point
+                                
+                                # Project r_vector onto plane perpendicular to torque axis
+                                dot_product = np.dot(r_vector, torque_dir)
+                                r_proj = r_vector - dot_product * torque_dir
+                                r_norm = np.linalg.norm(r_proj)
+                                
+                                if r_norm > 1e-10:  # Only apply force if node is away from axis
+                                    # Calculate tangential direction
+                                    tangent_dir = np.cross(torque_dir, r_proj)
+                                    tangent_dir = tangent_dir / np.linalg.norm(tangent_dir)
+                                    
+                                    # Calculate force magnitude
+                                    force_magnitude = torque_magnitude / (r_norm * len(nodes))
+                                    
+                                    # Apply force in tangential direction
+                                    force_vector = force_magnitude * tangent_dir
+                                    force[3*node:3*node + 3] += force_vector
+                                    
+                                    # Mark as torque node for visualization
+                                    mesh.node_indices[node, 3] = 6
+        
+        # Find elements that should be kept (fixed elements if specified in to_params)
+        if to_params.KeepFixedElems:
+            fixed_elems = []
+            for elem_idx in range(mesh.num_elems):
+                nodes = mesh.elemArray[elem_idx]
+                if any(node in fixed_nodes['xyz'] or 
+                       node in fixed_nodes['x'] or 
+                       node in fixed_nodes['y'] or 
+                       node in fixed_nodes['z'] for node in nodes):
+                    fixed_elems.append(elem_idx)
+            
+            if fixed_elems:
+                to_params.ElemsToKeep = np.array(fixed_elems)
+        
+        # Create boundary conditions and material properties
+        bc = bound_cond.BC(force=force,
+                        fixed_dofs=fixed_dofs,
+                        dirichlet_values=dirichlet_values)
+        
+        mat_prop = mat_lib.StructuralMaterial(youngs_modulus=youngs_modulus,
+                                            poissons_ratio=poissons_ratio)
+        
+        return mesh, mat_prop, bc
+    
     def start_optimization(self):
         """Start the topology optimization process"""
-        if not self.check_prerequisites():
-            return
-            
-        # Get optimization parameters
-        optimization_params = {
-            'objective': self.obj_combo.currentText(),
-            'method': self.method_combo.currentText(),
-            'use_all_loads': self.use_all_loads.isChecked(),
-            'smooth_surface': self.smooth_surface.isChecked(),
-            'load_set': self.load_set_spin.value(),
-            'volume_fraction': 0.50,  # Default value preserved in backend
-            'volume_step': 0.02500,   # Default value preserved in backend
-            'save_intermediate': self.save_intermediate.isChecked()
-        }
+        # Check prerequisites
+        if (not hasattr(self.parent, 'mesh') or self.parent.mesh is None) and \
+           (not hasattr(self.parent, 'analysis_mesher') or self.parent.analysis_mesher is None):
+            QtWidgets.QMessageBox.warning(
+                self, "Missing Data", "No mesh available. Create or import a mesh first."
+            )
+            return False
+
+        # If mesh is available in analysis_mesher but not in mesh, create the reference
+        if hasattr(self.parent, 'analysis_mesher') and self.parent.analysis_mesher is not None:
+            if not hasattr(self.parent, 'mesh') or self.parent.mesh is None:
+                self.parent.mesh = self.parent.analysis_mesher
+        
+        # Check for material data
+        if not hasattr(self.parent, 'material_data'):
+            QtWidgets.QMessageBox.warning(
+                self, "Missing Data", "No material properties defined."
+            )
+            return False
+        
+        # Create boundary conditions if they don't exist yet
+        if not hasattr(self.parent, 'bc') or self.parent.bc is None:
+            try:
+                self.log_message("Creating boundary conditions from mesh data...")
+                
+                # Process fixed nodes
+                fixed_dofs = []
+                if hasattr(self.parent, 'fixed_nodes'):
+                    for node in self.parent.fixed_nodes.get('xyz', set()):
+                        fixed_dofs.extend([3*node, 3*node + 1, 3*node + 2])
+                    
+                    for node in self.parent.fixed_nodes.get('x', set()):
+                        fixed_dofs.append(3*node)
+                    
+                    for node in self.parent.fixed_nodes.get('y', set()):
+                        fixed_dofs.append(3*node + 1)
+                    
+                    for node in self.parent.fixed_nodes.get('z', set()):
+                        fixed_dofs.append(3*node + 2)
+                else:
+                    QtWidgets.QMessageBox.warning(
+                        self, "Missing Data", "No boundary conditions defined. Apply boundary conditions first."
+                    )
+                    return False
+                
+                # Process load forces
+                force = np.zeros(3 * self.parent.mesh.num_nodes)
+                if hasattr(self.parent, 'load_nodes_groups') and hasattr(self.parent, 'load_forces') and \
+                   len(self.parent.load_nodes_groups) == len(self.parent.load_forces) and \
+                   len(self.parent.load_nodes_groups) > 0:
+                    for nodes, force_vector in zip(self.parent.load_nodes_groups, self.parent.load_forces):
+                        if nodes:
+                            force_per_node = np.array(force_vector) / len(nodes)
+                            for node in nodes:
+                                force[3*node:3*node + 3] += force_per_node
+                else:
+                    QtWidgets.QMessageBox.warning(
+                        self, "Missing Data", "No loads defined. Apply loads first."
+                    )
+                    return False
+                
+                # Process torque forces if available
+                if hasattr(self.parent, 'torque_nodes_groups') and \
+                   hasattr(self.parent, 'torque_values') and \
+                   hasattr(self.parent, 'torque_axis_points'):
+                    for i, nodes in enumerate(self.parent.torque_nodes_groups):
+                        if nodes and i < len(self.parent.torque_values):
+                            torque_vector = np.array(self.parent.torque_values[i])
+                            axis_point = np.array(self.parent.torque_axis_points[i])
+                            torque_magnitude = np.linalg.norm(torque_vector)
+                            
+                            # Skip if magnitude is too small
+                            if torque_magnitude < 1e-10:
+                                continue
+                            
+                            # Process each node in this torque group
+                            if torque_magnitude > 0:
+                                torque_dir = torque_vector / torque_magnitude
+                                
+                                for node in nodes:
+                                    # Get node position
+                                    if 0 <= node < len(self.parent.mesh.node_xyz):
+                                        node_pos = self.parent.mesh.node_xyz[node]
+                                        
+                                        # Vector from axis point to node
+                                        r_vector = node_pos - axis_point
+                                        
+                                        # Project r_vector onto plane perpendicular to torque axis
+                                        dot_product = np.dot(r_vector, torque_dir)
+                                        r_proj = r_vector - dot_product * torque_dir
+                                        r_norm = np.linalg.norm(r_proj)
+                                        
+                                        if r_norm > 1e-10:  # Only apply force if node is away from axis
+                                            # Calculate tangential direction
+                                            tangent_dir = np.cross(torque_dir, r_proj)
+                                            tangent_dir = tangent_dir / np.linalg.norm(tangent_dir)
+                                            
+                                            # Calculate force magnitude
+                                            force_magnitude = torque_magnitude / (r_norm * len(nodes))
+                                            
+                                            # Apply force in tangential direction
+                                            force_vector = force_magnitude * tangent_dir
+                                            force[3*node:3*node + 3] += force_vector
+                
+                # Create BC object
+                from bound_cond import BC
+                fixed_dofs = np.array(fixed_dofs, dtype=np.int32)
+                dirichlet_values = np.zeros_like(fixed_dofs, dtype=np.float64)
+                
+                self.parent.bc = BC(force=force, fixed_dofs=fixed_dofs, dirichlet_values=dirichlet_values)
+                self.log_message(f"Created BC with {len(fixed_dofs)} fixed DOFs")
+                
+            except Exception as e:
+                QtWidgets.QMessageBox.warning(
+                    self, "Error", f"Failed to create boundary conditions: {str(e)}"
+                )
+                return False
+        
+        # Get topology optimization parameters
+        method = self.method_combo.currentText()
+        volume_fraction = self.vol_spinbox.value()
+        save_intermediate = self.save_intermediate.isChecked()
         
         # Update UI state
         self.optimization_running = True
         self.optimize_button.setEnabled(False)
         self.stop_button.setEnabled(True)
+        self.progress_bar.setValue(0)
         
-        # Store optimization parameters in parent window
-        if hasattr(self.parent, 'optimization_params'):
-            self.parent.optimization_params = optimization_params
-            
-        # Log start of optimization
-        self.parent.message_text.append("Starting topology optimization...")
+        # Log start
+        self.log_message(f"Starting topology optimization with method: {method}")
+        self.log_message(f"Target volume fraction: {volume_fraction}")
         
-        # Update sidebar button icon if available
+        # Update state if available
         if hasattr(self.parent, 'update_button_icon'):
-            self.parent.update_button_icon("Structural TopOpt", "check")
+            self.parent.update_button_icon("Structural TopOpt", "process")
         
-        # Update LivVar state if available
-        self.parent.update_LivVar('topopt.structural_performed', True)
-
-        # Log parameters
-        self.parent.message_text.append(f"Optimization parameters set:")
-        self.parent.message_text.append(f"Objective: {optimization_params['objective']}")
-        self.parent.message_text.append(f"Method: {optimization_params['method']}")
+        if hasattr(self.parent, 'update_LivVar'):
+            self.parent.update_LivVar('topopt.structural_performing', True)
         
+        # Start optimization in a separate thread
+        self.optimization_thread = threading.Thread(
+            target=self.run_optimization,
+            args=(method, volume_fraction, save_intermediate)
+        )
+        self.optimization_thread.daemon = True
+        self.optimization_thread.start()
+        
+        return True
+    
+    def run_optimization(self, method, volume_fraction, save_intermediate):
+        """Run the topology optimization process in a separate thread"""
         try:
-            # Import necessary modules
-            from topopt_common import MaterialModel, TO_METHODS
-            from topopt_common import TOParams
+            # Get data from parent
+            if hasattr(self.parent, 'analysis_mesher'):
+                mesh = self.parent.analysis_mesher
+            elif hasattr(self.parent, 'mesh'):
+                mesh = self.parent.mesh
+            else:
+                raise ValueError("No mesh available for optimization")
             
-            # Configure JAX for high precision
-            jax.config.update("jax_enable_x64", True)
+            # Get material properties
+            if hasattr(self.parent, 'material_data'):
+                # Create material properties from material data
+                youngs_modulus = self.parent.material_data['young_modulus']
+                poissons_ratio = self.parent.material_data['poisson_ratio']
+            else:
+                raise ValueError("No material properties defined")
             
-            # Get mesh, material, BC and other required data from parent
-            mesh = self.parent.analysis_mesher if hasattr(self.parent, 'analysis_mesher') else None
-            mat_prop = mat_lib.StructuralMaterial(
-                        youngs_modulus=self.parent.material_data['young_modulus'],
-                        poissons_ratio=self.parent.material_data['poisson_ratio']
-                    )
-            bc = self.parent.stl_geom.bc if hasattr(self.parent.stl_geom, 'bc') else None
-            elem_body_force = self.parent.stl_geom.body_force if hasattr(self.parent.stl_geom, 'body_force') else None
-           
-            # Setup topology optimization constraints
-            from topopt_common import TOParams
+            # Get structural loads data
+            fixed_nodes = self.parent.fixed_nodes if hasattr(self.parent, 'fixed_nodes') else {'xyz': set(), 'x': set(), 'y': set(), 'z': set()}
+            load_data = {
+                'load_nodes_groups': self.parent.load_nodes_groups if hasattr(self.parent, 'load_nodes_groups') else [],
+                'load_forces': self.parent.load_forces if hasattr(self.parent, 'load_forces') else []
+            }
+            
+            # Get body forces if available
+            if hasattr(self.parent, 'torque_nodes_groups') and self.parent.torque_nodes_groups:
+                load_data['torque_nodes_groups'] = self.parent.torque_nodes_groups 
+                load_data['torque_values'] = self.parent.torque_values
+                load_data['torque_axis_points'] = self.parent.torque_axis_points
+                
+        
+            
+            # Create TO parameters
             to_params = TOParams()
+            to_params.DesiredVolFraction = volume_fraction
             
-            # Map UI constraints to TO constraints
-            if hasattr(self.parent, 'topopt_constraints'):
-                constraints = self.parent.topopt_constraints
-                
-                # Map symmetry constraints
-                if 'symmetry' in constraints:
-                    to_params.XSymmetry = constraints['symmetry'].get('x_symmetry', False)
-                    to_params.YSymmetry = constraints['symmetry'].get('y_symmetry', False)
-                    to_params.ZSymmetry = constraints['symmetry'].get('z_symmetry', False)
-                
-                # Map manufacturing constraints
-                if 'manufacturing' in constraints:
-                    manufacturing = constraints['manufacturing']
-                    
-                    # Map cyclic symmetry
-                    if 'cyclic_symmetry' in manufacturing:
-                        cyclic_sym = manufacturing['cyclic_symmetry']
-                        if cyclic_sym.get('enabled', False) and 'angle' in cyclic_sym:
-                            angle_text = cyclic_sym['angle']
-                            try:
-                                match = re.search(r'\d+', angle_text)
-                                if match:
-                                    angle = int(match.group())
-                                    to_params.ZAxisAngularSymmetry = int(360 / angle) if angle > 0 else 0
-                            except:
-                                to_params.ZAxisAngularSymmetry = 0
-                    
-                    # Map extrusion constraints
-                    if 'extrude' in manufacturing:
-                        extrude = manufacturing['extrude']
-                        if extrude.get('enabled', False):
-                            direction = extrude['direction']
-                            to_params.ExtrudeX = direction == "XDir"
-                            to_params.ExtrudeY = direction == "YDir"
-                            to_params.ExtrudeZ = direction == "ZDir"
-                    
-                    # Map AM build constraint
-                    if 'am_build' in manufacturing:
-                        am_build = manufacturing['am_build']
-                        to_params.AMBuildConstraint = am_build.get('enabled', False)
-                
-                # Map other constraints
-                if 'other' in constraints:
-                    other = constraints['other']
-                    to_params.KeepFixedElems = other.get('keep_fixed_faces', False)
-                    to_params.RemoveHangingElems = other.get('connected_topology', False)
+            # Apply constraints if available
+            if hasattr(self.parent, 'topopt_constraints') and self.parent.topopt_constraints:
+                try:
+                    to_params = self.apply_topopt_constraints(to_params, self.parent.topopt_constraints)
+                except Exception as constraint_error:
+                    self.log_message(f"Warning: Failed to apply some constraints: {str(constraint_error)}")
+                    # Reset potentially problematic constraints
+                    to_params.ZAxisAngularSymmetry = 0
+                    self.log_message("Disabled Z-axis angular symmetry due to error")
             
-            # Setup TO params
-
-            to_params.DesiredVolFraction = optimization_params['volume_fraction']
-          
-            # Setup solver
+            # Process data for topology optimization
+            mesh, mat_prop, bc = self.ProcessDataforTopOpt(
+                existing_mesh=mesh,
+                fixed_nodes=fixed_nodes,
+                load_data=load_data,
+                youngs_modulus=youngs_modulus,
+                poissons_ratio=poissons_ratio,
+                to_params=to_params
+            )
+            
+            # Initialize solver
             solver = lin_solv.Solvers.PARDISO
             
-            # Initialize the FE solver
-            self.parent.message_text.append("Initializing FEA solver...")
-            print(mat_prop)
-            fe_solver = fea.StructFEA(
+            # Create FE solver
+            fe_solver = StructFEA(
                 mesh=mesh,
                 mat_prop=mat_prop,
                 bc=bc,
                 solver=solver,
-                rtol=1e-8,
-                elem_body_force=elem_body_force
+                rtol=1e-8
             )
-        
-            # Choose optimization method based on objective
-            opt_method = TO_METHODS.DENSITYMMA  # Default
-
-            if optimization_params['objective'] == "Min. Compliance":
-                pass
-            elif optimization_params['objective'] == "Min. Mass":
-                pass
-            elif optimization_params['objective'] == "Min. Stress":
-                pass
             
-            # Start optimization in a separate thread
-            self.optimization_thread = threading.Thread(
-                target=self.run_optimization,
-                args=(to_params, fe_solver, opt_method )
-            )
-            self.optimization_thread.daemon = True
-            self.optimization_thread.start()
-      
-        except Exception as e:
-            self.parent.message_text.append(f"Error initializing optimization: {str(e)}")
-            self.stop_optimization()
-
-    def run_optimization(self,to_params, fe_solver, opt_method ):
-        """Run the optimization process in a separate thread"""
-        import topopt_common,topopt_density_oc,topopt_density_mma,topopt_pareto,topopt_levelset
-        
-        start_time = time.time()
-        self.parent.message_text.append(f"Starting {opt_method.name} optimization...")
-        
-        try:
-            # Call the appropriate optimization function based on the selected method
-            if opt_method == topopt_common.TO_METHODS.DENSITYOC:
-                u, history = topopt_density_oc.topopt_optimality_criteria(
-                    to_params,
-                    fe_solver=fe_solver
-                )
-            elif opt_method == topopt_common.TO_METHODS.DENSITYMMA:
-                u, history = topopt_density_mma.topopt_mma(
-                    to_params,
-                    fe_solver=fe_solver
-                )
-            elif opt_method == topopt_common.TO_METHODS.PARETO:
-                u, history = topopt_pareto.topopt_pareto(
-                    to_params,
-                    fe_solver=fe_solver
-                )
-            elif opt_method == topopt_common.TO_METHODS.LEVELSET:
-                u, history = topopt_levelset.topopt_levelset (
-                    to_params,
+            # Run optimization based on method
+            start_time = time.time()
+            
+            if method == "DENSITY-MMA":
+                u, history, success, error_msg, n_feas = topopt_mma(
                     fe_solver=fe_solver,
+                    to_params=to_params,
+                    plot_progress=False
                 )
-            else:
-                self.parent.message_text.append(f"Unsupported optimization method: {opt_method.name}")
+                
+            elif method == "DENSITY-OC":
+                u, history, success, error_msg, n_feas = topopt_optimality_criteria(
+                    fe_solver=fe_solver,
+                    to_params=to_params,
+                    plot_progress=False
+                )
+                
+            elif method == "PARETO":
+                u, history, success, error_msg, n_feas = topopt_pareto(
+                    fe_solver=fe_solver,
+                    to_params=to_params,
+                    plot_progress=False
+                )
+                
+            elif method == "Levelset":
+                u, history, success, error_msg, n_feas = topopt_levelset(
+                    fe_solver=fe_solver,
+                    to_params=to_params,
+                    plot_progress=False
+                )
+            
+            time_taken = time.time() - start_time
+            
+            # Store results in parent
+            self.parent.fe_solver = fe_solver
+            self.parent.optimization_results = {
+                'u': u,
+                'history': history,
+                'success': success,
+                'error_msg': error_msg,
+                'n_feas': n_feas,
+                'time_taken': time_taken,
+                'method': method,
+                'volume_fraction': volume_fraction
+            }
+            
+            # Signal completion on the main thread
+            QtCore.QMetaObject.invokeMethod(
+                self, "optimization_completed", 
+                QtCore.Qt.QueuedConnection,
+                QtCore.Q_ARG(bool, success),
+                QtCore.Q_ARG(str, error_msg if not success else "")
+            )
+            
+        except Exception as e:
+            error_msg = f"Optimization failed: {str(e)}\n{traceback.format_exc()}"
+            self.log_message(error_msg)
+            
+            # Signal failure on the main thread
+            QtCore.QMetaObject.invokeMethod(
+                self, "optimization_completed", 
+                QtCore.Qt.QueuedConnection,
+                QtCore.Q_ARG(bool, False),
+                QtCore.Q_ARG(str, str(e))
+            )
+    
+    @QtCore.pyqtSlot(bool, str)
+    def optimization_completed(self, success, error_msg):
+        """Handle optimization completion (called on main thread)"""
+        self.optimization_running = False
+        self.optimize_button.setEnabled(True)
+        self.stop_button.setEnabled(False)
+        self.progress_bar.setValue(100 if success else 0)
+        
+        if success:
+            # Get results
+            results = self.parent.optimization_results
+            history = results['history']
+            final_volume = history['volume'][-1]
+            final_compliance = history['compliance'][-1]
+            time_taken = results['time_taken']
+            
+            # Log results
+            self.log_message(f"Optimization completed successfully in {time_taken:.1f} seconds")
+            self.log_message(f"Final volume fraction: {final_volume:.3f}")
+            self.log_message(f"Final compliance: {final_compliance:.4g}")
+            
+            # Update results label
+            self.results_label.setText(f"Volume: {final_volume:.3f}, Compliance: {final_compliance:.4g}")
+            
+            # Update state if available
+            if hasattr(self.parent, 'update_button_icon'):
+                self.parent.update_button_icon("Structural TopOpt", "check")
+            
+            if hasattr(self.parent, 'update_LivVar'):
+                self.parent.update_LivVar('topopt.structural_performed', True)
+                self.parent.update_LivVar('topopt.structural_performing', False)
+            
+            # Visualize results
+            # Visualize results using the method within this class
+            self.visualize_optimized_topology()
+            
+        else:
+            self.log_message(f"Optimization failed: {error_msg}")
+            self.results_label.setText(f"Error: {error_msg}")
+            
+            # Update state if available
+            if hasattr(self.parent, 'update_button_icon'):
+                self.parent.update_button_icon("Structural TopOpt", "error")
+            
+            if hasattr(self.parent, 'update_LivVar'):
+                self.parent.update_LivVar('topopt.structural_performing', False)
+            
+            # Show error message
+            QtWidgets.QMessageBox.critical(
+                self, "Optimization Failed", f"Optimization failed: {error_msg}"
+            )
+    
+    def stop_optimization(self):
+        """Stop the optimization process"""
+        if self.optimization_running:
+            self.log_message("Requesting optimization to stop...")
+            # Set a flag to stop optimization in the next iteration
+            if hasattr(self.parent, 'stop_optimization'):
+                self.parent.stop_optimization = True
+            self.stop_button.setEnabled(False)
+
+    def visualize_optimized_topology(self):
+        """Visualize the optimized topology in the 3D viewer after optimization completes"""
+        try:
+            # Check if we have optimization results
+            if not hasattr(self.parent, 'optimization_results') or self.parent.optimization_results is None:
+                self.parent.message_text.append("Error: No optimization results available to visualize")
                 return
             
-            # Calculate elapsed time
-            elapsed_time = time.time() - start_time
+            # Get optimization results
+            results = self.parent.optimization_results
+            history = results.get('history', {})
+            method = results.get('method', 'Unknown')
+            # Use default value of 0.5 if volume_fraction is not available
+            volume_fraction = results.get('volume_fraction', 0.5)
             
-            # Update UI with results
-            QMetaObject.invokeMethod(
-                self.parent, 
-                "update_optimization_results",
-                Qt.QueuedConnection,
-                Q_ARG(QObject, self),
-                Q_ARG(object, u),
-                Q_ARG(object, history),
-                Q_ARG(float, elapsed_time)
-            )
+            # Get the density field (optimization result 'u' contains the density values)
+            if not hasattr(self.parent, 'fe_solver') or self.parent.fe_solver is None:
+                self.parent.message_text.append("Error: No FE solver with optimized mesh available")
+                return
+            
+            # Get element densities from the optimization results
+            # The optimization result 'u' contains the density values directly
+            mesh = self.parent.fe_solver.mesh
+            if 'u' in results:
+                # Use the optimization result directly
+                densities = results['u']
+            else:
+                # Try to get densities from the mesh if they were stored there
+                if hasattr(mesh, 'densities'):
+                    densities = np.array(mesh.densities)
+                else:
+                    self.parent.message_text.append("Error: No density data found in optimization results")
+                    return
+            
+            threshold = 0.5  # Default threshold for visualization
+            
+            # Log progress
+            self.parent.message_text.append("\nVisualizing optimized topology...")
+            self.parent.message_text.append(f"Method: {method}")
+            self.parent.message_text.append(f"Volume fraction: {volume_fraction:.3f}")
+            if history:
+                if 'volume' in history and history['volume']:
+                    self.parent.message_text.append(f"Final volume: {history['volume'][-1]:.3f}")
+                if 'compliance' in history and history['compliance']:
+                    self.parent.message_text.append(f"Final compliance: {history['compliance'][-1]:.4e}")
+            
+            # Remove any existing optimization visualization
+            if hasattr(self.parent, 'optimized_mesh_actor') and self.parent.optimized_mesh_actor is not None:
+                self.parent.renderer.RemoveActor(self.parent.optimized_mesh_actor)
+                self.parent.optimized_mesh_actor = None
+            
+            # Remove any scalar bar from previous visualization
+            if hasattr(self.parent, 'scalar_bar') and self.parent.scalar_bar is not None:
+                self.parent.renderer.RemoveActor(self.parent.scalar_bar)
+                self.parent.scalar_bar = None
+            
+            # Hide mesh actor if exists
+            if hasattr(self.parent, 'mesh_actor') and self.parent.mesh_actor is not None:
+                self.parent.mesh_actor.SetVisibility(False)
+            
+            # Hide stl actor if exists
+            if hasattr(self.parent, 'stl_actor') and self.parent.stl_actor is not None:
+                self.parent.stl_actor.SetVisibility(False)
+            
+            # Create points for visualization
+            points = vtk.vtkPoints()
+            cells = vtk.vtkCellArray()
+            
+            # Add points
+            for i in range(mesh.num_nodes):
+                points.InsertNextPoint(mesh.node_xyz[i])
+            
+            # Add hex elements
+            for elem in mesh.elemArray:
+                hex_cell = vtk.vtkHexahedron()
+                for i in range(8):
+                    hex_cell.GetPointIds().SetId(i, elem[i])
+                cells.InsertNextCell(hex_cell)
+            
+            # Create mesh structure
+            vtk_mesh = vtk.vtkUnstructuredGrid()
+            vtk_mesh.SetPoints(points)
+            vtk_mesh.SetCells(vtk.VTK_HEXAHEDRON, cells)
+            
+            # Add density as scalars - map element-based values to cells
+            scalars = vtk.vtkFloatArray()
+            scalars.SetNumberOfComponents(1)
+            scalars.SetName("Density")
+            
+            for density in densities:
+                scalars.InsertNextValue(density)
+            
+            vtk_mesh.GetCellData().SetScalars(scalars)
+            
+            # Create mapper with color mapping
+            mapper = vtk.vtkDataSetMapper()
+            mapper.SetInputData(vtk_mesh)
+            mapper.SetScalarRange(0, 1) # Density range is typically 0-1
+            
+            # Create custom color lookup table
+            lut = vtk.vtkLookupTable()
+            lut.SetHueRange(0.667, 0.0)  # Blue (low density) to red (high density)
+            lut.SetSaturationRange(1.0, 1.0)
+            lut.SetValueRange(1.0, 1.0)
+            lut.SetNumberOfTableValues(256)
+            lut.Build()
+            mapper.SetLookupTable(lut)
+            
+            # Create the optimized mesh actor
+            self.parent.optimized_mesh_actor = vtk.vtkActor()
+            self.parent.optimized_mesh_actor.SetMapper(mapper)
+            self.parent.optimized_mesh_actor.GetProperty().EdgeVisibilityOn()
+            self.parent.optimized_mesh_actor.GetProperty().SetEdgeColor(0.1, 0.1, 0.1)
+            self.parent.optimized_mesh_actor.GetProperty().SetLineWidth(1)
+            
+            # Create a scalar bar
+            scalar_bar = vtk.vtkScalarBarActor()
+            scalar_bar.SetLookupTable(mapper.GetLookupTable())
+            scalar_bar.SetTitle("Element Density")
+            scalar_bar.SetNumberOfLabels(5)
+            scalar_bar.SetPosition(0.85, 0.05)
+            scalar_bar.SetWidth(0.1)
+            scalar_bar.SetHeight(0.8)
+
+            # Improve font appearance
+            scalar_bar.UnconstrainedFontSizeOn()
+            
+            # Create title text property
+            title_text_prop = vtk.vtkTextProperty()
+            title_text_prop.SetFontFamilyToArial()
+            title_text_prop.SetFontSize(22)
+            title_text_prop.SetBold(True)
+            title_text_prop.SetColor(0, 0, 0)
+
+            # Create label text property
+            label_text_prop = vtk.vtkTextProperty()
+            label_text_prop.SetFontFamilyToArial()
+            label_text_prop.SetFontSize(18)
+            label_text_prop.SetBold(False)
+            label_text_prop.SetColor(0, 0, 0)
+
+            # Apply the text properties
+            scalar_bar.SetTitleTextProperty(title_text_prop)
+            scalar_bar.SetLabelTextProperty(label_text_prop)
+            
+            # Store and add actor
+            self.parent.scalar_bar = scalar_bar
+            
+            # Add title for the optimization result
+            title = f"Optimized topology (Vol.Frac: {volume_fraction:.3f})"
+            if not hasattr(self.parent, 'title_actor') or self.parent.title_actor is None:
+                title_actor = vtk.vtkTextActor()
+                title_actor.SetPosition(10, 10)
+                title_actor.GetTextProperty().SetColor(1.0, 1.0, 1.0)
+                title_actor.GetTextProperty().SetFontSize(16)
+                title_actor.GetTextProperty().SetBold(True)
+                self.parent.title_actor = title_actor
+                self.parent.renderer.AddActor2D(title_actor)
+            
+            self.parent.title_actor.SetInput(title)
+            
+            # Add actors to renderer
+            self.parent.renderer.AddActor(self.parent.optimized_mesh_actor)
+            self.parent.renderer.AddActor(self.parent.scalar_bar)
+            
+            # Reset camera and render
+            self.parent.renderer.ResetCamera()
+            self.parent.vtkWidget.GetRenderWindow().Render()
             
         except Exception as e:
-            # Log error and stop optimization
-            self.parent.message_text.append(f"Error during optimization: {str(e)}")
-            QMetaObject.invokeMethod(
-                self, 
-                "stop_optimization",
-                Qt.QueuedConnection
-            )
-        
-    def stop_optimization(self):
-        """Stop the ongoing optimization process"""
-        if self.optimization_running:
-            self.optimization_running = False
-            self.optimize_button.setEnabled(True)
-            self.stop_button.setEnabled(False)
-            self.parent.message_text.append("Optimization stopped by user")
+            self.parent.message_text.append(f"Error visualizing optimized topology: {str(e)}")
+            import traceback
+            traceback.print_exc()
+
+    def visualize_isosurface(self, mesh, densities, threshold=0.5):
+        """Create a smooth isosurface visualization of the optimized topology"""
+        try:
+            # Check if mesh has structured grid dimensions
+            is_structured = hasattr(mesh, 'nx') and hasattr(mesh, 'ny') and hasattr(mesh, 'nz')
             
-    def check_prerequisites(self):
-        """Check if all required conditions are met for optimization"""
-        if not hasattr(self.parent, 'stl_geom') or self.parent.stl_geom is None:
-            QtWidgets.QMessageBox.warning(self, "Error", "No geometry loaded")
-            return False
+            if is_structured:
+                # Structured mesh approach
+                nx, ny, nz = mesh.nx, mesh.ny, mesh.nz
+                
+                # Create image data
+                image_data = vtk.vtkImageData()
+                image_data.SetDimensions(nx+1, ny+1, nz+1)
+                image_data.SetOrigin(mesh.x_min, mesh.y_min, mesh.z_min)
+                image_data.SetSpacing(
+                    (mesh.x_max - mesh.x_min) / nx,
+                    (mesh.y_max - mesh.y_min) / ny,
+                    (mesh.z_max - mesh.z_min) / nz
+                )
+                
+                # Assign density values to cell data
+                cell_data = vtk.vtkFloatArray()
+                cell_data.SetName("Density")
+                cell_data.SetNumberOfComponents(1)
+                cell_data.SetNumberOfTuples(nx * ny * nz)
+                
+                for i in range(len(densities)):
+                    cell_data.SetValue(i, densities[i])
+                    
+                image_data.GetCellData().AddArray(cell_data)
+                image_data.GetCellData().SetActiveScalars("Density")
+                
+                # Convert cell data to point data for smoother isosurface
+                cell_to_point = vtk.vtkCellDataToPointData()
+                cell_to_point.SetInputData(image_data)
+                cell_to_point.PassCellDataOn()
+                cell_to_point.Update()
+                
+                # Create isosurface using contour filter
+                contour = vtk.vtkContourFilter()
+                contour.SetInputConnection(cell_to_point.GetOutputPort())
+                contour.SetValue(0, threshold)  # Isovalue = threshold
+                contour.SetInputArrayToProcess(0, 0, 0, vtk.vtkDataObject.FIELD_ASSOCIATION_POINTS, "Density")
+                contour.Update()
+                
+            else:
+                # Unstructured grid approach
+                # Create a vtkUnstructuredGrid from the mesh
+                points = vtk.vtkPoints()
+                for node_coords in mesh.node_xyz:
+                    points.InsertNextPoint(node_coords)
+                    
+                grid = vtk.vtkUnstructuredGrid()
+                grid.SetPoints(points)
+                
+                # Add hexahedral cells with density values
+                density_array = vtk.vtkFloatArray()
+                density_array.SetName("Density")
+                
+                for elem_idx, elem in enumerate(mesh.elemArray):
+                    if elem_idx < len(densities):  # Safety check
+                        hex_elem = vtk.vtkHexahedron()
+                        for i, node_id in enumerate(elem):
+                            if i < 8:  # Ensure we only use 8 points for a hexahedron
+                                hex_elem.GetPointIds().SetId(i, node_id)
+                        
+                        cell_id = grid.InsertNextCell(hex_elem.GetCellType(), hex_elem.GetPointIds())
+                        density_array.InsertNextValue(densities[elem_idx])
+                
+                grid.GetCellData().AddArray(density_array)
+                grid.GetCellData().SetActiveScalars("Density")
+                
+                # Convert cell data to point data
+                cell_to_point = vtk.vtkCellDataToPointData()
+                cell_to_point.SetInputData(grid)
+                cell_to_point.PassCellDataOn()
+                cell_to_point.Update()
+                
+                # Create isosurface using contour filter
+                contour = vtk.vtkContourFilter()
+                contour.SetInputData(cell_to_point.GetOutput())
+                contour.SetValue(0, threshold)
+                contour.SetInputArrayToProcess(0, 0, 0, vtk.vtkDataObject.FIELD_ASSOCIATION_POINTS, "Density")
+                contour.Update()
             
-        if not hasattr(self.parent, 'material_data') or self.parent.material_data is None:
-            QtWidgets.QMessageBox.warning(self, "Error", "No material assigned")
-            return False
+            # Clean up mesh and generate normals for better visualization
+            clean = vtk.vtkCleanPolyData()
+            clean.SetInputConnection(contour.GetOutputPort())
+            clean.Update()
             
-        if not hasattr(self.parent, 'topopt_constraints') or self.parent.topopt_constraints is None:
-            QtWidgets.QMessageBox.warning(self, "Error", "No optimization constraints defined")
-            return False
+            normals = vtk.vtkPolyDataNormals()
+            normals.SetInputConnection(clean.GetOutputPort())
+            normals.SetFeatureAngle(60)
+            normals.SplittingOff()
+            normals.Update()
             
-        return True
-    
+            # Create mapper and actor
+            mapper = vtk.vtkPolyDataMapper()
+            mapper.SetInputConnection(normals.GetOutputPort())
+            
+            # Create actor with material properties
+            self.optimized_mesh_actor = vtk.vtkActor()
+            self.optimized_mesh_actor.SetMapper(mapper)
+            self.optimized_mesh_actor.GetProperty().SetColor(0.2, 0.7, 0.9)  # Blue color
+            self.optimized_mesh_actor.GetProperty().SetAmbient(0.2)
+            self.optimized_mesh_actor.GetProperty().SetDiffuse(0.8)
+            self.optimized_mesh_actor.GetProperty().SetSpecular(0.5)
+            self.optimized_mesh_actor.GetProperty().SetSpecularPower(20)
+            
+            # Add to renderer
+            self.renderer.AddActor(self.optimized_mesh_actor)
+            
+        except Exception as e:
+            self.message_text.append(f"Error creating isosurface: {str(e)}")
+            traceback.print_exc()
+
+    def visualize_elements(self, mesh, densities, threshold=0.5):
+        """Create an element-based visualization of the optimized topology"""
+        try:
+            # Create points for the mesh nodes
+            points = vtk.vtkPoints()
+            for node_coords in mesh.node_xyz:
+                points.InsertNextPoint(node_coords)
+            
+            # Create unstructured grid
+            grid = vtk.vtkUnstructuredGrid()
+            grid.SetPoints(points)
+            
+            # Add cells (elements) with density above threshold
+            for elem_idx, elem in enumerate(mesh.elemArray):
+                if elem_idx < len(densities) and densities[elem_idx] > threshold:
+                    hex_elem = vtk.vtkHexahedron()
+                    for i, node_id in enumerate(elem):
+                        if i < 8:  # Hexahedron needs 8 points
+                            hex_elem.GetPointIds().SetId(i, node_id)
+                    
+                    grid.InsertNextCell(hex_elem.GetCellType(), hex_elem.GetPointIds())
+            
+            # Create mapper and actor
+            mapper = vtk.vtkDataSetMapper()
+            mapper.SetInputData(grid)
+            
+            self.optimized_mesh_actor = vtk.vtkActor()
+            self.optimized_mesh_actor.SetMapper(mapper)
+            self.optimized_mesh_actor.GetProperty().SetColor(0.2, 0.7, 0.9)
+            self.optimized_mesh_actor.GetProperty().SetAmbient(0.2)
+            self.optimized_mesh_actor.GetProperty().SetDiffuse(0.8)
+            self.optimized_mesh_actor.GetProperty().SetOpacity(1.0)
+            self.optimized_mesh_actor.GetProperty().EdgeVisibilityOn()
+            self.optimized_mesh_actor.GetProperty().SetEdgeColor(0.0, 0.0, 0.0)
+            self.optimized_mesh_actor.GetProperty().SetLineWidth(1.0)
+            
+            # Add to renderer
+            self.renderer.AddActor(self.optimized_mesh_actor)
+            
+        except Exception as e:
+            self.message_text.append(f"Error creating element visualization: {str(e)}")
+            traceback.print_exc()
     
 # ---------------------------------------------------------------------------------
 
@@ -8154,6 +8938,289 @@ class ThermalTopOptWindow(QtWidgets.QDialog):
             return False
             
         return True
+
+#---------------------------------------------------------------------------------
+# class TopologyOptimizationVisualization:
+#     """Class for visualizing topology optimization results in the PyTO GUI."""
+    
+#     def __init__(self, parent=None):
+#         """Initialize visualization class with parent window reference."""
+#         self.parent = parent
+#         self.history = None
+#         self.mesh = None
+#         self.optimization_complete = False
+#         self.threshold = 0.5  # Default density threshold for visualization
+        
+#     def display_results(self, fe_solver, history, elapsed_time):
+#         """Display optimization results in the main window.
+        
+#         Args:
+#             fe_solver: The FEA solver with optimized mesh
+#             history: Dictionary containing optimization history
+#             elapsed_time: Total optimization time in seconds
+#         """
+#         self.history = history
+#         self.mesh = fe_solver.mesh
+#         self.optimization_complete = True
+        
+#         # Update status in UI
+#         self.parent.message_text.append(f"Topology optimization complete in {elapsed_time:.2f} seconds")
+#         self.parent.message_text.append(f"Final volume fraction: {history['volume'][-1]:.4f}")
+#         self.parent.message_text.append(f"Final compliance: {history['compliance'][-1]:.4f}")
+        
+#         # Update visualization in main window viewport
+#         self.display_optimized_mesh()
+        
+#         # Create a history plot if available
+#         if self.parent.enable_plot_window and len(history['volume']) > 1:
+#             self.plot_optimization_history()
+            
+#     def display_optimized_mesh(self):
+#         """Display the optimized mesh in the main window viewport."""
+#         if not self.optimization_complete or self.mesh is None:
+#             return
+        
+#         # Clear previous visualization actors
+#         if hasattr(self.parent, 'optimized_mesh_actor') and self.parent.optimized_mesh_actor:
+#             self.parent.renderer.RemoveActor(self.parent.optimized_mesh_actor)
+            
+#         # Convert the density field to a VTK mesh for visualization
+#         import vtk
+#         import numpy as np
+        
+#         # Get element densities
+#         densities = np.array(self.mesh.densities)
+        
+#         # Create geometry - use isosurface or direct density visualization
+#         if hasattr(self.parent, 'smooth_surface') and self.parent.smooth_surface:
+#             # Create isosurface visualization (smoother)
+#             self.create_isosurface_visualization(densities)
+#         else:
+#             # Create direct element visualization (blocky)
+#             self.create_element_visualization(densities)
+            
+#         # Update render window
+#         self.parent.vtkWidget.GetRenderWindow().Render()
+        
+#     def create_isosurface_visualization(self, densities):
+#         """Create a smooth isosurface visualization of the optimized topology.
+        
+#         Args:
+#             densities: Array of element densities
+#         """
+#         import vtk
+#         import numpy as np
+        
+#         # Create structured points for the density field
+#         nx, ny, nz = self.mesh.nx, self.mesh.ny, self.mesh.nz
+        
+#         # Create image data
+#         image_data = vtk.vtkImageData()
+#         image_data.SetDimensions(nx+1, ny+1, nz+1)
+#         image_data.SetOrigin(self.mesh.x_min, self.mesh.y_min, self.mesh.z_min)
+#         image_data.SetSpacing(
+#             (self.mesh.x_max - self.mesh.x_min) / nx,
+#             (self.mesh.y_max - self.mesh.y_min) / ny,
+#             (self.mesh.z_max - self.mesh.z_min) / nz
+#         )
+        
+#         # Assign density values to cell data
+#         cell_data = vtk.vtkFloatArray()
+#         cell_data.SetName("Density")
+#         cell_data.SetNumberOfComponents(1)
+#         cell_data.SetNumberOfTuples(nx * ny * nz)
+        
+#         for i in range(len(densities)):
+#             cell_data.SetValue(i, densities[i])
+            
+#         image_data.GetCellData().AddArray(cell_data)
+#         image_data.GetCellData().SetActiveScalars("Density")
+        
+#         # Convert cell data to point data for smoother isosurface
+#         cell_to_point = vtk.vtkCellDataToPointData()
+#         cell_to_point.SetInputData(image_data)
+#         cell_to_point.PassCellDataOn()
+#         cell_to_point.Update()
+        
+#         # Create isosurface using contour filter
+#         contour = vtk.vtkContourFilter()
+#         contour.SetInputConnection(cell_to_point.GetOutputPort())
+#         contour.SetValue(0, self.threshold)  # Isovalue = threshold
+#         contour.SetInputArrayToProcess(0, 0, 0, vtk.vtkDataObject.FIELD_ASSOCIATION_POINTS, "Density")
+#         contour.Update()
+        
+#         # Clean up mesh and generate normals
+#         clean = vtk.vtkCleanPolyData()
+#         clean.SetInputConnection(contour.GetOutputPort())
+        
+#         normals = vtk.vtkPolyDataNormals()
+#         normals.SetInputConnection(clean.GetOutputPort())
+#         normals.SetFeatureAngle(60)
+#         normals.SplittingOff()
+        
+#         # Create mapper and actor
+#         mapper = vtk.vtkPolyDataMapper()
+#         mapper.SetInputConnection(normals.GetOutputPort())
+        
+#         self.parent.optimized_mesh_actor = vtk.vtkActor()
+#         self.parent.optimized_mesh_actor.SetMapper(mapper)
+#         self.parent.optimized_mesh_actor.GetProperty().SetColor(0.2, 0.7, 1.0)
+        
+#         # Add to renderer
+#         self.parent.renderer.AddActor(self.parent.optimized_mesh_actor)
+        
+#     def create_element_visualization(self, densities):
+#         """Create a direct element-based visualization of the optimized topology.
+        
+#         Args:
+#             densities: Array of element densities
+#         """
+#         import vtk
+#         import numpy as np
+        
+#         # Create unstructured grid from mesh elements
+#         points = vtk.vtkPoints()
+#         for i in range(len(self.mesh.nodeCoords)):
+#             x, y, z = self.mesh.nodeCoords[i]
+#             points.InsertNextPoint(x, y, z)
+            
+#         # Create grid
+#         grid = vtk.vtkUnstructuredGrid()
+#         grid.SetPoints(points)
+        
+#         # Add cells (elements) with density above threshold
+#         density_array = vtk.vtkFloatArray()
+#         density_array.SetName("Density")
+#         density_array.SetNumberOfComponents(1)
+        
+#         for i in range(len(densities)):
+#             if densities[i] > self.threshold:
+#                 # Get element nodes
+#                 elem_nodes = self.mesh.elemArray[i]
+                
+#                 # Create hexahedron (for hex elements)
+#                 hex_elem = vtk.vtkHexahedron()
+#                 for j in range(len(elem_nodes)):
+#                     hex_elem.GetPointIds().SetId(j, elem_nodes[j])
+                    
+#                 # Add to grid
+#                 grid.InsertNextCell(hex_elem.GetCellType(), hex_elem.GetPointIds())
+#                 density_array.InsertNextValue(densities[i])
+                
+#         # Add density data
+#         grid.GetCellData().AddArray(density_array)
+#         grid.GetCellData().SetActiveScalars("Density")
+        
+#         # Create mapper and actor
+#         mapper = vtk.vtkDataSetMapper()
+#         mapper.SetInputData(grid)
+#         mapper.ScalarVisibilityOff()
+        
+#         self.parent.optimized_mesh_actor = vtk.vtkActor()
+#         self.parent.optimized_mesh_actor.SetMapper(mapper)
+#         self.parent.optimized_mesh_actor.GetProperty().SetColor(0.2, 0.7, 1.0)
+        
+#         # Add to renderer
+#         self.parent.renderer.AddActor(self.parent.optimized_mesh_actor)
+    
+#     def plot_optimization_history(self):
+#         """Create a plot of the optimization history."""
+#         import matplotlib.pyplot as plt
+#         from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg
+#         from PyQt5.QtWidgets import QDialog, QVBoxLayout
+        
+#         # Create figure
+#         fig = plt.figure(figsize=(8, 6))
+        
+#         # Plot compliance history
+#         plt.subplot(2, 1, 1)
+#         plt.plot(self.history['compliance'], 'bo-')
+#         plt.ylabel('Compliance')
+#         plt.title('Topology Optimization History')
+#         plt.grid(True)
+        
+#         # Plot volume history
+#         plt.subplot(2, 1, 2)
+#         plt.plot(self.history['volume'], 'ro-')
+#         plt.xlabel('Iteration')
+#         plt.ylabel('Volume Fraction')
+#         plt.grid(True)
+        
+#         # Create dialog
+#         dialog = QDialog(self.parent)
+#         dialog.setWindowTitle("Optimization History")
+#         dialog.resize(800, 600)
+        
+#         # Create canvas for matplotlib figure
+#         canvas = FigureCanvasQTAgg(fig)
+        
+#         # Add to layout
+#         layout = QVBoxLayout(dialog)
+#         layout.addWidget(canvas)
+        
+#         # Show dialog
+#         dialog.show()
+    
+#     def update_optimization_progress(self, iteration, total_iterations, volume, compliance):
+#         """Update the visualization during optimization (for interactive feedback).
+        
+#         Args:
+#             iteration: Current iteration number
+#             total_iterations: Total expected iterations
+#             volume: Current volume fraction
+#             compliance: Current compliance value
+#         """
+#         # Update progress bar if available
+#         if hasattr(self.parent, 'progress_bar'):
+#             progress = int(100 * iteration / total_iterations)
+#             self.parent.progress_bar.setValue(progress)
+        
+#         # Update status message
+#         self.parent.message_text.append(f"Iteration {iteration}: vol={volume:.4f}, compliance={compliance:.4f}")
+        
+#         # Update visualization once every few iterations (not every iteration to avoid slowdowns)
+#         if iteration % 5 == 0 and hasattr(self.parent, 'mesh'):
+#             self.display_optimized_mesh()
+    
+#     def export_optimized_model(self, filename):
+#         """Export the optimized model to an STL file.
+        
+#         Args:
+#             filename: Path to save the STL file
+#         """
+#         if not self.optimization_complete or self.mesh is None:
+#             self.parent.message_text.append("No optimized model available to export")
+#             return False
+            
+#         import vtk
+        
+#         # Get the current visualization actor
+#         if hasattr(self.parent, 'optimized_mesh_actor') and self.parent.optimized_mesh_actor:
+#             # Create STL writer
+#             writer = vtk.vtkSTLWriter()
+#             writer.SetFileName(filename)
+            
+#             # Get the mapper's input
+#             mapper = self.parent.optimized_mesh_actor.GetMapper()
+            
+#             # If it's a dataset mapper, we need to get its input data
+#             if isinstance(mapper, vtk.vtkDataSetMapper):
+#                 # Convert unstructured grid to polydata
+#                 geom_filter = vtk.vtkGeometryFilter()
+#                 geom_filter.SetInputData(mapper.GetInput())
+#                 geom_filter.Update()
+#                 writer.SetInputData(geom_filter.GetOutput())
+#             else:
+#                 # It's already a polydata mapper
+#                 writer.SetInputData(mapper.GetInput())
+                
+#             writer.Write()
+#             self.parent.message_text.append(f"Optimized model exported to {filename}")
+#             return True
+        
+#         self.parent.message_text.append("No visualization available to export")
+#         return False
+
 #---------------------------------------------------------------------------------
 class ProjectData:
     def __init__(self):
