@@ -985,14 +985,14 @@ if __name__ == "__main__":
     jax.config.update("jax_enable_x64", True)
     from hex_structural_examples import StructuralExamples,getStructuralProblem
 
-    problem = StructuralExamples.FilletedBeam
+    problem = StructuralExamples.BeamSurfaceLoad
     control = ControlType.ForceControl 
    
 
 
     if (problem == StructuralExamples.BeamSurfaceLoad): # beam
         nDOFDesired= 2000
-        totalLoad = 100000
+        totalLoad = 10000
         nForceSteps = max(1,int(totalLoad/20000))
     elif (problem == StructuralExamples.TorsionBar): 
         nDOFDesired= 2000
