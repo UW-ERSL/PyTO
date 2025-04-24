@@ -30,7 +30,8 @@ from topopt_density_oc import topopt_optimality_criteria
 from tet_mesher import TetMesher
 from tet_thermal_examples import  createAnnularPlateThermalProblemTet
 from tet_thermal_fea import ThermalFEATet
-
+from tet_structural_examples import TetStructuralExamples, getTetStructuralProblem
+from tet_structural_fea import StructuralFEATet
 
 
 class pyTODemos(enum.Enum):
@@ -49,6 +50,7 @@ class pyTODemos(enum.Enum):
     # The following demos use a conforming tet mesh
 	Create_Tetmesh = enum.auto() # Create a tet mesh from an STL file 
 	ThermalFEA_Tet_Pardiso = enum.auto() # Create and solve a thermal FEA problem using the PARDISO solver 
+	StructuralFEA_Tet_Pardiso = enum.auto() # Create and solve a thermal FEA problem using the PARDISO solver 
 
 
 #Enable 64-bit precision in JAX
@@ -275,8 +277,9 @@ while True:
     elif demo == pyTODemos.StructuralTO_Voxel_Pareto:
         to_problem = StructuralTOExamples.CantileverTipLoad
         mesh, mat_prop, bc,elem_body_force, to_params = getStructuralTOProblem(to_problem)
-        fe_solver.plot_mesh(title = title)
+        
         fe_solver = StructFEA(mesh=mesh, mat_prop=mat_prop, solver= Solvers.PARDISO, bc=bc)
+        fe_solver.plot_mesh(title = title)
         u, history, success,errorMsg,nFEAs = topopt_pareto(fe_solver=fe_solver,to_params=to_params,plot_progress=True)
         plt.figure()
         plt.plot(history['volume'], history['compliance'], marker='o')
@@ -313,7 +316,31 @@ while True:
         uMax = np.max(np.abs(u))
         print("FEA time: ", time.time() - startTime)
         tetmesh.plotField(u,show_edges=False) # plot the solution field
+    elif demo == pyTODemos.StructuralFEA_Tet_Pardiso:
+        nDOFDesired = 1000
+        solver = Solvers.PARDISO
+        problem = TetStructuralExamples.BeamBending # CubeCompression, TensileBar, TorsionBar, BeamBending
+        quadratic_tet_mesh, mat_prop, bc, elem_body_force  = getTetStructuralProblem(problem,nDOFDesired = 1000)
+        solver = Solvers.PARDISO # typically DPCG or PARDISO
+        fe_solver = StructuralFEATet(quadratic_tet_mesh,
+                  mat_prop=mat_prop,
+                  bc=bc,
+                  solver=solver)
 
+        startTime = time.time()
+        fe_solver.assemble_global_stiffness_matrix()
+        fe_solver.solve()
+        delta = np.max(np.abs(fe_solver.deformation))
+    
+        nDOF = fe_solver.mesh.num_nodes
+    
+        print('-----------------------------')
+        print("nDof: ", nDOF)
+        print('Solver: ', fe_solver.solver.name)
+        print("FEA time: ", time.time() - startTime)
+        print('Max deformation: ', delta)
+        print('-----------------------------')
+        fe_solver.plot_deformation()
     # Move to next demo
     demo_list = list(pyTODemos)
     current_index = demo_list.index(demo)

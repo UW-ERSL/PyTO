@@ -99,7 +99,7 @@ def tet10_stiffness_matrix_structural(E,nu, elem_nodes):
             detJ = np.linalg.det(J)
             k_elem += B.T @ D @ B * w[i] * detJ
         return k_elem
-class StructFEATet:
+class StructuralFEATet:
   """Linear Structural Finite Element Analysis using 10-noded quadratic tet elements."""
 
   def __init__(self,
@@ -208,12 +208,12 @@ if __name__ == "__main__":
     from tet_structural_examples import TetStructuralExamples, getTetStructuralProblem
     jax.config.update("jax_enable_x64", True)
 
-    problem = TetStructuralExamples.TensileBar # CubeCompression, TensileBar, TorsionBar, BeamBending
+    problem = TetStructuralExamples.BeamBending # CubeCompression, TensileBar, TorsionBar, BeamBending
     
-    quadratic_tet_mesh, mat_prop, bc, elem_body_force  = getTetStructuralProblem(problem,nDOFDesired = 20000)
+    quadratic_tet_mesh, mat_prop, bc, elem_body_force  = getTetStructuralProblem(problem,nDOFDesired = 1000)
     
     solver = lin_sol.Solvers.PARDISO # typically DPCG or PARDISO
-    fe_solver = StructFEATet(quadratic_tet_mesh,
+    fe_solver = StructuralFEATet(quadratic_tet_mesh,
                 mat_prop=mat_prop,
                 bc=bc,
                 solver=solver)

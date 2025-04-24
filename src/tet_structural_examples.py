@@ -59,7 +59,7 @@ def createTensileBarTetStructuralProblem(nDOFDesired: int = 10000, E = 2e11, nu 
     xmax = np.max(quadratic_mesh.nodes[:, 0])
  
     load_nodes = np.where(np.abs(quadratic_mesh.nodes[:, 0] - xmax) <= tol)[0]
-    load_dof = 3*load_nodes+2
+    load_dof = 3*load_nodes
 
     force = np.zeros(3 * quadratic_mesh.nodes.shape[0])
     force[load_dof] = totalLoad / len(load_nodes)  # x-direction load
