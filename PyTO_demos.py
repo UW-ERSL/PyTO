@@ -28,7 +28,7 @@ from topopt_density_mma import topopt_mma
 from topopt_pareto import topopt_pareto
 from topopt_density_oc import topopt_optimality_criteria
 from tet_mesher import TetMesher
-from tet_examples_thermal import  createAnnularPlateThermalProblemTet
+from tet_thermal_examples import  createAnnularPlateThermalProblemTet
 from tet_thermal_fea import ThermalFEATet
 
 

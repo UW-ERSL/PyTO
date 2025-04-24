@@ -160,7 +160,7 @@ if __name__ == "__main__":
     import time
     import jax # import jax to enable 64 bit precision
     import time	
-    from tet_examples_thermal import *
+    from tet_thermal_examples import *
 
     jax.config.update("jax_enable_x64", True)
     

@@ -6,6 +6,7 @@ import jax.experimental.sparse as jax_sprs
 import linear_solvers as lin_sol
 import mat_lib
 import bound_cond
+import pyvista as pv # pip install pyvista
 
 class ThermalFEATet:
   """Linear Thermal Finite Element Analysis using linear tet elements."""
@@ -19,7 +20,6 @@ class ThermalFEATet:
 
     self.mesh, self.mat_prop, self.bc = mesh, mat_prop, bc
     self.solver, self.kwargs = solver, kwargs
-
     self.createEdofMatThermal()
    
   def createEdofMatThermal(self):
@@ -54,6 +54,7 @@ class ThermalFEATet:
             [-1, 0, 1, 0],
             [-1, 0, 0, 1]])
 
+   
     # Compute the Jacobian matrix
     jac = dN_dxi @ xyz_nodes
 
@@ -143,71 +144,60 @@ class ThermalFEATet:
     
     self.sol = u.copy()
     return u
+  
+  def plotTemperature(self, show_edges =  True, show_scalar_bar = True, show_grid = False):
+    plotter = pv.UnstructuredGrid({pv.CellType.TETRA: self.mesh.elems}, self.mesh.nodes)
+    plotter.point_data["field"] = self.sol
+    # Some common alternatives:
+    plotter.plot(show_edges=show_edges, show_scalar_bar=show_scalar_bar, show_grid=show_grid, cmap="jet",
+                    scalar_bar_args={ 
+                  'title': '',
+                  'vertical': True,
+                  'position_x': 0.8,
+                  'position_y': 0.3,
+                  'width': 0.1
+                  })      # Classic rainbow colormap
+        
 
 if __name__ == "__main__":
     import jax # import jax to enable 64 bit precision
     import time	
-    from tet_examples_thermal import *
+    from tet_thermal_examples import *
     jax.config.update("jax_enable_x64", True)
 
     
-    # Create lists to store DOFs and corresponding uMax values
-    dof_range = [100,500, 1000,2000]  # Range of desired DOFs
-    dofs = []
-    u_maxs = []
-    timing = []
+ 
+    nDOFDesired = 1000
     example = 3
-    for nDOFDesired in dof_range:
-      if example == 1:
-        tetmesh, mat_prop, bc = createThickPlateThermalProblemTet(nDOFDesired=nDOFDesired)
-      elif example == 2:
-        tetmesh, mat_prop, bc = createLBracketThermalProblemTet(nDOFDesired=nDOFDesired)
-      elif example == 3:
-        tetmesh, mat_prop, bc = createAnnularPlateThermalProblemTet(nDOFDesired=nDOFDesired)
+   
+    if example == 1:
+      tetmesh, mat_prop, bc = createThickPlateThermalProblemTet(nDOFDesired=nDOFDesired)
+    elif example == 2:
+      tetmesh, mat_prop, bc = createLBracketThermalProblemTet(nDOFDesired=nDOFDesired)
+    elif example == 3:
+      tetmesh, mat_prop, bc = createAnnularPlateThermalProblemTet(nDOFDesired=nDOFDesired)
+  
+    solver = lin_sol.Solvers.PARDISO
     
-      solver = lin_sol.Solvers.PARDISO
-      
-      fe_solver = ThermalFEATet(mesh=tetmesh,
-                  mat_prop=mat_prop,
-                  bc=bc,
-                  solver=solver)
+    fe_solver = ThermalFEATet(mesh=tetmesh,
+                mat_prop=mat_prop,
+                bc=bc,
+                solver=solver)
 
-      startTime = time.time()
-      fe_solver.assemble_global_stiffness_matrix()
-      u = np.asarray(fe_solver.solve())
-      uMax = np.max(np.abs(u))
-      
-      # Store results
-      nDOF = fe_solver.mesh.num_nodes
-      dofs.append(nDOF)
-      u_maxs.append(uMax)
-      timing.append(time.time() - startTime)
-      print('-----------------------------')
-      print("nDof: ", nDOF)
-      print('Solver: ', fe_solver.solver.name)
-      print("FEA time: ", time.time() - startTime)
-      print('Max u: ', uMax)
-      print('-----------------------------')
+    startTime = time.time()
+    fe_solver.assemble_global_stiffness_matrix()
+    u = np.asarray(fe_solver.solve())
+    uMax = np.max(np.abs(u))
     
-    # Plot DOF vs uMax
-    import matplotlib.pyplot as plt
-    plt.figure(figsize=(8, 6))
-    plt.plot(dofs, np.array(u_maxs), 'bo-')
-    plt.xlabel('Number of DOFs')
-    plt.ylabel('Maximum Temperature')
-    plt.ylim(0.9*min(u_maxs), 1.1*max(u_maxs))
-    plt.grid(True)
-    plt.title(f'Convergence Study - TetMesh')
-    plt.show()
-    
-    plt.figure(figsize=(8, 6))
-    plt.plot(dofs, np.array(timing), 'bo-')
-    plt.xlabel('Number of DOFs')
-    plt.ylabel('Timing (secs)')
-    plt.grid(True)
-    plt.title(f'Timing - TetMesh')
-    plt.show()
-   
-   
-	
-    tetmesh.plotField(u,show_edges=True) # plot the solution field
+    # Store results
+    nDOF = fe_solver.mesh.num_nodes
+
+    print('-----------------------------')
+    print("nDof: ", nDOF)
+    print('Solver: ', fe_solver.solver.name)
+    print("FEA time: ", time.time() - startTime)
+    print('Max u: ', uMax)
+    print('-----------------------------')
+
+  
+    fe_solver.plotTemperature(show_edges=True) # plot the solution field
