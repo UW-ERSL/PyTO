@@ -22,7 +22,6 @@ def runTOMethodOnBenchmarks(optimizationMethod):
 						StructuralTOExamples.DistributedLoad,
 						StructuralTOExamples.TorquePlate]
 	
-	benchmarks_2_5D_problems = [StructuralTOExamples.DistributedLoad]
 
 	benchmarks_bodyforce_problems = [StructuralTOExamples.GravityPlate,
 						StructuralTOExamples.CentrifugalPlate]
