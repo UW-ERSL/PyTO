@@ -6,6 +6,7 @@
 *.node
 /PyTOSlides
 /Results
+/Models
 /Projects
 /__pycache__
 /src/__pycache__
