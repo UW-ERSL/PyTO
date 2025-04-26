@@ -9,7 +9,7 @@ import pyvista as pv
 class STLGeom:
     TOL = 1e-9
 
-    def __init__(self, file_path):
+    def __init__(self, file_path = None):
         self.mesh = mesh.Mesh.from_file(file_path)
         
         self.stl_n_triangles = len(self.mesh.vectors)
@@ -22,6 +22,44 @@ class STLGeom:
         self.selected_triangles = set()
         self.file_path = file_path
 
+    def create_stl_of_box(self, box_size):
+        if isinstance(box_size, (int, float)):
+            dx = dy = dz = box_size
+        else:
+            dx, dy, dz = box_size
+
+        vertices = np.array([
+            [0, 0, 0],
+            [dx, 0, 0],
+            [dx, dy, 0],
+            [0, dy, 0],
+            [0, 0, dz],
+            [dx, 0, dz],
+            [dx, dy, dz],
+            [0, dy, dz]
+        ])
+
+        faces = np.array([
+            [0, 3, 1], [1, 3, 2],       # bottom face
+            [0, 1, 4], [1, 5, 4],       # front face
+            [1, 2, 5], [2, 6, 5],       # right face
+            [2, 3, 6], [3, 7, 6],       # back face
+            [3, 0, 7], [0, 4, 7],       # left face
+            [4, 5, 7], [5, 6, 7]        # top face
+        ])
+
+        new_mesh = mesh.Mesh(np.zeros(faces.shape[0], dtype=mesh.Mesh.dtype))
+        for i, face in enumerate(faces):
+            for j in range(3):
+                new_mesh.vectors[i][j] = vertices[face[j]]
+
+        self.mesh = new_mesh
+        self.stl_n_triangles = len(new_mesh.vectors)
+        self.tri_normals = self.compute_normals_vectorized()
+        self.tri_areas = self.compute_areas_vectorized()
+        self.tri_neighbors = self.compute_neighbors()
+        self.tri_highlight = [False] * self.stl_n_triangles
+        
     def get_bounding_box(self):
         """
         Compute the bounding box (min/max coordinates) of the STL geometry.
@@ -676,6 +714,7 @@ class STLGeom:
    
 if __name__ == "__main__":
     import os
+
 
     script_dir = os.path.dirname(os.path.abspath(__file__))
 

@@ -14,6 +14,7 @@ def runTOMethodOnBenchmarks(optimizationMethod):
 
 	benchmarks_2_5D_problems = [StructuralTOExamples.Mitchell_1, StructuralTOExamples.Mitchell_2,
 						StructuralTOExamples.Mitchell_3, 
+						StructuralTOExamples.ShortCantileverTipLoad, StructuralTOExamples.ShortCantileverMidLoad,
 						StructuralTOExamples.CantileverTipLoad, StructuralTOExamples.CantileverMidLoad,
 						StructuralTOExamples.MBBB,
 						StructuralTOExamples.LBracketTopLoad, StructuralTOExamples.LBracketMidLoad,
@@ -21,6 +22,8 @@ def runTOMethodOnBenchmarks(optimizationMethod):
 						StructuralTOExamples.DistributedLoad,
 						StructuralTOExamples.TorquePlate]
 	
+	benchmarks_2_5D_problems = [StructuralTOExamples.DistributedLoad]
+
 	benchmarks_bodyforce_problems = [StructuralTOExamples.GravityPlate,
 						StructuralTOExamples.CentrifugalPlate]
 	

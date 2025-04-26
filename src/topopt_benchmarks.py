@@ -7,6 +7,8 @@ class StructuralTOExamples(enum.Enum):
 	Mitchell_1 = enum.auto()
 	Mitchell_2 = enum.auto()
 	Mitchell_3 = enum.auto()       
+	ShortCantileverTipLoad = enum.auto()
+	ShortCantileverMidLoad = enum.auto()
 	CantileverTipLoad = enum.auto()
 	CantileverMidLoad = enum.auto()
 	MBBB = enum.auto()
@@ -24,8 +26,6 @@ class StructuralTOExamples(enum.Enum):
 	Table = enum.auto()
 	BliskWithBlade = enum.auto()
 	NoseCone = enum.auto()
-     
-
 
     
 def find_elements_with_fixedDOF(mesh, bc) -> np.ndarray:
@@ -85,6 +85,19 @@ def getStructuralTOProblem(to_problem: StructuralTOExamples,nDOFDesired = None, 
         to_params.ExtrudeZ = True
         to_params.nDOFDesired = 25000 if nDOFDesired is None else nDOFDesired
         to_params.DesiredVolFraction = 0.5
+    elif to_problem == StructuralTOExamples.ShortCantileverTipLoad:
+        structural_problem = StructuralExamples.ShortCantileverTipLoad
+        to_params.Comment  = "Benchmark 2.5D"
+        to_params.ExtrudeZ = True
+        to_params.nDOFDesired = 25000 if nDOFDesired is None else nDOFDesired
+        to_params.DesiredVolFraction = 0.5
+    elif to_problem == StructuralTOExamples.ShortCantileverMidLoad:
+        structural_problem = StructuralExamples.ShortCantileverMidLoad
+        to_params.Comment  = "Benchmark 2.5D"
+        to_params.YSymmetry = True  # Symmetry about the Y-axis
+        to_params.ExtrudeZ = True
+        to_params.nDOFDesired = 25000 if nDOFDesired is None else nDOFDesired
+        to_params.DesiredVolFraction = 0.5
     elif to_problem == StructuralTOExamples.CantileverTipLoad:
         structural_problem = StructuralExamples.CantileverTipLoad
         to_params.Comment  = "Benchmark 2.5D"
@@ -101,7 +114,7 @@ def getStructuralTOProblem(to_problem: StructuralTOExamples,nDOFDesired = None, 
     elif to_problem == StructuralTOExamples.MBBB:
         structural_problem = StructuralExamples.MBBB
         to_params.Comment  = "Benchmark 2.5D"
-        to_params.nDOFDesired = 50000 if nDOFDesired is None else nDOFDesired
+        to_params.nDOFDesired = 60000 if nDOFDesired is None else nDOFDesired
         to_params.DesiredVolFraction = 0.25
     elif to_problem == StructuralTOExamples.DistributedLoad:
         structural_problem = StructuralExamples.DistributedLoad

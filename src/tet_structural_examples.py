@@ -8,9 +8,9 @@ script_dir = os.path.dirname(os.path.abspath(__file__))
 
 class TetStructuralExamples(enum.Enum):
 	TensileBar = enum.auto()
-	TorsionBar = enum.auto()
 	BeamBending = enum.auto()
 	CubeCompression = enum.auto()
+	Arrowhead = enum.auto()
 
 def getTetStructuralProblem(problem: TetStructuralExamples, **kwargs):
   """Returns a structural problem based on the given problem name.
@@ -29,12 +29,12 @@ def getTetStructuralProblem(problem: TetStructuralExamples, **kwargs):
   """
   if problem == TetStructuralExamples.TensileBar:
     return createTensileBarTetStructuralProblem(**kwargs)
-  elif problem == TetStructuralExamples.TorsionBar:
-    return createTorsionBarTetStructuralProblem(**kwargs)
   elif problem == TetStructuralExamples.BeamBending:
     return createBeamBendingTetStructuralProblem(**kwargs)
   elif problem == TetStructuralExamples.CubeCompression:
     return createCubeCompressionTetStructuralProblem(**kwargs)
+  elif problem == TetStructuralExamples.GEGrabCAD:
+    return createGEGrabCADTetStructuralProblem(**kwargs)
   else:
     raise ValueError("Invalid structural tet example name.")
   
@@ -70,37 +70,6 @@ def createTensileBarTetStructuralProblem(nDOFDesired: int = 10000, E = 2e11, nu 
     elem_body_force = None
     return quadratic_mesh, mat_prop, bc, elem_body_force
 
-def createTorsionBarTetStructuralProblem(nDOFDesired: int = 10000, E = 2e11, nu = 0.3, totalLoad = 100000):
-    # Read the STL model, create a mesh of desired size, and a structural problem is posed on it.
-    stl_file = os.path.join(script_dir, '../Models/Beam/Beam.STL')
-    nElemsDesired = nDOFDesired // 3  # estimate (3 DOFs per node for structural)
-    tetmesh = TetMesher()
-
-    tetmesh.createTetMeshFromSTLFile(stl_file, nElemsDesired=nElemsDesired)
-    quadratic_mesh = tetmesh.createQuadraticTetMesh()
-
-    # Fixed boundary condition at x = xMin plane (all DOFs fixed)
-    xmin = np.min(quadratic_mesh.nodes[:, 0])
-    tol = 1e-8
-    fixed_nodes = np.where(np.abs(quadratic_mesh.nodes[:, 0] - xmin) <= tol)[0]
-    fixed_dofs = np.concatenate([3 * fixed_nodes, 3 * fixed_nodes + 1, 3 * fixed_nodes + 2])
-    dirichlet_values = np.zeros_like(fixed_dofs, dtype=float)
-
-    # Load application as a torsional load around the x-axis
-    xmax = np.max(quadratic_mesh.nodes[:, 0])
-    load_nodes = np.where(np.abs(quadratic_mesh.nodes[:, 0] - xmax) <= tol)[0]
-    load_dof_y = 3 * load_nodes + 1  # y-direction DOFs
-    load_dof_z = 3 * load_nodes + 2  # z-direction DOFs
-
-    force = np.zeros(3 * quadratic_mesh.nodes.shape[0])
-    force[load_dof_y] = totalLoad / len(load_nodes)  # y-direction load
-    force[load_dof_z] = totalLoad / len(load_nodes)  # z-direction load
-
-    bc = bound_cond.BC(force=force, fixed_dofs=fixed_dofs, dirichlet_values=dirichlet_values)
-
-    mat_prop = mat_lib.StructuralMaterial(youngs_modulus=E, poissons_ratio=nu)
-    elem_body_force = None
-    return quadratic_mesh, mat_prop, bc, elem_body_force
 
 def createBeamBendingTetStructuralProblem(nDOFDesired: int = 10000, E = 2e11, nu = 0.3, totalLoad = 10000):
     # Read the STL model, create a mesh of desired size, and a structural problem is posed on it.
@@ -195,3 +164,14 @@ def createThickPlateTetStructuralProblem(nDOFDesired: int = 10000, E = 2e11, nu 
     elem_body_force = None
     return quadratic_mesh, mat_prop, bc, elem_body_force
 
+def createGEGrabCADTetStructuralProblem(nDOFDesired: int = 10000, E = 2e11, nu = 0.3, totalLoad = 100000):
+    
+    tetmesh = TetMesher()
+    
+    tetmesh.read_Abaqus_linear_tetmesh(os.path.join(script_dir, '../Models/GEGrabCAD/GEGrabCADLinearTetMesh.inp'))
+    quadratic_mesh = tetmesh.createQuadraticTetMesh()    
+    mat_prop = mat_lib.StructuralMaterial(youngs_modulus=E,poissons_ratio=nu)
+    bc = None
+    elem_body_force = None
+   
+    return quadratic_mesh, mat_prop, bc, elem_body_force

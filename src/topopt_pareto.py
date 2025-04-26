@@ -214,7 +214,7 @@ if __name__ == "__main__":
 	from topopt_benchmarks import *
 	
 	print("-" * 50)
-	to_problem = StructuralTOExamples.EdgeCantilever # Choose the TO problem
+	to_problem = StructuralTOExamples.Mitchell_1 # Choose the TO problem
 	print(f"Running {to_problem.name}...") 
 	print("-" * 50)
 	

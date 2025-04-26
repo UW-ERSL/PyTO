@@ -15,9 +15,10 @@ class StructuralExamples(enum.Enum):
 	ShearBlock = enum.auto()
 	Mitchell = enum.auto()
 	EdgeCantilever = enum.auto()
+	ShortCantileverTipLoad = enum.auto()
+	ShortCantileverMidLoad = enum.auto()
 	CantileverTipLoad = enum.auto()
 	CantileverMidLoad = enum.auto()
-	MidCantilever = enum.auto()
 	TwoBar = enum.auto()
 	ThreeHoleBracket = enum.auto()
 	MBBB = enum.auto()
@@ -66,6 +67,10 @@ def getStructuralProblem(problem: StructuralExamples, **kwargs):
     return createMitchellProblem(**kwargs)
   elif problem == StructuralExamples.EdgeCantilever:
     return createEdgeCantileverProblem(**kwargs)
+  elif problem == StructuralExamples.ShortCantileverTipLoad:
+    return createShortCantileverTipLoadProblem(**kwargs)
+  elif problem == StructuralExamples.ShortCantileverMidLoad:
+    return createShortCantileverMidLoadProblem(**kwargs)
   elif problem == StructuralExamples.CantileverTipLoad:
     return createCantileverTipLoadProblem(**kwargs)
   elif problem == StructuralExamples.CantileverMidLoad:
@@ -78,8 +83,6 @@ def getStructuralProblem(problem: StructuralExamples, **kwargs):
     return createTwoBarProblem(**kwargs)
   elif problem == StructuralExamples.DistributedLoad:
     return createDistributedLoadProblem(**kwargs)
-  elif problem == StructuralExamples.MidCantilever:
-    return createMidCantileverProblem(**kwargs)
   elif problem == StructuralExamples.ThreeHoleBracket:
     return createThreeHoleBracketProblem(**kwargs)
   elif problem == StructuralExamples.Multiload:
@@ -467,7 +470,7 @@ def createShearBlockProblem(nDOFDesired: int = 10000, L: float = [1, 1, 1],young
 
 
 
-def createMitchellProblem(nDOFDesired: int = 10000, L: float = [1, 1, 0.1],youngs_modulus = 2e11, 
+def createMitchellProblem(nDOFDesired: int = 10000, youngs_modulus = 2e11, 
                             poissons_ratio = 0.26,load1 = 5.6e4, load2 = 0):
   """
   See: Topology Optimization Benchmarks in 2D: Results for Minimum Compliance and Minimum Volume in Planar Stress Problems
@@ -491,16 +494,10 @@ S. Ivvan Valdez, et al. Arch Computat Methods Eng (2017) 24:803–839, DOI 10.10
     - mat_prop: Material properties object
     - bc: Boundary conditions with fixed left face and load on right face
   """
-  
-  nVoxelsDesired = nDOFDesired/3    
-  # Let the number of voxels be proportional to the length in each direction
-  alpha = (nVoxelsDesired/(L[0]*L[1]*L[2]))**(1/3)
-  nelx = round(alpha*L[0])
-  nely = round(alpha*L[1])
-  nelz = round(alpha*L[2])
+  stl_file = os.path.join(script_dir, '../Models/Mitchell/Mitchell.STL')
+  nElemsDesired = nDOFDesired/3    # estimate
   mesh = hex_mesher.Mesher()
-  mesh.grid_mesh(num_elems = (nelx, nely, nelz),
-                  elem_size = (L[0]/nelx, L[1]/nely, L[2]/nelz))
+  mesh.createMeshFromSTLFile(stl_file, nElemsDesired=nElemsDesired)
   mesh.createEdofMatStructural()
 
   node_pts = mesh.node_xyz
@@ -611,78 +608,8 @@ def createEdgeCantileverProblem(nDOFDesired: int = 10000, L: float = [0.4, 0.2, 
 
   # ----------------------------------------
 
-
-def createMidCantileverProblem(nDOFDesired: int = 10000, L: float = [0.4, 0.2, 0.025],
-                               youngs_modulus = 2e11, poissons_ratio = 0.3,totalLoad = 10000):
-  """Creates a edge loaded cantilever beam problem with approximate desired DOFs.
-
-  Parameters:
-  ----------
-  nDOFDesired : int
-    Desired number of degrees of freedom (default 10000)
-  L : list of float
-    Dimensions [Lx, Ly, Lz] of domain (default [0.1, 0.1, 0.1])
-  youngs_modulus : float
-    Young's modulus of material (default 2e11)
-  poissons_ratio : float 
-    Poisson's ratio of material (default 0.3)
-
-  Returns:
-  -------
-  tuple
-    (mesh, mat_prop, bc) containing:
-    - mesh: Mesher object with grid discretization
-    - mat_prop: Material properties object
-    - bc: Boundary conditions with fixed left face and load on right face
-  """
-  nVoxelsDesired = nDOFDesired/3    
-  # Let the number of voxels be proportional to the length in each direction
-  alpha = (nVoxelsDesired/(L[0]*L[1]*L[2]))**(1/3)
-  nelx = round(alpha*L[0])
-  nely = round(alpha*L[1])
-  nelz = round(alpha*L[2])
-  mesh = hex_mesher.Mesher()
-  mesh.grid_mesh(num_elems = (nelx, nely, nelz),
-                  elem_size = (L[0]/nelx, L[1]/nely, L[2]/nelz))
-  mesh.createEdofMatStructural()
-
-  fixed_nodes = mesh.getNodesOnBoundingBoxPlane(0,True) # x = 0 plane
-  fixed_dofs = np.array([3 * fixed_nodes,
-              3 * fixed_nodes + 1,
-              3 * fixed_nodes + 2]).flatten().astype(int)
-  dirichlet_values = 0*np.ones_like(fixed_dofs, dtype = float)
-
-  mesh.node_indices[fixed_nodes, 3] = 1
-  # line defined by x = xMax, and y = yMax/2,
-  # Get nodes on plane x = xMax
-  max_x_nodes = mesh.getNodesOnBoundingBoxPlane(0,False)
-  # Get nodes with y coordinate near yMax/2
-  node_pts = mesh.node_xyz
-  y_mid = (np.max(node_pts[:,1]) + np.min(node_pts[:,1]))/2
-  y_mid_nodes = np.where(abs(node_pts[:,1] - y_mid) < 1.5*mesh.elem_size[1])[0]
-  # Intersect the two sets to get nodes on the line
-
-  load_nodes = np.intersect1d(max_x_nodes, y_mid_nodes)
-  load_dofs = 3 * load_nodes + 1  # y direction
-
-  mesh.node_indices[load_nodes, 3] = 2
-  load_per_dof = -totalLoad/len(load_nodes)
-
-  force = np.zeros(3*mesh.num_nodes)
-  force[load_dofs] = load_per_dof
-
-  bc = bound_cond.BC(force = force,
-            fixed_dofs = fixed_dofs,
-            dirichlet_values = dirichlet_values) 
-
-  mat_prop = mat_lib.StructuralMaterial(youngs_modulus=youngs_modulus,
-                      poissons_ratio=poissons_ratio)
-  elem_body_force = None
-  return mesh, mat_prop, bc, elem_body_force
-
-  # ----------------------------------------
   
-def createCantileverMidLoadProblem(nDOFDesired: int = 10000, L: float = [1, 1, 0.1],
+def createShortCantileverMidLoadProblem(nDOFDesired: int = 10000,
                                youngs_modulus = 2e11, poissons_ratio = 0.3,totalLoad = 9e4):
   """Creates a edge loaded cantilever beam problem with approximate desired DOFs.
 
@@ -705,15 +632,10 @@ def createCantileverMidLoadProblem(nDOFDesired: int = 10000, L: float = [1, 1, 0
     - mat_prop: Material properties object
     - bc: Boundary conditions with fixed left face and load on right face
   """
-  nVoxelsDesired = nDOFDesired/3    
-  # Let the number of voxels be proportional to the length in each direction
-  alpha = (nVoxelsDesired/(L[0]*L[1]*L[2]))**(1/3)
-  nelx = round(alpha*L[0])
-  nely = round(alpha*L[1])
-  nelz = round(alpha*L[2])
+  stl_file = os.path.join(script_dir, '../Models/ShortCantilever/ShortCantilever.STL')
+  nElemsDesired = nDOFDesired/3    # estimate
   mesh = hex_mesher.Mesher()
-  mesh.grid_mesh(num_elems = (nelx, nely, nelz),
-                  elem_size = (L[0]/nelx, L[1]/nely, L[2]/nelz))
+  mesh.createMeshFromSTLFile(stl_file, nElemsDesired=nElemsDesired)
   mesh.createEdofMatStructural()
 
   fixed_nodes = mesh.getNodesOnBoundingBoxPlane(0,True) # x = 0 plane
@@ -752,7 +674,7 @@ def createCantileverMidLoadProblem(nDOFDesired: int = 10000, L: float = [1, 1, 0
   # ----------------------------------------
 
 
-def createCantileverTipLoadProblem(nDOFDesired: int = 10000, L: float = [1, 1, 0.1],
+def createShortCantileverTipLoadProblem(nDOFDesired: int = 10000, 
                                youngs_modulus = 2e11, poissons_ratio = 0.3,totalLoad = 5.8e4):
   """Creates a edge loaded cantilever beam problem with approximate desired DOFs.
 
@@ -775,15 +697,10 @@ def createCantileverTipLoadProblem(nDOFDesired: int = 10000, L: float = [1, 1, 0
     - mat_prop: Material properties object
     - bc: Boundary conditions with fixed left face and load on right face
   """
-  nVoxelsDesired = nDOFDesired/3    
-  # Let the number of voxels be proportional to the length in each direction
-  alpha = (nVoxelsDesired/(L[0]*L[1]*L[2]))**(1/3)
-  nelx = round(alpha*L[0])
-  nely = round(alpha*L[1])
-  nelz = round(alpha*L[2])
+  stl_file = os.path.join(script_dir, '../Models/ShortCantilever/ShortCantilever.STL')
+  nElemsDesired = nDOFDesired/3    # estimate
   mesh = hex_mesher.Mesher()
-  mesh.grid_mesh(num_elems = (nelx, nely, nelz),
-                  elem_size = (L[0]/nelx, L[1]/nely, L[2]/nelz))
+  mesh.createMeshFromSTLFile(stl_file, nElemsDesired=nElemsDesired)
   mesh.createEdofMatStructural()
 
   fixed_nodes = mesh.getNodesOnBoundingBoxPlane(0,True) # x = 0 plane
@@ -821,7 +738,8 @@ def createCantileverTipLoadProblem(nDOFDesired: int = 10000, L: float = [1, 1, 0
 
   # ----------------------------------------
   
-def createTwoBarProblem(nDOFDesired: int = 10000, L: float = [1, 2, 0.1],
+
+def createCantileverMidLoadProblem(nDOFDesired: int = 10000,
                                youngs_modulus = 2e11, poissons_ratio = 0.3,totalLoad = 9e4):
   """Creates a edge loaded cantilever beam problem with approximate desired DOFs.
 
@@ -844,15 +762,139 @@ def createTwoBarProblem(nDOFDesired: int = 10000, L: float = [1, 2, 0.1],
     - mat_prop: Material properties object
     - bc: Boundary conditions with fixed left face and load on right face
   """
-  nVoxelsDesired = nDOFDesired/3    
-  # Let the number of voxels be proportional to the length in each direction
-  alpha = (nVoxelsDesired/(L[0]*L[1]*L[2]))**(1/3)
-  nelx = round(alpha*L[0])
-  nely = round(alpha*L[1])
-  nelz = round(alpha*L[2])
+  stl_file = os.path.join(script_dir, '../Models/Cantilever/Cantilever.STL')
+  nElemsDesired = nDOFDesired/3    # estimate
   mesh = hex_mesher.Mesher()
-  mesh.grid_mesh(num_elems = (nelx, nely, nelz),
-                  elem_size = (L[0]/nelx, L[1]/nely, L[2]/nelz))
+  mesh.createMeshFromSTLFile(stl_file, nElemsDesired=nElemsDesired)
+  mesh.createEdofMatStructural()
+
+  fixed_nodes = mesh.getNodesOnBoundingBoxPlane(0,True) # x = 0 plane
+  fixed_dofs = np.array([3 * fixed_nodes,
+              3 * fixed_nodes + 1,
+              3 * fixed_nodes + 2]).flatten().astype(int)
+  dirichlet_values = 0*np.ones_like(fixed_dofs, dtype = float)
+
+  mesh.node_indices[fixed_nodes, 3] = 1
+  
+  max_x_nodes = mesh.getNodesOnBoundingBoxPlane(0,False)
+  # Get nodes with y coordinate near yMax/2
+  node_pts = mesh.node_xyz
+  y_mid = (np.max(node_pts[:,1]) + np.min(node_pts[:,1]))/2
+  y_mid_nodes = np.where(abs(node_pts[:,1] - y_mid) < 0.05)[0]
+  # Intersect the two sets to get nodes on the line
+
+  load_nodes = np.intersect1d(max_x_nodes, y_mid_nodes)
+  load_dofs = 3 * load_nodes + 1  # y direction
+
+  mesh.node_indices[load_nodes, 3] = 2
+  load_per_dof = -totalLoad/len(load_nodes)
+
+  force = np.zeros(3*mesh.num_nodes)
+  force[load_dofs] = load_per_dof
+
+  bc = bound_cond.BC(force = force,
+            fixed_dofs = fixed_dofs,
+            dirichlet_values = dirichlet_values) 
+
+  mat_prop = mat_lib.StructuralMaterial(youngs_modulus=youngs_modulus,
+                      poissons_ratio=poissons_ratio)
+  elem_body_force = None
+  return mesh, mat_prop, bc, elem_body_force
+
+  # ----------------------------------------
+
+
+def createCantileverTipLoadProblem(nDOFDesired: int = 10000,
+                               youngs_modulus = 2e11, poissons_ratio = 0.3,totalLoad = 5.8e4):
+  """Creates a edge loaded cantilever beam problem with approximate desired DOFs.
+
+  Parameters:
+  ----------
+  nDOFDesired : int
+    Desired number of degrees of freedom (default 10000)
+  L : list of float
+    Dimensions [Lx, Ly, Lz] of domain (default [1, 1, 0.1])
+  youngs_modulus : float
+    Young's modulus of material (default 2e11)
+  poissons_ratio : float 
+    Poisson's ratio of material (default 0.3)
+
+  Returns:
+  -------
+  tuple
+    (mesh, mat_prop, bc) containing:
+    - mesh: Mesher object with grid discretization
+    - mat_prop: Material properties object
+    - bc: Boundary conditions with fixed left face and load on right face
+  """
+  stl_file = os.path.join(script_dir, '../Models/Cantilever/Cantilever.STL')
+  nElemsDesired = nDOFDesired/3    # estimate
+  mesh = hex_mesher.Mesher()
+  mesh.createMeshFromSTLFile(stl_file, nElemsDesired=nElemsDesired)
+  mesh.createEdofMatStructural()
+
+  fixed_nodes = mesh.getNodesOnBoundingBoxPlane(0,True) # x = 0 plane
+  fixed_dofs = np.array([3 * fixed_nodes,
+              3 * fixed_nodes + 1,
+              3 * fixed_nodes + 2]).flatten().astype(int)
+  dirichlet_values = 0*np.ones_like(fixed_dofs, dtype = float)
+
+  mesh.node_indices[fixed_nodes, 3] = 1
+  
+  max_x_nodes = mesh.getNodesOnBoundingBoxPlane(0,False)
+  # Get nodes with y coordinate near yMax/2
+  node_pts = mesh.node_xyz
+ 
+  y_tip_nodes = np.where(abs(node_pts[:,1]) < 0.1)[0]
+  # Intersect the two sets to get nodes on the line
+
+  load_nodes = np.intersect1d(max_x_nodes, y_tip_nodes)
+  load_dofs = 3 * load_nodes + 1  # y direction
+
+  mesh.node_indices[load_nodes, 3] = 2
+  load_per_dof = -totalLoad/len(load_nodes)
+
+  force = np.zeros(3*mesh.num_nodes)
+  force[load_dofs] = load_per_dof
+
+  bc = bound_cond.BC(force = force,
+            fixed_dofs = fixed_dofs,
+            dirichlet_values = dirichlet_values) 
+
+  mat_prop = mat_lib.StructuralMaterial(youngs_modulus=youngs_modulus,
+                      poissons_ratio=poissons_ratio)
+  elem_body_force = None
+  return mesh, mat_prop, bc, elem_body_force
+
+  # ----------------------------------------
+
+def createTwoBarProblem(nDOFDesired: int = 10000,
+                               youngs_modulus = 2e11, poissons_ratio = 0.3,totalLoad = 9e4):
+  """Creates a edge loaded cantilever beam problem with approximate desired DOFs.
+
+  Parameters:
+  ----------
+  nDOFDesired : int
+    Desired number of degrees of freedom (default 10000)
+  L : list of float
+    Dimensions [Lx, Ly, Lz] of domain (default [1, 1, 0.1])
+  youngs_modulus : float
+    Young's modulus of material (default 2e11)
+  poissons_ratio : float 
+    Poisson's ratio of material (default 0.3)
+
+  Returns:
+  -------
+  tuple
+    (mesh, mat_prop, bc) containing:
+    - mesh: Mesher object with grid discretization
+    - mat_prop: Material properties object
+    - bc: Boundary conditions with fixed left face and load on right face
+  """
+  stl_file = os.path.join(script_dir, '../Models/TwoBar/TwoBar.STL')
+  nElemsDesired = nDOFDesired/3    # estimate
+  mesh = hex_mesher.Mesher()
+  mesh.createMeshFromSTLFile(stl_file, nElemsDesired=nElemsDesired)
   mesh.createEdofMatStructural()
 
   fixed_nodes = mesh.getNodesOnBoundingBoxPlane(0,True) # x = 0 plane
@@ -892,21 +934,16 @@ def createTwoBarProblem(nDOFDesired: int = 10000, L: float = [1, 2, 0.1],
 
 
 
-def createMBBBProblem(nDOFDesired: int = 10000, L: float = [3, 1, 0.1],youngs_modulus = 2e11, 
+def createMBBBProblem(nDOFDesired: int = 10000, youngs_modulus = 2e11, 
                       poissons_ratio = 0.3,load = 2.7e4):
   ''' 
     See: Topology Optimization Benchmarks in 2D: Results for Minimum Compliance and Minimum Volume in Planar Stress Problems
   S. Ivvan Valdez, et al. Arch Computat Methods Eng (2017) 24:803–839, DOI 10.1007/s11831-016-9190-3
 '''
-  nVoxelsDesired = nDOFDesired/3    
-  # Let the number of voxels be proportional to the length in each direction
-  alpha = (nVoxelsDesired/(L[0]*L[1]*L[2]))**(1/3)
-  nelx = round(alpha*L[0])
-  nely = round(alpha*L[1])
-  nelz = round(alpha*L[2])
+  stl_file = os.path.join(script_dir, '../Models/MBBB/MBBB.STL')
+  nElemsDesired = nDOFDesired/3    # estimate
   mesh = hex_mesher.Mesher()
-  mesh.grid_mesh(num_elems = (nelx, nely, nelz),
-                  elem_size = (L[0]/nelx, L[1]/nely, L[2]/nelz))
+  mesh.createMeshFromSTLFile(stl_file, nElemsDesired=nElemsDesired)
   mesh.createEdofMatStructural()
 
   symmetry_nodes = mesh.getNodesOnBoundingBoxPlane(0,True) # x = 0 plane
@@ -943,17 +980,11 @@ def createMBBBProblem(nDOFDesired: int = 10000, L: float = [3, 1, 0.1],youngs_mo
   # ----------------------------------------
   
 def createDistributedLoadProblem(nDOFDesired: int = 10000, L: float = [1.0, 0.5, 0.025],youngs_modulus = 2e11, poissons_ratio = 0.3):
-  nVoxelsDesired = nDOFDesired/3    
-  # Let the number of voxels be proportional to the length in each direction
-  alpha = (nVoxelsDesired/(L[0]*L[1]*L[2]))**(1/3)
-  nelx = round(alpha*L[0])
-  nely = round(alpha*L[1])
-  nelz = round(alpha*L[2])
+  stl_file = os.path.join(script_dir, '../Models/DistributedLoad/DistributedLoad.STL')
+  nElemsDesired = nDOFDesired/3    # estimate
   mesh = hex_mesher.Mesher()
-  mesh.grid_mesh(num_elems = (nelx, nely, nelz),
-                  elem_size = (L[0]/nelx, L[1]/nely, L[2]/nelz))
+  mesh.createMeshFromSTLFile(stl_file, nElemsDesired=nElemsDesired)
   mesh.createEdofMatStructural()
-
 
   left_node =np.intersect1d(mesh.getNodesOnBoundingBoxPlane(0,True), mesh.getNodesOnBoundingBoxPlane(1,True))
   right_node =np.intersect1d(mesh.getNodesOnBoundingBoxPlane(0,False), mesh.getNodesOnBoundingBoxPlane(1,True))

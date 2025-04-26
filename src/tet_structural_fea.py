@@ -208,7 +208,7 @@ if __name__ == "__main__":
     from tet_structural_examples import TetStructuralExamples, getTetStructuralProblem
     jax.config.update("jax_enable_x64", True)
 
-    problem = TetStructuralExamples.BeamBending # CubeCompression, TensileBar, TorsionBar, BeamBending
+    problem = TetStructuralExamples.BeamBending # CubeCompression, TensileBar, BeamBending
     
     quadratic_tet_mesh, mat_prop, bc, elem_body_force  = getTetStructuralProblem(problem,nDOFDesired = 1000)
     
