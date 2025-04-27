@@ -593,7 +593,7 @@ if __name__ == "__main__":
 
 
   problem = StructuralExamples.TorsionBar
-  nDOFDesired = 5000
+  nDOFDesired = 80000
   mesh, mat_prop, bc,elem_body_force = getStructuralProblem(problem,nDOFDesired = nDOFDesired)
   solver = lin_solv.Solvers.PARDISO # typically DPCG or PARDISO
   
@@ -614,7 +614,9 @@ if __name__ == "__main__":
         elem_body_force = elem_body_force)
 
   fe_solver.plot_mesh()
-  u = np.asarray(fe_solver.solve())
+  startTime = time.time()
+  fe_solver.solve()
+  print(f"Time to solve: {time.time() - startTime:.2f} seconds")
   fe_solver.postprocess()
   fe_solver.plot_deformation()
   fe_solver.plot_vonMisesStress()

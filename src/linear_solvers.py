@@ -3,7 +3,7 @@
 import enum
 import numpy as np
 
-import jax
+
 import jax.numpy as jnp
 
 import scipy.sparse as spy_sprs

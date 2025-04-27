@@ -3,7 +3,7 @@ import numpy as np
 import pyvista as pv # pip install pyvista
 from scipy.sparse import coo_matrix
 import tetgen #pip install tetgen
-import jax.numpy as jnp
+
 
 class TetMesher:
     def __init__(self):	
