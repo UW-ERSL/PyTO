@@ -97,7 +97,7 @@ class TetTransientThermalFEA:
         C = self.C_mtrx
         A = K + C/dt
         for timeIndex in range(1,time_steps):
-            print(f"Time step {timeIndex} / {time_steps-1}")
+            #print(f"Time step {timeIndex} / {time_steps-1}")
             heatFluxApplied = heat_flux_func(timeIndex, self.deltaTime, self.mesh)
             b = self.C_mtrx @ self.u[:, timeIndex-1]/self.deltaTime + heatFluxApplied
             self.u[:, timeIndex] = lin_sol.solve(A, b, self.solver, self.bc)
