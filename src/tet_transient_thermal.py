@@ -61,7 +61,7 @@ class TetTransientThermalFEA:
 
         elem_stiffness_stacked = np.concatenate(data)
         self.K_mtrx = jax_sprs.BCOO((elem_stiffness_stacked, self.node_idx),
-                                shape=(bc.num_dofs, bc.num_dofs))
+                                shape=(self.bc.num_dofs, self.bc.num_dofs))
         datasp = []
         for i in range(self.mesh.num_elems):
             elem_specific_heat =  tet4_specific_heat_matrix(self.mat_prop.specific_heat,
@@ -71,7 +71,7 @@ class TetTransientThermalFEA:
 
         elem_specific_heat_stacked = np.concatenate(datasp)
         self.C_mtrx = jax_sprs.BCOO((elem_specific_heat_stacked, self.node_idx),
-                                shape=(bc.num_dofs, bc.num_dofs))
+                                shape=(self.bc.num_dofs, self.bc.num_dofs))
     
 
     def solve_newmark(self, time_steps: int, heat_flux_func, callback=None) -> np.ndarray:
