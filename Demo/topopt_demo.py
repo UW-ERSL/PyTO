@@ -12,7 +12,7 @@ import plots_demo
 import jax
 	
 if __name__ == "__main__":    
-	#from examples_topology_optimization import *
+	from topopt_benchmarks import *
 	from examples_topology_optimization_demo import *
 	import struct_fea as fea
 	import linear_solvers as lin_solv
@@ -28,7 +28,8 @@ if __name__ == "__main__":
 	
 	# Choose the TO problem
 	print("-" * 50)
-	to_problem = StructuralTOExamplesDemo.BasePlateAssembly
+	#to_problem = StructuralTOExamplesDemo.BasePlateAssembly
+	to_problem = StructuralTOExamplesDemo.EdgeCantileverDemo
 	print(f"Running {to_problem.name}...")
 	print("-" * 50)
 	solver = lin_solv.Solvers.PARDISO # Typically PARDISO, but DPCG for DOF > 200,000
@@ -59,7 +60,7 @@ if __name__ == "__main__":
 	print("nElem: ", fe_solver.mesh.num_elems)	
 	
 	title = f'nDOF: {3*fe_solver.mesh.num_nodes}, nElem: {fe_solver.mesh.num_elems}'
-	mesh.plot()
+	#mesh.plot()
 	plots.plotMesh(mesh, bc,title = title)
 	#plots.plotIsocontour(fe_solver.mesh, title = title, save_path = None)
 

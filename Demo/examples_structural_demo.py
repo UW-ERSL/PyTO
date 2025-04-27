@@ -411,7 +411,14 @@ def createEdgeCantileverDemoProblem(nDOFDesired: int = 10000, L: float = [0.4, 0
     - mat_prop: Material properties object
     - bc: Boundary conditions with fixed left face and load on right face
   """
-  nVoxelsDesired = nDOFDesired/3    
+  stl_file = '../Models/EdgeCantilever/EdgeCantilever.STL'
+  
+  #plots_demo.plot_stl(stl_file)
+  nVoxelsDesired = nDOFDesired/3    # estimate
+  mesh = mesher.Mesher()
+  
+  mesh.createMeshFromSTLFile(stl_file, nElemsDesired=nVoxelsDesired)
+  mesh.createEdofMatStructural()
   # Let the number of voxels be proportional to the length in each direction
   alpha = (nVoxelsDesired/(L[0]*L[1]*L[2]))**(1/3)
   nelx = round(alpha*L[0])
@@ -442,11 +449,7 @@ def createEdgeCantileverDemoProblem(nDOFDesired: int = 10000, L: float = [0.4, 0
   bc = bound_cond.BC(force = force,
             fixed_dofs = fixed_dofs,
             dirichlet_values = dirichlet_values) 
-  # Get material data from XML if it exists
-  fp_materialXML = os.path.join(script_dir, './material.xml')
-  if fp_materialXML is not None and os.path.isfile(fp_materialXML):
-      youngs_modulus, poissons_ratio = parse_material_properties(fp_materialXML)
-
+  
   mat_prop = mat_lib.StructuralMaterial(youngs_modulus=youngs_modulus,
                       poissons_ratio=poissons_ratio)
   elem_body_force = None
