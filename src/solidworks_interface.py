@@ -1,7 +1,7 @@
 
 import os
 import win32com.client #pip install pypiwin32
-from STLGeom import STLGeom
+from stl_reader import STLGeom
 
 class SolidWorksInterface:
     def __init__(self):

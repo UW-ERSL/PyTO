@@ -10,7 +10,8 @@ def topopt_mma(fe_solver: sfea.StructFEA,
 							 kkt_tol: float = 1.e-6,
 							 move_tol: float = 0.025,
 							 rel_conv_tol: float = 1.e-3,
-							plotIntermediateTopologies: bool = False,
+							 print_progress: bool = True,
+							plot_progress: bool = False,
 							 grey_tol: float = 0.2,
 							 debug: bool = False,
 							 ) -> tuple[np.ndarray, dict]:
@@ -42,7 +43,8 @@ def topopt_mma(fe_solver: sfea.StructFEA,
 	tStart = time.time()
 	num_elems= fe_solver.mesh.num_elems
 	history = {'compliance': [], 'volume': [], 'change': []}
-	
+	if (print_progress):
+		print("Computing Filters ...")
 	[H,Hs] = createFilters(fe_solver, to_params)
 
 	elemsWithForces = find_elements_with_forces(fe_solver.mesh, fe_solver.bc.force)
@@ -92,6 +94,9 @@ def topopt_mma(fe_solver: sfea.StructFEA,
 	nFEAs = 0
 	while not mma_state.is_converged:
 		x = mma_state.x.reshape(-1)
+		if (plot_progress):
+			fe_solver.mesh.setPseudoDensity(x)
+			fe_solver.plot_pseudo_density(auto_close = False, title = f"Iteration {mma_state.epoch+1}")
 		timeFEAStart = time.time()
 		obj,u = compliance(x, fe_solver, material_model_dict)
 		nFEAs += 1
@@ -166,6 +171,8 @@ def topopt_mma(fe_solver: sfea.StructFEA,
 																jnp.array([cons]).reshape((1, 1)),
 																grad_cons.reshape((1, num_elems))
 																)
+			
+
 		timeMMA += time.time() - timeMMAStart
 
 		change = np.max(np.abs(x - x_old))
@@ -173,7 +180,8 @@ def topopt_mma(fe_solver: sfea.StructFEA,
 		# Estimate the percentage of grey elements
 		grey_elements = np.sum((x > 0.05) & (x < 0.95))
 		fraction_grey = (grey_elements / num_elems) 
-		print(f"it.: {mma_state.epoch}, obj.: {obj[0]:.4g}, vf: {vf:.3f}, change: {change: 0.3f}, grey: {fraction_grey:.3f}")
+		if (print_progress):
+			print(f"it.: {mma_state.epoch}, obj.: {obj[0]:.4g}, vf: {vf:.3f}, change: {change: 0.3f}, grey: {fraction_grey:.3f}")
 		history['compliance'].append(obj[0])
 		history['volume'].append(np.mean(x))
 		history['change'].append(change)
@@ -198,8 +206,11 @@ def topopt_mma(fe_solver: sfea.StructFEA,
 		errorMsg = "Maximum iterations reached."
 		success = False
 	
-	# extract binary topology
-	x = np.where(x < 0.5, 0.0, 1.0)
+	# Find threshold that preserves volume fraction
+	target_vf = to_params.DesiredVolFraction
+	x_sorted = np.sort(x)
+	threshold = x_sorted[int((1-target_vf)*len(x))]
+	x = np.where(x < threshold, 0.0, 1.0)
 	volfrac = np.mean(x)
 	fe_solver.mesh.setPseudoDensity(x)
 	meshComponents = fe_solver.mesh.find_connected_components()
@@ -230,7 +241,7 @@ if __name__ == "__main__":
 	from topopt_benchmarks import *
 	
 	print("-" * 50)
-	to_problem = StructuralTOExamples.DistributedLoad # Choose the TO problem
+	to_problem = StructuralTOExamples.Mitchell_1 # Choose the TO problem
 	print(f"Running {to_problem.name}...") 
 	print("-" * 50)
 	solver = lin_solv.Solvers.PARDISO # # Choose solver. Typically PARDISO, but DPCG for DOF > 200,000
@@ -255,21 +266,31 @@ if __name__ == "__main__":
 				rtol = 1e-8,
         		elem_body_force = elem_body_force)
 	
-
 	print('Solver: ', fe_solver.solver.name)
 	print("nDof: ", 3*fe_solver.mesh.num_nodes)
 	print("nElem: ", fe_solver.mesh.num_elems)	
 	
 	title = f'nDOF: {3*fe_solver.mesh.num_nodes}, nElem: {fe_solver.mesh.num_elems}'
-	#plots.plotMesh(mesh, bc,title = title)
-
-
+	fe_solver.plot_mesh(title = title, save_path = None)
 	startTime = time.time()
 	print("OptimizationMethod: MMA")
 	u, history,success,errorMsg,nFEAs = topopt_mma(fe_solver = fe_solver,
 								to_params = to_params,
+								plot_progress = True,
 								debug = debug)
 	timeTaken = time.time() - startTime
+	print(f"Time taken: {timeTaken:.0f} s")
+	if not success:
+		print(f"Error: {errorMsg}")
+
+	title = f"MMA: nDOF: {3*fe_solver.mesh.num_nodes}, vol: {history['volume'][-1]:0.2f}, J: {history['compliance'][-1]:.3g}, time: {timeTaken:.0f} s"
+	fe_solver.plot_mesh(title = title, plot_bc = False, save_path = None)
+	
+	# plot other quantities over the optimized mesh
+	fe_solver.plot_deformation()
+	fe_solver.postprocess()
+	fe_solver.plot_vonMisesStress()
+
 	fig, ax1 = plt.subplots()
 
 	# Plot compliance on left y-axis
@@ -293,14 +314,4 @@ if __name__ == "__main__":
 	ax1.legend(lines1 + lines2, labels1 + labels2)
 
 	plt.grid(True)
-	plt.show(block=False)
-
-	title = f"MMA: nDOF: {3*fe_solver.mesh.num_nodes}, vol: {history['volume'][-1]:0.2f}, J: {history['compliance'][-1]:.3g}, time: {timeTaken:.0f} s"
-
-	print(f"Time taken: {timeTaken:.0f} s")
-	if not success:
-		print(f"Error: {errorMsg}")
-	plots.plotMesh(fe_solver.mesh, bc = None, u=None, title = title)
-
-	#plots.plotIsocontour(fe_solver.mesh, title = title, save_path = None)
-	# Save the mesh and results
+	plt.show()

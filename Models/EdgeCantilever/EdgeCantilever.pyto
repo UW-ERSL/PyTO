@@ -1,0 +1,133 @@
+{
+    "version": "2025.01",
+    "stl_file_path": "EdgeCantilever.STL",
+    "settings": {
+        "unit_system": "MKS",
+        "temperature_unit": "Kelvin",
+        "angle_unit": "Degree"
+    },
+    "material_data": {
+        "name": "AlloySteel",
+        "young_modulus": 210000000000.0,
+        "poisson_ratio": 0.28,
+        "yield_strength": 500000000.0,
+        "density": 7700.0,
+        "thermal_conductivity": 50.0,
+        "thermal_expansion": 1.3e-05,
+        "specific_heat": 452.0,
+        "price": 2.0,
+        "do_not_optimize": false,
+        "display_young_modulus": 210000000000.0,
+        "display_yield_strength": 500000000.0,
+        "display_unit_system": "MKS"
+    },
+    "structuralBC": {
+        "load_forces": [
+            [
+                0.0,
+                -1000.0,
+                0.0
+            ]
+        ],
+        "constraint_counts": {
+            "fixed_triangles": 2,
+            "loaded_triangles": 4
+        },
+        "fixed_faces_indices": [
+            2,
+            3
+        ],
+        "load_faces_indices": [
+            [
+                0,
+                1,
+                6,
+                7
+            ]
+        ]
+    },
+    "thermalBC": {},
+    "topopt_constraints": {
+        "manufacturing": {
+            "extrude": {
+                "enabled": true,
+                "direction": "ZDir"
+            },
+            "am_build": {
+                "enabled": false,
+                "direction": "+XDir"
+            },
+            "draw_direction": {
+                "enabled": false,
+                "direction": "XDir"
+            },
+            "cyclic_symmetry": {
+                "enabled": false,
+                "angle": "(+)90 deg"
+            }
+        },
+        "patterns": {
+            "x_grid": {
+                "enabled": false,
+                "value": 2
+            },
+            "y_grid": {
+                "enabled": false,
+                "value": 2
+            },
+            "z_grid": {
+                "enabled": false,
+                "value": 2
+            }
+        },
+        "performance": {
+            "stress_safety": {
+                "enabled": false,
+                "value": 1.0
+            },
+            "max_displacement": {
+                "enabled": false,
+                "value": 160.0
+            },
+            "min_frequency": {
+                "enabled": false,
+                "value": 1000.0
+            },
+            "max_temperature": {
+                "enabled": false,
+                "value": 2000.0
+            },
+            "min_feature": {
+                "enabled": false,
+                "value": 0.0
+            },
+            "max_feature": {
+                "enabled": false,
+                "value": 0.0
+            }
+        },
+        "symmetry": {
+            "x_symmetry": false,
+            "y_symmetry": false,
+            "z_symmetry": false
+        },
+        "other": {
+            "connected_topology": true,
+            "keep_fixed_faces": false
+        }
+    },
+    "optimization_params": {
+        "objective": "Min. Compliance",
+        "method": "DENSITY-OC",
+        "use_all_loads": true,
+        "smooth_surface": true,
+        "load_set": 0,
+        "volume_fraction": 0.5,
+        "volume_step": 0.025,
+        "save_intermediate": false
+    },
+    "analysis_settings": {
+        "n_elements": 10000,
+        "solver_type": "PARDISO"
+    }
+}

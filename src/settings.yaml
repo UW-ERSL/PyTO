@@ -5,14 +5,6 @@ MATERIAL:
   density: 7700.0
   specific_heat: 460.0
   alpha: 1.3e-5
-  
-OPTIMIZATION:
-  num_iter: 10
-  lr: 5.e-2
-  max_vol_frac: 0.4
-
-DEFLATION:
-  num_groups: 250
 
 PLOT:
   figure.dpi: 200  # High resolution for print

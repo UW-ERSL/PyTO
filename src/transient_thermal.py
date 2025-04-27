@@ -1,10 +1,10 @@
 import numpy as np
-import mesher
+import hex_mesher
 import plots
 import linear_solvers as lin_sol
 import mat_lib
 import bound_cond
-import element_stiffness as es
+import hex_element_stiffness as es
 import jax.numpy as jnp
 import jax.experimental.sparse as jax_sprs
 

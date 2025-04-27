@@ -4,15 +4,15 @@ import enum
 import numpy as np
 import jax
 import jax.numpy as jnp
-import element_stiffness as elem_stiff
-import mesher
-import struct_fea as sfea
+import hex_element_stiffness as elem_stiff
+import hex_mesher
+import hex_structural_fea as sfea
 import mma
 import deflation
-from to_filters import *
+from topopt_filters import *
 import time
 import matplotlib.pyplot as plt
-import struct_fea as fea
+import hex_structural_fea as fea
 import linear_solvers as lin_solv
 import time
 import matplotlib.pyplot as plt
@@ -54,7 +54,7 @@ class TOParams: # These are the default parameters
     AMBuildConstraint = False
     ElemsToKeep = None
 
-def find_elements_with_forces(mesh: mesher.Mesher, force) -> np.ndarray:
+def find_elements_with_forces(mesh: hex_mesher.Mesher, force) -> np.ndarray:
 	"""Find all elements that have nodes on which force has been applied.
 	
 	Args:
@@ -125,7 +125,6 @@ def compliance(x: jnp.ndarray,
 
 def createFilters(fe_solver: sfea.StructFEA,to_params):
 	# Create  filters
-	print("Computing filters...")
 	H, Hs = createSmoothingFilter(fe_solver.mesh, rel_filter_radius=to_params.RelativeFilterRadius)
 	# Accumulate all other filters
 	if to_params.XSymmetry:
@@ -137,9 +136,21 @@ def createFilters(fe_solver: sfea.StructFEA,to_params):
 	if to_params.ZSymmetry:
 		HZ = createZSymmetryFilter(fe_solver.mesh)
 		H = H*HZ
+	if to_params.XAxisAngularSymmetry > 0:
+		HAAX = createXAngularSymmetryFilter(fe_solver.mesh, to_params.XAxisAngularSymmetry)
+		H = H*HAAX
+	if to_params.YAxisAngularSymmetry > 0:
+		HAAY = createYAngularSymmetryFilter(fe_solver.mesh, to_params.YAxisAngularSymmetry)
+		H = H*HAAY
 	if to_params.ZAxisAngularSymmetry >	0:
 		HAZ = createZAngularSymmetryFilter(fe_solver.mesh, to_params.ZAxisAngularSymmetry)
 		H = H*HAZ
+	if (to_params.ExtrudeY):
+		HEY = createYExtrudeFilter(fe_solver.mesh)
+		H = H*HEY
+	if (to_params.ExtrudeX):
+		HEX = createXExtrudeFilter(fe_solver.mesh)
+		H = H*HEX
 	if (to_params.ExtrudeZ):
 		HEZ = createZExtrudeFilter(fe_solver.mesh)
 		H = H*HEZ

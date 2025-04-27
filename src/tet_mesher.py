@@ -66,10 +66,6 @@ class TetMesher:
         """
         # Get all faces from tetrahedra
         faces = np.vstack([
-            # self.elems[:, [0, 1, 2]],
-            # self.elems[:, [0, 3, 1]],
-            # self.elems[:, [1, 3, 2]],
-            # self.elems[:, [3, 0, 2]]
             self.elems[:, [0, 2, 1]],
             self.elems[:, [0, 1, 3]],
             self.elems[:, [1, 2, 3]],
@@ -85,7 +81,6 @@ class TetMesher:
         # Surface triangles are faces that appear only once
         self.surface_triangles = faces[idx[counts == 1]]
         
-       
         print(f"Number of surface triangles: {len(self.surface_triangles)}")
 
         element_sizes = np.zeros(self.num_elems)
@@ -95,7 +90,7 @@ class TetMesher:
         print(f"Element size: {self.elem_size}")
 
 
-    def readAbaqusInputFile(self, abaqusFileName: str):
+    def read_Abaqus_linear_tetmesh(self, abaqusFileName: str):
         """
         Read an Abaqus input file and extract nodes and elements.
         The files are generated via SolidWorks.
@@ -128,6 +123,68 @@ class TetMesher:
         self.num_elems = len(self.elems)
         print(f"Tetmesh: Number of nodes: {self.num_nodes}, Number of elements: {self.num_elems}")
         self.createSurfaceMesh()
+
+    def createQuadraticTetMesh(self):
+        # 10 noded quadratic tetrahedral elements
+        # Create quadratic 10-noded tet mesh from linear 4-noded tet mesh
+        # First copy the nodes and elements
+        '''
+        The implementation assumes that the 10 nodes are numbered as follows:
+
+            Nodes 0-3: The four vertices of the tetrahedron.
+            Nodes 4-9: The mid-edge nodes, arranged so that:
+            Node 4 lies on the edge between vertex 0 and vertex 1.
+            Node 5 lies on the edge between vertex 1 and vertex 2.
+            Node 6 lies on the edge between vertex 2 and vertex 0.
+            Node 7 lies on the edge between vertex 0 and vertex 3.
+            Node 8 lies on the edge between vertex 1 and vertex 3.
+            Node 9 lies on the edge between vertex 2 and vertex 3.
+        '''
+        nodes = self.nodes.copy()
+        elems = self.elems.copy()
+
+        # Create edges for each element
+        edges = []
+        for e in elems:
+            edges.extend([(e[0], e[1]), (e[1], e[2]), (e[2], e[0]),
+                        (e[0], e[3]), (e[1], e[3]), (e[2], e[3])])
+
+        # Remove duplicates and sort edge nodes
+        unique_edges = list(set(tuple(sorted(edge)) for edge in edges))
+
+        # Add midpoint nodes
+        mid_nodes = nodes[unique_edges].mean(axis=1)
+        num_mid_nodes = len(mid_nodes)
+
+        # Update nodes array with mid-nodes
+        nodes = np.vstack((nodes, mid_nodes))
+
+        # Create node mapping for edge midpoints
+        edge_to_node = {tuple(sorted(edge)): i + self.num_nodes 
+                        for i, edge in enumerate(unique_edges)}
+
+        # Update elements with mid-node indices
+        quad_elems = np.zeros((self.num_elems, 10), dtype=np.int32)
+        quad_elems[:, :4] = elems  # Corner nodes
+        for i, e in enumerate(elems):
+            # Add mid-nodes
+            quad_elems[i, 4] = edge_to_node[tuple(sorted((e[0], e[1])))]
+            quad_elems[i, 5] = edge_to_node[tuple(sorted((e[1], e[2])))]
+            quad_elems[i, 6] = edge_to_node[tuple(sorted((e[2], e[0])))]
+            quad_elems[i, 7] = edge_to_node[tuple(sorted((e[0], e[3])))]
+            quad_elems[i, 8] = edge_to_node[tuple(sorted((e[1], e[3])))]
+            quad_elems[i, 9] = edge_to_node[tuple(sorted((e[2], e[3])))]
+
+        quadratic_mesh = type('QuadTetMesh', (), {
+            'nodes': nodes,
+            'elems': quad_elems,
+            'num_nodes': len(nodes),
+            'num_elems': self.num_elems
+        })
+        print(f"Quadratic Tetmesh: Number of nodes: {quadratic_mesh.num_nodes}, Number of elements: {quadratic_mesh.num_elems}")
+        # Create surface triangles for quadratic mesh
+        return quadratic_mesh
+
 
     def integrate_over_surface_triangles(self, q, tri_surface_indices):
         """
@@ -235,9 +292,6 @@ class TetMesher:
                 normal /= norm
             normals[i] = normal
         return centers, normals, areas
-    
-    def createEdofMatThermal(self):
-        self.edofMat = np.array(self.elems[:, :4], dtype=int)
     
     def get_nodes_from_locations(self, locations):
         distances = np.linalg.norm(self.nodes[:, :3] - locations[:, None], axis=2)
@@ -413,9 +467,9 @@ if __name__ == "__main__":
     stlFileName = os.path.join(script_dir, '../Models/BicycleCrank/BicycleCrank.STL')
     tetmesh.createTetMeshFromSTLFile(stlFileName, nElemsDesired=20000)
     tetmesh.plot()
-    tetmesh.readAbaqusInputFile(os.path.join(script_dir, '../Models/ThreeHoleBracket/ThreeHoleBracketLinearTetMesh.inp'))
+    tetmesh.read_Abaqus_linear_tetmesh(os.path.join(script_dir, '../Models/ThreeHoleBracket/ThreeHoleBracketLinearTetMesh.inp'))
     tetmesh.plot()
-    tetmesh.readAbaqusInputFile(os.path.join(script_dir, '../Models/GEGrabCAD/GEGrabCADLinearTetMesh.inp'))
+    tetmesh.read_Abaqus_linear_tetmesh(os.path.join(script_dir, '../Models/GEGrabCAD/GEGrabCADLinearTetMesh.inp'))
     tetmesh.plot()
 
 

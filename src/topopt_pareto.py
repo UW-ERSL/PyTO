@@ -1,5 +1,5 @@
 from topopt_common import *
-
+from topopt_filters import imposeZCastFilter
 
 def topopt_pareto(fe_solver: sfea.StructFEA,
 				  to_params,
@@ -9,7 +9,8 @@ def topopt_pareto(fe_solver: sfea.StructFEA,
 							min_local_iters: int = 2,
 							max_local_iters: int = 5,
 							xVoid: float = 0,
-							plotIntermediateTopologies: bool = False,
+							print_progress: bool = True,
+							plot_progress: bool = False,
 							debug: bool = False
 							)-> tuple[np.ndarray, dict]:
 	"""Pareto method for Topology Optimization.
@@ -43,9 +44,11 @@ def topopt_pareto(fe_solver: sfea.StructFEA,
 	volfrac = 1.0
 	
 	history = {'compliance': [], 'volume': []}
+	if (print_progress):
+		print("Computing Filters ...")
 	[H,Hs] = createFilters(fe_solver, to_params)
 
-	print("Computing element with forces ...")
+	
 	elemsWithForces = find_elements_with_forces(fe_solver.mesh, fe_solver.bc.force)
 
 	if (fe_solver.elem_body_force is not None):
@@ -58,14 +61,13 @@ def topopt_pareto(fe_solver: sfea.StructFEA,
 	else:
 		nodal_body_force = None
 
-	print("Initial FEA...")
 	
 	u = np.asarray(fe_solver.solve(x))
 	nFEAs = 1
 	# Store initial compliance
 	history['compliance'].append(fe_solver.total_force.T @ u)
 	history['volume'].append(volfrac)
-	fe_solver.postprocess(u) # compute stresses and strains for the initial design
+	fe_solver.postprocess() # compute stresses and strains for the initial design
 	# Compute initial topological sensitivity
 	T = computeTopologicalSensitivity(fe_solver.mat_prop,fe_solver.strainComponents,fe_solver.stressComponents,x)
 	
@@ -83,17 +85,19 @@ def topopt_pareto(fe_solver: sfea.StructFEA,
 		T[to_params.ElemsToKeep] = np.max(T)
 	T = (H * T) / Hs
 
-
-	print(f"vf={history['volume'][-1]:.3f}, J={history['compliance'][-1]:.3g}, #FEA={totalIter:2d}")
+	if (print_progress):
+		print(f"vf={history['volume'][-1]:.3f}, J={history['compliance'][-1]:.3g}, #FEA={totalIter:2d}")
 	vol_decr = vol_decr_max
 	
 	success = True
 	terminatePareto = False
 	errorMsg = ""
-	wtDamping = 0.25 # 0 means full wt to current T values, else previous T values are damped in
+	# Observation: Damping using the previous sensitivity values avoids getting trapped in local minima
+	wtDamping = 0.5 # 0 means full wt to current T values, else previous T values are damped in
 
 	while volfrac > to_params.DesiredVolFraction:
-		
+		if (plot_progress):
+			fe_solver.plot_mesh(plot_bc = False,auto_close = False, title = f'Volfrac: {volfrac:0.3f}')
 		# Move to next volume fraction
 		volfrac = max(to_params.DesiredVolFraction, volfrac - vol_decr)
 		if (debug):
@@ -157,7 +161,7 @@ def topopt_pareto(fe_solver: sfea.StructFEA,
 			JTemp = float(fe_solver.total_force.T @ u)
 			#plots.plotMesh(fe_solver.mesh, bc = None, u=u, title = title)
 			# Update sensitivity
-			fe_solver.postprocess(u)
+			fe_solver.postprocess()
 			T = computeTopologicalSensitivity(fe_solver.mat_prop,fe_solver.strainComponents,fe_solver.stressComponents,x)
 		
 			# Add contribution from body force to topological sensitivity if present
@@ -169,6 +173,7 @@ def topopt_pareto(fe_solver: sfea.StructFEA,
 				T += 2*T_body
 
 			T = (H * T) / Hs
+			
 			T = ((1-wtDamping)*T + wtDamping*TPrev)  # Damping
 
 			if (elemsWithForces.size > 0):
@@ -194,7 +199,8 @@ def topopt_pareto(fe_solver: sfea.StructFEA,
 			history['volume'].append(volfrac)
 			scale = history['compliance'][-1] / history['compliance'][0]
 			vol_decr = max(vol_decr_min,min(vol_decr,vol_decr_max/scale)) # Reduce volume increment for steep increase in compliance
-			print(f"vf={history['volume'][-1]:.3f}, J={history['compliance'][-1]:.3g}, #FEA={nFEAs:2d}")
+			if (print_progress):
+				print(f"vf={history['volume'][-1]:.3f}, J={history['compliance'][-1]:.3g}, #FEA={nFEAs:2d}")
 			fe_solver.mesh.setPseudoDensity(x.flatten())
 	totalTime = time.time() - tStart
 
@@ -208,22 +214,30 @@ if __name__ == "__main__":
 	from topopt_benchmarks import *
 	
 	print("-" * 50)
-	to_problem = StructuralTOExamples.DistributedLoad # Choose the TO problem
+	to_problem = StructuralTOExamples.Mitchell_1 # Choose the TO problem
 	print(f"Running {to_problem.name}...") 
 	print("-" * 50)
-	solver = lin_solv.Solvers.PARDISO # # Choose solver. Typically PARDISO, but DPCG for DOF > 200,000
+	
 	debug = False
 
 	# Get the structural problem
 	mesh, mat_prop, bc,elem_body_force, to_params = getStructuralTOProblem(to_problem)
 
 	dsolver = deflation.DeflationSolver()
-	# initialize the fe solver 
-	if (solver == lin_solv.Solvers.DPCG):
+	if (to_params.nDOFDesired < 50000):#  # Choose solver. Typically PARDISO, but DPCG for large DOF problems
+		print("Solver: Pardiso")
+		solver = lin_solv.Solvers.PARDISO
+	else:
+		print("Solver: DPCG")
+		solver = lin_solv.Solvers.DPCG
+		# DPCG solver is used for large DOF problems
+		# Create deflation solver object
 		nGroups =  min(dsolver.maxGroups,max(dsolver.minGroups,round(3*mesh.num_nodes/dsolver.dofPerGroup)))
 		dsolver.create_deflation_groups(mesh, nGroups)
 		dsolver.create_delfation_matrix(mesh)
 		dsolver.W = dsolver.W[bc.free_dofs, :]
+	 
+	
 
 	fe_solver = fea.StructFEA(mesh = mesh,
 				mat_prop = mat_prop,
@@ -239,19 +253,29 @@ if __name__ == "__main__":
 	print("nElem: ", fe_solver.mesh.num_elems)	
 	
 	title = f'nDOF: {3*fe_solver.mesh.num_nodes}, nElem: {fe_solver.mesh.num_elems}'
-	#plots.plotMesh(mesh, bc,title = title)
-
+	fe_solver.plot_mesh(title = title, save_path = None)
 
 	startTime = time.time()
 
 	print("OptimizationMethod: Pareto")
 	u, history, success,errorMsg,nFEAs = topopt_pareto(fe_solver = fe_solver,
 									to_params = to_params,
+									plot_progress= True,
 									debug = debug)
 	
 	timeTaken = time.time() - startTime
+	print(f"Time taken: {timeTaken:.0f} s")
+	if not success:
+		print(f"Error: {errorMsg}")
+
 	title = f"Pareto: nDOF: {3*fe_solver.mesh.num_nodes}, vol: {history['volume'][-1]:0.2f}, J: {history['compliance'][-1]:.3g}, time: {timeTaken:.0f} s"
-	
+	fe_solver.plot_mesh(title = title, save_path = None)
+
+		
+	# plot other quantities over the optimized mesh
+	fe_solver.plot_deformation()
+	fe_solver.plot_vonMisesStress()
+
 	# Plot volume vs compliance history
 	plt.figure()
 	plt.plot(history['volume'], history['compliance'], marker='o')
@@ -261,10 +285,4 @@ if __name__ == "__main__":
 	plt.grid(True)
 	plt.show(block=False)
 	
-	print(f"Time taken: {timeTaken:.0f} s")
-	if not success:
-		print(f"Error: {errorMsg}")
-	plots.plotMesh(fe_solver.mesh, bc = None, u=None, title = title)
-
-	#plots.plotIsocontour(fe_solver.mesh, title = title, save_path = None)
-	# Save the mesh and results
+	

@@ -1,13 +1,12 @@
 *.pyc
-*.STL
-*.stl
 *.SLDPRT
 *.sldprt
 *.png
 *.face
 *.node
-/Models
 /PyTOSlides
 /Results
+/Models
 /Projects
 /__pycache__
+/src/__pycache__

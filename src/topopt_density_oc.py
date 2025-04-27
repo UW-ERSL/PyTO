@@ -12,7 +12,8 @@ def topopt_optimality_criteria(
 							move_tol: float = 0.025,
 							rel_conv_tol: float = 1.e-3,
 							directLagrangeMethod: bool = False,
-							plotIntermediateTopologies: bool = False,
+							print_progress: bool = True,
+							plot_progress: bool = False,
 							debug: bool = False,
 							) -> tuple[np.ndarray, dict]:
 	"""Optimality Criteria based topology optimization for minimum compliance.
@@ -40,6 +41,8 @@ def topopt_optimality_criteria(
 		#  https://doi.org/10.1002/nme.2499, https://doi.org/10.1016/j.cma.2017.04.021 
 
 	num_elems = fe_solver.mesh.num_elems
+	if (print_progress):
+		print("Computing Filters ...")
 	[H,Hs] = createFilters(fe_solver, to_params)
 	elemsWithForces = find_elements_with_forces(fe_solver.mesh, fe_solver.bc.force)
 
@@ -73,6 +76,9 @@ def topopt_optimality_criteria(
 	errorMsg = ""
 	for iter in range(maxIterations):
 		x = np.array(x)
+		if (plot_progress):
+			fe_solver.mesh.setPseudoDensity(x)
+			fe_solver.plot_pseudo_density(auto_close = False, title = f"Iteration {iter}")
 		obj,u = compliance(x, fe_solver,material_model_dict)
 		ce = (np.dot(u[fe_solver.mesh.edofMat].reshape(num_elems, 24), KE) * u[fe_solver.mesh.edofMat].reshape(num_elems, 24)).sum(1)
 		if material_model == MaterialModel.SIMP:
@@ -151,7 +157,8 @@ def topopt_optimality_criteria(
 		# Estimate the percentage of grey elements
 		grey_elements = np.sum((x > 0.05) & (x < 0.95))
 		fraction_grey = (grey_elements / num_elems) 
-		print(f"it.: {iter+1:d}, obj.: {obj:.5g}, "
+		if (print_progress):
+			print(f"it.: {iter+1:d}, obj.: {obj:.5g}, "
 				  	f"vol.: {np.mean(xPhys):.3g}, grey: {fraction_grey:.3f}")
 		if np.isnan(obj):
 			print("Objective function became NaN. Exiting optimization.")
@@ -170,8 +177,11 @@ def topopt_optimality_criteria(
 		print(errorMsg)
 		success = False
 	totalTime = time.time() - tStart
-	# extract binary topology
-	x = np.where(x < 0.5, 0.0, 1.0)
+	# extract binary topology while preserving volume fraction
+	target_vf = to_params.DesiredVolFraction
+	x_sorted = np.sort(x)
+	threshold = x_sorted[int((1-target_vf)*len(x))]
+	x = np.where(x < threshold, 0.0, 1.0)
 	volfrac = np.mean(x)
 	fe_solver.mesh.setPseudoDensity(x)
 	obj,u = compliance(x, fe_solver, material_model_dict)
@@ -196,7 +206,7 @@ if __name__ == "__main__":
 	from topopt_benchmarks import *
 
 	print("-" * 50)
-	to_problem = StructuralTOExamples.DistributedLoad # Choose the TO problem
+	to_problem = StructuralTOExamples.EdgeCantilever # Choose the TO problem
 	print(f"Running {to_problem.name}...") 
 	print("-" * 50)
 	solver = lin_solv.Solvers.PARDISO # # Choose solver. Typically PARDISO, but DPCG for DOF > 200,000
@@ -227,17 +237,30 @@ if __name__ == "__main__":
 	print("nElem: ", fe_solver.mesh.num_elems)	
 	
 	title = f'nDOF: {3*fe_solver.mesh.num_nodes}, nElem: {fe_solver.mesh.num_elems}'
-	#plots.plotMesh(mesh, bc,title = title)
+	fe_solver.plot_mesh(title = title, save_path = None)
 
-
-	startTime = time.time()
+	startTime = time.time()		
 	
 	print("OptimizationMethod: OC")
 	u, history, success,errorMsg,nFEAs = topopt_optimality_criteria(fe_solver = fe_solver,
 											to_params = to_params,
+											plot_progress = True,
 											debug = debug)
 	timeTaken = time.time() - startTime
+	print(f"Time taken: {timeTaken:.0f} s")
+	if not success:
+		print(f"Error: {errorMsg}")
+
 	title = f"OC: nDOF: {3*fe_solver.mesh.num_nodes}, vol: {history['volume'][-1]:0.2f}, J: {history['compliance'][-1]:.3g}, time: {timeTaken:.0f} s"
+
+	
+	# plot the optimized mesh
+	fe_solver.plot_mesh(title = title, plot_bc = False, save_path = None)
+
+	# plot other quantities over the optimized mesh
+	fe_solver.plot_deformation()
+	fe_solver.postprocess()
+	fe_solver.plot_vonMisesStress()
 
 	fig, ax1 = plt.subplots()
 
@@ -262,13 +285,4 @@ if __name__ == "__main__":
 	ax1.legend(lines1 + lines2, labels1 + labels2)
 
 	plt.grid(True)
-	plt.show(block=False)
-
-
-	print(f"Time taken: {timeTaken:.0f} s")
-	if not success:
-		print(f"Error: {errorMsg}")
-	plots.plotMesh(fe_solver.mesh, bc = None, u=None, title = title)
-
-	#plots.plotIsocontour(fe_solver.mesh, title = title, save_path = None)
-	# Save the mesh and results
+	plt.show()

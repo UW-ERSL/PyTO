@@ -125,7 +125,7 @@ def solve(A: spy_sprs.coo_matrix,
       # Smoothed Aggregation solver gives the wrong result
       #ml = pyamg.smoothed_aggregation_solver(A, B=b, smooth='energy')
       #x = ml.solve(b, tol=kwargs['rtol'])
-      x = pyamg.solve(A, b,tol= kwargs['rtol'], verb = kwargs['verbose'])
+      x = pyamg.solve(A, b,tol= kwargs['rtol'], verb = False)
 
     elif solver == Solvers.DPCG:
       dsolver = kwargs['dsolver']
@@ -145,7 +145,7 @@ def solve(A: spy_sprs.coo_matrix,
     u = jnp.zeros(b0.shape)
     u = u.at[bc.fixed_dofs].set(bc.dirichlet_values)
     u = u.at[bc.free_dofs].set(x)
-    return u
+    return np.array(u)
   return solver_wrapper(A,b)
   # result_shape = jax.ShapeDtypeStruct(b.shape, b.dtype)
   # cust_solver = lambda mv, b: jax.pure_callback(solver_wrapper, result_shape, A, b)
