@@ -9,14 +9,13 @@ import linear_solvers as lin_sol
 import hex_element_stiffness as elem_stiff
 import mat_lib
 import bound_cond
-
 import hex_structural_fea as fea
 import linear_solvers as lin_solv
 import mat_lib
 import os
 import deflation 
 import pyvista as pv
-from mpl_toolkits.mplot3d import Axes3D
+
 script_dir = os.path.dirname(os.path.abspath(__file__))
 
 

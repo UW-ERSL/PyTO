@@ -37,7 +37,6 @@ import hex_structural_fea as fea
 import deflation
 import linear_solvers as lin_solv
 import topopt_common as topopt_common
-import os
 from hex_structural_examples import *
 jax.config.update("jax_enable_x64", True)
 

@@ -1,12 +1,12 @@
 import numpy as np
-import hex_mesher
-import plots
 import linear_solvers as lin_sol
 import mat_lib
 import bound_cond
 import hex_element_stiffness as es
 import jax.numpy as jnp
 import jax.experimental.sparse as jax_sprs
+import matplotlib.pyplot as plt
+from hex_thermal_examples import *
 
 class TransientThermalFEA:
     def __init__(self,
@@ -27,11 +27,6 @@ class TransientThermalFEA:
         self.bc = bc
         self.solver = solver
         self.deltaTime = deltaTime
-        #self.elem_effective_stiff = elem_stiff + elem_specific_heat*(1.0/self.deltaTime)
-        #self.staticThermalFEA = ThermalFEA(mesh, mat_prop, bc, solver, **kwargs)
-        # Overide the element stiffness matrix  
-        #self.staticThermalFEA.set_element_stiffness( self.elem_effective_stiff)
-
 
         elem_stiff = jnp.asarray(es.hex8_stiffness_matrix_thermal(mat_prop, mesh.elem_size))
         elem_stiffness_stacked = jnp.einsum('ij, e -> eij',
@@ -151,7 +146,8 @@ class TransientThermalFEA:
         return u
     
 if __name__ == "__main__":
-    import thermal_fea as thermal_fea
+    from hex_thermal_fea import ThermalFEA
+    from hex_thermal_examples import ThermalExamples, getThermalProblem
     import linear_solvers as lin_solv
     import time
     import jax # import jax to enable 64 bit precision
@@ -167,11 +163,16 @@ if __name__ == "__main__":
 
     # Simulation parameters
     totalTime = 0.0125   # This is the total time for the simulation
-    deltaTime = 48e-6 # This is the time step for the simulation
-    nDOFDesired = 30000 # This is the number of degrees of freedom desired for the FE Mesh
+    deltaTime = 100e-6 # This is the time step for the simulation
+    nDOFDesired = 50000 # This is the number of degrees of freedom desired for the FE Mesh
     
     nTimeSteps = int(totalTime/deltaTime)+1
-    mesh, mat_prop, bc = thermal_fea.createMoranBenchMark(nDOFDesired=nDOFDesired)
+    problem = ThermalExamples.Moran
+
+    umax_values = []
+    timing = []
+    solver = lin_solv.Solvers.PARDISO
+    mesh, mat_prop, bc = getThermalProblem(problem, nDOFDesired=nDOFDesired)
     transient_solver = TransientThermalFEA(mesh = mesh,
                               mat_prop = mat_prop,
                               bc = bc,
@@ -209,6 +210,7 @@ if __name__ == "__main__":
             - In the paper, a point source is implemented, but here, we use a Gaussian distribution.
             - If no nodes are found within the laser spot radius, a warning is printed.
             """
+        print(f"Time step {timeStep} / {nTimeSteps-1}")
         q = np.zeros(mesh.num_nodes)
         x = xStart + timeStep*dt*V
         if (x > xStart + deltaX): # laser has stopped 
@@ -232,9 +234,8 @@ if __name__ == "__main__":
     print(f"elemSize: {elemSize}")
     print(f"timeStep: {deltaTime}")
     print(f"Time taken for simulation: {end_time - start_time:.2f} seconds")
+
     
-    
-    import matplotlib.pyplot as plt
     plt.figure()
     for eta in [0, 0.5, 1.0]:
         xLocationOfInterest = xStart + eta * deltaX

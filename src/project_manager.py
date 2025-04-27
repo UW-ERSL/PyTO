@@ -17,7 +17,7 @@ import bound_cond
 from stl_reader import STLGeom
 from hex_mesher import Mesher
 import plots
-import thermal_fea
+import hex_thermal_fea
 
 # Enable double precision
 jax.config.update("jax_enable_x64", True)
@@ -604,7 +604,7 @@ class ThermalAnalysis(BaseAnalysis):
                 mass_density=mat_data.get('density', 7800.0)
             )
             
-            self.fe_solver = thermal_fea.ThermalFEA(
+            self.fe_solver = hex_thermal_fea.ThermalFEA(
                 mesh=self.mesh,
                 mat_prop=self.thermal_mat_prop,
                 bc=self.bc,

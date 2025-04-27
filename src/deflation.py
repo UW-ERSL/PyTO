@@ -10,7 +10,6 @@ in the problem domain efficiently.
 
 from typing import TypeAlias, Union
 import numpy as np
-import matplotlib.pyplot as plt
 import scipy.sparse as spy_sprs
 import scipy.linalg as spy_linalg
 # Mac does not support pypardiso, so we skip it for now
@@ -21,10 +20,7 @@ except ImportError:
 import scipy
 
 from scipy.sparse import csr_matrix
-from scipy.sparse.linalg import factorized
 
-from sklearn.cluster import SpectralClustering # pip install scikit-learn
-from sklearn.cluster import KMeans, MiniBatchKMeans
 _Array: TypeAlias = Union[spy_sprs.coo_matrix,
 													spy_sprs.csr_matrix,
 													spy_sprs.csc_matrix,
@@ -209,48 +205,6 @@ class DeflationSolver:
 		#print("Number of deflation groups: ", self.ws_nGroups)
 		return True
 
-	def create_deflation_groups_connectivity(self, meshData, nGroupsDesired: int):
-		"""Create deflation groups using graph-based connectivity partitioning.
-		
-		Args:
-			meshData: Mesh data object containing node and element information
-			nGroupsDesired (int): Target number of deflation groups
-			
-		Returns:
-			bool: True if grouping was successful
-		"""
-		
-		
-		# Apply spectral clustering
-		n_clusters = min(nGroupsDesired, int(meshData.num_nodes/(1 + self.minNodesPerGroup)))
-		# Alternate clustering using KMeans
-
-		clustering = KMeans(
-			n_clusters=n_clusters, 
-			random_state=42
-		).fit(meshData.node_indices[:, 0:3])
-		# clustering = SpectralClustering(
-		# 	n_clusters=n_clusters,
-		# 	affinity='precomputed',
-		# 	random_state=0
-		# ).fit(meshData.node_indices[:, 0:3])
-		
-		# Assign nodes to groups
-		self.ws_nodeGroupNumber = clustering.labels_
-		self.ws_nGroups = n_clusters
-		self.ws_groupCount = np.bincount(self.ws_nodeGroupNumber)
-		
-		# Calculate group centers
-		xyz = np.zeros((meshData.num_nodes, 3))
-		for i in range(3):
-			xyz[:,i] = meshData.origin[i] + meshData.elem_size[i]*meshData.node_indices[:,i]
-
-		self.ws_groupCenter = np.zeros((self.ws_nGroups, 3))
-		for i in range(3):
-			np.add.at(self.ws_groupCenter[:, i], self.ws_nodeGroupNumber, xyz[:, i])
-		self.ws_groupCenter /= self.ws_groupCount[:, np.newaxis]
-		
-		return True
 	def create_delfation_matrix(self, meshData):
 		# Implements eqn 1 from Yadav, P., Suresh, K., "Large Scale Finite Element Analysis via  ..."
 		# The size of the sparse W matrix is (num_nodes, 6*nGroups)

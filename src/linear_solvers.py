@@ -147,7 +147,3 @@ def solve(A: spy_sprs.coo_matrix,
     u = u.at[bc.free_dofs].set(x)
     return np.array(u)
   return solver_wrapper(A,b)
-  # result_shape = jax.ShapeDtypeStruct(b.shape, b.dtype)
-  # cust_solver = lambda mv, b: jax.pure_callback(solver_wrapper, result_shape, A, b)
-  # sol = jax.lax.custom_linear_solve(mv, b, cust_solver, symmetric=True)
-  # return sol.reshape(-1)

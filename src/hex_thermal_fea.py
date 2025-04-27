@@ -236,14 +236,14 @@ def runDOFTest():
     print('-----------------------------')
 if __name__ == "__main__":
     import plots
-    import thermal_fea as fea
+    import hex_thermal_fea as fea
     import linear_solvers as lin_solv
     import jax # import jax to enable 64 bit precision
     import time	
     from hex_thermal_examples import *
     jax.config.update("jax_enable_x64", True)
 
-    problem = ThermalExamples.ThickPlate
+    problem = ThermalExamples.LBracket
     nDOFDesired = 10000
     umax_values = []
     timing = []
@@ -263,10 +263,7 @@ if __name__ == "__main__":
     timing.append(time.time() - startTime )
     print(f'DOF: {fe_solver.mesh.num_nodes}, Max u: {uMax:.3e}')
     
-    
-
     nDOF = fe_solver.mesh.num_nodes
-   
     print('-----------------------------')
     print("nDof: ", nDOF)
     print('Solver: ', fe_solver.solver.name)

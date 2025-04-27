@@ -20,7 +20,7 @@ from linear_solvers import Solvers
 from deflation import DeflationSolver
 from hex_structural_fea import StructFEA
 from hex_modal_fea import ModalFEA
-from thermal_fea import ThermalFEA
+from hex_thermal_fea import ThermalFEA
 from hex_structural_examples import StructuralExamples, getStructuralProblem
 from hex_thermal_examples import ThermalExamples, getThermalProblem
 from topopt_benchmarks import StructuralTOExamples, getStructuralTOProblem
@@ -185,8 +185,6 @@ while True:
                     elem_body_force = elem_body_force)
    
         title = f'nDOF: {3*fe_solver.mesh.num_nodes}, nElem: {fe_solver.mesh.num_elems}'
-        fe_solver.plot_mesh(title = title)
-
         startTime = time.time()
         u, history,success,errorMsg,nFEAs = topopt_mma(fe_solver = fe_solver,plot_progress=True,
                                     to_params = to_params)
@@ -237,7 +235,6 @@ while True:
                     elem_body_force = elem_body_force)
         
         title = f'nDOF: {3*fe_solver.mesh.num_nodes}, nElem: {fe_solver.mesh.num_elems}'
-        fe_solver.plot_mesh(title = title)
         startTime = time.time()
         u, history, success,errorMsg,nFEAs = topopt_optimality_criteria(fe_solver = fe_solver,plot_progress=True,
                                                 to_params = to_params)
@@ -279,7 +276,6 @@ while True:
         mesh, mat_prop, bc,elem_body_force, to_params = getStructuralTOProblem(to_problem)
         
         fe_solver = StructFEA(mesh=mesh, mat_prop=mat_prop, solver= Solvers.PARDISO, bc=bc)
-        fe_solver.plot_mesh(title = title)
         u, history, success,errorMsg,nFEAs = topopt_pareto(fe_solver=fe_solver,to_params=to_params,plot_progress=True)
         plt.figure()
         plt.plot(history['volume'], history['compliance'], marker='o')

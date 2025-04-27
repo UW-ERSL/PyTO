@@ -25,6 +25,6 @@ class ThermalMaterial:
     thermal_conductivity: The thermal conductivity of the material [W/mK].
     specific_heat: The specific heat of the material [J/kgK].
   """
-  thermal_conductivity: Optional[float] = None
-  specific_heat: Optional[float] = None
-  mass_density: Optional[float] = None
+  thermal_conductivity: Optional[float] = 50.0
+  specific_heat: Optional[float] = 1e3  # J/kgK
+  mass_density: Optional[float] =  1e3  # kg/m^3

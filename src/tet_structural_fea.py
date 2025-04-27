@@ -149,6 +149,7 @@ class StructuralFEATet:
                 ).T.astype(int)
     
         ke_stacked = jnp.concatenate(data)
+        
         self.K = jax_sprs.BCOO((ke_stacked, self.node_idx),
                     shape=(self.bc.num_dofs, self.bc.num_dofs))
 
