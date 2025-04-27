@@ -95,12 +95,14 @@ class ThermalFEATet:
     """Assemble the global stiffness matrix."""
     # Initialize the global stiffness matrix in COO format
     data = []
+    print("Assembling global stiffness matrix...")
+    startTime = time.time()
     K = self.mat_prop.thermal_conductivity
     for i in range(self.mesh.num_elems):
       elem_nodes = self.mesh.nodes[self.mesh.elems[i]]
       ke = tet4_stiffness_matrix_thermal(K, elem_nodes)
       data.append(ke.flatten())
-
+    print("Data gathered in {:.2f} seconds.".format(time.time() - startTime))
     rows = np.repeat(self.edofMat, 4, axis=1)
     cols = np.tile(self.edofMat, 4)
     self.node_idx = jnp.array(np.vstack((rows.flatten(), cols.flatten())).T)
@@ -110,7 +112,7 @@ class ThermalFEATet:
     self.K = jax_sprs.BCOO((ke_stacked, self.node_idx),
                   shape=(self.bc.num_dofs, self.bc.num_dofs))
   
-    
+    print("Global stiffness matrix assembled in {:.2f} seconds.".format(time.time() - startTime))
   def solve(self) -> jnp.ndarray:
     """Solve the thermal finite element problem.
 
@@ -151,7 +153,7 @@ if __name__ == "__main__":
     jax.config.update("jax_enable_x64", True)
 
     
-    nDOFDesired = 1000
+    nDOFDesired = 100000
     problem = TetThermalExamples.ThickPlate
     tetmesh, mat_prop, bc = getTetThermalProblem(problem, nDOFDesired=nDOFDesired)
   
@@ -163,6 +165,7 @@ if __name__ == "__main__":
 
     startTime = time.time()
     fe_solver.assemble_global_stiffness_matrix()
+
     u = np.asarray(fe_solver.solve())
     uMax = np.max(np.abs(u))
     

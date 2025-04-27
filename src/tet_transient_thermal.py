@@ -2,10 +2,13 @@ import numpy as np
 import linear_solvers as lin_sol
 import mat_lib
 import bound_cond
-from tet_thermal_fea import tet4_stiffness_matrix_thermal, tet4_specific_heat_matrix
 import jax.numpy as jnp
 import jax.experimental.sparse as jax_sprs
+from tet_thermal_fea import tet4_stiffness_matrix_thermal, tet4_specific_heat_matrix
 from tet_thermal_examples import createThickPlateThermalProblemTet
+import time
+
+
 class TetTransientThermalFEA:
     def __init__(self,
                  mesh,
@@ -17,6 +20,7 @@ class TetTransientThermalFEA:
                  **kwargs):
 
         self.mesh = mesh
+        self.mat_prop = mat_prop
         self.initial_temp = T0*np.ones_like(mesh.nodes[:, 0])
         self.edofMat = np.array(self.mesh.elems[:, :4], dtype=int)
         self.node_idx = jnp.stack((
@@ -26,31 +30,8 @@ class TetTransientThermalFEA:
         self.bc = bc
         self.solver = solver
         self.deltaTime = deltaTime
-
-        data = []
-        for i in range(self.mesh.num_elems):
-            elem_stiff =  jnp.asarray(tet4_stiffness_matrix_thermal(mat_prop.thermal_conductivity, 
-                                                                    self.mesh.nodes[self.edofMat[i, :]]))
-            data.append(elem_stiff.flatten())
-
-  
-        elem_stiffness_stacked = jnp.concatenate(data)
-    
-        self.K_mtrx = jax_sprs.BCOO((elem_stiffness_stacked, self.node_idx),
-                                shape=(bc.num_dofs, bc.num_dofs))
-        datasp = []
-        for i in range(self.mesh.num_elems):
-            elem_specific_heat =  jnp.asarray(tet4_specific_heat_matrix(mat_prop.specific_heat,
-                                                                        mat_prop.mass_density, 
-                                                                        self.mesh.nodes[self.edofMat[i, :]]))
-            datasp.append( elem_specific_heat.flatten())
-
-        elem_specific_heat_stacked = jnp.concatenate(datasp)
-
-        self.C_mtrx = jax_sprs.BCOO((elem_specific_heat_stacked, self.node_idx),
-                                shape=(bc.num_dofs, bc.num_dofs))
-    
-        self.num_dofs = bc.num_dofs
+   
+        self.num_dofs = bc.num_dofs 
         # Check CFL condition
         mesh_size = mesh.elem_size  # assuming uniform mesh
         diffusivity = mat_prop.thermal_conductivity / (mat_prop.mass_density* mat_prop.specific_heat)
@@ -67,7 +48,32 @@ class TetTransientThermalFEA:
             print(f"Warning: CFL condition not met. CFL = {cfl:.3f}")
             print("Time step should be reduced for stability")
             input("Press Enter to continue...")
-            
+
+
+    def assemble_global_stiffness_matrices(self):
+        data = []
+        start_time = time.time()
+        K = self.mat_prop.thermal_conductivity
+        for i in range(self.mesh.num_elems):
+            elem_nodes = self.mesh.nodes[self.mesh.elems[i]]
+            elem_stiff = tet4_stiffness_matrix_thermal(K, elem_nodes)
+            data.append(elem_stiff.flatten())
+
+        elem_stiffness_stacked = np.concatenate(data)
+        self.K_mtrx = jax_sprs.BCOO((elem_stiffness_stacked, self.node_idx),
+                                shape=(bc.num_dofs, bc.num_dofs))
+        datasp = []
+        for i in range(self.mesh.num_elems):
+            elem_specific_heat =  tet4_specific_heat_matrix(self.mat_prop.specific_heat,
+                                                                        self.mat_prop.mass_density, 
+                                                                        self.mesh.nodes[self.edofMat[i, :]])
+            datasp.append( elem_specific_heat.flatten())
+
+        elem_specific_heat_stacked = np.concatenate(datasp)
+        self.C_mtrx = jax_sprs.BCOO((elem_specific_heat_stacked, self.node_idx),
+                                shape=(bc.num_dofs, bc.num_dofs))
+    
+
     def solve_newmark(self, time_steps: int, heat_flux_func, callback=None) -> np.ndarray:
         """
         Solves the transient thermal problem using the Newmark method.
@@ -93,11 +99,13 @@ class TetTransientThermalFEA:
         self.u = np.zeros((self.num_dofs, time_steps))
         self.u[:, 0] = self.initial_temp
         dt = self.deltaTime
+        self.assemble_global_stiffness_matrices()
         K = self.K_mtrx
         C = self.C_mtrx
         A = K + C/dt
         for timeIndex in range(1,time_steps):
-            #print(f"Time step {timeIndex} / {time_steps-1}")
+            if (callback is None):
+                print(f"Time step {timeIndex} / {time_steps-1}")
             heatFluxApplied = heat_flux_func(timeIndex, self.deltaTime, self.mesh)
             b = self.C_mtrx @ self.u[:, timeIndex-1]/self.deltaTime + heatFluxApplied
             self.u[:, timeIndex] = lin_sol.solve(A, b, self.solver, self.bc)
@@ -118,7 +126,7 @@ if __name__ == "__main__":
 
     jax.config.update("jax_enable_x64", True)
 
-    nDOFDesired = 1000
+    nDOFDesired = 10000
     problem = TetTransientThermalExamples.ThickPlate
     tetmesh, mat_prop, bc, initialTemperature, totalTime,timeStep,transientHeatFunction,ptsOfInterest = getTetTransientThermalProblem(problem, nDOFDesired=nDOFDesired)
     nTimeSteps = int(totalTime/timeStep)+1
