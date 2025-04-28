@@ -22,7 +22,7 @@ to_problem = StructuralTOExamples.EdgeCantilever
 linearSolvers = [lin_solv.Solvers.PYAMG, lin_solv.Solvers.CG, lin_solv.Solvers.PARDISO, lin_solv.Solvers.DPCG]
 
 optimizationMethod = TO_METHODS.DENSITYMMA
-dofs = [25000,50000,75000,100000,150000,250000,500000,1e6,1.5e6,2e6,3e6]
+dofs = [5000,10000,25000,50000,75000,100000,150000,250000,500000,1e6,1.5e6,2e6,3e6]
 # Set the time limit
 timeLimit = 60*5 # seconds
 dofActualList = []
