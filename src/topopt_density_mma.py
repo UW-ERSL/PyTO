@@ -1,6 +1,8 @@
 from topopt_common import *
-
-def topopt_mma(fe_solver: sfea.StructFEA,
+import time
+import mma
+import matplotlib.pyplot as plt
+def topopt_mma(fe_solver: hex_structural_fea.HexStructuralFEA,
 			   			to_params,
 			   			minMMAIterations: int = 5,
 			   			 maxMMAIterations: int = 250, 
@@ -66,12 +68,12 @@ def topopt_mma(fe_solver: sfea.StructFEA,
 														)
 	
 	if isinstance(fe_solver.mat_prop, list):
-		KE_list = [elem_stiff.hex8_stiffness_matrix_structural( mp,fe_solver.mesh.elem_size)
+		KE_list = [hex_element_stiffness.hex8_stiffness_matrix_structural( mp,fe_solver.mesh.elem_size)
 			 for mp in fe_solver.mat_prop]
 		KE = KE_list[0]
 		print("Density-MMA: Assuming all elements have the same material properties")
 	else:
-		KE = elem_stiff.hex8_stiffness_matrix_structural( fe_solver.mat_prop,fe_solver.mesh.elem_size)
+		KE = hex_element_stiffness.hex8_stiffness_matrix_structural( fe_solver.mat_prop,fe_solver.mesh.elem_size)
 	x0 = to_params.DesiredVolFraction * np.ones(num_elems, dtype = float)
 	x0 = x0.reshape(-1, 1)
 	mma_state = mma.init_mma(x0, mma_params)
@@ -257,7 +259,7 @@ if __name__ == "__main__":
 		dsolver.create_delfation_matrix(mesh)
 		dsolver.W = dsolver.W[bc.free_dofs, :]
 
-	fe_solver = fea.StructFEA(mesh = mesh,
+	fe_solver = hex_structural_fea.HexStructuralFEA(mesh = mesh,
 				mat_prop = mat_prop,
 				bc = bc,
 				solver = solver,

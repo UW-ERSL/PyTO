@@ -12,7 +12,7 @@ import scipy.sparse as sp
 
 script_dir = os.path.dirname(os.path.abspath(__file__))
 
-class ThermalFEA:
+class HexThermalFEA:
   """Linear Thermal Finite Element Analysis using Hex8 elements."""
 
   def __init__(self,
@@ -232,7 +232,6 @@ def runDOFTest():
     print("FEA time: ", time.time() - startTime)
     print('-----------------------------')
 if __name__ == "__main__":
-    import plots
     import hex_thermal_fea as fea
     import linear_solvers as lin_solv
     import time	
@@ -246,7 +245,7 @@ if __name__ == "__main__":
     
     mesh, mat_prop, bc = getThermalProblem(problem, nDOFDesired=nDOFDesired)
     
-    fe_solver = fea.ThermalFEA(mesh=mesh,
+    fe_solver =HexThermalFEA(mesh=mesh,
                   mat_prop=mat_prop,
                   bc=bc,
                   solver=solver)
@@ -266,4 +265,4 @@ if __name__ == "__main__":
     print('Max u: ', uMax)
     print('-----------------------------')
 	
-    plots.plotMesh(fe_solver.mesh, None, u,title=f'Dof = {nDOF}, Tmax: {uMax:.3g}',show_edges=True,)
+    fe_solver.plot_temperature()

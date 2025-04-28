@@ -51,7 +51,7 @@ class BoundingBox:
     return np.sqrt(self.lx**2 + self.ly**2 + self.lz**2)
 
 
-class Mesher:
+class HexMesher:
 	def __init__(self):	
 		self.num_nodes = 0
 		self.num_elems = 0
@@ -1038,7 +1038,7 @@ class Mesher:
 if __name__ == "__main__":
     import os
     import time
-    mesh = Mesher()
+    mesh = HexMesher()
     script_dir = os.path.dirname(os.path.abspath(__file__))
     stlFileName = os.path.join(script_dir, '../Models/LBracket/LBracket.STL')
     stlFileName = os.path.join(script_dir, '../Models/FilletedBeam/FilletedBeam.STL')

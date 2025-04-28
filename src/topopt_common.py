@@ -2,22 +2,14 @@
 
 import enum
 import numpy as np
-import hex_element_stiffness as elem_stiff
+import hex_element_stiffness
 import hex_mesher
-import hex_structural_fea as sfea
-import mma
-import deflation
+import hex_structural_fea 
 from topopt_filters import *
-import time
 import matplotlib.pyplot as plt
-import hex_structural_fea as fea
 import linear_solvers as lin_solv
-import time
-import matplotlib.pyplot as plt
 import deflation
-import os
 import pandas as pd
-import plots	
 
 _LARGE_NUMBER = 1.e9
 
@@ -52,7 +44,7 @@ class TOParams: # These are the default parameters
     AMBuildConstraint = False
     ElemsToKeep = None
 
-def find_elements_with_forces(mesh: hex_mesher.Mesher, force) -> np.ndarray:
+def find_elements_with_forces(mesh: hex_mesher.HexMesher, force) -> np.ndarray:
 	"""Find all elements that have nodes on which force has been applied.
 	
 	Args:
@@ -105,8 +97,8 @@ def volume_fraction_lowerlimit(density: np.ndarray,
 	return 1- (np.mean(density)/volfracLower)
 
 def compliance(x: np.ndarray,
-								fe_solver: sfea.StructFEA,
-													material_model_dict = None,
+				fe_solver: hex_structural_fea.HexStructuralFEA,
+						material_model_dict = None,
 													) -> np.ndarray:
 	"""Compute the structural compliance objective.
 
@@ -121,7 +113,7 @@ def compliance(x: np.ndarray,
 	return np.einsum('i, i -> ', fe_solver.total_force, u), u
 
 
-def createFilters(fe_solver: sfea.StructFEA,to_params):
+def createFilters(fe_solver: hex_structural_fea.HexStructuralFEA,to_params):
 	# Create  filters
 	H, Hs = createSmoothingFilter(fe_solver.mesh, rel_filter_radius=to_params.RelativeFilterRadius)
 	# Accumulate all other filters

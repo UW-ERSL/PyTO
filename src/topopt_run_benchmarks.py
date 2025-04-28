@@ -4,6 +4,7 @@ from topopt_density_oc import topopt_optimality_criteria
 from topopt_pareto import topopt_pareto
 from topopt_levelset import topopt_levelset	
 from topopt_benchmarks import *
+import time
 import glob
 
 def runTOMethodOnBenchmarks(optimizationMethod):
@@ -22,7 +23,7 @@ def runTOMethodOnBenchmarks(optimizationMethod):
 						StructuralTOExamples.DistributedLoad,
 						StructuralTOExamples.TorquePlate]
 	
-
+	
 	benchmarks_bodyforce_problems = [StructuralTOExamples.GravityPlate,
 						StructuralTOExamples.CentrifugalPlate]
 	
@@ -52,7 +53,7 @@ def runTOMethodOnBenchmarks(optimizationMethod):
 			dsolver.W = dsolver.W[bc.free_dofs, :]
 
 		
-		fe_solver = fea.StructFEA(mesh = mesh,
+		fe_solver = hex_structural_fea.HexStructuralFEA(mesh = mesh,
 					mat_prop = mat_prop,
 					bc = bc,
 					solver = solver,
@@ -81,7 +82,7 @@ def runTOMethodOnBenchmarks(optimizationMethod):
 		image_path = f"{output_dir}/{to_problem.name}.png"
 		title = f"{optimizationMethod.name}: nDOF: {3*fe_solver.mesh.num_nodes}, vol: {history['volume'][-1]:0.2f}, J: {history['compliance'][-1]:.3g}, time: {timeTaken:.0f} s"
 	
-		plots.plotMesh(fe_solver.mesh, bc = None, u=None, save_path = image_path, title = title)
+		fe_solver.plot_mesh(save_path=image_path, title=title)
 		
 		results_list.append({
 			'name': to_problem.name,

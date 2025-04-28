@@ -30,7 +30,6 @@ For Loop:
 """
 import itertools
 import time
-
 import numpy as np # pip install numpy
 import matplotlib.pyplot as plt # pip install matplotlib
 import hex_structural_fea as fea

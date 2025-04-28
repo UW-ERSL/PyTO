@@ -7,14 +7,14 @@ import os
 import enum
 script_dir = os.path.dirname(os.path.abspath(__file__))
 
-class ThermalExamples(enum.Enum):
+class HexThermalExamples(enum.Enum):
     ThickPlate = enum.auto()
     AnnularPlate = enum.auto()
     LBracket = enum.auto()
     Moran = enum.auto()
     BliskWithBlade = enum.auto()
 
-def getThermalProblem(problem: ThermalExamples, **kwargs):
+def getThermalProblem(problem: HexThermalExamples, **kwargs):
   """Returns a thermal problem based on the given problem name.
 
   Parameters:
@@ -29,15 +29,15 @@ def getThermalProblem(problem: ThermalExamples, **kwargs):
   tuple
     A tuple containing the mesh, material properties, and boundary conditions for the problem.
   """
-  if problem == ThermalExamples.LBracket:
+  if problem == HexThermalExamples.LBracket:
     return createLBracketThermalProblem(**kwargs)
-  elif problem == ThermalExamples.ThickPlate:
+  elif problem == HexThermalExamples.ThickPlate:
     return createThickPlateThermalProblem(**kwargs)
-  elif problem == ThermalExamples.AnnularPlate:
+  elif problem == HexThermalExamples.AnnularPlate:
     return createAnnularPlateThermalProblem(**kwargs)
-  elif problem == ThermalExamples.Moran:
+  elif problem == HexThermalExamples.Moran:
     return createMoranBenchMark(**kwargs)
-  elif problem == ThermalExamples.BliskWithBlade:
+  elif problem == HexThermalExamples.BliskWithBlade:
     return createBliskWithBladeProblem(**kwargs)
   else:
     raise ValueError("Invalid structural example name.")
@@ -69,7 +69,7 @@ def createThickPlateThermalProblem(nDOFDesired: int = 10000,thermal_conductivity
 	# Read the STL model, create a mesh of desired size, and a structural problem is posed on it.
     stl_file = os.path.join(script_dir, '../Models/ThickPlate/ThickPlate.STL')
     nElemsDesired = nDOFDesired	# estimate
-    mesh = hex_mesher.Mesher()
+    mesh = hex_mesher.HexMesher()
 	
     mesh.createMeshFromSTLFile(stl_file, nElemsDesired=nElemsDesired)
     
@@ -123,7 +123,7 @@ def createAnnularPlateThermalProblem(nDOFDesired: int = 10000,thermal_conductivi
 	# Read the STL model, create a mesh of desired size, and a structural problem is posed on it.
     stl_file = os.path.join(script_dir, '../Models/CircularPlateHole/CircularPlateHole.STL')
     nElemsDesired = nDOFDesired	# estimate
-    mesh = hex_mesher.Mesher()
+    mesh = hex_mesher.HexMesher()
 	
     mesh.createMeshFromSTLFile(stl_file, nElemsDesired=nElemsDesired)
     
@@ -180,7 +180,7 @@ def createLBracketThermalProblem(nDOFDesired: int = 10000,thermal_conductivity =
 	# Read the STL model, create a mesh of desired size, and a structural problem is posed on it.
     stl_file = os.path.join(script_dir, '../Models/LBracket/LBracket.STL')
     nElemsDesired = nDOFDesired	# estimate
-    mesh = hex_mesher.Mesher()
+    mesh = hex_mesher.HexMesher()
 	
     mesh.createMeshFromSTLFile(stl_file, nElemsDesired=nElemsDesired)
 
@@ -213,7 +213,7 @@ def createBliskWithBladeProblem(nDOFDesired: int = 10000,thermal_conductivity = 
   stl_file = os.path.join(script_dir, '../Models/BliskModel/BliskSectionWithBlade.STL')
 
   nElemsDesired = nDOFDesired    # estimate
-  mesh = hex_mesher.Mesher()
+  mesh = hex_mesher.HexMesher()
 
   mesh.createMeshFromSTLFile(stl_file, nElemsDesired=nElemsDesired)
   mesh.createEdofMatThermal()
@@ -251,7 +251,7 @@ def createMoranBenchMark(nDOFDesired: int = 10000,T0 = 23):
 	nelx = round(alpha*L[0])
 	nely = round(alpha*L[1])
 	nelz = round(alpha*L[2])
-	mesh = hex_mesher.Mesher()
+	mesh = hex_mesher.HexMesher()
 	mesh.grid_mesh(num_elems = (nelx, nely, nelz),
 								 elem_size = (L[0]/nelx, L[1]/nely, L[2]/nelz))
 	mesh.createEdofMatThermal()

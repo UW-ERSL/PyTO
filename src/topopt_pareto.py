@@ -1,7 +1,8 @@
 from topopt_common import *
 from topopt_filters import imposeZCastFilter
-
-def topopt_pareto(fe_solver: sfea.StructFEA,
+import time
+import numpy as np
+def topopt_pareto(fe_solver: hex_structural_fea.HexStructuralFEA,
 				  to_params,
 							rel_err: float = 0.02,
 							vol_decr_max: float = 0.05,
@@ -238,7 +239,7 @@ if __name__ == "__main__":
 	 
 	
 
-	fe_solver = fea.StructFEA(mesh = mesh,
+	fe_solver = hex_structural_fea.HexStructuralFEA(mesh = mesh,
 				mat_prop = mat_prop,
 				bc = bc,
 				solver = solver,

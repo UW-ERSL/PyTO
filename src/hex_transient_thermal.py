@@ -7,7 +7,7 @@ import matplotlib.pyplot as plt
 from hex_thermal_examples import *
 import scipy.sparse as sp
 
-class TransientThermalFEA:
+class HexTransientThermalFEA:
     def __init__(self,
                  mesh,
                  mat_prop: mat_lib.ThermalMaterial,
@@ -145,8 +145,7 @@ class TransientThermalFEA:
         return u
     
 if __name__ == "__main__":
-    from hex_thermal_fea import ThermalFEA
-    from hex_thermal_examples import ThermalExamples, getThermalProblem
+    from hex_thermal_examples import HexThermalExamples, getThermalProblem
     import linear_solvers as lin_solv
     import time
 
@@ -163,13 +162,13 @@ if __name__ == "__main__":
     nDOFDesired = 50000 # This is the number of degrees of freedom desired for the FE Mesh
     
     nTimeSteps = int(totalTime/deltaTime)+1
-    problem = ThermalExamples.Moran
+    problem = HexThermalExamples.Moran
 
     umax_values = []
     timing = []
     solver = lin_solv.Solvers.PARDISO
     mesh, mat_prop, bc = getThermalProblem(problem, nDOFDesired=nDOFDesired)
-    transient_solver = TransientThermalFEA(mesh = mesh,
+    transient_solver = HexTransientThermalFEA(mesh = mesh,
                               mat_prop = mat_prop,
                               bc = bc,
                               deltaTime = deltaTime,

@@ -1,28 +1,25 @@
 """Structural Finite Element Analysis."""
 import time
 import numpy as np
-import linear_solvers as lin_sol
-import hex_element_stiffness as elem_stiff
+import os
+import pyvista as pv
 import mat_lib
 import bound_cond
-import hex_structural_fea as fea
-import linear_solvers as lin_solv
-import mat_lib
-import os
-import deflation 
-import pyvista as pv
+import linear_solvers
+import hex_element_stiffness
+import deflation
 import scipy.sparse as sp
 
 script_dir = os.path.dirname(os.path.abspath(__file__))
 
-class StructFEA:
+class HexStructuralFEA:
   """Linear Structural Finite Element Analysis."""
 
   def __init__(self,
          mesh,
          mat_prop: mat_lib.StructuralMaterial | list[mat_lib.StructuralMaterial],
          bc: bound_cond.BC,
-         solver: lin_sol.Solvers,
+         solver: linear_solvers.Solvers,
          elem_body_force: np.ndarray = None,
          **kwargs):
 
@@ -32,12 +29,12 @@ class StructFEA:
     # Handle single material or list of materials
     if isinstance(mat_prop, list):
     # Create element stiffness matrix for each material
-      elem_stiff_list = [elem_stiff.hex8_stiffness_matrix_structural(mp, mesh.elem_size) 
+      elem_stiff_list = [hex_element_stiffness.hex8_stiffness_matrix_structural(mp, mesh.elem_size) 
                 for mp in mat_prop]
       self.elem_stiff = np.stack(elem_stiff_list)
     else:
       self.elem_stiff = np.expand_dims(
-          elem_stiff.hex8_stiffness_matrix_structural(mat_prop, mesh.elem_size), axis=0)
+          hex_element_stiffness.hex8_stiffness_matrix_structural(mat_prop, mesh.elem_size), axis=0)
 
    
     self.node_idx = np.stack((
@@ -129,7 +126,7 @@ class StructFEA:
       node_forces[1::3] = self.mesh.elem_to_node_field_mapping* elem_force[1::3] 
       node_forces[2::3] = self.mesh.elem_to_node_field_mapping* elem_force[2::3] 
       self.total_force += node_forces
-    sol =  lin_sol.solve(stiff_mtrx,
+    sol =  linear_solvers.solve(stiff_mtrx,
                       self.total_force,
                       self.solver,
                       self.bc,
@@ -266,7 +263,7 @@ class StructFEA:
     pv_mesh.cell_data['density'] = face_densities
 
     # Create plotter
-    save_path = None
+
     if save_path is  None:
       plotter = self.pyVistaPlotter 
       if plotter.iren is None:
@@ -275,6 +272,8 @@ class StructFEA:
         plotter.show(interactive_update=True, auto_close=False)
     else:
       plotter = pv.Plotter(off_screen=True) # for saving images
+      plotter.camera_position =self.camera_position
+      plotter.enable_anti_aliasing()
     
     plotter.add_title(title, font_size=8)
   
@@ -590,17 +589,17 @@ if __name__ == "__main__":
   problem = StructuralExamples.TorsionBar
   nDOFDesired = 80000
   mesh, mat_prop, bc,elem_body_force = getStructuralProblem(problem,nDOFDesired = nDOFDesired)
-  solver = lin_solv.Solvers.PARDISO # typically DPCG or PARDISO
+  solver = linear_solvers.Solvers.PARDISO # typically DPCG or PARDISO
   
   dsolver = deflation.DeflationSolver()
   startTime = time.time()
-  if (solver == lin_solv.Solvers.DPCG):
+  if (solver == linear_solvers.Solvers.DPCG):
     nGroups =  min(dsolver.maxGroups,max(dsolver.minGroups,round(3*mesh.num_nodes/dsolver.dofPerGroup)))
     dsolver.create_deflation_groups(mesh, nGroups)
     dsolver.create_delfation_matrix(mesh)
     dsolver.W = dsolver.W[bc.free_dofs, :]
   
-  fe_solver = fea.StructFEA(mesh = mesh,
+  fe_solver = HexStructuralFEA(mesh = mesh,
         mat_prop = mat_prop,
         bc = bc,
         solver = solver,

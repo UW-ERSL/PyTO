@@ -72,7 +72,7 @@ def tet4_specific_heat_matrix(specific_heat: float,
   return ce
 
 
-class ThermalFEATet:
+class TetThermalFEA:
   """Linear Thermal Finite Element Analysis using linear tet elements."""
 
   def __init__(self,
@@ -149,12 +149,12 @@ if __name__ == "__main__":
     from tet_thermal_examples import TetThermalExamples, getTetThermalProblem
   
     
-    nDOFDesired = 100000
-    problem = TetThermalExamples.ThickPlate
+    nDOFDesired = 10000
+    problem = TetThermalExamples.AnnularPlate
     tetmesh, mat_prop, bc = getTetThermalProblem(problem, nDOFDesired=nDOFDesired)
   
     solver = lin_sol.Solvers.PARDISO
-    fe_solver = ThermalFEATet(mesh=tetmesh,
+    fe_solver = TetThermalFEA(mesh=tetmesh,
                 mat_prop=mat_prop,
                 bc=bc,
                 solver=solver)

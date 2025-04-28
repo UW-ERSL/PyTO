@@ -1,7 +1,8 @@
 from topopt_common import *
+import time
 
 def topopt_optimality_criteria(
-							fe_solver: sfea.StructFEA,
+							fe_solver: hex_structural_fea.HexStructuralFEA,
 							to_params,
 			  				maxIterations: int = 250,
 							penal: float = 3,
@@ -63,12 +64,12 @@ def topopt_optimality_criteria(
 	xmax = 1.0    # Maximum density
 	
 	if isinstance(fe_solver.mat_prop, list):
-		KE_list = [elem_stiff.hex8_stiffness_matrix_structural( mp,fe_solver.mesh.elem_size)
+		KE_list = [hex_element_stiffness.hex8_stiffness_matrix_structural( mp,fe_solver.mesh.elem_size)
 			 for mp in fe_solver.mat_prop]
 		KE = KE_list[0]
 		print("Density-OC: Assuming all elements have the same material properties")
 	else:
-		KE = elem_stiff.hex8_stiffness_matrix_structural( fe_solver.mat_prop,fe_solver.mesh.elem_size)
+		KE = hex_element_stiffness.hex8_stiffness_matrix_structural( fe_solver.mat_prop,fe_solver.mesh.elem_size)
 	success = True
 	errorMsg = ""
 	for iter in range(maxIterations):
@@ -219,7 +220,7 @@ if __name__ == "__main__":
 		dsolver.create_delfation_matrix(mesh)
 		dsolver.W = dsolver.W[bc.free_dofs, :]
 
-	fe_solver = fea.StructFEA(mesh = mesh,
+	fe_solver = hex_structural_fea.HexStructuralFEA(mesh = mesh,
 				mat_prop = mat_prop,
 				bc = bc,
 				solver = solver,

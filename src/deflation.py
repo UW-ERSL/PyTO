@@ -45,7 +45,7 @@ class DeflationSolver:
 
 	def __init__(self, minNodesPerGroup: int = 15):	
 		"""Initialize the deflation solver with default parameters."""
-		self.minNodesPerGroup = 15
+		self.minNodesPerGroup = minNodesPerGroup
 		self.maxGroups = 2000
 		self.minGroups = 10
 		self.dofPerGroup = 500

@@ -5,7 +5,7 @@ from scipy.sparse import coo_matrix
 import hex_mesher
 
 
-def createSmoothingFilter(mesh: hex_mesher.Mesher, rel_filter_radius: float = 1.5):
+def createSmoothingFilter(mesh: hex_mesher.HexMesher, rel_filter_radius: float = 1.5):
 	"""Create a smoothing filter using the provided formula.
 
 	Args:
@@ -36,7 +36,7 @@ def createSmoothingFilter(mesh: hex_mesher.Mesher, rel_filter_radius: float = 1.
 	Hs = np.array(H.sum(1)).squeeze()
 	return H, Hs
 
-def createXSymmetryFilter(mesh: hex_mesher.Mesher) -> tuple[coo_matrix, np.ndarray]:
+def createXSymmetryFilter(mesh: hex_mesher.HexMesher) -> tuple[coo_matrix, np.ndarray]:
 	"""Create a symmetry filter matrix about X mid-plane.
 	
 	Args:
@@ -78,7 +78,7 @@ def createXSymmetryFilter(mesh: hex_mesher.Mesher) -> tuple[coo_matrix, np.ndarr
 	HX = coo_matrix((data, (rows, cols)), shape=(num_elems, num_elems)).tocsc()
 	return HX
 
-def createYSymmetryFilter(mesh: hex_mesher.Mesher) -> tuple[coo_matrix, np.ndarray]:
+def createYSymmetryFilter(mesh: hex_mesher.HexMesher) -> tuple[coo_matrix, np.ndarray]:
 	"""Create a symmetry filter matrix about Y mid-plane.
 	
 	Args:
@@ -117,7 +117,7 @@ def createYSymmetryFilter(mesh: hex_mesher.Mesher) -> tuple[coo_matrix, np.ndarr
 	HY = coo_matrix((data, (rows, cols)), shape=(num_elems, num_elems)).tocsc()
 	return HY
 	
-def createZSymmetryFilter(mesh: hex_mesher.Mesher) -> tuple[coo_matrix, np.ndarray]:
+def createZSymmetryFilter(mesh: hex_mesher.HexMesher) -> tuple[coo_matrix, np.ndarray]:
 	"""Create a symmetry filter matrix about Z mid-plane.
 	
 	Args:
@@ -157,7 +157,7 @@ def createZSymmetryFilter(mesh: hex_mesher.Mesher) -> tuple[coo_matrix, np.ndarr
 
 	HZ = coo_matrix((data, (rows, cols)), shape=(num_elems, num_elems)).tocsc()
 	return HZ
-def createXAngularSymmetryFilter(mesh: hex_mesher.Mesher, n_fold: int) -> tuple[coo_matrix, np.ndarray]:
+def createXAngularSymmetryFilter(mesh: hex_mesher.HexMesher, n_fold: int) -> tuple[coo_matrix, np.ndarray]:
 	"""Create a filter matrix for n-fold angular symmetry about X axis.
 	
 	Args:
@@ -209,7 +209,7 @@ def createXAngularSymmetryFilter(mesh: hex_mesher.Mesher, n_fold: int) -> tuple[
 	return HAX
 
 
-def createYAngularSymmetryFilter(mesh: hex_mesher.Mesher, n_fold: int) -> tuple[coo_matrix, np.ndarray]:
+def createYAngularSymmetryFilter(mesh: hex_mesher.HexMesher, n_fold: int) -> tuple[coo_matrix, np.ndarray]:
 	"""Create a filter matrix for n-fold angular symmetry about Y axis.
 	
 	Args:
@@ -259,7 +259,7 @@ def createYAngularSymmetryFilter(mesh: hex_mesher.Mesher, n_fold: int) -> tuple[
 	
 	HAY = coo_matrix((data, (rows, cols)), shape=(num_elems, num_elems)).tocsc()
 	return HAY
-def createZAngularSymmetryFilter(mesh: hex_mesher.Mesher, n_fold: int) -> tuple[coo_matrix, np.ndarray]:
+def createZAngularSymmetryFilter(mesh: hex_mesher.HexMesher, n_fold: int) -> tuple[coo_matrix, np.ndarray]:
 	"""Create a filter matrix for n-fold angular symmetry about Z axis.
 	
 	Args:
@@ -311,7 +311,7 @@ def createZAngularSymmetryFilter(mesh: hex_mesher.Mesher, n_fold: int) -> tuple[
 	return HAZ
 
 
-def createXExtrudeFilter(mesh: hex_mesher.Mesher):	
+def createXExtrudeFilter(mesh: hex_mesher.HexMesher):	
 	"""Create a filter matrix for extruding elements all the way through in the X direction.
 	
 	Args:
@@ -353,7 +353,7 @@ def createXExtrudeFilter(mesh: hex_mesher.Mesher):
 	HXE = coo_matrix((data, (rows, cols)), shape=(num_elems, num_elems)).tocsc()
 	return HXE
 
-def createYExtrudeFilter(mesh: hex_mesher.Mesher):
+def createYExtrudeFilter(mesh: hex_mesher.HexMesher):
 	"""Create a filter matrix for extruding elements all the way through in the Y direction.
 	
 	Args:
@@ -395,7 +395,7 @@ def createYExtrudeFilter(mesh: hex_mesher.Mesher):
 	HYE = coo_matrix((data, (rows, cols)), shape=(num_elems, num_elems)).tocsc()
 	return HYE
 
-def createZExtrudeFilter(mesh: hex_mesher.Mesher):
+def createZExtrudeFilter(mesh: hex_mesher.HexMesher):
 	"""Create a filter matrix for extruding elements all the way through in the Z direction.
 	
 	Args:
@@ -438,7 +438,7 @@ def createZExtrudeFilter(mesh: hex_mesher.Mesher):
 	return HZE	
 
 
-def createAMBuildFilter(mesh: hex_mesher.Mesher):
+def createAMBuildFilter(mesh: hex_mesher.HexMesher):
 	"""Create a filter matrix to enforce z-direction build constraints for additive manufacturing.
 	
 	Args:
@@ -481,7 +481,7 @@ def createAMBuildFilter(mesh: hex_mesher.Mesher):
 	
 	return HZAM
 
-def imposeZCastFilter(mesh: hex_mesher.Mesher, sensitivity: np.ndarray) -> np.ndarray:
+def imposeZCastFilter(mesh: hex_mesher.HexMesher, sensitivity: np.ndarray) -> np.ndarray:
 	"""Apply Z-direction casting constraints about a midplane to a sensitivity field.
 	
 	Args:
