@@ -168,7 +168,7 @@ def topopt_mma(fe_solver: sfea.StructFEA,
 															mma_params,
 																obj,
 																np.array([grad_obj]).reshape((num_elems, 1)),
-																jnp.array([cons]).reshape((1, 1)),
+																np.array([cons]).reshape((1, 1)),
 																grad_cons.reshape((1, num_elems))
 																)
 			
@@ -237,7 +237,6 @@ def topopt_mma(fe_solver: sfea.StructFEA,
 	return np.asarray(u), history,success,errorMsg,nFEAs
 	
 if __name__ == "__main__":    
-	jax.config.update("jax_enable_x64", True)
 	from topopt_benchmarks import *
 	
 	print("-" * 50)

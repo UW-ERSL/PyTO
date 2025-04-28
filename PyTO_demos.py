@@ -6,7 +6,6 @@ creating voxel meshes, and performing finite element analysis (FEA) and topology
 
 
 import sys
-import jax
 import enum
 import time
 import numpy as np  
@@ -54,7 +53,6 @@ class pyTODemos(enum.Enum):
 
 
 #Enable 64-bit precision in JAX
-jax.config.update("jax_enable_x64", True)
 
 demo = pyTODemos.Load_STL  # Initialize with first demo
 while True:
@@ -126,7 +124,7 @@ while True:
         
     elif demo == pyTODemos.StructuralFEA_Voxel_DPCG:# DPCG solver for large scale problems
         # This example uses the Knuckle assembly problem from the StructuralExamples module.
-        problem = StructuralExamples.KnuckleAssembly 
+        problem = StructuralExamples.CompliantMechanism 
         nDOFDesired = 500000 
         mesh, mat_prop, bc,elem_body_force = getStructuralProblem(problem,nDOFDesired = nDOFDesired)
         solver = Solvers.DPCG

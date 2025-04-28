@@ -30,7 +30,7 @@ For Loop:
 """
 import itertools
 import time
-import jax # pip install jax jaxlib
+
 import numpy as np # pip install numpy
 import matplotlib.pyplot as plt # pip install matplotlib
 import hex_structural_fea as fea
@@ -38,7 +38,7 @@ import deflation
 import linear_solvers as lin_solv
 import topopt_common as topopt_common
 from hex_structural_examples import *
-jax.config.update("jax_enable_x64", True)
+
 
 
 # Choose the linear solvers to compare
@@ -46,6 +46,7 @@ linearSolvers = ['spsolve','pyamg','pycg','pypardiso','pydpcg']
 # Set the DOF for the problems to run through
 dofs = [1000,5000,10000,25000,50000,100000,250000,500000,1e6,1.5e6,2e6,3e6]
 # Set the time limit for each solver
+dofs = [1000,5000,10000]
 timeLimit = 20 # seconds
 dofList = []
 solverTime = dict(zip(linearSolvers, [None]*len(linearSolvers)))

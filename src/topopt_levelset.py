@@ -98,10 +98,8 @@ def topopt_levelset(fe_solver: sfea.StructFEA,
 
 
 if __name__ == "__main__":    
-	
 	from topopt_benchmarks import *
-	jax.config.update("jax_enable_x64", True)
-	
+
 	print("-" * 50)
 	to_problem = StructuralTOExamples.MidCantilever # Choose the TO problem
 	print(f"Running {to_problem.name}...") 

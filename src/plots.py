@@ -3,11 +3,8 @@
 import numpy as np
 import pyvista as pv
 import matplotlib.pyplot as plt
-
 import deflation
 import hex_mesher
-
-
 
 def plotMesh(mesh: hex_mesher.Mesher,
              bc = None,

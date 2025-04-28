@@ -32,7 +32,6 @@ def runTOMethodOnBenchmarks(optimizationMethod):
 						StructuralTOExamples.KnuckleAssembly, 
 						StructuralTOExamples.Table]
 	
-	
 
 	for to_problem in benchmarks_2_5D_problems:
 		print("-" * 50)
@@ -249,8 +248,7 @@ def combine_results():
 	plt.close()
 
 if __name__ == "__main__":    
-	jax.config.update("jax_enable_x64", True)
-	  
+
 	optimizationMethods = [TO_METHODS.DENSITYMMA, TO_METHODS.DENSITYOC, TO_METHODS.PARETO]
 	for optimizationMethod in optimizationMethods:
 		runTOMethodOnBenchmarks(optimizationMethod)

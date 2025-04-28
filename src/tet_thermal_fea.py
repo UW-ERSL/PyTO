@@ -1,13 +1,11 @@
 import time
 import numpy as np
-import jax
-import jax.numpy as jnp
-import jax.experimental.sparse as jax_sprs
 import linear_solvers as lin_sol
 import mat_lib
 import bound_cond
 import pyvista as pv # pip install pyvista
 from numba import njit
+import scipy.sparse as sp
 
 @njit(cache=True)
 def tet4_stiffness_matrix_thermal(thermal_conductivity,xyz_nodes):
@@ -36,8 +34,8 @@ def tet4_stiffness_matrix_thermal(thermal_conductivity,xyz_nodes):
 @njit(cache=True)
 def tet4_specific_heat_matrix(specific_heat: float,
       mass_density: float,
-        xyz_nodes: jnp.ndarray,
-      ) -> jnp.ndarray:
+        xyz_nodes: np.ndarray,
+      ) -> np.ndarray:
   """Computes the element specific heat matrix of a tetrahedral element in 3D.
   The specific heat matrix is simplified as:
 
@@ -105,15 +103,15 @@ class ThermalFEATet:
     print("Data gathered in {:.2f} seconds.".format(time.time() - startTime))
     rows = np.repeat(self.edofMat, 4, axis=1)
     cols = np.tile(self.edofMat, 4)
-    self.node_idx = jnp.array(np.vstack((rows.flatten(), cols.flatten())).T)
+    self.node_idx = np.array(np.vstack((rows.flatten(), cols.flatten())).T)
   
-    ke_stacked = jnp.array(np.concatenate(data))
+    ke_stacked = np.array(np.concatenate(data))
     # Create the sparse global stiffness matrix
-    self.K = jax_sprs.BCOO((ke_stacked, self.node_idx),
+    self.K = sp.coo_matrix((ke_stacked, (self.node_idx[:, 0], self.node_idx[:, 1])),
                   shape=(self.bc.num_dofs, self.bc.num_dofs))
   
     print("Global stiffness matrix assembled in {:.2f} seconds.".format(time.time() - startTime))
-  def solve(self) -> jnp.ndarray:
+  def solve(self) -> np.ndarray:
     """Solve the thermal finite element problem.
 
     Args:
@@ -147,11 +145,9 @@ class ThermalFEATet:
         
 
 if __name__ == "__main__":
-    import jax # import jax to enable 64 bit precision
     import time	
     from tet_thermal_examples import TetThermalExamples, getTetThermalProblem
-    jax.config.update("jax_enable_x64", True)
-
+  
     
     nDOFDesired = 100000
     problem = TetThermalExamples.ThickPlate

@@ -210,7 +210,6 @@ def topopt_pareto(fe_solver: sfea.StructFEA,
 
 
 if __name__ == "__main__":    
-	jax.config.update("jax_enable_x64", True)
 	from topopt_benchmarks import *
 	
 	print("-" * 50)

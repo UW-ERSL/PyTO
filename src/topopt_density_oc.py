@@ -1,8 +1,5 @@
 from topopt_common import *
 
-
-
-
 def topopt_optimality_criteria(
 							fe_solver: sfea.StructFEA,
 							to_params,
@@ -118,8 +115,8 @@ def topopt_optimality_criteria(
 				lmid = 0.5 * (l2 + l1)
 				b = -grad_obj / lmid	
 				# OC update with damping and bounds
-				xnew = jnp.maximum(xmin,np.maximum(x - move,np.minimum(xmax, np.minimum(x + move, x * np.sqrt(b)))))
-				if jnp.sum(xnew) - to_params.DesiredVolFraction * num_elems > 0:
+				xnew = np.maximum(xmin,np.maximum(x - move,np.minimum(xmax, np.minimum(x + move, x * np.sqrt(b)))))
+				if np.sum(xnew) - to_params.DesiredVolFraction * num_elems > 0:
 					l1 = lmid
 				else:
 					l2 = lmid	
@@ -146,8 +143,8 @@ def topopt_optimality_criteria(
 			xPhys = xnew.copy()
 
 		# Calculate change and update densities
-		#change = jnp.linalg.norm(x - xold, np.inf)
-		change = jnp.max(jnp.abs(x - xold))
+		#change = np.linalg.norm(x - xold, np.inf)
+		change = np.max(np.abs(x - xold))
 
 		fe_solver.mesh.setPseudoDensity(np.asarray(xPhys))
 	
@@ -202,7 +199,6 @@ def topopt_optimality_criteria(
 
 	
 if __name__ == "__main__":    
-	jax.config.update("jax_enable_x64", True)
 	from topopt_benchmarks import *
 
 	print("-" * 50)

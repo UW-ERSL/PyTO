@@ -1,6 +1,5 @@
 # %%
 import time
-import jax # pip install jax jaxlib
 import numpy as np # pip install numpy
 import matplotlib.pyplot as plt # pip install matplotlib
 import hex_structural_fea as fea
@@ -15,7 +14,6 @@ from topopt_common import *
 from topopt_benchmarks import *
 import itertools
 
-jax.config.update("jax_enable_x64", True)
 dsolver = deflation.DeflationSolver()
 
 script_dir = os.path.dirname(os.path.abspath(__file__))

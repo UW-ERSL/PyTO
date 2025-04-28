@@ -2,12 +2,10 @@ import numpy as np
 import linear_solvers as lin_sol
 import mat_lib
 import bound_cond
-import jax.numpy as jnp
-import jax.experimental.sparse as jax_sprs
 from tet_thermal_fea import tet4_stiffness_matrix_thermal, tet4_specific_heat_matrix
 from tet_thermal_examples import createThickPlateThermalProblemTet
 import time
-
+import scipy.sparse as sp
 
 class TetTransientThermalFEA:
     def __init__(self,
@@ -23,7 +21,7 @@ class TetTransientThermalFEA:
         self.mat_prop = mat_prop
         self.initial_temp = T0*np.ones_like(mesh.nodes[:, 0])
         self.edofMat = np.array(self.mesh.elems[:, :4], dtype=int)
-        self.node_idx = jnp.stack((
+        self.node_idx = np.stack((
               np.kron(self.edofMat, np.ones((4, 1))).flatten(),
               np.kron(self.edofMat, np.ones((1, 4))).flatten())
               ).T.astype(int)
@@ -60,7 +58,7 @@ class TetTransientThermalFEA:
             data.append(elem_stiff.flatten())
 
         elem_stiffness_stacked = np.concatenate(data)
-        self.K_mtrx = jax_sprs.BCOO((elem_stiffness_stacked, self.node_idx),
+        self.K_mtrx = sp.coo_matrix((elem_stiffness_stacked,  (self.node_idx[:, 0], self.node_idx[:, 1])),
                                 shape=(self.bc.num_dofs, self.bc.num_dofs))
         datasp = []
         for i in range(self.mesh.num_elems):
@@ -70,7 +68,7 @@ class TetTransientThermalFEA:
             datasp.append( elem_specific_heat.flatten())
 
         elem_specific_heat_stacked = np.concatenate(datasp)
-        self.C_mtrx = jax_sprs.BCOO((elem_specific_heat_stacked, self.node_idx),
+        self.C_mtrx = sp.coo_matrix((elem_specific_heat_stacked,  (self.node_idx[:, 0], self.node_idx[:, 1])),
                                 shape=(self.bc.num_dofs, self.bc.num_dofs))
     
 
@@ -116,15 +114,10 @@ class TetTransientThermalFEA:
 
 if __name__ == "__main__":
     import hex_thermal_fea as hex_thermal_fea
-    import linear_solvers as lin_solv
     import time
-    import jax # import jax to enable 64 bit precision
-    import time	
     import matplotlib.pyplot as plt
     from tet_transient_thermal_examples import TetTransientThermalExamples, getTetTransientThermalProblem
 
-
-    jax.config.update("jax_enable_x64", True)
 
     nDOFDesired = 10000
     problem = TetTransientThermalExamples.ThickPlate

@@ -3,10 +3,9 @@ import linear_solvers as lin_sol
 import mat_lib
 import bound_cond
 import hex_element_stiffness as es
-import jax.numpy as jnp
-import jax.experimental.sparse as jax_sprs
 import matplotlib.pyplot as plt
 from hex_thermal_examples import *
+import scipy.sparse as sp
 
 class TransientThermalFEA:
     def __init__(self,
@@ -20,7 +19,7 @@ class TransientThermalFEA:
 
         self.mesh = mesh
         self.initial_temp = T0*np.ones_like(mesh.node_indices[:, 0])
-        self.node_idx = jnp.stack((
+        self.node_idx = np.stack((
                         np.kron(mesh.edofMat, np.ones((8, 1))).flatten(),
                         np.kron(mesh.edofMat, np.ones((1, 8))).flatten())
                         ).T.astype(int)
@@ -28,20 +27,20 @@ class TransientThermalFEA:
         self.solver = solver
         self.deltaTime = deltaTime
 
-        elem_stiff = jnp.asarray(es.hex8_stiffness_matrix_thermal(mat_prop, mesh.elem_size))
-        elem_stiffness_stacked = jnp.einsum('ij, e -> eij',
+        elem_stiff = np.asarray(es.hex8_stiffness_matrix_thermal(mat_prop, mesh.elem_size))
+        elem_stiffness_stacked = np.einsum('ij, e -> eij',
                                  elem_stiff,
 								np.ones((mesh.num_elems,)) ).flatten(order = 'C')
 
-        self.K_mtrx = jax_sprs.BCOO((elem_stiffness_stacked, self.node_idx),
+        self.K_mtrx = sp.coo_matrix((elem_stiffness_stacked,  (self.node_idx[:, 0], self.node_idx[:, 1])),
                                 shape=(bc.num_dofs, bc.num_dofs))
         
-        elem_specific_heat = jnp.asarray( es.hex8_specific_heat_matrix(mat_prop, mesh.elem_size))
-        elem_specific_heat_stacked = jnp.einsum('ij, e -> eij',
+        elem_specific_heat = np.asarray( es.hex8_specific_heat_matrix(mat_prop, mesh.elem_size))
+        elem_specific_heat_stacked = np.einsum('ij, e -> eij',
                                  elem_specific_heat,
 								np.ones((mesh.num_elems,)) ).flatten(order = 'C')
 
-        self.C_mtrx = jax_sprs.BCOO((elem_specific_heat_stacked, self.node_idx),
+        self.C_mtrx = sp.coo_matrix((elem_specific_heat_stacked,  (self.node_idx[:, 0], self.node_idx[:, 1])),
                                 shape=(bc.num_dofs, bc.num_dofs))
     
         self.num_dofs = bc.num_dofs
@@ -150,10 +149,7 @@ if __name__ == "__main__":
     from hex_thermal_examples import ThermalExamples, getThermalProblem
     import linear_solvers as lin_solv
     import time
-    import jax # import jax to enable 64 bit precision
-    import time	
 
-    jax.config.update("jax_enable_x64", True)
     
     # See Paper: "Utility of superposition-based finite element ..."  by Moran, at. al., Additive Manuf, 2018
     xStart = 0.0025 # This is the start of the laser

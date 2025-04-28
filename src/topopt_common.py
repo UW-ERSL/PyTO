@@ -2,8 +2,6 @@
 
 import enum
 import numpy as np
-import jax
-import jax.numpy as jnp
 import hex_element_stiffness as elem_stiff
 import hex_mesher
 import hex_structural_fea as sfea
@@ -76,9 +74,9 @@ def find_elements_with_forces(mesh: hex_mesher.Mesher, force) -> np.ndarray:
 	return np.array(elements_with_forces)
 
 
-def volume_fraction_upperlimit(density: jnp.ndarray,
+def volume_fraction_upperlimit(density: np.ndarray,
 											 volfracUpper: float,
-											 )-> jnp.ndarray:
+											 )-> np.ndarray:
 	"""Compute the volume constraint.
 	
 	Args:
@@ -89,11 +87,11 @@ def volume_fraction_upperlimit(density: jnp.ndarray,
 		returned value is zero. The constraint is inactive when the returned
 		value is negative.
 	"""
-	return (jnp.mean(density)/volfracUpper) - 1.0
+	return (np.mean(density)/volfracUpper) - 1.0
 
-def volume_fraction_lowerlimit(density: jnp.ndarray,
+def volume_fraction_lowerlimit(density: np.ndarray,
 											 volfracLower: float,
-											 )-> jnp.ndarray:
+											 )-> np.ndarray:
 	"""Compute the volume constraint.
 	
 	Args:
@@ -104,12 +102,12 @@ def volume_fraction_lowerlimit(density: jnp.ndarray,
 		returned value is zero. The constraint is inactive when the returned
 		value is negative.
 	"""
-	return 1- (jnp.mean(density)/volfracLower)
+	return 1- (np.mean(density)/volfracLower)
 
-def compliance(x: jnp.ndarray,
+def compliance(x: np.ndarray,
 								fe_solver: sfea.StructFEA,
 													material_model_dict = None,
-													) -> jnp.ndarray:
+													) -> np.ndarray:
 	"""Compute the structural compliance objective.
 
 	Args:
@@ -120,7 +118,7 @@ def compliance(x: jnp.ndarray,
 	Returns: The compliance objective value.
 	"""
 	u = fe_solver.solve(x, material_model_dict)
-	return jnp.einsum('i, i -> ', fe_solver.total_force, u), u
+	return np.einsum('i, i -> ', fe_solver.total_force, u), u
 
 
 def createFilters(fe_solver: sfea.StructFEA,to_params):
