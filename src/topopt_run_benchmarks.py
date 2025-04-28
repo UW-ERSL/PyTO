@@ -33,7 +33,7 @@ def runTOMethodOnBenchmarks(optimizationMethod):
 						StructuralTOExamples.KnuckleAssembly, 
 						StructuralTOExamples.Table]
 	
-
+ 
 	for to_problem in benchmarks_2_5D_problems:
 		print("-" * 50)
 		print(f"Running {to_problem.name} using {optimizationMethod.name} method")
