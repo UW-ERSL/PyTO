@@ -38,6 +38,7 @@ class StructuralExamples(enum.Enum):
 	BliskQuarter = enum.auto()
 	BliskWithBlade =  enum.auto()
 	NoseCone = enum.auto()
+	
 
 
 def getStructuralProblem(problem: StructuralExamples, **kwargs):
@@ -1857,4 +1858,5 @@ def createNoseconeProblem(nDOFDesired: int = 10000, youngs_modulus = 1e7,
   
   elem_body_force = None
   return mesh, mat_prop, bc, elem_body_force
+
 

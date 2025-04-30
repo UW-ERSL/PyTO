@@ -14,7 +14,6 @@ def topopt_mma(fe_solver: hex_structural_fea.HexStructuralFEA,
 							 rel_conv_tol: float = 1.e-3,
 							 print_progress: bool = True,
 							plot_progress: bool = False,
-							 grey_tol: float = 0.2,
 							 debug: bool = False,
 							 ) -> tuple[np.ndarray, dict]:
 	"""MMA based topology optimization for minimum compliance.

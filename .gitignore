@@ -4,6 +4,9 @@
 *.png
 *.face
 *.node
+*.stl 
+*.STL 
+*.msh
 /PyTOSlides
 /Results
 /Models

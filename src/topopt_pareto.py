@@ -49,7 +49,6 @@ def topopt_pareto(fe_solver: hex_structural_fea.HexStructuralFEA,
 		print("Computing Filters ...")
 	[H,Hs] = createFilters(fe_solver, to_params)
 
-	
 	elemsWithForces = find_elements_with_forces(fe_solver.mesh, fe_solver.bc.force)
 
 	if (fe_solver.elem_body_force is not None):
@@ -70,7 +69,7 @@ def topopt_pareto(fe_solver: hex_structural_fea.HexStructuralFEA,
 	history['volume'].append(volfrac)
 	fe_solver.postprocess() # compute stresses and strains for the initial design
 	# Compute initial topological sensitivity
-	T = computeTopologicalSensitivity(fe_solver.mat_prop,fe_solver.strainComponents,fe_solver.stressComponents,x)
+	T = computeTopologicalSensitivity(fe_solver.mat_prop.poissons_ratio,fe_solver.strainComponents,fe_solver.stressComponents,x)
 	
 	# Add contribution from body force to topological sensitivity if present
 	if (nodal_body_force is not None):
@@ -142,6 +141,7 @@ def topopt_pareto(fe_solver: hex_structural_fea.HexStructuralFEA,
 			value = np.sort(T.flatten())[int(fe_solver.mesh.num_elems * (1 - volfrac))]
 			x = np.ones((fe_solver.mesh.num_elems))
 			x[T < value] = xVoid
+
 			fe_solver.mesh.setPseudoDensity(x.flatten())
 			if (removeHangingElems):
 				meshComponents = fe_solver.mesh.find_connected_components()
@@ -160,10 +160,10 @@ def topopt_pareto(fe_solver: hex_structural_fea.HexStructuralFEA,
 			u = np.asarray(fe_solver.solve(x))
 			nFEAs += 1
 			JTemp = float(fe_solver.total_force.T @ u)
-			#plots.plotMesh(fe_solver.mesh, bc = None, u=u, title = title)
+
 			# Update sensitivity
 			fe_solver.postprocess()
-			T = computeTopologicalSensitivity(fe_solver.mat_prop,fe_solver.strainComponents,fe_solver.stressComponents,x)
+			T = computeTopologicalSensitivity(fe_solver.mat_prop.poissons_ratio,fe_solver.strainComponents,fe_solver.stressComponents,x)
 		
 			# Add contribution from body force to topological sensitivity if present
 			if (nodal_body_force is not None):

@@ -6,7 +6,7 @@ from topopt_levelset import topopt_levelset
 from topopt_benchmarks import *
 import time
 import glob
-
+import pandas as pd
 def runTOMethodOnBenchmarks(optimizationMethod):
 	# Create a list to store results
 	results_list = []
@@ -30,10 +30,10 @@ def runTOMethodOnBenchmarks(optimizationMethod):
 	benchmarks_3D_problems = [StructuralTOExamples.EdgeCantilever, 
 						StructuralTOExamples.ThreeHoleBracket, 
 						 StructuralTOExamples.Multiload,	
-						StructuralTOExamples.KnuckleAssembly, 
 						StructuralTOExamples.Table]
 	
- 
+
+	subFolder = "2.5D"
 	for to_problem in benchmarks_2_5D_problems:
 		print("-" * 50)
 		print(f"Running {to_problem.name} using {optimizationMethod.name} method")
@@ -75,7 +75,7 @@ def runTOMethodOnBenchmarks(optimizationMethod):
 													to_params = to_params)
 		timeTaken = time.time() - startTime
 		# Create the directory if it does not exist
-		output_dir = f"./Results/Results_{time.strftime('%Y-%m-%d')}/{optimizationMethod.name}"
+		output_dir = f"./Results/subFolder/Results_{time.strftime('%Y-%m-%d')}/{optimizationMethod.name}"
 		if not os.path.exists(output_dir):
 			os.makedirs(output_dir)
 
@@ -127,7 +127,7 @@ def runTOMethodOnBenchmarks(optimizationMethod):
 
 def combine_results():
 	# Get the latest results directory
-	results_dir = sorted(glob.glob(f"./Results/Results_{time.strftime('%Y-%m-%d')}"))[-1]
+	results_dir = sorted(glob.glob(f"./Results/subFolder/Results_{time.strftime('%Y-%m-%d')}"))[-1]
 	print(f"Combining results from {results_dir}")
 	# Read all CSV files
 	dataframes = {}

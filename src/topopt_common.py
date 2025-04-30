@@ -9,7 +9,8 @@ from topopt_filters import *
 import matplotlib.pyplot as plt
 import linear_solvers as lin_solv
 import deflation
-import pandas as pd
+
+
 
 _LARGE_NUMBER = 1.e9
 
@@ -150,7 +151,8 @@ def createFilters(fe_solver: hex_structural_fea.HexStructuralFEA,to_params):
 
 	return H, Hs
 
-def computeTopologicalSensitivity(mat_prop,strains,stresses,x):
+
+def computeTopologicalSensitivity(poissons_ratio,strains,stresses,x):
 	stress_tensor = x[:, None, None] * np.array([
 		[stresses[:, 0], stresses[:, 3], stresses[:, 4]],
 		[stresses[:, 3], stresses[:, 1], stresses[:, 5]],
@@ -166,17 +168,17 @@ def computeTopologicalSensitivity(mat_prop,strains,stresses,x):
 	# Compute topological sensitivity
 	trace_stress = np.trace(stress_tensor, axis1=1, axis2=2)
 	trace_strain = np.trace(strain_tensor, axis1=1, axis2=2)
-	if isinstance(mat_prop, list):
+	if isinstance(poissons_ratio, list):
 		# Handle multiple materials based on element component ID
 		
 		# This needs to be fixed to handle different nu values
-		nu = mat_prop[0].poissons_ratio
+		nu = poissons_ratio[0]
 		
 		T = (4 / (1 + nu) * np.sum(stress_tensor * strain_tensor, axis=(1,2)) -
 			 (1 - 3 * nu) / (1 - nu**2) * trace_stress * trace_strain)
 	else:
 		# Single material case
-		nu = mat_prop.poissons_ratio
+		nu = poissons_ratio
 		T = (4 / (1 + nu) * np.sum(stress_tensor * strain_tensor, axis=(1, 2)) -
 			(1 - 3 * nu) / (1 - nu**2) * trace_stress * trace_strain)
 	return T

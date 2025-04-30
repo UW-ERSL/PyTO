@@ -93,14 +93,14 @@ class TetThermalFEA:
     """Assemble the global stiffness matrix."""
     # Initialize the global stiffness matrix in COO format
     data = []
-    print("Assembling global stiffness matrix...")
+    
     startTime = time.time()
     K = self.mat_prop.thermal_conductivity
     for i in range(self.mesh.num_elems):
       elem_nodes = self.mesh.nodes[self.mesh.elems[i]]
       ke = tet4_stiffness_matrix_thermal(K, elem_nodes)
       data.append(ke.flatten())
-    print("Data gathered in {:.2f} seconds.".format(time.time() - startTime))
+    
     rows = np.repeat(self.edofMat, 4, axis=1)
     cols = np.tile(self.edofMat, 4)
     self.node_idx = np.array(np.vstack((rows.flatten(), cols.flatten())).T)
@@ -110,7 +110,7 @@ class TetThermalFEA:
     self.K = sp.coo_matrix((ke_stacked, (self.node_idx[:, 0], self.node_idx[:, 1])),
                   shape=(self.bc.num_dofs, self.bc.num_dofs))
   
-    print("Global stiffness matrix assembled in {:.2f} seconds.".format(time.time() - startTime))
+    
   def solve(self) -> np.ndarray:
     """Solve the thermal finite element problem.
 
