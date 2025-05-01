@@ -1,6 +1,8 @@
 from topopt_common import *
-
-def topopt_mma(fe_solver: sfea.StructFEA,
+import time
+import mma
+import matplotlib.pyplot as plt
+def topopt_mma(fe_solver: hex_structural_fea.HexStructuralFEA,
 			   			to_params,
 			   			minMMAIterations: int = 5,
 			   			 maxMMAIterations: int = 250, 
@@ -12,7 +14,6 @@ def topopt_mma(fe_solver: sfea.StructFEA,
 							 rel_conv_tol: float = 1.e-3,
 							 print_progress: bool = True,
 							plot_progress: bool = False,
-							 grey_tol: float = 0.2,
 							 debug: bool = False,
 							 ) -> tuple[np.ndarray, dict]:
 	"""MMA based topology optimization for minimum compliance.
@@ -66,12 +67,12 @@ def topopt_mma(fe_solver: sfea.StructFEA,
 														)
 	
 	if isinstance(fe_solver.mat_prop, list):
-		KE_list = [elem_stiff.hex8_stiffness_matrix_structural( mp,fe_solver.mesh.elem_size)
+		KE_list = [hex_element_stiffness.hex8_stiffness_matrix_structural( mp,fe_solver.mesh.elem_size)
 			 for mp in fe_solver.mat_prop]
 		KE = KE_list[0]
 		print("Density-MMA: Assuming all elements have the same material properties")
 	else:
-		KE = elem_stiff.hex8_stiffness_matrix_structural( fe_solver.mat_prop,fe_solver.mesh.elem_size)
+		KE = hex_element_stiffness.hex8_stiffness_matrix_structural( fe_solver.mat_prop,fe_solver.mesh.elem_size)
 	x0 = to_params.DesiredVolFraction * np.ones(num_elems, dtype = float)
 	x0 = x0.reshape(-1, 1)
 	mma_state = mma.init_mma(x0, mma_params)
@@ -168,7 +169,7 @@ def topopt_mma(fe_solver: sfea.StructFEA,
 															mma_params,
 																obj,
 																np.array([grad_obj]).reshape((num_elems, 1)),
-																jnp.array([cons]).reshape((1, 1)),
+																np.array([cons]).reshape((1, 1)),
 																grad_cons.reshape((1, num_elems))
 																)
 			
@@ -237,7 +238,6 @@ def topopt_mma(fe_solver: sfea.StructFEA,
 	return np.asarray(u), history,success,errorMsg,nFEAs
 	
 if __name__ == "__main__":    
-	jax.config.update("jax_enable_x64", True)
 	from topopt_benchmarks import *
 	
 	print("-" * 50)
@@ -258,7 +258,7 @@ if __name__ == "__main__":
 		dsolver.create_delfation_matrix(mesh)
 		dsolver.W = dsolver.W[bc.free_dofs, :]
 
-	fe_solver = fea.StructFEA(mesh = mesh,
+	fe_solver = hex_structural_fea.HexStructuralFEA(mesh = mesh,
 				mat_prop = mat_prop,
 				bc = bc,
 				solver = solver,

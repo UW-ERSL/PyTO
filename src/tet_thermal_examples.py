@@ -3,9 +3,41 @@ import os
 from tet_mesher import TetMesher
 import mat_lib
 import bound_cond
+import enum
 script_dir = os.path.dirname(os.path.abspath(__file__))
 
-def createThickPlateThermalProblemTet(nDOFDesired: int = 10000,thermal_conductivity = 50, heat_load = 1000):
+class TetThermalExamples(enum.Enum):
+	ThickPlate = enum.auto()
+	AnnularPlate = enum.auto()
+	LBracket = enum.auto()
+
+def getTetThermalProblem(problem: TetThermalExamples, **kwargs):
+  """Returns a structural problem based on the given problem name.
+
+  Parameters:
+  ----------
+  problem : StructuralExamples
+    The name of the problem to return.
+  **kwargs : dict
+    Additional keyword arguments to pass to the problem creation function.
+
+  Returns:
+  -------
+  tuple
+    A tuple containing the mesh, material properties, and boundary conditions for the problem.
+  """
+  if problem == TetThermalExamples.ThickPlate:
+    return createThickPlateThermalProblemTet(**kwargs)
+  elif problem == TetThermalExamples.AnnularPlate:
+    return createAnnularPlateThermalProblemTet(**kwargs)
+  elif problem == TetThermalExamples.LBracket:
+    return createLBracketThermalProblemTet(**kwargs)
+  else:
+    raise ValueError("Invalid structural tet example name.")
+  
+
+
+def createThickPlateThermalProblemTet(nDOFDesired: int = 10000,thermal_conductivity = 50, heat_load = 100000):
     """Creates a thermal problem setup for an L-bracket topology optimization.
     This function sets up a finite element mesh and boundary conditions for an L-bracket
     thermal problem from an STL file. The mesh is created with approximately the desired
@@ -38,7 +70,7 @@ def createThickPlateThermalProblemTet(nDOFDesired: int = 10000,thermal_conductiv
 
     fixed_nodes = np.where(tetmesh.nodes[:, 0] == np.min(tetmesh.nodes[:, 0]) )[0] # x = xMin plane
     fixed_dofs = np.array([fixed_nodes]).flatten().astype(int)
-    dirichlet_values = 0*np.ones_like(fixed_dofs, dtype = float)
+    dirichlet_values =23*np.ones_like(fixed_dofs, dtype = float)
     load_nodes = np.where(tetmesh.nodes[:, 0] == np.max(tetmesh.nodes[:, 0]) )[0] # x = xMax plane
     tri_surface_indices = tetmesh.get_surface_triangles_with_all_nodes_in_node_set(load_nodes)
     #tri_surface_indices =  tetmesh.get_surface_triangles_on_bounding_box(axis_dir = 0,min_plane = False)
@@ -47,7 +79,7 @@ def createThickPlateThermalProblemTet(nDOFDesired: int = 10000,thermal_conductiv
    
     bc = bound_cond.BC(force = force,fixed_dofs = fixed_dofs,dirichlet_values = dirichlet_values) 
 
-    mat_prop = mat_lib.ThermalMaterial(thermal_conductivity=thermal_conductivity)
+    mat_prop = mat_lib.ThermalMaterial(thermal_conductivity=thermal_conductivity,mass_density=7850,specific_heat=500)
     return tetmesh, mat_prop, bc
 
 
@@ -100,7 +132,7 @@ def createAnnularPlateThermalProblemTet(nDOFDesired: int = 10000,thermal_conduct
     force = tetmesh.integrate_over_surface_triangles(heat_load, tri_surface_indices)
     bc = bound_cond.BC(force = force,fixed_dofs = fixed_dofs,dirichlet_values = dirichlet_values) 
 
-    mat_prop = mat_lib.ThermalMaterial(thermal_conductivity=thermal_conductivity)
+    mat_prop = mat_lib.ThermalMaterial(thermal_conductivity=thermal_conductivity,mass_density=7850,specific_heat=500)
     return tetmesh, mat_prop, bc
 
 def createLBracketThermalProblemTet(nDOFDesired = 10000,thermal_conductivity = 50, heat_load = 10):
@@ -147,5 +179,5 @@ def createLBracketThermalProblemTet(nDOFDesired = 10000,thermal_conductivity = 5
 
     bc = bound_cond.BC(force = force,fixed_dofs = fixed_dofs,dirichlet_values = dirichlet_values) 
 
-    mat_prop = mat_lib.ThermalMaterial(thermal_conductivity=thermal_conductivity)
+    mat_prop = mat_lib.ThermalMaterial(thermal_conductivity=thermal_conductivity,mass_density=7850,specific_heat=500)
     return tetmesh, mat_prop, bc

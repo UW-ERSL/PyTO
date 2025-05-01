@@ -1,14 +1,78 @@
 import time
 import numpy as np
-import jax
-import jax.numpy as jnp
-import jax.experimental.sparse as jax_sprs
 import linear_solvers as lin_sol
 import mat_lib
 import bound_cond
 import pyvista as pv # pip install pyvista
+from numba import njit
+import scipy.sparse as sp
 
-class ThermalFEATet:
+@njit(cache=True)
+def tet4_stiffness_matrix_thermal(thermal_conductivity,xyz_nodes):
+  """Computes the element stiffness matrix of a tetrahedral element in 3D.
+  
+
+  Returns: The element stiffness matrix of size (4, 4)
+  """
+  xyz_nodes = np.asarray(xyz_nodes, dtype=np.float64)
+  # Define the shape function gradients in the reference element
+  dN_dxi = np.array([[-1.0, 1.0, 0.0, 0.0],
+                      [-1.0, 0.0, 1.0, 0.0],
+                      [-1.0, 0.0, 0.0, 1.0]], dtype=np.float64)
+
+  # Compute the Jacobian matrix
+  jac = dN_dxi @ xyz_nodes
+
+  det_jac = np.linalg.det(jac)
+  # Compute the shape function gradients in the physical element using solve
+  dN_dxyz = np.linalg.solve(jac, dN_dxi)
+
+  # Compute the element stiffness matrix
+  ke = thermal_conductivity * (dN_dxyz.T @ dN_dxyz) * (det_jac) / 6.0
+  return ke
+
+@njit(cache=True)
+def tet4_specific_heat_matrix(specific_heat: float,
+      mass_density: float,
+        xyz_nodes: np.ndarray,
+      ) -> np.ndarray:
+  """Computes the element specific heat matrix of a tetrahedral element in 3D.
+  The specific heat matrix is simplified as:
+
+        C = (1/20) * C*V*rho * predefined_matrix
+
+  Args:
+  mat_prop: The thermal material properties of the element.
+  xyz_nodes: Array of (4, 3) containing the x, y, z coordinates of the nodes.
+
+  Returns: The element specific heat matrix of size (4, 4)
+  """
+  xyz_nodes = np.asarray(xyz_nodes, dtype=np.float64)
+  # Compute the Jacobian matrix
+  dN_dxi = np.array([[-1.0, 1.0, 0.0, 0.0],
+                      [-1.0, 0.0, 1.0, 0.0],
+                      [-1.0, 0.0, 0.0, 1.0]], dtype=np.float64)
+
+  jac = dN_dxi @ xyz_nodes
+
+  det_jac = np.linalg.det(jac)
+
+  # Define the predefined matrix of 1s and 2s
+  predefined_matrix = np.array([
+      [2.0, 1.0, 1.0, 1.0],
+      [1.0, 2.0, 1.0, 1.0],
+      [1.0, 1.0, 2.0, 1.0],
+      [1.0, 1.0, 1.0, 2.0]
+  ], dtype=np.float64)
+
+
+  # Compute the specific heat matrix
+  ce = (1 / 120) * det_jac * predefined_matrix*specific_heat*mass_density
+
+  return ce
+
+
+class TetThermalFEA:
   """Linear Thermal Finite Element Analysis using linear tet elements."""
 
   def __init__(self,
@@ -25,108 +89,29 @@ class ThermalFEATet:
   def createEdofMatThermal(self):
         self.edofMat = np.array(self.mesh.elems[:, :4], dtype=int)
 
-  def tet4_stiffness_matrix_thermal(self,
-          mat_prop: mat_lib.ThermalMaterial,
-          xyz_nodes: jnp.ndarray,
-        ) -> jnp.ndarray:
-    """Computes the element stiffness matrix of a tetrahedral element in 3D.
-    The stiffness matrix for linear thermal is derived as:
-
-          K = sum_gauss(B'D B |J| w )
-      Where,
-
-        B is the strain displacement matrix.
-        D is the constitutive matrix.
-        J is the Jacobian.
-        w is the gauss weight.
-    Args:
-    mat_prop: The thermal material properties of the element.
-    xyz_nodes: Array of (4, 3) containing the x, y, z coordinates of the nodes.
-
-    Returns: The element stiffness matrix of size (4, 4)
-    """
-    K = mat_prop.thermal_conductivity
-    # Initialize the element stiffness matrix.
-    ke = np.zeros((4, 4))
-
-    # Define the shape function gradients in the reference element
-    dN_dxi = np.array([[-1, 1, 0, 0],
-            [-1, 0, 1, 0],
-            [-1, 0, 0, 1]])
-
-   
-    # Compute the Jacobian matrix
-    jac = dN_dxi @ xyz_nodes
-
-    det_jac = np.linalg.det(jac)
-    inv_jac = np.linalg.inv(jac)
-
-    # Compute the shape function gradients in the physical element
-    dN_dxyz = inv_jac @ dN_dxi
-
-    # Compute the element stiffness matrix
-    ke = K * (dN_dxyz.T @ dN_dxyz) * det_jac / 6.0
-
-    return ke
-
-  
-  def tet4_specific_heat_matrix(self,
-          mat_prop: mat_lib.ThermalMaterial,
-          xyz_nodes: jnp.ndarray,
-        ) -> jnp.ndarray:
-    """Computes the element specific heat matrix of a tetrahedral element in 3D.
-    The specific heat matrix is simplified as:
-
-          C = (1/20) * C*V*rho * predefined_matrix
-
-    Args:
-    mat_prop: The thermal material properties of the element.
-    xyz_nodes: Array of (4, 3) containing the x, y, z coordinates of the nodes.
-
-    Returns: The element specific heat matrix of size (4, 4)
-    """
-    # Compute the Jacobian matrix
-    dN_dxi = np.array([[-1, 1, 0, 0],
-                       [-1, 0, 1, 0],
-                       [-1, 0, 0, 1]])
-    jac = dN_dxi @ xyz_nodes
-    det_jac = np.linalg.det(jac)
-
-    # Define the predefined matrix of 1s and 2s
-    predefined_matrix = np.array([
-        [2, 1, 1, 1],
-        [1, 2, 1, 1],
-        [1, 1, 2, 1],
-        [1, 1, 1, 2]
-    ])
-    C=mat_prop.specific_heat
-    rho=mat_prop.mass_density
-    # Compute the specific heat matrix
-    ce = (1 / 120) * det_jac * predefined_matrix*C*rho
-    # print(f"Specific heat matrix (ce):\n{ce}")
-    # t=1
-    return ce
-
   def assemble_global_stiffness_matrix(self):
     """Assemble the global stiffness matrix."""
     # Initialize the global stiffness matrix in COO format
     data = []
+    
+    startTime = time.time()
+    K = self.mat_prop.thermal_conductivity
     for i in range(self.mesh.num_elems):
-      ke = self.tet4_stiffness_matrix_thermal(self.mat_prop, self.mesh.nodes[self.edofMat[i, :]])
+      elem_nodes = self.mesh.nodes[self.mesh.elems[i]]
+      ke = tet4_stiffness_matrix_thermal(K, elem_nodes)
       data.append(ke.flatten())
-
-    self.node_idx = jnp.stack((
-              np.kron(self.edofMat, np.ones((4, 1))).flatten(),
-              np.kron(self.edofMat, np.ones((1, 4))).flatten())
-              ).T.astype(int)
+    
+    rows = np.repeat(self.edofMat, 4, axis=1)
+    cols = np.tile(self.edofMat, 4)
+    self.node_idx = np.array(np.vstack((rows.flatten(), cols.flatten())).T)
   
-    ke_stacked = jnp.concatenate(data)
+    ke_stacked = np.array(np.concatenate(data))
     # Create the sparse global stiffness matrix
-    self.K = jax_sprs.BCOO((ke_stacked, self.node_idx),
+    self.K = sp.coo_matrix((ke_stacked, (self.node_idx[:, 0], self.node_idx[:, 1])),
                   shape=(self.bc.num_dofs, self.bc.num_dofs))
   
     
-  def solve(self) -> jnp.ndarray:
+  def solve(self) -> np.ndarray:
     """Solve the thermal finite element problem.
 
     Args:
@@ -160,32 +145,23 @@ class ThermalFEATet:
         
 
 if __name__ == "__main__":
-    import jax # import jax to enable 64 bit precision
     import time	
-    from tet_thermal_examples import *
-    jax.config.update("jax_enable_x64", True)
-
+    from tet_thermal_examples import TetThermalExamples, getTetThermalProblem
+  
     
- 
-    nDOFDesired = 1000
-    example = 3
-   
-    if example == 1:
-      tetmesh, mat_prop, bc = createThickPlateThermalProblemTet(nDOFDesired=nDOFDesired)
-    elif example == 2:
-      tetmesh, mat_prop, bc = createLBracketThermalProblemTet(nDOFDesired=nDOFDesired)
-    elif example == 3:
-      tetmesh, mat_prop, bc = createAnnularPlateThermalProblemTet(nDOFDesired=nDOFDesired)
+    nDOFDesired = 10000
+    problem = TetThermalExamples.AnnularPlate
+    tetmesh, mat_prop, bc = getTetThermalProblem(problem, nDOFDesired=nDOFDesired)
   
     solver = lin_sol.Solvers.PARDISO
-    
-    fe_solver = ThermalFEATet(mesh=tetmesh,
+    fe_solver = TetThermalFEA(mesh=tetmesh,
                 mat_prop=mat_prop,
                 bc=bc,
                 solver=solver)
 
     startTime = time.time()
     fe_solver.assemble_global_stiffness_matrix()
+
     u = np.asarray(fe_solver.solve())
     uMax = np.max(np.abs(u))
     
@@ -200,4 +176,4 @@ if __name__ == "__main__":
     print('-----------------------------')
 
   
-    fe_solver.plotTemperature(show_edges=True) # plot the solution field
+    fe_solver.plotTemperature(show_edges=False) # plot the solution field

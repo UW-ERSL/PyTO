@@ -1,9 +1,9 @@
 """Optimization routines for topology optimization."""
 
 from topopt_common import *
+import time
 
-
-def topopt_levelset(fe_solver: sfea.StructFEA,
+def topopt_levelset(fe_solver: hex_structural_fea.HexStructuralFEA,
 					 to_params,
 						 maxIterations: int = 250,
 						 volfrac: float = 0.5,
@@ -55,7 +55,7 @@ def topopt_levelset(fe_solver: sfea.StructFEA,
 		material_model_dict = {'name': 'SIMP', 'penal': 3.0}
 
 		# Element stiffness matrix
-		KE = elem_stiff.hex8_stiffness_matrix_structural(fe_solver.mat_prop, fe_solver.mesh.elem_size)
+		KE = hex_element_stiffness.hex8_stiffness_matrix_structural(fe_solver.mat_prop, fe_solver.mesh.elem_size)
 		[H,Hs] = createFilters(fe_solver, to_params)
 		success = True
 		errorMsg = ""
@@ -98,10 +98,8 @@ def topopt_levelset(fe_solver: sfea.StructFEA,
 
 
 if __name__ == "__main__":    
-	
 	from topopt_benchmarks import *
-	jax.config.update("jax_enable_x64", True)
-	
+
 	print("-" * 50)
 	to_problem = StructuralTOExamples.MidCantilever # Choose the TO problem
 	print(f"Running {to_problem.name}...") 
@@ -120,7 +118,7 @@ if __name__ == "__main__":
 		dsolver.create_delfation_matrix(mesh)
 		dsolver.W = dsolver.W[bc.free_dofs, :]
 
-	fe_solver = fea.StructFEA(mesh = mesh,
+	fe_solver = hex_structural_fea.HexStructuralFEA(mesh = mesh,
 				mat_prop = mat_prop,
 				bc = bc,
 				solver = solver,
@@ -154,7 +152,7 @@ if __name__ == "__main__":
 	print(f"Time taken: {timeTaken:.0f} s")
 	if not success:
 		print(f"Error: {errorMsg}")
-	plots.plotMesh(fe_solver.mesh, bc = None, u=None, title = title)
+	fe_solver.plotMesh(fe_solver.mesh, bc = None, u=None, title = title)
 
 	#plots.plotIsocontour(fe_solver.mesh, title = title, save_path = None)
 	# Save the mesh and results

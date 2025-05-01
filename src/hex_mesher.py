@@ -51,7 +51,7 @@ class BoundingBox:
     return np.sqrt(self.lx**2 + self.ly**2 + self.lz**2)
 
 
-class Mesher:
+class HexMesher:
 	def __init__(self):	
 		self.num_nodes = 0
 		self.num_elems = 0
@@ -204,7 +204,7 @@ class Mesher:
 		9. (1 1 0.7 1 0 ....) pseudoDensity for each element
 		"""
 		with open(fileName, mode='rb') as file:
-
+			
 			self.grid = np.fromfile(file, dtype=np.uint32, count = 3)  
 			self.origin = np.fromfile(file, dtype=np.double, count = 3)  
 			self.elem_size = np.fromfile(file, dtype=np.double, count = 3)
@@ -217,16 +217,43 @@ class Mesher:
 				self.node_xyz[:,i] = self.origin[i] + self.elem_size[i]*self.node_indices[:,i]
 			self.num_elems = np.fromfile(file, dtype=np.uint32, count = 1)[0]
 
+			print("#Nodes = ", self.num_nodes, "\n#Elems = ", self.num_elems)
 			self.elemArray = np.fromfile(file, dtype=np.uint32,
 														count = 8*self.num_elems).reshape((self.num_elems,8))
 			self.elemPartIndex = np.fromfile(file, dtype=np.uint32, count = self.num_elems)
 			self.elemPseudoDensity = np.fromfile(file, dtype=np.double, count = self.num_elems)
 
 			self.elemNeighborsfileName = fileName.replace("msh", "elneigh")
-			self.elemNeighborsArray = np.loadtxt(self.elemNeighborsfileName, skiprows = 2)	
+			try:
+				self.elemNeighborsArray = np.loadtxt(self.elemNeighborsfileName, skiprows = 2)
+			except:
+				print(f"Warning: Could not read element neighbors from {self.elemNeighborsfileName}.")
+				print("Creating element neighbors array from scratch.")
+				# Create element neighbors array from scratch
+				# Build a dictionary mapping each node to its associated elements
+				node_to_elems = {}
+				for elem_idx in range(self.num_elems):
+					for node_idx in self.elemArray[elem_idx]:
+						if node_idx not in node_to_elems:
+							node_to_elems[node_idx] = []
+						node_to_elems[node_idx].append(elem_idx)
 
-			print("#Nodes = ", self.num_nodes, "\n#Elems = ", self.num_elems)
-			file.close()
+				# For each element, find all neighboring elements by looking at shared nodes
+				self.elemNeighborsArray = np.zeros((self.num_elems, 27), dtype=np.int32)
+
+				for elem in range(self.num_elems):
+					neighbors = set()
+					# Get all nodes of this element
+					for node in self.elemArray[elem]:
+						# Add all elements connected to this node
+						neighbors.update(node_to_elems[node])
+					# Convert to list 
+					neighbor_list = list(neighbors)
+					# Take first 27 neighbors (or pad with -1 if fewer exist)
+					self.elemNeighborsArray[elem] = (neighbor_list[:27] + [-1] * 27)[:27]
+				
+				
+
 			self.elem_centers = np.zeros((self.num_elems, 3))
 			
 			for elem in range(self.num_elems):
@@ -237,7 +264,15 @@ class Mesher:
 						x=Extent(np.min(self.node_xyz[:,0]), np.max(self.node_xyz[:,0])),
 						y=Extent(np.min(self.node_xyz[:,1]), np.max(self.node_xyz[:,1])),
 						z=Extent(np.min(self.node_xyz[:,2]), np.max(self.node_xyz[:,2])))
-
+			self.num_components = 1
+			# Create pyvista voxel grid
+			try:
+				cells = np.column_stack(([8] * self.num_elems, self.elemArray)).ravel()
+				self.voxels = pv.UnstructuredGrid(cells, [12] * self.num_elems, self.node_xyz)
+			except MemoryError:
+				print("Memory error when creating mesh. Try reducing the number of elements.")
+				raise
+			file.close()
 
 
 	def createMeshFromSTLFileSingleComponent(self, stlFileName: str,nElemsDesired: int):
@@ -435,9 +470,8 @@ class Mesher:
 		self.voxels = voxel_mesh_components
 		self.num_elems = self.voxels.n_cells
 		self.num_nodes = self.voxels.n_points 
-		
-		#print(f"Mesher: #Elements: {self.num_elems}")
-		#print(f"Mesher: #Nodes: {self.num_nodes}")
+	
+
 		self.origin = [self.voxels.bounds[0], self.voxels.bounds[2], self.voxels.bounds[4]]
 
 		self.node_indices = np.zeros((self.num_nodes, 4), dtype = np.int32)
@@ -1038,7 +1072,7 @@ class Mesher:
 if __name__ == "__main__":
     import os
     import time
-    mesh = Mesher()
+    mesh = HexMesher()
     script_dir = os.path.dirname(os.path.abspath(__file__))
     stlFileName = os.path.join(script_dir, '../Models/LBracket/LBracket.STL')
     stlFileName = os.path.join(script_dir, '../Models/FilletedBeam/FilletedBeam.STL')

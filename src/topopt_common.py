@@ -2,24 +2,15 @@
 
 import enum
 import numpy as np
-import jax
-import jax.numpy as jnp
-import hex_element_stiffness as elem_stiff
+import hex_element_stiffness
 import hex_mesher
-import hex_structural_fea as sfea
-import mma
-import deflation
+import hex_structural_fea 
 from topopt_filters import *
-import time
 import matplotlib.pyplot as plt
-import hex_structural_fea as fea
 import linear_solvers as lin_solv
-import time
-import matplotlib.pyplot as plt
 import deflation
-import os
-import pandas as pd
-import plots	
+
+
 
 _LARGE_NUMBER = 1.e9
 
@@ -54,7 +45,7 @@ class TOParams: # These are the default parameters
     AMBuildConstraint = False
     ElemsToKeep = None
 
-def find_elements_with_forces(mesh: hex_mesher.Mesher, force) -> np.ndarray:
+def find_elements_with_forces(mesh: hex_mesher.HexMesher, force) -> np.ndarray:
 	"""Find all elements that have nodes on which force has been applied.
 	
 	Args:
@@ -76,9 +67,9 @@ def find_elements_with_forces(mesh: hex_mesher.Mesher, force) -> np.ndarray:
 	return np.array(elements_with_forces)
 
 
-def volume_fraction_upperlimit(density: jnp.ndarray,
+def volume_fraction_upperlimit(density: np.ndarray,
 											 volfracUpper: float,
-											 )-> jnp.ndarray:
+											 )-> np.ndarray:
 	"""Compute the volume constraint.
 	
 	Args:
@@ -89,11 +80,11 @@ def volume_fraction_upperlimit(density: jnp.ndarray,
 		returned value is zero. The constraint is inactive when the returned
 		value is negative.
 	"""
-	return (jnp.mean(density)/volfracUpper) - 1.0
+	return (np.mean(density)/volfracUpper) - 1.0
 
-def volume_fraction_lowerlimit(density: jnp.ndarray,
+def volume_fraction_lowerlimit(density: np.ndarray,
 											 volfracLower: float,
-											 )-> jnp.ndarray:
+											 )-> np.ndarray:
 	"""Compute the volume constraint.
 	
 	Args:
@@ -104,12 +95,12 @@ def volume_fraction_lowerlimit(density: jnp.ndarray,
 		returned value is zero. The constraint is inactive when the returned
 		value is negative.
 	"""
-	return 1- (jnp.mean(density)/volfracLower)
+	return 1- (np.mean(density)/volfracLower)
 
-def compliance(x: jnp.ndarray,
-								fe_solver: sfea.StructFEA,
-													material_model_dict = None,
-													) -> jnp.ndarray:
+def compliance(x: np.ndarray,
+				fe_solver: hex_structural_fea.HexStructuralFEA,
+						material_model_dict = None,
+													) -> np.ndarray:
 	"""Compute the structural compliance objective.
 
 	Args:
@@ -120,10 +111,10 @@ def compliance(x: jnp.ndarray,
 	Returns: The compliance objective value.
 	"""
 	u = fe_solver.solve(x, material_model_dict)
-	return jnp.einsum('i, i -> ', fe_solver.total_force, u), u
+	return np.einsum('i, i -> ', fe_solver.total_force, u), u
 
 
-def createFilters(fe_solver: sfea.StructFEA,to_params):
+def createFilters(fe_solver: hex_structural_fea.HexStructuralFEA,to_params):
 	# Create  filters
 	H, Hs = createSmoothingFilter(fe_solver.mesh, rel_filter_radius=to_params.RelativeFilterRadius)
 	# Accumulate all other filters
@@ -160,7 +151,8 @@ def createFilters(fe_solver: sfea.StructFEA,to_params):
 
 	return H, Hs
 
-def computeTopologicalSensitivity(mat_prop,strains,stresses,x):
+
+def computeTopologicalSensitivity(poissons_ratio,strains,stresses,x):
 	stress_tensor = x[:, None, None] * np.array([
 		[stresses[:, 0], stresses[:, 3], stresses[:, 4]],
 		[stresses[:, 3], stresses[:, 1], stresses[:, 5]],
@@ -176,17 +168,17 @@ def computeTopologicalSensitivity(mat_prop,strains,stresses,x):
 	# Compute topological sensitivity
 	trace_stress = np.trace(stress_tensor, axis1=1, axis2=2)
 	trace_strain = np.trace(strain_tensor, axis1=1, axis2=2)
-	if isinstance(mat_prop, list):
+	if isinstance(poissons_ratio, list):
 		# Handle multiple materials based on element component ID
 		
 		# This needs to be fixed to handle different nu values
-		nu = mat_prop[0].poissons_ratio
+		nu = poissons_ratio[0]
 		
 		T = (4 / (1 + nu) * np.sum(stress_tensor * strain_tensor, axis=(1,2)) -
 			 (1 - 3 * nu) / (1 - nu**2) * trace_stress * trace_strain)
 	else:
 		# Single material case
-		nu = mat_prop.poissons_ratio
+		nu = poissons_ratio
 		T = (4 / (1 + nu) * np.sum(stress_tensor * strain_tensor, axis=(1, 2)) -
 			(1 - 3 * nu) / (1 - nu**2) * trace_stress * trace_strain)
 	return T

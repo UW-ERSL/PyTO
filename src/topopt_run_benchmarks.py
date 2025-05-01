@@ -4,8 +4,9 @@ from topopt_density_oc import topopt_optimality_criteria
 from topopt_pareto import topopt_pareto
 from topopt_levelset import topopt_levelset	
 from topopt_benchmarks import *
+import time
 import glob
-
+import pandas as pd
 def runTOMethodOnBenchmarks(optimizationMethod):
 	# Create a list to store results
 	results_list = []
@@ -22,18 +23,17 @@ def runTOMethodOnBenchmarks(optimizationMethod):
 						StructuralTOExamples.DistributedLoad,
 						StructuralTOExamples.TorquePlate]
 	
-
+	
 	benchmarks_bodyforce_problems = [StructuralTOExamples.GravityPlate,
 						StructuralTOExamples.CentrifugalPlate]
 	
 	benchmarks_3D_problems = [StructuralTOExamples.EdgeCantilever, 
 						StructuralTOExamples.ThreeHoleBracket, 
 						 StructuralTOExamples.Multiload,	
-						StructuralTOExamples.KnuckleAssembly, 
 						StructuralTOExamples.Table]
 	
-	
 
+	subFolder = "2.5D"
 	for to_problem in benchmarks_2_5D_problems:
 		print("-" * 50)
 		print(f"Running {to_problem.name} using {optimizationMethod.name} method")
@@ -53,7 +53,7 @@ def runTOMethodOnBenchmarks(optimizationMethod):
 			dsolver.W = dsolver.W[bc.free_dofs, :]
 
 		
-		fe_solver = fea.StructFEA(mesh = mesh,
+		fe_solver = hex_structural_fea.HexStructuralFEA(mesh = mesh,
 					mat_prop = mat_prop,
 					bc = bc,
 					solver = solver,
@@ -75,14 +75,14 @@ def runTOMethodOnBenchmarks(optimizationMethod):
 													to_params = to_params)
 		timeTaken = time.time() - startTime
 		# Create the directory if it does not exist
-		output_dir = f"./Results/Results_{time.strftime('%Y-%m-%d')}/{optimizationMethod.name}"
+		output_dir = f"./Results/subFolder/Results_{time.strftime('%Y-%m-%d')}/{optimizationMethod.name}"
 		if not os.path.exists(output_dir):
 			os.makedirs(output_dir)
 
 		image_path = f"{output_dir}/{to_problem.name}.png"
 		title = f"{optimizationMethod.name}: nDOF: {3*fe_solver.mesh.num_nodes}, vol: {history['volume'][-1]:0.2f}, J: {history['compliance'][-1]:.3g}, time: {timeTaken:.0f} s"
 	
-		plots.plotMesh(fe_solver.mesh, bc = None, u=None, save_path = image_path, title = title)
+		fe_solver.plot_mesh(save_path=image_path, title=title)
 		
 		results_list.append({
 			'name': to_problem.name,
@@ -127,7 +127,7 @@ def runTOMethodOnBenchmarks(optimizationMethod):
 
 def combine_results():
 	# Get the latest results directory
-	results_dir = sorted(glob.glob(f"./Results/Results_{time.strftime('%Y-%m-%d')}"))[-1]
+	results_dir = sorted(glob.glob(f"./Results/subFolder/Results_{time.strftime('%Y-%m-%d')}"))[-1]
 	print(f"Combining results from {results_dir}")
 	# Read all CSV files
 	dataframes = {}
@@ -249,8 +249,7 @@ def combine_results():
 	plt.close()
 
 if __name__ == "__main__":    
-	jax.config.update("jax_enable_x64", True)
-	  
+
 	optimizationMethods = [TO_METHODS.DENSITYMMA, TO_METHODS.DENSITYOC, TO_METHODS.PARETO]
 	for optimizationMethod in optimizationMethods:
 		runTOMethodOnBenchmarks(optimizationMethod)

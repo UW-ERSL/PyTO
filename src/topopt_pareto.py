@@ -1,7 +1,8 @@
 from topopt_common import *
 from topopt_filters import imposeZCastFilter
-
-def topopt_pareto(fe_solver: sfea.StructFEA,
+import time
+import numpy as np
+def topopt_pareto(fe_solver: hex_structural_fea.HexStructuralFEA,
 				  to_params,
 							rel_err: float = 0.02,
 							vol_decr_max: float = 0.05,
@@ -48,7 +49,6 @@ def topopt_pareto(fe_solver: sfea.StructFEA,
 		print("Computing Filters ...")
 	[H,Hs] = createFilters(fe_solver, to_params)
 
-	
 	elemsWithForces = find_elements_with_forces(fe_solver.mesh, fe_solver.bc.force)
 
 	if (fe_solver.elem_body_force is not None):
@@ -69,7 +69,7 @@ def topopt_pareto(fe_solver: sfea.StructFEA,
 	history['volume'].append(volfrac)
 	fe_solver.postprocess() # compute stresses and strains for the initial design
 	# Compute initial topological sensitivity
-	T = computeTopologicalSensitivity(fe_solver.mat_prop,fe_solver.strainComponents,fe_solver.stressComponents,x)
+	T = computeTopologicalSensitivity(fe_solver.mat_prop.poissons_ratio,fe_solver.strainComponents,fe_solver.stressComponents,x)
 	
 	# Add contribution from body force to topological sensitivity if present
 	if (nodal_body_force is not None):
@@ -141,6 +141,7 @@ def topopt_pareto(fe_solver: sfea.StructFEA,
 			value = np.sort(T.flatten())[int(fe_solver.mesh.num_elems * (1 - volfrac))]
 			x = np.ones((fe_solver.mesh.num_elems))
 			x[T < value] = xVoid
+
 			fe_solver.mesh.setPseudoDensity(x.flatten())
 			if (removeHangingElems):
 				meshComponents = fe_solver.mesh.find_connected_components()
@@ -159,10 +160,10 @@ def topopt_pareto(fe_solver: sfea.StructFEA,
 			u = np.asarray(fe_solver.solve(x))
 			nFEAs += 1
 			JTemp = float(fe_solver.total_force.T @ u)
-			#plots.plotMesh(fe_solver.mesh, bc = None, u=u, title = title)
+
 			# Update sensitivity
 			fe_solver.postprocess()
-			T = computeTopologicalSensitivity(fe_solver.mat_prop,fe_solver.strainComponents,fe_solver.stressComponents,x)
+			T = computeTopologicalSensitivity(fe_solver.mat_prop.poissons_ratio,fe_solver.strainComponents,fe_solver.stressComponents,x)
 		
 			# Add contribution from body force to topological sensitivity if present
 			if (nodal_body_force is not None):
@@ -210,7 +211,6 @@ def topopt_pareto(fe_solver: sfea.StructFEA,
 
 
 if __name__ == "__main__":    
-	jax.config.update("jax_enable_x64", True)
 	from topopt_benchmarks import *
 	
 	print("-" * 50)
@@ -239,7 +239,7 @@ if __name__ == "__main__":
 	 
 	
 
-	fe_solver = fea.StructFEA(mesh = mesh,
+	fe_solver = hex_structural_fea.HexStructuralFEA(mesh = mesh,
 				mat_prop = mat_prop,
 				bc = bc,
 				solver = solver,

@@ -23,7 +23,7 @@ from hex_mesher import Mesher
 import hex_structural_fea as fea
 import linear_solvers as lin_solv
 import jax
-import thermal_fea
+import hex_thermal_fea
 import traceback
 from topopt_density_mma import topopt_mma
 from topopt_density_oc import topopt_optimality_criteria
@@ -4729,7 +4729,7 @@ class AnalysisWindow(QtWidgets.QDialog):
             self.parent.message_text.append("Creating thermal solver...")
             
             # Create solver with properly processed mesh
-            fe_solver = thermal_fea.ThermalFEA(
+            fe_solver = hex_thermal_fea.ThermalFEA(
                 mesh=mesh,
                 mat_prop=mat_prop,
                 bc=bc,

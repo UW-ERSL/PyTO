@@ -1,34 +1,26 @@
 """Structural Finite Element Analysis."""
-
 import time
 import numpy as np
-import jax
-import jax.numpy as jnp
-import jax.experimental.sparse as jax_sprs
-import linear_solvers as lin_sol
-import hex_element_stiffness as elem_stiff
+import os
+import pyvista as pv
 import mat_lib
 import bound_cond
+import linear_solvers
+import hex_element_stiffness
+import deflation
+import scipy.sparse as sp
 
-import hex_structural_fea as fea
-import linear_solvers as lin_solv
-import mat_lib
-import os
-import deflation 
-import pyvista as pv
-from mpl_toolkits.mplot3d import Axes3D
 script_dir = os.path.dirname(os.path.abspath(__file__))
 
-
-class StructFEA:
+class HexStructuralFEA:
   """Linear Structural Finite Element Analysis."""
 
   def __init__(self,
          mesh,
          mat_prop: mat_lib.StructuralMaterial | list[mat_lib.StructuralMaterial],
          bc: bound_cond.BC,
-         solver: lin_sol.Solvers,
-         elem_body_force: jnp.ndarray = None,
+         solver: linear_solvers.Solvers,
+         elem_body_force: np.ndarray = None,
          **kwargs):
 
     self.mesh, self.mat_prop, self.bc = mesh, mat_prop, bc
@@ -37,15 +29,15 @@ class StructFEA:
     # Handle single material or list of materials
     if isinstance(mat_prop, list):
     # Create element stiffness matrix for each material
-      elem_stiff_list = [elem_stiff.hex8_stiffness_matrix_structural(mp, mesh.elem_size) 
+      elem_stiff_list = [hex_element_stiffness.hex8_stiffness_matrix_structural(mp, mesh.elem_size) 
                 for mp in mat_prop]
-      self.elem_stiff = jnp.stack(elem_stiff_list)
+      self.elem_stiff = np.stack(elem_stiff_list)
     else:
-      self.elem_stiff = jnp.expand_dims(
-          elem_stiff.hex8_stiffness_matrix_structural(mat_prop, mesh.elem_size), axis=0)
+      self.elem_stiff = np.expand_dims(
+          hex_element_stiffness.hex8_stiffness_matrix_structural(mat_prop, mesh.elem_size), axis=0)
 
    
-    self.node_idx = jnp.stack((
+    self.node_idx = np.stack((
             np.kron(self.mesh.edofMat, np.ones((24, 1))).flatten(),
             np.kron(self.mesh.edofMat, np.ones((1, 24))).flatten())
             ).T.astype(int)
@@ -70,8 +62,8 @@ class StructFEA:
 
 #################################################################
   def solve(self,
-            x: jnp.ndarray = None,
-            elasticity_material_model: dict = None) -> jnp.ndarray:
+            x: np.ndarray = None,
+            elasticity_material_model: dict = None) -> np.ndarray:
     """Solve the structural finite element problem.
 
     Args:
@@ -81,7 +73,7 @@ class StructFEA:
     Returns: Array of (num_dofs,) of the solution to the finite element problem.
     """
     if x is None:
-      x = jnp.ones((self.mesh.num_elems,))
+      x = np.ones((self.mesh.num_elems,))
 
     if elasticity_material_model is None:
       elem_material_scaling = x**3 # default to SIMP with penal = 3 if nothing is provided
@@ -102,7 +94,7 @@ class StructFEA:
     # Handle different shapes of elem_stiff
     if self.elem_stiff.shape[0] == 1:
       # Single material case (1,N,N)
-      elem_stiff_mtrx = jnp.einsum('ij, e -> eij',
+      elem_stiff_mtrx = np.einsum('ij, e -> eij',
                     self.elem_stiff[0],
                     elem_material_scaling).flatten(order = 'C')
     else:
@@ -110,12 +102,13 @@ class StructFEA:
       # Assuming elem_mat_id contains material ID (0 to M-1) for each element
       # Randomly assign material IDs (0 or 1) to each element
       
-      elem_stiff_mtrx = jnp.einsum('mij, e, em -> eij',
+      elem_stiff_mtrx = np.einsum('mij, e, em -> eij',
                     self.elem_stiff,
                     elem_material_scaling,
-                    jnp.eye(self.elem_stiff.shape[0])[self.mesh.elemComponentId]).flatten(order = 'C')
+                    np.eye(self.elem_stiff.shape[0])[self.mesh.elemComponentId]).flatten(order = 'C')
 
-    stiff_mtrx = jax_sprs.BCOO((elem_stiff_mtrx, self.node_idx),
+    
+    stiff_mtrx = sp.coo_matrix((elem_stiff_mtrx, (self.node_idx[:, 0], self.node_idx[:, 1])),
                    shape=(self.bc.num_dofs, self.bc.num_dofs))
     self.total_force = self.bc.force.copy()
     if self.elem_body_force is not None:
@@ -133,14 +126,14 @@ class StructFEA:
       node_forces[1::3] = self.mesh.elem_to_node_field_mapping* elem_force[1::3] 
       node_forces[2::3] = self.mesh.elem_to_node_field_mapping* elem_force[2::3] 
       self.total_force += node_forces
-    sol =  lin_sol.solve(stiff_mtrx,
+    sol =  linear_solvers.solve(stiff_mtrx,
                       self.total_force,
                       self.solver,
                       self.bc,
                       **self.kwargs)
     self.sol = sol
-    self.deformation = jnp.sqrt(sol[0::3]**2 + sol[1::3]**2 + sol[2::3]**2)
-    self.max_deformation = jnp.max(self.deformation)
+    self.deformation = np.sqrt(sol[0::3]**2 + sol[1::3]**2 + sol[2::3]**2)
+    self.max_deformation = np.max(self.deformation)
     return sol
 #################################################################
   def postprocess(self):
@@ -184,7 +177,7 @@ class StructFEA:
         for mp in self.mat_prop:
           E = mp.youngs_modulus
           nu = mp.poissons_ratio
-          D = E / ((1 + nu) * (1 - 2*nu)) * jnp.array([
+          D = E / ((1 + nu) * (1 - 2*nu)) * np.array([
         [1-nu, nu, nu, 0, 0, 0],
         [nu, 1-nu, nu, 0, 0, 0],
         [nu, nu, 1-nu, 0, 0, 0],
@@ -193,15 +186,15 @@ class StructFEA:
         [0, 0, 0, 0, 0, (1-2*nu)/2]
           ])
           D_list.append(D)
-        D_stack = jnp.stack(D_list)
+        D_stack = np.stack(D_list)
         # Use elem_mat_id to select correct D matrix for each element
-        element_stress = jnp.einsum('mij,ej,em->ei', D_stack, strain, 
-                  jnp.eye(len(self.mat_prop))[self.mesh.elemComponentId])
+        element_stress = np.einsum('mij,ej,em->ei', D_stack, strain, 
+                  np.eye(len(self.mat_prop))[self.mesh.elemComponentId])
       else:
         # Single material case
         E = self.mat_prop.youngs_modulus 
         nu = self.mat_prop.poissons_ratio
-        D = E / ((1 + nu) * (1 - 2*nu)) * jnp.array([
+        D = E / ((1 + nu) * (1 - 2*nu)) * np.array([
           [1-nu, nu, nu, 0, 0, 0],
           [nu, 1-nu, nu, 0, 0, 0],
           [nu, nu, 1-nu, 0, 0, 0],
@@ -209,10 +202,10 @@ class StructFEA:
           [0, 0, 0, 0, (1-2*nu)/2, 0],
           [0, 0, 0, 0, 0, (1-2*nu)/2]
         ])
-        element_stress = jnp.einsum('ij,ej->ei', D, strain)
+        element_stress = np.einsum('ij,ej->ei', D, strain)
       self.strainComponents = strain
       self.stressComponents = element_stress
-      self.vonMisesStress = jnp.sqrt(0.5*((element_stress[:,0]-element_stress[:,1])**2 +
+      self.vonMisesStress = np.sqrt(0.5*((element_stress[:,0]-element_stress[:,1])**2 +
                 (element_stress[:,1]-element_stress[:,2])**2 +
                 (element_stress[:,2]-element_stress[:,0])**2) +
                 3*(element_stress[:,3]**2 + element_stress[:,4]**2 +
@@ -270,7 +263,7 @@ class StructFEA:
     pv_mesh.cell_data['density'] = face_densities
 
     # Create plotter
-    save_path = None
+
     if save_path is  None:
       plotter = self.pyVistaPlotter 
       if plotter.iren is None:
@@ -279,6 +272,8 @@ class StructFEA:
         plotter.show(interactive_update=True, auto_close=False)
     else:
       plotter = pv.Plotter(off_screen=True) # for saving images
+      plotter.camera_position =self.camera_position
+      plotter.enable_anti_aliasing()
     
     plotter.add_title(title, font_size=8)
   
@@ -589,24 +584,22 @@ class StructFEA:
     
 #################################################################
 if __name__ == "__main__":    
-  jax.config.update("jax_enable_x64", True)
   from hex_structural_examples import StructuralExamples,getStructuralProblem
 
-
   problem = StructuralExamples.TorsionBar
-  nDOFDesired = 5000
+  nDOFDesired = 80000
   mesh, mat_prop, bc,elem_body_force = getStructuralProblem(problem,nDOFDesired = nDOFDesired)
-  solver = lin_solv.Solvers.PARDISO # typically DPCG or PARDISO
+  solver = linear_solvers.Solvers.PARDISO # typically DPCG or PARDISO
   
   dsolver = deflation.DeflationSolver()
   startTime = time.time()
-  if (solver == lin_solv.Solvers.DPCG):
+  if (solver == linear_solvers.Solvers.DPCG):
     nGroups =  min(dsolver.maxGroups,max(dsolver.minGroups,round(3*mesh.num_nodes/dsolver.dofPerGroup)))
     dsolver.create_deflation_groups(mesh, nGroups)
     dsolver.create_delfation_matrix(mesh)
     dsolver.W = dsolver.W[bc.free_dofs, :]
   
-  fe_solver = fea.StructFEA(mesh = mesh,
+  fe_solver = HexStructuralFEA(mesh = mesh,
         mat_prop = mat_prop,
         bc = bc,
         solver = solver,
@@ -615,7 +608,9 @@ if __name__ == "__main__":
         elem_body_force = elem_body_force)
 
   fe_solver.plot_mesh()
-  u = np.asarray(fe_solver.solve())
+  startTime = time.time()
+  fe_solver.solve()
+  print(f"Time to solve: {time.time() - startTime:.2f} seconds")
   fe_solver.postprocess()
   fe_solver.plot_deformation()
   fe_solver.plot_vonMisesStress()

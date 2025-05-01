@@ -2,9 +2,7 @@
 
 import numpy as np
 import scipy.special as spy_spl
-
 import mat_lib
-
 
 def get_gauss_integ_points_weights(order: int,
                                    dimension: int,

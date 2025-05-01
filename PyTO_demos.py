@@ -1,12 +1,11 @@
 '''
 This script is a demo for the pyTO package. 
 It includes examples of how to use the package for various tasks, including loading STL files, 
-creating voxel meshes, and performing finite element analysis (FEA) and topology optimization (TO).
+creating hex meshes, and performing finite element analysis (FEA) and topology optimization (TO).
 '''
 
 
 import sys
-import jax
 import enum
 import time
 import numpy as np  
@@ -15,46 +14,42 @@ import matplotlib.pyplot as plt
 # PyTO files
 sys.path.append('./src') #assumes PyTO src files are in this directory
 from stl_reader import STLGeom
-from hex_mesher import Mesher
+from hex_mesher import HexMesher
 from linear_solvers import Solvers
 from deflation import DeflationSolver
-from hex_structural_fea import StructFEA
+from hex_structural_fea import HexStructuralFEA
 from hex_modal_fea import ModalFEA
-from thermal_fea import ThermalFEA
+from hex_thermal_fea import HexThermalFEA
 from hex_structural_examples import StructuralExamples, getStructuralProblem
-from hex_thermal_examples import ThermalExamples, getThermalProblem
+from hex_thermal_examples import HexThermalExamples, getThermalProblem
 from topopt_benchmarks import StructuralTOExamples, getStructuralTOProblem
 from topopt_density_mma import topopt_mma
 from topopt_pareto import topopt_pareto
 from topopt_density_oc import topopt_optimality_criteria
 from tet_mesher import TetMesher
 from tet_thermal_examples import  createAnnularPlateThermalProblemTet
-from tet_thermal_fea import ThermalFEATet
+from tet_thermal_fea import TetThermalFEA
 from tet_structural_examples import TetStructuralExamples, getTetStructuralProblem
-from tet_structural_fea import StructuralFEATet
+from tet_structural_fea import TetStructuralFEA
 
 
 class pyTODemos(enum.Enum):
 	Load_STL = enum.auto() # Load an STL file and compute mass properties
 
-    # The following demos use a non-conforming voxel mesh
-	Create_Voxelmesh = enum.auto() # Create a voxel mesh from an STL file  
-	ThermalFEA_Voxel_Pardiso = enum.auto() # Create and solve a predefined structural FEA problem using the Pardiso solver
-	StructuralFEA_Voxel_Pardiso = enum.auto() # Create and solve a predefined structural FEA problem using the Pardiso solver
-	StructuralFEA_Voxel_DPCG = enum.auto() # Create and solve a predefined structural FEA problem using the DPCG solver
-	ModalFEA_Voxel_Pardiso = enum.auto() # Create and solve a predefined structural FEA problem using the Pardiso solver    
-	StructuralTO_Voxel_DensityMMA = enum.auto() # Create and solve a structural topology optimization problem using Density-method and MMA solver
-	StructuralTO_Voxel_DensityOC = enum.auto() # Create and solve a structural topology optimization problem using Density-method and OC solver
-	StructuralTO_Voxel_Pareto = enum.auto() # Create and solve a structural topology optimization problem using Pareto method
+    # The following demos use a non-conforming hex mesh
+	HexCreateMesh = enum.auto() # Create a hex mesh from an STL file  
+	HexThermalFEA_Pardiso = enum.auto() # Create and solve a predefined structural FEA problem using the Pardiso solver
+	HexStructuralFEA_Pardiso = enum.auto() # Create and solve a predefined structural FEA problem using the Pardiso solver
+	HexStructuralFEA_DPCG = enum.auto() # Create and solve a predefined structural FEA problem using the DPCG solver
+	HexModalFEA_Pardiso = enum.auto() # Create and solve a predefined structural FEA problem using the Pardiso solver    
+	HexStructuralTO_DensityMMA = enum.auto() # Create and solve a structural topology optimization problem using Density-method and MMA solver
+	HexStructuralTO_DensityOC = enum.auto() # Create and solve a structural topology optimization problem using Density-method and OC solver
+	HexStructuralTO_Pareto = enum.auto() # Create and solve a structural topology optimization problem using Pareto method
     
     # The following demos use a conforming tet mesh
-	Create_Tetmesh = enum.auto() # Create a tet mesh from an STL file 
-	ThermalFEA_Tet_Pardiso = enum.auto() # Create and solve a thermal FEA problem using the PARDISO solver 
-	StructuralFEA_Tet_Pardiso = enum.auto() # Create and solve a thermal FEA problem using the PARDISO solver 
-
-
-#Enable 64-bit precision in JAX
-jax.config.update("jax_enable_x64", True)
+	TetCreateMesh = enum.auto() # Create a tet mesh from an STL file 
+	TetThermalFEA_Pardiso = enum.auto() # Create and solve a thermal FEA problem using the PARDISO solver 
+	TetStructuralFEA_Pardiso = enum.auto() # Create and solve a thermal FEA problem using the PARDISO solver 
 
 demo = pyTODemos.Load_STL  # Initialize with first demo
 while True:
@@ -86,18 +81,18 @@ while True:
         print(f"Area: {area}, Volume: {volume}, Center of Mass: {cg}, Inertia: {inertia}")
         stl_geom.plotGeometry(show_edges=False, show_axes=True, show_bounding_box=True)
 
-    elif demo == pyTODemos.Create_Voxelmesh:
-        # Create a voxel mesh from an STL file and display it
-        mesh = Mesher()
+    elif demo == pyTODemos.HexCreateMesh:
+        # Create a hex mesh from an STL file and display it
+        mesh = HexMesher()
         stlFileName = './Models/LBracket/LBracket.STL'
         mesh.createMeshFromSTLFile(stlFileName, nElemsDesired=10000)
         mesh.plot()
-    elif demo == pyTODemos.ThermalFEA_Voxel_Pardiso:
-        problem = ThermalExamples.ThickPlate
+    elif demo == pyTODemos.HexThermalFEA_Pardiso:
+        problem = HexThermalExamples.ThickPlate
         nDOFDesired = 10000
         solver = Solvers.PARDISO
         mesh, mat_prop, bc = getThermalProblem(problem, nDOFDesired=nDOFDesired)
-        thermal_fe_solver = ThermalFEA(mesh=mesh,
+        thermal_fe_solver = HexThermalFEA(mesh=mesh,
                     mat_prop=mat_prop,
                     bc=bc,
                     solver=solver)
@@ -108,13 +103,13 @@ while True:
         print("FEA time: ", time.time() - startTime)
         thermal_fe_solver.plot_temperature()
        
-    elif demo == pyTODemos.StructuralFEA_Voxel_Pardiso:
+    elif demo == pyTODemos.HexStructuralFEA_Pardiso:
         # This example uses the Beam Bending problem from the StructuralExamples module.
         problem = StructuralExamples.BeamBending 
         nDOFDesired = 10000 
         mesh, mat_prop, bc,elem_body_force = getStructuralProblem(problem,nDOFDesired = nDOFDesired)
         solver = Solvers.PARDISO
-        fe_solver = StructFEA(mesh=mesh, mat_prop=mat_prop, bc=bc, solver=solver, elem_body_force=elem_body_force)
+        fe_solver = HexStructuralFEA(mesh=mesh, mat_prop=mat_prop, bc=bc, solver=solver, elem_body_force=elem_body_force)
         fe_solver.plot_mesh()
         startTime = time.time()
         u = fe_solver.solve()
@@ -124,9 +119,9 @@ while True:
         fe_solver.plot_vonMisesStress()
         fe_solver.plot_stress_component(0)
         
-    elif demo == pyTODemos.StructuralFEA_Voxel_DPCG:# DPCG solver for large scale problems
+    elif demo == pyTODemos.HexStructuralFEA_DPCG:# DPCG solver for large scale problems
         # This example uses the Knuckle assembly problem from the StructuralExamples module.
-        problem = StructuralExamples.KnuckleAssembly 
+        problem = StructuralExamples.CompliantMechanism 
         nDOFDesired = 500000 
         mesh, mat_prop, bc,elem_body_force = getStructuralProblem(problem,nDOFDesired = nDOFDesired)
         solver = Solvers.DPCG
@@ -139,7 +134,7 @@ while True:
         dsolver.create_delfation_matrix(mesh)
         dsolver.W = dsolver.W[bc.free_dofs, :]
 
-        fe_solver = StructFEA(mesh = mesh,
+        fe_solver = HexStructuralFEA(mesh = mesh,
                     mat_prop = mat_prop,
                     bc = bc,
                     solver = solver,
@@ -150,7 +145,7 @@ while True:
         u = fe_solver.solve()
         print('Solver time: ', time.time() - startTime)
         fe_solver.plot_deformation()
-    elif demo == pyTODemos.ModalFEA_Voxel_Pardiso:
+    elif demo == pyTODemos.HexModalFEA_Pardiso:
         problem = StructuralExamples.LBracket
         nDOFDesired = 50000
         mesh, mat_prop, bc,elem_body_force = getStructuralProblem(problem,nDOFDesired = nDOFDesired)
@@ -173,20 +168,18 @@ while True:
         print('-----------------------------')
         for i in range(nEigenModes):
             modal_solver.plot_eigenmode(i)
-    elif demo == pyTODemos.StructuralTO_Voxel_DensityMMA:
+    elif demo == pyTODemos.HexStructuralTO_DensityMMA:
         to_problem = StructuralTOExamples.DistributedLoad # Choose the TO problem
         solver = Solvers.PARDISO # # Choose solver. Typically PARDISO, but DPCG for DOF > 200,000
         # Get the structural problem
         mesh, mat_prop, bc,elem_body_force, to_params = getStructuralTOProblem(to_problem)
-        fe_solver = StructFEA(mesh = mesh,
+        fe_solver = HexStructuralFEA(mesh = mesh,
                     mat_prop = mat_prop,
                     bc = bc,
                     solver = solver,
                     elem_body_force = elem_body_force)
    
         title = f'nDOF: {3*fe_solver.mesh.num_nodes}, nElem: {fe_solver.mesh.num_elems}'
-        fe_solver.plot_mesh(title = title)
-
         startTime = time.time()
         u, history,success,errorMsg,nFEAs = topopt_mma(fe_solver = fe_solver,plot_progress=True,
                                     to_params = to_params)
@@ -225,19 +218,18 @@ while True:
         plt.show()
 
         # Save the mesh and results
-    elif demo == pyTODemos.StructuralTO_Voxel_DensityOC:
+    elif demo == pyTODemos.HexStructuralTO_DensityOC:
         to_problem = StructuralTOExamples.EdgeCantilever # Choose the TO problem
         solver = Solvers.PARDISO # # Choose solver. Typically PARDISO, but DPCG for DOF > 200,000
         # Get the structural problem
         mesh, mat_prop, bc,elem_body_force, to_params = getStructuralTOProblem(to_problem)
-        fe_solver = StructFEA(mesh = mesh,
+        fe_solver = HexStructuralFEA(mesh = mesh,
                     mat_prop = mat_prop,
                     bc = bc,
                     solver = solver,
                     elem_body_force = elem_body_force)
         
         title = f'nDOF: {3*fe_solver.mesh.num_nodes}, nElem: {fe_solver.mesh.num_elems}'
-        fe_solver.plot_mesh(title = title)
         startTime = time.time()
         u, history, success,errorMsg,nFEAs = topopt_optimality_criteria(fe_solver = fe_solver,plot_progress=True,
                                                 to_params = to_params)
@@ -274,12 +266,11 @@ while True:
             print(f"Error: {errorMsg}")
         fe_solver.plot_mesh(title = title)
 
-    elif demo == pyTODemos.StructuralTO_Voxel_Pareto:
+    elif demo == pyTODemos.HexStructuralTO_Pareto:
         to_problem = StructuralTOExamples.CantileverTipLoad
         mesh, mat_prop, bc,elem_body_force, to_params = getStructuralTOProblem(to_problem)
         
-        fe_solver = StructFEA(mesh=mesh, mat_prop=mat_prop, solver= Solvers.PARDISO, bc=bc)
-        fe_solver.plot_mesh(title = title)
+        fe_solver = HexStructuralFEA(mesh=mesh, mat_prop=mat_prop, solver= Solvers.PARDISO, bc=bc)
         u, history, success,errorMsg,nFEAs = topopt_pareto(fe_solver=fe_solver,to_params=to_params,plot_progress=True)
         plt.figure()
         plt.plot(history['volume'], history['compliance'], marker='o')
@@ -291,18 +282,18 @@ while True:
         if not success:
             print(f"Error: {errorMsg}")
         fe_solver.plot_mesh(title = title)
-    elif demo == pyTODemos.Create_Tetmesh:
+    elif demo == pyTODemos.TetCreateMesh:
         # Create a tet mesh from an STL file and display it
         tetmesh = TetMesher()
         stlFileName = './Models/BicycleCrank/BicycleCrank.STL'
         tetmesh.createTetMeshFromSTLFile(stlFileName, nElemsDesired=20000)
         tetmesh.plot()
-    elif demo == pyTODemos.ThermalFEA_Tet_Pardiso:
+    elif demo == pyTODemos.TetThermalFEA_Pardiso:
         # This example uses the ThermalExamples module.
         nDOFDesired = 10000
         solver = Solvers.PARDISO
         tetmesh, mat_prop, bc = createAnnularPlateThermalProblemTet(nDOFDesired=nDOFDesired)
-        fe_solver = ThermalFEATet(mesh=tetmesh,
+        fe_solver = TetThermalFEA(mesh=tetmesh,
                   mat_prop=mat_prop,
                   bc=bc,
                   solver=solver)
@@ -316,13 +307,13 @@ while True:
         uMax = np.max(np.abs(u))
         print("FEA time: ", time.time() - startTime)
         tetmesh.plotField(u,show_edges=False) # plot the solution field
-    elif demo == pyTODemos.StructuralFEA_Tet_Pardiso:
+    elif demo == pyTODemos.TetStructuralFEA_Pardiso:
         nDOFDesired = 1000
         solver = Solvers.PARDISO
         problem = TetStructuralExamples.BeamBending # CubeCompression, TensileBar, TorsionBar, BeamBending
         quadratic_tet_mesh, mat_prop, bc, elem_body_force  = getTetStructuralProblem(problem,nDOFDesired = 1000)
         solver = Solvers.PARDISO # typically DPCG or PARDISO
-        fe_solver = StructuralFEATet(quadratic_tet_mesh,
+        fe_solver = TetStructuralFEA(quadratic_tet_mesh,
                   mat_prop=mat_prop,
                   bc=bc,
                   solver=solver)

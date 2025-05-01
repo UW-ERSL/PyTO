@@ -3,14 +3,14 @@ import numpy as np
 import pyvista as pv # pip install pyvista
 from scipy.sparse import coo_matrix
 import tetgen #pip install tetgen
-import jax.numpy as jnp
+
 
 class TetMesher:
     def __init__(self):	
         self.num_nodes = 0
         self.num_elems = 0
     
-    def createTetMeshFromSTLFile(self, stlFileName: str, nElemsDesired: int = 10000):
+    def createTetMeshFromSTLFile(self, stlFileName: str, mergeFacets = True, nElemsDesired: int = 10000):
         """
         Create a tetrahedral mesh from an STL file.
         This function reads an STL file, cleans and repairs the surface, and generates a tetrahedral mesh
@@ -47,7 +47,10 @@ class TetMesher:
         # Generate tetrahedral mesh with target number of cells and quality constraints
         tet = tetgen.TetGen(surf)
 
-        nodes, elements = tet.tetrahedralize(switches=f"pq1.5a{max_tet_volume}Q")
+        if (mergeFacets):
+            nodes, elements = tet.tetrahedralize(switches=f"pq1.5a{max_tet_volume}Q")
+        else:
+            nodes, elements = tet.tetrahedralize(switches=f"pq1.5a{max_tet_volume}QM")
         self.nodes = nodes
         self.elems = elements
         self.num_nodes = len(self.nodes)
@@ -461,15 +464,11 @@ if __name__ == "__main__":
     import os
     tetmesh = TetMesher()
     script_dir = os.path.dirname(os.path.abspath(__file__))
-    stlFileName = os.path.join(script_dir, '../Models/EdgeCantilever/EdgeCantilever.STL')
+    stlFileName = os.path.join(script_dir, '../Models/Overhang/Overhang.STL')
     tetmesh.createTetMeshFromSTLFile(stlFileName, nElemsDesired=20000)
     tetmesh.plot()
-    stlFileName = os.path.join(script_dir, '../Models/BicycleCrank/BicycleCrank.STL')
-    tetmesh.createTetMeshFromSTLFile(stlFileName, nElemsDesired=20000)
-    tetmesh.plot()
-    tetmesh.read_Abaqus_linear_tetmesh(os.path.join(script_dir, '../Models/ThreeHoleBracket/ThreeHoleBracketLinearTetMesh.inp'))
-    tetmesh.plot()
-    tetmesh.read_Abaqus_linear_tetmesh(os.path.join(script_dir, '../Models/GEGrabCAD/GEGrabCADLinearTetMesh.inp'))
+    stlFileName = os.path.join(script_dir, '../Models/Overhang/OverhangSplitLine.STL')
+    tetmesh.createTetMeshFromSTLFile(stlFileName, nElemsDesired=20000,mergeFacets=False)
     tetmesh.plot()
 
 

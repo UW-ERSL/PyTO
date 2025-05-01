@@ -1,10 +1,8 @@
 from topopt_common import *
-
-
-
+import time
 
 def topopt_optimality_criteria(
-							fe_solver: sfea.StructFEA,
+							fe_solver: hex_structural_fea.HexStructuralFEA,
 							to_params,
 			  				maxIterations: int = 250,
 							penal: float = 3,
@@ -66,12 +64,12 @@ def topopt_optimality_criteria(
 	xmax = 1.0    # Maximum density
 	
 	if isinstance(fe_solver.mat_prop, list):
-		KE_list = [elem_stiff.hex8_stiffness_matrix_structural( mp,fe_solver.mesh.elem_size)
+		KE_list = [hex_element_stiffness.hex8_stiffness_matrix_structural( mp,fe_solver.mesh.elem_size)
 			 for mp in fe_solver.mat_prop]
 		KE = KE_list[0]
 		print("Density-OC: Assuming all elements have the same material properties")
 	else:
-		KE = elem_stiff.hex8_stiffness_matrix_structural( fe_solver.mat_prop,fe_solver.mesh.elem_size)
+		KE = hex_element_stiffness.hex8_stiffness_matrix_structural( fe_solver.mat_prop,fe_solver.mesh.elem_size)
 	success = True
 	errorMsg = ""
 	for iter in range(maxIterations):
@@ -118,8 +116,8 @@ def topopt_optimality_criteria(
 				lmid = 0.5 * (l2 + l1)
 				b = -grad_obj / lmid	
 				# OC update with damping and bounds
-				xnew = jnp.maximum(xmin,np.maximum(x - move,np.minimum(xmax, np.minimum(x + move, x * np.sqrt(b)))))
-				if jnp.sum(xnew) - to_params.DesiredVolFraction * num_elems > 0:
+				xnew = np.maximum(xmin,np.maximum(x - move,np.minimum(xmax, np.minimum(x + move, x * np.sqrt(b)))))
+				if np.sum(xnew) - to_params.DesiredVolFraction * num_elems > 0:
 					l1 = lmid
 				else:
 					l2 = lmid	
@@ -146,8 +144,8 @@ def topopt_optimality_criteria(
 			xPhys = xnew.copy()
 
 		# Calculate change and update densities
-		#change = jnp.linalg.norm(x - xold, np.inf)
-		change = jnp.max(jnp.abs(x - xold))
+		#change = np.linalg.norm(x - xold, np.inf)
+		change = np.max(np.abs(x - xold))
 
 		fe_solver.mesh.setPseudoDensity(np.asarray(xPhys))
 	
@@ -202,7 +200,6 @@ def topopt_optimality_criteria(
 
 	
 if __name__ == "__main__":    
-	jax.config.update("jax_enable_x64", True)
 	from topopt_benchmarks import *
 
 	print("-" * 50)
@@ -223,7 +220,7 @@ if __name__ == "__main__":
 		dsolver.create_delfation_matrix(mesh)
 		dsolver.W = dsolver.W[bc.free_dofs, :]
 
-	fe_solver = fea.StructFEA(mesh = mesh,
+	fe_solver = hex_structural_fea.HexStructuralFEA(mesh = mesh,
 				mat_prop = mat_prop,
 				bc = bc,
 				solver = solver,

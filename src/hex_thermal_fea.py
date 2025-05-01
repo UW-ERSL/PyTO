@@ -2,20 +2,17 @@
 
 import time
 import numpy as np
-import jax
-import jax.numpy as jnp
-import jax.experimental.sparse as jax_sprs
 import linear_solvers as lin_sol
 import hex_element_stiffness as elem_stiff
 import mat_lib
 import bound_cond
 import os
 import pyvista as pv
-
+import scipy.sparse as sp
 
 script_dir = os.path.dirname(os.path.abspath(__file__))
 
-class ThermalFEA:
+class HexThermalFEA:
   """Linear Thermal Finite Element Analysis using Hex8 elements."""
 
   def __init__(self,
@@ -27,16 +24,16 @@ class ThermalFEA:
 
     self.mesh, self.mat_prop, self.bc = mesh, mat_prop, bc
     self.solver, self.kwargs = solver, kwargs
-    self.elem_stiff = jnp.asarray(
+    self.elem_stiff = np.asarray(
                     elem_stiff.hex8_stiffness_matrix_thermal(mat_prop, mesh.elem_size))
 
-    self.node_idx = jnp.stack((
+    self.node_idx = np.stack((
                       np.kron(self.mesh.edofMat, np.ones((8, 1))).flatten(),
                       np.kron(self.mesh.edofMat, np.ones((1, 8))).flatten())
                       ).T.astype(int)
 
 
-  def solve(self, x: jnp.ndarray = None,) -> jnp.ndarray:
+  def solve(self, x: np.ndarray = None,) -> np.ndarray:
     """Solve the thermal finite element problem.
 
     Args:
@@ -46,11 +43,11 @@ class ThermalFEA:
     Returns: Array of (num_dofs,) of the solution to the finite element problem.
     """
     if x is None:
-      x = jnp.ones((self.mesh.num_elems,))
-    elem_stiff_mtrx = jnp.einsum('ij, e -> eij',
+      x = np.ones((self.mesh.num_elems,))
+    elem_stiff_mtrx = np.einsum('ij, e -> eij',
                                  self.elem_stiff, x).flatten(order = 'C')
 
-    stiff_mtrx = jax_sprs.BCOO((elem_stiff_mtrx, self.node_idx),
+    stiff_mtrx = sp.coo_matrix((elem_stiff_mtrx, (self.node_idx[:, 0], self.node_idx[:, 1])),
                                 shape=(self.bc.num_dofs, self.bc.num_dofs))
     
 
@@ -235,15 +232,12 @@ def runDOFTest():
     print("FEA time: ", time.time() - startTime)
     print('-----------------------------')
 if __name__ == "__main__":
-    import plots
-    import thermal_fea as fea
+    import hex_thermal_fea as fea
     import linear_solvers as lin_solv
-    import jax # import jax to enable 64 bit precision
     import time	
     from hex_thermal_examples import *
-    jax.config.update("jax_enable_x64", True)
 
-    problem = ThermalExamples.ThickPlate
+    problem = ThermalExamples.LBracket
     nDOFDesired = 10000
     umax_values = []
     timing = []
@@ -251,7 +245,7 @@ if __name__ == "__main__":
     
     mesh, mat_prop, bc = getThermalProblem(problem, nDOFDesired=nDOFDesired)
     
-    fe_solver = fea.ThermalFEA(mesh=mesh,
+    fe_solver =HexThermalFEA(mesh=mesh,
                   mat_prop=mat_prop,
                   bc=bc,
                   solver=solver)
@@ -263,10 +257,7 @@ if __name__ == "__main__":
     timing.append(time.time() - startTime )
     print(f'DOF: {fe_solver.mesh.num_nodes}, Max u: {uMax:.3e}')
     
-    
-
     nDOF = fe_solver.mesh.num_nodes
-   
     print('-----------------------------')
     print("nDof: ", nDOF)
     print('Solver: ', fe_solver.solver.name)
@@ -274,4 +265,4 @@ if __name__ == "__main__":
     print('Max u: ', uMax)
     print('-----------------------------')
 	
-    plots.plotMesh(fe_solver.mesh, None, u,title=f'Dof = {nDOF}, Tmax: {uMax:.3g}',show_edges=True,)
+    fe_solver.plot_temperature()

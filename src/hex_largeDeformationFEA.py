@@ -4,7 +4,7 @@ import pypardiso # pip install pypardiso
 from scipy.special import roots_legendre
 import numpy as np
 import deflation
-import linear_solvers as lin_solv
+import linear_solvers 
 import pyvista as pv
 from numba import njit
 import time
@@ -17,7 +17,7 @@ class ControlType(enum.Enum):
 	DisplacementControl = enum.auto()
 
 class largeDeformationFEA:
-    def __init__(self,mesh, mat_prop, bc, shape='Linear',solver= lin_solv.Solvers.PARDISO):
+    def __init__(self,mesh, mat_prop, bc, shape='Linear',solver= linear_solvers.Solvers.PARDISO):
         self.shape = shape
         self.material_model = 'GeneralizedNeoHookean1'
         self.mesh = mesh
@@ -36,13 +36,13 @@ class largeDeformationFEA:
         self.n, self.grad_n = self.get_shapefunction_gradients_at_quadpts()
 
         self.solver = solver
-        if (self.solver == lin_solv.Solvers.DPCG):
+        if (self.solver == linear_solvers.Solvers.DPCG):
             print('Using DPCG Solver')
             nGroups =  min(2000,max(10,round(3*mesh.num_nodes/500)))
             dsolver.create_deflation_groups(mesh, nGroups)
             dsolver.create_delfation_matrix(mesh)
             dsolver.W = dsolver.W[bc.free_dofs, :]
-        elif (self.solver == lin_solv.Solvers.PARDISO):
+        elif (self.solver == linear_solvers.Solvers.PARDISO):
             print('Using Pardiso Solver')
         else:
             print('Solver not implemented')
@@ -83,14 +83,14 @@ class largeDeformationFEA:
                 K_fd = K_global[free_dofs, :][:, fixed_dofs]
 
                 b_free = b[free_dofs] - K_fd.dot(u_fixed)
-                if (self.solver == lin_solv.Solvers.DPCG):
-                    M = lin_solv._jacobi_preconditioner(K_ff)
+                if (self.solver == linear_solvers.Solvers.DPCG):
+                    M = linear_solvers._jacobi_preconditioner(K_ff)
                     d_u_free = -dsolver.deflatedPCG(K_ff,
                                 b_free,
                                 W = dsolver.W,
                                 M = M,
                                 rtol = 1e-8)
-                elif (self.solver == lin_solv.Solvers.PARDISO):
+                elif (self.solver == linear_solvers.Solvers.PARDISO):
                     d_u_free = -pypardiso.spsolve(K_ff, b_free)
                 else:
                     print('Solver not implemented')
@@ -164,14 +164,14 @@ class largeDeformationFEA:
                 if iter == 1:
                     b[free_dofs] = b[free_dofs] +  K_global[free_dofs, :][:, fixed_dofs].dot(self.delta_sol[fixed_dofs])
 
-                if (self.solver == lin_solv.Solvers.DPCG):
-                    M = lin_solv._jacobi_preconditioner(K_ff)
+                if (self.solver == linear_solvers.Solvers.DPCG):
+                    M = linear_solvers._jacobi_preconditioner(K_ff)
                     d_u_free = -dsolver.deflatedPCG(K_ff,
                                 b[free_dofs],
                                 W = dsolver.W,
                                 M = M,
                                 rtol = 1e-8)
-                elif (self.solver == lin_solv.Solvers.PARDISO):
+                elif (self.solver == linear_solvers.Solvers.PARDISO):
                     d_u_free = -pypardiso.spsolve(K_ff, b[free_dofs])
                 else:
                     print('Solver not implemented')
@@ -981,19 +981,19 @@ def get_cnodes_for_symmetryBC() -> np.ndarray:
 
 
 if __name__ == "__main__":
-    import jax
-    jax.config.update("jax_enable_x64", True)
+ 
     from hex_structural_examples import StructuralExamples,getStructuralProblem
 
     problem = StructuralExamples.BeamSurfaceLoad
     control = ControlType.ForceControl 
-   
 
 
+    solver = linear_solvers.Solvers.PARDISO
     if (problem == StructuralExamples.BeamSurfaceLoad): # beam
         nDOFDesired= 2000
         totalLoad = 10000
         nForceSteps = max(1,int(totalLoad/20000))
+
     elif (problem == StructuralExamples.TorsionBar): 
         nDOFDesired= 2000
         totalLoad = 45000
@@ -1005,6 +1005,11 @@ if __name__ == "__main__":
     elif (problem == StructuralExamples.ArrowHead):
         nDOFDesired= 100000
         totalLoad = 1000000
+    elif (problem == StructuralExamples.Brain):
+        nDOFDesired= 100000 # not relevant
+        totalLoad = 100
+        nForceSteps = 2
+        solver = linear_solvers.Solvers.DPCG
 
     
     mesh, mat_prop, bc,elem_body_force = getStructuralProblem(problem,totalLoad = totalLoad,nDOFDesired = nDOFDesired)
@@ -1061,7 +1066,8 @@ if __name__ == "__main__":
             bc.dirichlet_values = dirichlet_values
         
 
-    ldFEA = largeDeformationFEA(mesh, mat_prop, bc, solver =  lin_solv.Solvers.PARDISO)
+    ldFEA = largeDeformationFEA(mesh, mat_prop, bc, solver =  solver)
+    print(f'Number of DOF: {ldFEA.mesh.num_nodes*3}')
     ldFEA.plot_mesh(plot_bc = True, title = f'DOF: {ldFEA.mesh.num_nodes*3}', save_path = None)
 
     start_time = time.time()

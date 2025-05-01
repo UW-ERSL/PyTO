@@ -1,7 +1,6 @@
 conda install pip
 pip install numpy
 pip install scipy
-pip install jax
 pip install matplotlib
 pip install scikit-learn
 pip install pypardiso

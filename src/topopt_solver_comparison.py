@@ -1,6 +1,5 @@
 # %%
 import time
-import jax # pip install jax jaxlib
 import numpy as np # pip install numpy
 import matplotlib.pyplot as plt # pip install matplotlib
 import hex_structural_fea as fea
@@ -15,7 +14,6 @@ from topopt_common import *
 from topopt_benchmarks import *
 import itertools
 
-jax.config.update("jax_enable_x64", True)
 dsolver = deflation.DeflationSolver()
 
 script_dir = os.path.dirname(os.path.abspath(__file__))
@@ -24,7 +22,7 @@ to_problem = StructuralTOExamples.EdgeCantilever
 linearSolvers = [lin_solv.Solvers.PYAMG, lin_solv.Solvers.CG, lin_solv.Solvers.PARDISO, lin_solv.Solvers.DPCG]
 
 optimizationMethod = TO_METHODS.DENSITYMMA
-dofs = [25000,50000,75000,100000,150000,250000,500000,1e6,1.5e6,2e6,3e6]
+dofs = [5000,10000,25000,50000,75000,100000,150000,250000,500000,1e6,1.5e6,2e6,3e6]
 # Set the time limit
 timeLimit = 60*5 # seconds
 dofActualList = []

@@ -1,13 +1,11 @@
 import time
 import numpy as np
-import jax
-import jax.numpy as jnp
-import jax.experimental.sparse as jax_sprs
 import linear_solvers as lin_sol
 import mat_lib
 import bound_cond
 import pyvista as pv # pip install pyvista
 from numba import njit
+import scipy.sparse as sp
 
 @njit(cache=True)
 def tet10_stiffness_matrix_structural(E,nu, elem_nodes):
@@ -99,7 +97,7 @@ def tet10_stiffness_matrix_structural(E,nu, elem_nodes):
             detJ = np.linalg.det(J)
             k_elem += B.T @ D @ B * w[i] * detJ
         return k_elem
-class StructuralFEATet:
+class TetStructuralFEA:
   """Linear Structural Finite Element Analysis using 10-noded quadratic tet elements."""
 
   def __init__(self,
@@ -143,19 +141,20 @@ class StructuralFEATet:
             k_elem = tet10_stiffness_matrix_structural(self.mat_prop.youngs_modulus, self.mat_prop.poissons_ratio,elem_nodes)
             data.append(k_elem.flatten())
 
-        self.node_idx = jnp.stack((
+        self.node_idx = np.stack((
                 np.kron(self.edofMat, np.ones((30, 1))).flatten(),
                 np.kron(self.edofMat, np.ones((1, 30))).flatten())
                 ).T.astype(int)
     
-        ke_stacked = jnp.concatenate(data)
-        self.K = jax_sprs.BCOO((ke_stacked, self.node_idx),
+        ke_stacked = np.concatenate(data)
+        
+        self.K = sp.coo_matrix((ke_stacked,(self.node_idx[:, 0], self.node_idx[:, 1])),
                     shape=(self.bc.num_dofs, self.bc.num_dofs))
 
         return 
 
 
-  def solve(self) -> jnp.ndarray:
+  def solve(self) -> np.ndarray:
     """Solve the thermal finite element problem.
 
     Args:
@@ -170,8 +169,8 @@ class StructuralFEATet:
                       self.solver,
                       self.bc,
                       **self.kwargs)
-    self.deformation = jnp.sqrt(self.sol[0::3]**2 + self.sol[1::3]**2 + self.sol[2::3]**2)
-    self.max_deformation = jnp.max(self.deformation)
+    self.deformation = np.sqrt(self.sol[0::3]**2 + self.sol[1::3]**2 + self.sol[2::3]**2)
+    self.max_deformation = np.max(self.deformation)
     
     return 
 
@@ -203,17 +202,14 @@ class StructuralFEATet:
     plotter.show()  
 
 if __name__ == "__main__":
-    import jax # import jax to enable 64 bit precision
     import time	
     from tet_structural_examples import TetStructuralExamples, getTetStructuralProblem
-    jax.config.update("jax_enable_x64", True)
-
+   
     problem = TetStructuralExamples.BeamBending # CubeCompression, TensileBar, BeamBending
-    
     quadratic_tet_mesh, mat_prop, bc, elem_body_force  = getTetStructuralProblem(problem,nDOFDesired = 1000)
     
     solver = lin_sol.Solvers.PARDISO # typically DPCG or PARDISO
-    fe_solver = StructuralFEATet(quadratic_tet_mesh,
+    fe_solver = TetStructuralFEA(quadratic_tet_mesh,
                 mat_prop=mat_prop,
                 bc=bc,
                 solver=solver)

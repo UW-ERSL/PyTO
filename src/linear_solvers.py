@@ -2,10 +2,6 @@
 
 import enum
 import numpy as np
-
-import jax
-import jax.numpy as jnp
-
 import scipy.sparse as spy_sprs
 import scipy.sparse.linalg as spy_linalg
 
@@ -107,10 +103,8 @@ def solve(A: spy_sprs.coo_matrix,
     return A @ u
 
   def solver_wrapper(A0, b0):
-    A_sp = spy_sprs.coo_matrix((np.asarray(A0.data),
-                                (A0.indices[:,0], A0.indices[:,1])),
-                                shape=A0.shape)
-    A, b = bound_cond.impose_dirichlet_bc(A_sp.tocsr(), b0, bc)
+ 
+    A, b = bound_cond.impose_dirichlet_bc(A0.tocsr(), b0, bc)
 
 
     if solver == Solvers.SPSOLVE:
@@ -142,12 +136,8 @@ def solve(A: spy_sprs.coo_matrix,
     else:
       raise ValueError('Unknown solver type')
 
-    u = jnp.zeros(b0.shape)
-    u = u.at[bc.fixed_dofs].set(bc.dirichlet_values)
-    u = u.at[bc.free_dofs].set(x)
-    return np.array(u)
+    u = np.zeros(b0.shape)
+    u[bc.fixed_dofs] = bc.dirichlet_values
+    u[bc.free_dofs] = x
+    return u
   return solver_wrapper(A,b)
-  # result_shape = jax.ShapeDtypeStruct(b.shape, b.dtype)
-  # cust_solver = lambda mv, b: jax.pure_callback(solver_wrapper, result_shape, A, b)
-  # sol = jax.lax.custom_linear_solve(mv, b, cust_solver, symmetric=True)
-  # return sol.reshape(-1)
