@@ -5,7 +5,7 @@ import numpy as np
 import pyvista as pv
 import matplotlib.pyplot as plt
 
-import mesher
+import hex_mesher as mesher
 
 
 def retainOuterGeom(mesh: mesher.Mesher,

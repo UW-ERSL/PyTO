@@ -28,9 +28,12 @@ import pyvista as pv
 import trimesh
 import pymeshfix
 import vedo
-import enum
+import vtk
 import os
 import traceback
+from plots_examples import *
+from plots_demo_2 import *
+
 
 # Attempt to import visualization and mesh-fixing libraries
 try:
@@ -60,7 +63,7 @@ def load_mesh(file_path: str) -> pv.PolyData:
     return mesh
 
 
-def clean_mesh(mesh: pv.PolyData) -> pv.PolyData:
+def clean_mesh(mesh: pv.PolyData, hole_fraction=0.05) -> pv.PolyData:
     """
     Clean the mesh:
     - Merge duplicate points.
@@ -69,11 +72,58 @@ def clean_mesh(mesh: pv.PolyData) -> pv.PolyData:
     - Compute and orient normals (outward by default).
     """
     mesh = mesh.clean(inplace=False)  # merge duplicates, remove degenerate
+    mesh = preprocess(mesh)
+    
+    #mesh = check_and_repair(mesh)
+    mesh = clean_using_trimesh(mesh)
+    
     if not mesh.is_all_triangles:
         mesh = mesh.triangulate(inplace=False)
-    mesh = mesh.compute_normals(auto_orient_normals=True, inplace=False)
+
+    if mesh.n_faces > 0:
+        mesh = mesh.compute_normals(auto_orient_normals=True, inplace=False)
+    else:
+        print("Warning: Mesh has no faces to compute normals.")
+
+    
+    # Fill holes smaller than some fraction of bounding box diagonal
+    bounds = mesh.bounds
+    diag = np.linalg.norm([bounds[1] - bounds[0],
+                           bounds[3] - bounds[2],
+                           bounds[5] - bounds[4]])
+    hole_size = diag * hole_fraction
+    mesh = mesh.fill_holes(hole_size)
+
+    # Keep only largest connected component
+    mesh = mesh.connectivity('largest')
+    mesh = mesh.clean()
     return mesh
 
+
+def clean_using_trimesh(mesh: pv.PolyData) -> pv.PolyData:
+    """
+    Clean a pyvista.PolyData mesh using trimesh operations:
+    - Merge duplicate points.
+    - Remove unused points and degenerate cells.
+    - Fill small holes.
+    - Return a cleaned pyvista.PolyData.
+    """
+    # Convert pyvista mesh to trimesh
+    vertices = np.array(mesh.points)
+    faces = np.array(mesh.faces.reshape(-1, 4))[:, 1:]  # PyVista faces are (N_faces, 4), with first number being 3 (for triangle)
+    tri_mesh = trimesh.Trimesh(vertices=vertices, faces=faces, process=False)
+
+    # Cleaning operations
+    tri_mesh.fill_holes()        # fill small holes
+    tri_mesh.merge_vertices()    # merge close vertices
+    tri_mesh.remove_unreferenced_vertices()
+    tri_mesh.update_faces(tri_mesh.nondegenerate_faces())
+
+    # Convert back to pyvista
+    cleaned_mesh = pv.PolyData(tri_mesh.vertices, np.hstack(
+        [np.full((tri_mesh.faces.shape[0], 1), 3), tri_mesh.faces]).astype(np.int64))
+
+    return cleaned_mesh
 
 def check_and_repair(mesh: pv.PolyData) -> pv.PolyData:
     """
@@ -140,8 +190,39 @@ def inflate_patch(patch, scale_factor=1.02):
 
     return patch
 
-    # # Inflate all patches slightly
-    # inflated_patches = [inflate_patch(p, scale_factor=1.02) for p in patch_list]
+def directional_inflate_patch(patch, scale_factor=1.02, direction="z"):
+    """
+    Scales a patch in a specific direction ("x", "y", or "z").
+
+    Parameters:
+        patch (pv.PolyData): The mesh to scale.
+        scale_factor (float): Factor by which to scale in the specified direction.
+        direction (str): One of "x", "y", or "z".
+
+    Returns:
+        pv.PolyData: The scaled patch.
+    """
+    dir_map = {"x": 0, "y": 1, "z": 2}
+    if direction not in dir_map:
+        raise ValueError("Direction must be one of 'x', 'y', or 'z'.")
+
+    # Compute center
+    center = patch.center
+
+    # Translate to origin
+    patch.translate(-np.array(center), inplace=True)
+
+    # Build scaling vector
+    scale_vec = [1.0, 1.0, 1.0]
+    scale_vec[dir_map[direction]] = scale_factor
+
+    # Scale only in the specified direction
+    patch.scale(scale_vec, inplace=True)
+
+    # Translate back
+    patch.translate(center, inplace=True)
+
+    return patch
 
 
 def extract_low_density_region(volume_mesh: pv.DataSet, threshold: float, scalars: str = None) -> pv.PolyData:
@@ -256,17 +337,23 @@ def repair_with_pymeshfix(poly: pv.PolyData) -> pv.PolyData:
     cleaned = meshfix.mesh  # this is a vtkPolyData
     return pv.PolyData(cleaned)
 
-def safe_boolean_difference(original: pv.PolyData, cutter: pv.PolyData) -> pv.PolyData:
+def safe_boolean_difference(original: pv.PolyData, cutter: pv.PolyData, smoothing_n_iter: int = 15, pass_band: float = 0.8) -> pv.PolyData:
     """
     Subtract 'cutter' from 'original' using boolean difference.
     Performs pre-checks (triangulation, manifoldness) and catches errors.
+    smoothing_n_iter: Number of smoothing iterations for the cutter mesh.
+    pass_band: Smoothing pass band for the cutter mesh. 0.0 to 2.0. Where 2.0 is preserving geometry.
     Returns the resulting PolyData (or raises if it fails).
     """
     # Ensure triangles
     orig = ensure_triangles(original)
     cut = ensure_triangles(cutter)
-    cut = cut.smooth_taubin(n_iter=50)
-    # Optional: ensure normals point outward for original (not strictly needed if input is good)
+    if orig.is_manifold and cut.is_manifold:
+        print("Mesh has open or non-manifold edges!")
+    
+    #cut = cut.smooth_taubin(n_iter=10)
+    cut = cut.smooth_taubin(n_iter=smoothing_n_iter, pass_band=pass_band,
+                              boundary_smoothing=True, feature_smoothing=False)
     # Perform boolean difference
     try:
         result = orig.boolean_difference(cut, tolerance=1e-5)
@@ -321,36 +408,6 @@ def save_mesh(mesh: pv.PolyData, file_path: str):
     mesh = mesh.compute_normals(auto_orient_normals=True, inplace=False)
     mesh.save(file_path)
     print(f"Saved cleaned mesh to '{file_path}'.")
-
-class ExamplesCAD(enum.Enum):
-    EdgeCantileverDemo = enum.auto()
-    BliskSectionWithBlade = enum.auto()
-    KnuckleAssembly = enum.auto()
-
-def get_example_cad(example: ExamplesCAD):
-    if example == ExamplesCAD.EdgeCantileverDemo:
-        return (
-            "../Models/EdgeCantilever/EdgeCantilever.STL",
-            "./EdgeCantilever.vtu",
-            "./Demo/results/EdgeCantileverRecovered.stl",
-            "./Demo/results/EdgeCantileverRecoveredFixed.stl",
-        )
-    elif example == ExamplesCAD.BliskSectionWithBlade:
-        return (
-            "../Models/Saketh/BliskSectionWithBlade2test.STL",
-            "../Models/Saketh/test1.vtu",
-            "./Demo/results//BliskSectionWithBlade2Recovered.stl",
-            "./Demo/results/BliskSectionWithBlade2RecoveredFixed.stl",
-        )
-    elif example == ExamplesCAD.KnuckleAssembly:
-        return (
-            "../Models/KnuckleAssembly/KnuckleAssembly.STL",
-            "./KnuckleAssembly.vtu",
-            "./Demo/results/KnuckleAssemblyRecovered.stl",
-            "./Demo/results/KnuckleAssemblyRecoveredFixed.stl",
-        )
-    else:
-        raise ValueError(f"Unknown example: {example}")
 
 def filter_and_export_mesh(
     input_stl, input_vtu, output_stl, output_fixed_stl, threshold=0.3, scalars="density"
@@ -416,14 +473,67 @@ def trimesh_verification(mesh: trimesh.Trimesh):
     # Fix inverted faces
     trimesh.repair.fix_inversion(mesh)
     return mesh
+
+
+# 2. Clean + triangulate + normals on *both* meshes
+def preprocess(pd: pv.PolyData) -> pv.PolyData:
+    # a) Clean coincident points, degenerate cells, etc.
+    cleaner = vtk.vtkCleanPolyData()
+    cleaner.SetInputData(pd)
+    cleaner.Update()
+    pd_clean = pv.wrap(cleaner.GetOutput())                             
+
+    # b) Ensure only triangles
+    tri = vtk.vtkTriangleFilter()
+    tri.SetInputData(pd_clean)
+    tri.Update()
+    pd_tri = pv.wrap(tri.GetOutput())                                    
+
+    # c) Recompute normals (consistent, no splits)
+    norms = vtk.vtkPolyDataNormals()
+    norms.SetInputData(pd_tri)
+    norms.ConsistencyOn()
+    norms.SplittingOff()
+    norms.Update()
+    pd_norm = pv.wrap(norms.GetOutput())                                
     
+    # CHeck if the mesh is manifold
+    # vmesh = vedo.Mesh(pd_norm)  
+    # vmesh.non_manifold_faces(remove=True, tol="auto")
+    # mesh = pv.wrap(vmesh)  # back to PyVista  
+
+    return pd_norm
+
+
+def fix_mesh(fp_meshstl: str)->pv.PolyData:
+  mfix = pymeshfix._meshfix.PyTMesh(False)  # False removes extra verbose output
+  mfix.load_file(fp_meshstl)
+
+  # Fills all the holes having at at most 'nbe' boundary edges. If
+  # 'refine' is true, adds inner vertices to reproduce the sampling
+  # density of the surroundings. Returns number of holes patched.  If
+  # 'nbe' is 0 (default), all the holes are patched.
+  mfix.fill_small_boundaries(nbe=100, refine=True)
+
+  vert, faces = mfix.return_arrays()
+  triangles = np.empty((faces.shape[0], 4), dtype=faces.dtype)
+  triangles[:, -3:] = faces
+  triangles[:, 0] = 3
+
+  repaired_mesh = pv.PolyData(vert, triangles)
+  return repaired_mesh
 
 def main():
-    example = ExamplesCAD.EdgeCantileverDemo  # Change to the one you want
+    example = ExamplesCAD.Mitchell_1  # Change to the one you want
     input_stl, input_vtu, output_stl, out_stl_fixed = get_example_cad(example)
     threshold=0.5
     scalars="density"
     no_visualization = False
+    # num cells in a patch below this percentage of the largest patch will not be considered for removal
+    cells_threshold_percentage = 20 
+    inflate_scale_factor = 1.04
+    smoothing_n_iter=15
+    pass_band=0.8
     # Load meshes
     print("Loading original STL mesh...")
     mesh_original = load_mesh(input_stl)
@@ -431,42 +541,44 @@ def main():
     mesh_volume = load_mesh(input_vtu)
 
     # Clean original mesh
-    print("Cleaning original mesh...")
-    mesh_original = clean_mesh(mesh_original)
-    mesh_original = check_and_repair(mesh_original)
+    #print("Cleaning original mesh...")
+    #mesh_original = clean_mesh(mesh_original)
 
     # Extract low-density region surface
     print(f"Extracting low-density region (threshold = {threshold})...")
-    #low_density_surface = extract_low_density_region(mesh_volume, threshold, scalars=scalars)
         
     #assume the VTU has point or cell data named "density"
     patches_poly = extract_low_density_patches(mesh_volume, scalars, threshold=0.5)
         
     # Split and filter out tiny patches
-    patch_list = split_and_filter_patches(patches_poly, 10) 
+    patch_list = split_and_filter_patches(patches_poly, cells_threshold_percentage) 
     print(f"Found {len(patch_list)} large void patches.")
 
     
     # Inflate all patches slightly
-    inflated_patches = [inflate_patch(p, scale_factor=1.03) for p in patch_list]
+    inflated_patches = [inflate_patch(p, scale_factor=inflate_scale_factor) for p in patch_list]
     
     # Perform the subtraction for each patch
     recovered = mesh_original
     for patch in inflated_patches:
         print("Subtracting patch with", patch.n_cells, "cells")
-        recovered.plot()
-        recovered = safe_boolean_difference(recovered, patch)
+        diagnostic_report(recovered, "recovered")
+        diagnostic_report(patch, "patch")
+
+        recovered = safe_boolean_difference(recovered, patch, smoothing_n_iter=smoothing_n_iter, pass_band=pass_band)
         #recovered = recovered.connectivity('largest')
 
         # Clean intermediate result
         recovered = clean_mesh(recovered)
+        #recovered.plot(color='lightblue', show_edges=True)
+        
 
     # Clean the final mesh and ensure largest component
     print("Cleaning final mesh...")
-    result_mesh = clean_mesh(recovered)
-    result_mesh = check_and_repair(result_mesh)
-    if result_mesh.n_cells > 0:
-        result_mesh = result_mesh.extract_largest()
+    #result_mesh = clean_mesh(recovered)
+    result_mesh = recovered
+    # if result_mesh.n_cells > 0:
+    #     result_mesh = result_mesh.extract_largest()
 
     # Visualize final result if enabled
     if not no_visualization:
@@ -475,6 +587,10 @@ def main():
 
     # Save output STL
     save_mesh(result_mesh, output_stl)
+    result_mesh = fix_mesh(fp_meshstl=output_stl)
+    result_mesh.plot(color='lightblue', show_edges=True)
+    save_mesh(result_mesh, output_stl)
+    
 
 
 if __name__ == "__main__":

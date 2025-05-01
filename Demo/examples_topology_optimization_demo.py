@@ -4,7 +4,6 @@ import enum
 #from examples_structural import *
 from topopt_benchmarks import *	
 from examples_structural_demo import *
-import struct_fea as sfea
 
 
 class StructuralTOExamplesDemo(enum.Enum):

@@ -4,7 +4,7 @@ import plots_demo
 import numpy as np
 import mat_lib
 import bound_cond
-import mesher
+import hex_mesher as mesher
 import mat_lib
 import os
 import enum

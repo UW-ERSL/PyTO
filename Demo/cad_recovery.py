@@ -4,6 +4,9 @@ import trimesh
 import pymeshfix
 from plots_examples import *
 from plots_demo_1 import *
+import trimesh
+from fast_simplification import simplify
+
 
 def diagnostic_report(mesh, name="mesh"):
     report = {}
@@ -56,7 +59,16 @@ def clean_mesh(mesh, name="mesh", hole_fraction=0.05):
         mesh = mesh.extract_surface().clean()
     if not mesh.is_all_triangles:
         mesh = mesh.triangulate()
-    mesh = mesh.compute_normals(consistent_normals=True, auto_orient_normals=True)
+
+    mesh = mesh.extract_geometry()  # now guaranteed all faces
+    mesh = mesh.clean()
+
+    # 4) Compute normals only if there is actually a polygon mesh
+    if mesh.n_faces > 0:
+        mesh = mesh.compute_normals(
+            consistent_normals=True,
+            auto_orient_normals=True
+        )
 
     # Fill holes smaller than some fraction of bounding box diagonal
     bounds = mesh.bounds
@@ -169,33 +181,7 @@ def marching_cubes_isosurf(voxel_cut, pad=1):
     mc = dg.contour([0.0], scalars="dist")
     return mc.triangulate().clean()
 
-# def marching_cubes_isosurf(voxel_cut: pv.PolyData, original: pv.PolyData):
-#     """
-#     This example demonstrates how to use marching cubes to create a cut patch from a cube
-#     and then smooth it before re-subtracting it from the original cube.
-#     """
-    
-#     # --- 2) Build a volume and compute a signed‐distance field ---
-#     bounds = voxel_cut.bounds
-#     nx = ny = nz = 50
-#     spacing = [
-#         (bounds[1] - bounds[0]) / (nx - 1),
-#         (bounds[3] - bounds[2]) / (ny - 1),
-#         (bounds[5] - bounds[4]) / (nz - 1),
-#     ]
-#     vol = pv.ImageData(dimensions=(nx, ny, nz), spacing=spacing, origin=(bounds[0], bounds[2], bounds[4]))
-
-#     # IMPORTANT: capture the returned grid since inplace=True returns None
-#     dist_grid = vol.compute_implicit_distance(voxel_cut, inplace=False)
-#     dist_grid["dist"] = dist_grid.point_data["implicit_distance"]
-
-#     # --- 3) Run marching cubes on the zero‐level set ---
-#     mc = dist_grid.contour([0.0], scalars="dist")
-#     mc = mc.triangulate().clean()
-
-#     return mc
-
-def fix_with_meshfix(mesh: pv.PolyData) -> pv.PolyData:
+def repair_meshfix(mesh: pv.PolyData) -> pv.PolyData:
     # 1) Ensure we have a PolyData surface
     if not isinstance(mesh, pv.PolyData):
         mesh = mesh.extract_surface().triangulate().clean()
@@ -209,23 +195,38 @@ def fix_with_meshfix(mesh: pv.PolyData) -> pv.PolyData:
     mfix.repair()
     # Access the repaired mesh with vtk
     #mesh = mfix.mesh
-
     # Or, access the resulting arrays directly from the object
     v2 = mfix.v # numpy np.float64 array
     f2 = mfix.f
+    # 5) Rebuild a clean PyVista PolyData
+    new_faces = np.hstack([np.full((f2.shape[0],1), 3, dtype=int), f2])
+    repaired = pv.PolyData(v2, new_faces)
+    repaired.compute_normals(auto_orient_normals=True, inplace=True)
+    return repaired
+
+
+def advanced_repair_meshfix(mesh: pv.PolyData) -> pv.PolyData:
+    # 1) Ensure we have a PolyData surface
+    if not isinstance(mesh, pv.PolyData):
+        mesh = mesh.extract_surface().triangulate().clean()
+
+    # 2) Pull out points & faces
+    verts = mesh.points
+    # faces come in a flat array: [3, i, j, k, 3, i2, j2, k2, ...]
+    face_array = mesh.faces.reshape(-1, 4)[:, 1:4]
 
     # # 3) Feed into the PyMeshFix “PyTMesh” engine
     mfix = pymeshfix._meshfix.PyTMesh(False)  
-    mfix.load_array(v2, f2)  
+    mfix.load_array(verts, face_array)  
 
-    mfix.join_closest_components()
+    #mfix.join_closest_components()
 
     # Fill holes
     mfix.fill_small_boundaries(refine=True)
     print('There are {:d} boundaries'.format(mfix.boundaries()))
 
     # Clean (removes self intersections)
-    mfix.clean(max_iters=10, inner_loops=3)
+    #mfix.clean(max_iters=10, inner_loops=3)
 
     # Check mesh for holes again
     print('There are {:d} boundaries'.format(mfix.boundaries()))
@@ -241,27 +242,16 @@ def fix_with_meshfix(mesh: pv.PolyData) -> pv.PolyData:
 
 
 if __name__ == "__main__":
-    orig_stl = "../Models/Saketh/BliskSectionWithBlade2test.STL"
-    mesh_vtu = "../Models/Saketh/test1.vtu"
-    # result = robust_boolean_difference(orig_stl, mesh_vtu)
-    # if result:
-    #     result.save("boolean_result.vtk")
-    #     print("\nSaved result to boolean_result.vtk")
-    # else:
-    #     print("\nBoolean operation failed.")
+
     example = ExamplesCAD.Mitchell_1  # Change to the one you want
     input_stl, input_vtu, output_stl, out_stl_fixed = get_example_cad(example)
     # Precompute an implicit distance field on the cut surface
     original = pv.read(input_stl).triangulate().compute_normals()
     voxels = pv.read(input_vtu)
     negative_voxels = extract_low_density_patches(voxels, 'density', threshold=0.5)
-    
-
-    # 1) extract and tag
     voxel_cut = negative_voxels.extract_surface().triangulate().clean()
 
     marching_cubes =  marching_cubes_isosurf(voxel_cut, original)
-    marching_cubes.plot(color='red', show_edges=True)
 
     smoothed = marching_cubes.smooth_taubin(
     n_iter=20,
@@ -269,96 +259,92 @@ if __name__ == "__main__":
     boundary_smoothing=True,    # hold boundary (coincident edges) fixed
     feature_smoothing=False      # keep sharp folds intact
     )
-    smoothed.plot(color='red', show_edges=True)
-    #######Above is the marching cubes part directly on the negative elements
-    # # Precompute an implicit distance field on the cut surface
-    # cut = voxel_cut.compute_implicit_distance(original, inplace=False)
-    # # cut.point_data['implicit_distance'] now holds signed distance to the original surface
+
+    #inflated = inflate_patch(smoothed, scale_factor=1.02)
+    inflated = directional_inflate_patch(smoothed, scale_factor=1.05) 
+
+    # --- 4) Visualize everything together in one Plotter ---
+    pl = pv.Plotter()
+    pl.add_text("Marching Cubes Reconstruction", font_size=14)
+    pl.add_mesh(original, color="lightblue", opacity=0.3, show_edges=True)
+    pl.add_mesh(voxel_cut, style="wireframe", color="black", opacity=0.2)
+    pl.add_mesh(inflated, color="red", show_edges=False)
+    pl.show()
+    #closed_patches = fix_with_meshfix(inflated)
     
-    # # For each cell, take the max absolute distance of its points
-    # pts = cut.points
-    # dists = cut.point_data['implicit_distance']
-    # # 3) Build the (n_cells × 3) array of point indices:
-    # # PyVista stores faces as [3, i0, j0, k0, 3, i1, j1, k1, …].
-    # faces = cut.faces.reshape((-1, 4))    # one row per cell: [3, pt0, pt1, pt2]
-    # cell_pt_ids = faces[:, 1:4]           # drop the leading “3”
-
-    # # 4) For each cell, take the max absolute distance of its vertices:
-    # max_dist = np.max(np.abs(dists[cell_pt_ids]), axis=1)
-
-    # # 5) Split into coincident vs new cells
-    # tol = 1e-3
-    # coincident_ids = np.where(max_dist < tol)[0]
-    # all_ids       = np.arange(cut.n_cells)
-    # remainder_ids = np.setdiff1d(all_ids, coincident_ids)
-
-    # coincident = cut.extract_cells(coincident_ids)
-    # remainder  = cut.extract_cells(remainder_ids)
+    save_mesh(inflated, output_stl)
+    #result_mesh = fix_mesh(fp_meshstl=output_stl)
     
+    # 1. Load your complex mesh
+    mesh = trimesh.load(output_stl)
+    # 2. Decide on a target face count
+    target_faces = 1000  # e.g. reduce to ~1k triangles
+    # 3. Perform quadratic decimation
+    simple = mesh.simplify_quadric_decimation(face_count = target_faces)
+    # 4. (Optional) If you want the “outer shell” only:
+    # simple = simple.convex_hull
+    # 5. Export simplified STL
+    export_stl = 'simple_model.stl'
+    simple.export(export_stl)
 
-    # # turn it into a surface PolyData again
-    # remainder_poly = (
-    #     remainder
-    #     .extract_surface()   # collapse to PolyData
-    #     .triangulate()       # ensure triangles
-    #     .clean()             # merge any dup verts
-    # )
-    # remainder_poly.plot(color='red', show_edges=True)
-    # marching_cubes =  marching_cubes_isosurf(remainder_poly, original)
+    # mesh = pv.read(output_stl)
+    # dec = mesh.decimate_pro(0.99, preserve_topology=True, splitting = False, boundary_vertex_deletion = False)  # Keep 10% of triangles
+    # dec.save(export_stl)
 
-    # smoothed = marching_cubes.smooth_taubin(
-    # n_iter=20,
-    # pass_band=0.1,
-    # boundary_smoothing=True,    # hold boundary (coincident edges) fixed
-    # feature_smoothing=False      # keep sharp folds intact
-    # )
-    # #smoothed.plot(color='red', show_edges=True)
-
-    # inflated = inflate_patch(smoothed, scale_factor=1.01)
-    # # --- 4) Visualize everything together in one Plotter ---
-    # pl = pv.Plotter()
-    # pl.add_text("Marching Cubes Reconstruction", font_size=14)
-    # pl.add_mesh(original, color="lightblue", opacity=0.3, show_edges=True)
-    # pl.add_mesh(voxel_cut, style="wireframe", color="black", opacity=0.2)
-    # pl.add_mesh(inflated, color="red", show_edges=False)
-    # pl.show()
-
-    # combined = coincident.merge(inflated)
-    # closed_patches = fix_with_meshfix(combined)
-
-    #######
-    inflated = inflate_patch(smoothed, scale_factor=1.03)
-    
-    closed_patches = fix_with_meshfix(inflated)
+    inflated = pv.read(export_stl)
     inflated.plot(color='red', show_edges=True)
     # Split and filter out tiny patches
     patch_list = split_and_filter_patches(inflated, cells_threshold_percentage=10) 
     print(f"Found {len(patch_list)} large void patches.")
-
     
     # Inflate all patches slightly
-    #inflated_patches = [inflate_patch(p, scale_factor=1.02) for p in patch_list]
+    
+    
+    inflated_patches = [inflate_patch(p, scale_factor=1.07) for p in patch_list]
     
     # Perform the subtraction for each patch
     recovered = original
-    for patch in patch_list:
+    for patch in inflated_patches:
         print("Subtracting patch with", patch.n_cells, "cells")
         diagnostic_report(patch, "patch")
-        recovered = safe_boolean_difference(recovered, patch, smoothing_n_iter=50, pass_band=0.1)
+        # Ensure triangles
+        recovered = ensure_triangles(recovered)
+        recovered = clean_mesh(recovered)
+
+        patch = ensure_triangles(patch)
+        #recovered = recovered.triangulate().subdivide(2).clean()
+        patch = patch.triangulate().subdivide(2).clean()
+        patch = clean_mesh(patch)
+
+
+        #recovered.plot(color='lightblue', show_edges=True)
+        #patch.plot(color='red', show_edges=True)
+        recovered = safe_boolean_difference(recovered, patch, smoothing_n_iter=10, pass_band=0.57)
         #recovered = recovered.boolean_difference(patch, tolerance=1e-5).clean()
+        #recovered.plot(color='lightblue', show_edges=True)
         #recovered = recovered.connectivity('largest')
         # Clean intermediate result
-        #recovered = clean_mesh(recovered)
-        patch.plot(color='red', show_edges=True)
+        save_mesh(recovered, output_stl)
+        recovered = fix_mesh(fp_meshstl=output_stl)
+        
+        #recovered = advanced_repair_meshfix(recovered)
+
+    #closed_patches = advanced_repair_meshfix(recovered)
+    #recovered = repair_meshfix(recovered)
 
     
     # Force it to PolyData
-    closed_patches = closed_patches.extract_surface().triangulate().clean()
+    
+    save_mesh(recovered, output_stl)
+    recovered = fix_mesh(fp_meshstl=output_stl)
+    closed_patches = recovered.extract_surface().triangulate().clean()
     closed_patches.plot(color='red', show_edges=True)
     plotter = pv.Plotter()
-    plotter.add_mesh(closed_patches, color='red', show_edges=True)
-    plotter.add_mesh(original, color='lightblue', show_edges=True)
+    plotter.add_mesh(closed_patches, color='lightblue')
+    plotter.add_mesh(voxel_cut, color='red', show_edges=True, style='wireframe')
     plotter.show()
-    final = original.boolean_difference(closed_patches, tolerance=1e-5).clean()
-    final.plot()
+    closed_patches.plot(color='lightblue')
+
+    #final = original.boolean_difference(closed_patches, tolerance=1e-5).clean()
+    #final.plot()
 

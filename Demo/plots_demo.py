@@ -8,10 +8,62 @@ import vedo
 
 import matplotlib.pyplot as plt
 
-import mesher
+import hex_mesher as mesher
 import pymeshfix
-import enum
+from plots_examples import *
 
+
+def export_vtu_mesh(mesh: mesher.Mesher,
+                   u=None,
+                   Binarization = False,
+                   title = 'exported_mesh',                   
+                   save_folder_path=None):
+  """Plot isocontour surface based on element pseudo-density.
+
+  Args:
+    u (ndarray, optional): Displacement vector for deformation visualization
+    save_folder_path (str, optional): folder path to save the mesh 
+  """
+  # Create vertices array
+  vertices = mesh.node_xyz
+  
+  # Handle deformation if provided
+  if (u is not None) and (np.max(np.abs(u)) > 0):
+    delta = np.sqrt(u[0::3]**2 + u[1::3]**2 + u[2::3]**2)
+    deltaMax = np.max(delta)
+    scale = 0.1*mesh.bbox.diag_length/deltaMax
+    uVertex = u.reshape(vertices.shape)
+    vertices = vertices + scale*uVertex
+    values = delta
+  else:
+    values = None
+
+  # Create cells array for PyVista
+  cells = np.hstack((
+                      np.full((mesh.num_elems, 1), 8),  # 8 vertices per hexahedron
+                      mesh.elemArray
+                    ))
+
+  # Create PyVista mesh
+  pv_mesh = pv.UnstructuredGrid({12: cells[:, 1:]}, vertices)  # 12 is VTK_HEXAHEDRON
+
+  elemPseudoDensity = mesh.elemPseudoDensity
+  if (Binarization):
+    elemPseudoDensity = np.where(elemPseudoDensity > 0.5, 1, 0)
+  # Add element densities to cell data
+  pv_mesh.cell_data['density'] = elemPseudoDensity
+
+  # Add displacement values to point data if provided
+  if values is not None:
+    pv_mesh.point_data['displacement'] = values
+
+
+  # Save or show
+  if save_folder_path:
+    pv_mesh.save(save_folder_path + f'{title}.vtu')
+  else:
+    pv_mesh.save('../CadRecoveryResults/' + f'{title}.vtu')
+  
 
 def retainOuterGeom(mesh: mesher.Mesher,
                    fp_original_stl: str,
@@ -91,14 +143,14 @@ def retainOuterGeom(mesh: mesher.Mesher,
       original_stl.compute_normals(inplace=True)
 
   # Define a small dilation factor (adjust as needed) #Required as small bits remain at the outer surface
-  bounds = low_density_surface.bounds
-  diag_length = np.sqrt((bounds[1]-bounds[0])**2 +
-                        (bounds[3]-bounds[2])**2 +
-                        (bounds[5]-bounds[4])**2)
-  dilation_factor = 0.0015 * diag_length
-  inflated_points = low_density_surface.points + dilation_factor * low_density_surface.point_data['Normals']
-  inflated_low_density_surface = pv.PolyData(inflated_points, faces=low_density_surface.faces)
-
+  # bounds = low_density_surface.bounds
+  # diag_length = np.sqrt((bounds[1]-bounds[0])**2 +
+  #                       (bounds[3]-bounds[2])**2 +
+  #                       (bounds[5]-bounds[4])**2)
+  # dilation_factor = 0.0015 * diag_length
+  # inflated_points = low_density_surface.points + dilation_factor * low_density_surface.point_data['Normals']
+  # inflated_low_density_surface = pv.PolyData(inflated_points, faces=low_density_surface.faces)
+  inflated_low_density_surface = low_density_surface
   plotter = pv.Plotter()
   _ = plotter.add_mesh(inflated_low_density_surface, color='red', show_edges=True)
   _ = plotter.add_mesh(original_stl, color='green', show_edges=True, style='wireframe')
@@ -162,11 +214,29 @@ def retainOuterGeomUsingIsoSurf(mesh: mesher.Mesher,
   getRetainedOuterGeomSTL(fp_original_stl,
                    low_density_elements,
                    fp_outputstlpath, isovalue = 0.5)
-  
+
+
+def inflate_patch(patch, scale_factor=1.02):
+    # Determine the center of the patch
+    center = patch.center
+
+    # Translate the patch to the origin
+    patch.translate(-np.array(center), inplace=True)
+
+    # Scale the patch
+    patch.scale([scale_factor] * 3, inplace=True)
+
+    # Translate the patch back to its original position
+    patch.translate(center, inplace=True)
+
+    return patch 
 
 def getRetainedOuterGeomSTL(fp_original_stl: str,
                    low_density_elements: pv.PolyData,
-                   fp_outputstlpath: str, getOnlyLargestPatchDiff = False,
+                   fp_outputstlpath: str, 
+                   cells_threshold_percentage = 20, 
+                   inflation_scale_factor: float = 1.1,
+                   getOnlyLargestPatchDiff = False,
 ):               
   
   #low_density_elements.plot(show_edges=True, color='red')
@@ -175,9 +245,12 @@ def getRetainedOuterGeomSTL(fp_original_stl: str,
   low_density_elements.plot(show_edges=True, color='red')
   # Split into connected bodies (patches)
   patches = low_density_elements.split_bodies()
-  min_cells = 1000 #ToDo: get top 90percent of the patches wrt to the largest patch
+  
+  cell_counts = [patch.n_cells for patch in patches]
+  min_cells = cells_threshold_percentage * 0.01 * max(cell_counts)
   filtered_patches = [patch for patch in patches if patch.n_cells > min_cells]
   patches_list = list(filtered_patches)
+  patches_list = [inflate_patch(p, scale_factor=inflation_scale_factor) for p in patches_list]
   
   # Check if the result is a MultiBlock
   if isinstance(patches, pv.MultiBlock):
@@ -236,69 +309,76 @@ def preprocess(pd: pv.PolyData) -> pv.PolyData:
 
 def removePatchFromSTL(fp_original_stl: str, patch: pv.PolyData, fp_outputstlpath: str, 
                        dxfactor: float = 0.0, dyfactor: float = 0.0, dzfactor: float = 0.0, 
-                       smooth_iter: int = 100,
+                       smooth_iter: int = 10,
                        dilation_factor_scale: float = 0.005,
                        b_extra_preprocess: bool = False,):
-  check_and_verify_mesh(patch)
   
+  original_stl = pv.read(fp_original_stl).clean().extract_surface().triangulate()
+  #original_stl = original_stl.subdivide_adaptive()
+  original_stl.plot(show_edges=True, color='lightblue')
+
+  #check_and_verify_mesh(patch)
   low_density_surface = patch.triangulate().extract_surface().clean()
-  low_density_surface.plot(show_edges=True, color='red')
-  low_density_surface = low_density_surface.smooth(n_iter=4)
-  check_and_verify_mesh(low_density_surface)
+  
+  plotter = pv.Plotter()
+  _ = plotter.add_mesh(low_density_surface, color='red', show_edges=True)
+  _ = plotter.add_mesh(original_stl, color='green', show_edges=True)
+  plotter.show_axes()
+  plotter.show()
+  #low_density_surface = low_density_surface.smooth(n_iter=4)
+  #check_and_verify_mesh(low_density_surface)
 
   # Volume preserving smoothing
   #pass_band=0.05 # varies betn 0 to 2. if 2, more of the original shape is retained
-  # low_density_surface = low_density_surface.smooth_taubin(n_iter=smooth_iter,
-  #   pass_band=0.055,
-  #   boundary_smoothing=False,
-  #   feature_smoothing=False, #preserve holes or features if present
-  #   normalize_coordinates=True, #Prevents numerical issues on oddly sized models.
-  #   non_manifold_smoothing=True) 
+  low_density_surface = low_density_surface.smooth_taubin(n_iter=smooth_iter,
+    pass_band=0.8,
+    boundary_smoothing=True,
+    feature_smoothing=False, #preserve holes or features if present
+    normalize_coordinates=True, #Prevents numerical issues on oddly sized models.
+    non_manifold_smoothing=True) 
 
-  if b_extra_preprocess:
-    low_density_surface = low_density_surface.delaunay_3d()
-    low_density_surface = low_density_surface.extract_surface().clean()
-    low_density_surface.plot(show_edges=True, color='red')
+  #if b_extra_preprocess:
+  #low_density_surface = low_density_surface.delaunay_3d()
+  low_density_surface = low_density_surface.extract_surface().clean()
+  low_density_surface.plot(show_edges=True, color='red')
     #low_density_surface = low_density_surface.smooth(n_iter=100)
   # Save the resulting surface as an STL file (STL requires PolyData)
   fp_low_density_surface = 'low_density_elements_isosurface.stl'
   low_density_surface.save(fp_low_density_surface, binary=True)
-  original_stl = pv.read(fp_original_stl).clean().extract_surface().triangulate()
-  #original_stl = original_stl.subdivide_adaptive()
-  #original_stl.plot(show_edges=True, color='lightblue')
 
   #Compute normals if not available
   if 'Normals' not in original_stl.point_data:
       original_stl.compute_normals(inplace=True)
 
   # Define a small dilation factor (adjust as needed) #Required as small bits remain at the outer surface
-  bounds = low_density_surface.bounds
-  diag_length = np.sqrt((bounds[1]-bounds[0])**2 +
-                        (bounds[3]-bounds[2])**2 +
-                        (bounds[5]-bounds[4])**2)
-  dilation_factor = dilation_factor_scale * diag_length
-  inflated_points = low_density_surface.points + dilation_factor * low_density_surface.point_data['Normals']
-  inflated_low_density_surface = pv.PolyData(inflated_points, faces=low_density_surface.faces)
+#   bounds = low_density_surface.bounds
+#   diag_length = np.sqrt((bounds[1]-bounds[0])**2 +
+#                         (bounds[3]-bounds[2])**2 +
+#                         (bounds[5]-bounds[4])**2)
+#   dilation_factor = dilation_factor_scale * diag_length
+#   inflated_points = low_density_surface.points + dilation_factor * low_density_surface.point_data['Normals']
+#   inflated_low_density_surface = pv.PolyData(inflated_points, faces=low_density_surface.faces)
+  
 
- # Translate the mesh along the z-axis
-  z_min, z_max = inflated_low_density_surface.bounds[4], inflated_low_density_surface.bounds[5]  # Get the bounds of the mesh
-  z_length = z_max - z_min # Calculate the length in the z-direction
-  # Define the translation distance as a percentage of the z_length
-  percentage = 1.0  # For example, 10 for 10%
-  dz = (percentage / 100.0) * z_length * dzfactor
-  dy = dz * dyfactor
-  dx = dz * dxfactor
+#  # Translate the mesh along the z-axis
+#   z_min, z_max = inflated_low_density_surface.bounds[4], inflated_low_density_surface.bounds[5]  # Get the bounds of the mesh
+#   z_length = z_max - z_min # Calculate the length in the z-direction
+#   # Define the translation distance as a percentage of the z_length
+#   percentage = 1.0  # For example, 10 for 10%
+#   dz = (percentage / 100.0) * z_length * dzfactor
+#   dy = dz * dyfactor
+#   dx = dz * dxfactor
   #dx, dy = -dz*1.5, dz = -dz*2
 
     
-  
+  inflated_low_density_surface = low_density_surface
   plotter = pv.Plotter()
   _ = plotter.add_mesh(inflated_low_density_surface, color='red', show_edges=True)
   _ = plotter.add_mesh(original_stl, color='green', show_edges=True)
   plotter.show_axes()
   plotter.show()
-  inflated_low_density_surface = inflated_low_density_surface.translate((dx, dy, dz))
-  inflated_low_density_surface.plot(show_edges=True, color='lightblue')
+  #inflated_low_density_surface = inflated_low_density_surface.translate((dx, dy, dz))
+  #inflated_low_density_surface.plot(show_edges=True, color='lightblue')
 
   mesh_diff = original_stl.boolean_difference(inflated_low_density_surface).clean()
   cleaned_mesh = mesh_diff.connectivity('largest')
@@ -396,46 +476,20 @@ def check_and_verify_mesh(mesh: pv.PolyData)->pv.PolyData:
   return mesh
 
 
-class ExamplesCAD(enum.Enum):
-	EdgeCantileverDemo = enum.auto()
-	BliskSectionWithBlade = enum.auto()
-	KnuckleAssembly = enum.auto()
-  
-def get_example_cad(example: ExamplesCAD):
-  if example == ExamplesCAD.EdgeCantileverDemo:
-    fp_original_stl = "../Models/EdgeCantilever/EdgeCantilever.STL"
-    fp_vtu_mesh = "./EdgeCantilever.vtu"
-    fp_outputstlpath = "./results/EdgeCantileverRecovered.stl"
-    fp_outputfixedstlpath = "./results//EdgeCantileverRecoveredFixed.stl"
-  elif example == ExamplesCAD.BliskSectionWithBlade:
-    fp_original_stl = "../Models/Saketh/BliskSectionWithBlade2test.STL"
-    fp_vtu_mesh = "../Models/Saketh/test1.vtu"
-    fp_outputstlpath = "../Models/Saketh/BliskSectionWithBlade2Recovered.stl"
-    fp_outputfixedstlpath = "../Models/Saketh/BliskSectionWithBlade2RecoveredFixed.stl"
-  elif example == ExamplesCAD.KnuckleAssembly:
-    fp_original_stl = "../Models/KnuckleAssembly/KnuckleAssembly.STL"
-    fp_vtu_mesh = "./KnuckleAssembly (2).vtu"
-    fp_outputstlpath = "../Models/KnuckleAssembly/KnuckleAssemblyRecovered.stl"
-    fp_outputfixedstlpath = "../Models/KnuckleAssembly/KnuckleAssemblyRecoveredFixed.stl"
-  else:
-    raise ValueError(f"Unknown example: {example}")
-  return fp_original_stl, fp_vtu_mesh, fp_outputstlpath, fp_outputfixedstlpath
-
 # Example usage
 if __name__ == "__main__":
     
-  # fp_org_stl = "C:/Users/pthombre/Downloads/RocketPy_PyTO/Models/Saketh/BliskSectionWithBlade2test.STL"
-  # fp_vtu_mesh = "C:/Users/pthombre/Downloads/RocketPy_PyTO/Models/Saketh/test1.vtu"
-  # outputstlpath = "./BliskSectionWithBlade2Recovered.stl"
-  # outputfixedstlpath = "./BliskSectionWithBlade2RecoveredFixed.stl"
-  example = ExamplesCAD.KnuckleAssembly
+  example = ExamplesCAD.Mitchell_1
   fp_org_stl, fp_vtu_mesh, outputstlpath, outputfixedstlpath = get_example_cad(example)
 
 
   vtu_mesh = pv.read(fp_vtu_mesh)
   getRetainedOuterGeomSTL(fp_org_stl,
                   vtu_mesh,
-                  outputstlpath, getOnlyLargestPatchDiff = False)
+                  outputstlpath,
+                   cells_threshold_percentage = 20, 
+                   inflation_scale_factor = 1.2,
+                     getOnlyLargestPatchDiff = False)
 
   mesh = fix_mesh(fp_meshstl=outputstlpath)
   mesh.save(outputfixedstlpath, binary=True)
