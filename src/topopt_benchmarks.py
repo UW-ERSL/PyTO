@@ -20,6 +20,8 @@ class StructuralTOExamples(enum.Enum):
 	EdgeCantilever = enum.auto()
 	Multiload = enum.auto()
 	ThreeHoleBracket = enum.auto()
+	LBracketThickTopLoad = enum.auto()
+	LBracketThickMidLoad = enum.auto()
 	CentrifugalPlate = enum.auto()
 	GravityPlate = enum.auto()
 	KnuckleAssembly = enum.auto()
@@ -133,8 +135,8 @@ def getStructuralTOProblem(to_problem: StructuralTOExamples,nDOFDesired = None, 
         to_params.DesiredVolFraction = 0.5
     elif to_problem == StructuralTOExamples.LBracketMidLoad:
         structural_problem = StructuralExamples.LBracket
-        kwargs['topload'] = 1.5e4
-        kwargs['midload'] = 0
+        kwargs['topload'] = 0
+        kwargs['midload'] = 1.5e4
         to_params.Comment  = "Benchmark 2.5D"
         to_params.ExtrudeZ = True
         to_params.nDOFDesired = 25000 if nDOFDesired is None else nDOFDesired
@@ -156,14 +158,14 @@ def getStructuralTOProblem(to_problem: StructuralTOExamples,nDOFDesired = None, 
         structural_problem = StructuralExamples.EdgeCantilever
         to_params.Comment = "Benchmark 3D"
         to_params.YSymmetry = True
-        to_params.nDOFDesired = 50000 if nDOFDesired is None else nDOFDesired
-        to_params.DesiredVolFraction = 0.50
+        to_params.nDOFDesired = 150000 if nDOFDesired is None else nDOFDesired
+        to_params.DesiredVolFraction = 0.25
     elif to_problem == StructuralTOExamples.ThreeHoleBracket:
         structural_problem = StructuralExamples.ThreeHoleBracket
         to_params.Comment  = "Retaining Material"
         to_params.ZSymmetry = True
         to_params.KeepFixedElems = True
-        to_params.nDOFDesired = 40000 if nDOFDesired is None else nDOFDesired
+        to_params.nDOFDesired = 60000 if nDOFDesired is None else nDOFDesired
         to_params.DesiredVolFraction = 0.35
     elif to_problem == StructuralTOExamples.Multiload:
         structural_problem = StructuralExamples.Multiload
@@ -177,6 +179,7 @@ def getStructuralTOProblem(to_problem: StructuralTOExamples,nDOFDesired = None, 
         to_params.XSymmetry = True
         to_params.ExactVolumeFraction = True
         to_params.nDOFDesired = 20000 if nDOFDesired is None else nDOFDesired
+        to_params.RelativeFilterRadius = 1.5
         to_params.DesiredVolFraction = 0.25
     elif to_problem == StructuralTOExamples.CentrifugalPlate:
         structural_problem = StructuralExamples.CentrifugalPlate
@@ -187,6 +190,22 @@ def getStructuralTOProblem(to_problem: StructuralTOExamples,nDOFDesired = None, 
         to_params.nDOFDesired = 50000 if nDOFDesired is None else nDOFDesired
         to_params.DesiredVolFraction = 0.5
         to_params.KeepFixedElems = True  # Keep elements that are fixed in the centrifugal plate example
+    elif to_problem == StructuralTOExamples.LBracketThickTopLoad:
+        structural_problem = StructuralExamples.LBracketThick
+        to_params.Comment  = "3D"
+        to_params.ZSymmetry = True
+        kwargs['topload'] = 1.5e4
+        kwargs['midload'] = 0
+        to_params.nDOFDesired = 250000 if nDOFDesired is None else nDOFDesired
+        to_params.DesiredVolFraction = 0.1
+    elif to_problem == StructuralTOExamples.LBracketThickMidLoad:
+        structural_problem = StructuralExamples.LBracketThick
+        to_params.Comment  = "3D"
+        to_params.ZSymmetry = True
+        kwargs['topload'] = 0
+        kwargs['midload'] = 1.5e4
+        to_params.nDOFDesired = 250000 if nDOFDesired is None else nDOFDesired
+        to_params.DesiredVolFraction = 0.1
     elif to_problem == StructuralTOExamples.KnuckleAssembly:
         structural_problem = StructuralExamples.KnuckleAssembly
         to_params.Comment = "Retaining Components"

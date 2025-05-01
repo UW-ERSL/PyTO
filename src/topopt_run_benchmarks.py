@@ -7,6 +7,7 @@ from topopt_benchmarks import *
 import time
 import glob
 import pandas as pd
+subFolder = "2.5D"
 def runTOMethodOnBenchmarks(optimizationMethod):
 	# Create a list to store results
 	results_list = []
@@ -28,30 +29,37 @@ def runTOMethodOnBenchmarks(optimizationMethod):
 						StructuralTOExamples.CentrifugalPlate]
 	
 	benchmarks_3D_problems = [StructuralTOExamples.EdgeCantilever, 
+						   StructuralTOExamples.LBracketThickTopLoad,
+						StructuralTOExamples.LBracketThickMidLoad,
 						StructuralTOExamples.ThreeHoleBracket, 
-						 StructuralTOExamples.Multiload,	
+						 StructuralTOExamples.Multiload,
 						StructuralTOExamples.Table]
 	
-
-	
 	for to_problem in benchmarks_2_5D_problems:
+		if to_problem in benchmarks_2_5D_problems:
+			subFolder = "2.5D"
+		elif to_problem in benchmarks_3D_problems:
+			subFolder = "3D"
+		elif to_problem in benchmarks_bodyforce_problems:
+			subFolder = "BodyForce"
+		else:
+			subFolder = "Other"
 		print("-" * 50)
 		print(f"Running {to_problem.name} using {optimizationMethod.name} method")
 		print("-" * 50)
 		print_progress = False
 		mesh, mat_prop, bc,elem_body_force, to_params = getStructuralTOProblem(to_problem)
-		startTime = time.time()
-		if (to_params.nDOFDesired < 100000):#  PARDISO 
-			print("Solver: Pardiso")
+		dsolver = deflation.DeflationSolver()
+		if (to_params.nDOFDesired <= 100000):#  # Choose solver. Typically PARDISO, but DPCG for large DOF problems
 			solver = lin_solv.Solvers.PARDISO
-		else: 
-			print("Solver: DPCG")
-			solver = lin_solv.Solvers.DPCG 
+		else:
+			solver = lin_solv.Solvers.DPCG
 			nGroups =  min(dsolver.maxGroups,max(dsolver.minGroups,round(3*mesh.num_nodes/dsolver.dofPerGroup)))
 			dsolver.create_deflation_groups(mesh, nGroups)
 			dsolver.create_delfation_matrix(mesh)
 			dsolver.W = dsolver.W[bc.free_dofs, :]
 
+		startTime = time.time()
 		
 		fe_solver = hex_structural_fea.HexStructuralFEA(mesh = mesh,
 					mat_prop = mat_prop,
@@ -82,7 +90,7 @@ def runTOMethodOnBenchmarks(optimizationMethod):
 		image_path = f"{output_dir}/{to_problem.name}.png"
 		title = f"{optimizationMethod.name}: nDOF: {3*fe_solver.mesh.num_nodes}, vol: {history['volume'][-1]:0.2f}, J: {history['compliance'][-1]:.3g}, time: {timeTaken:.0f} s"
 	
-		fe_solver.plot_mesh(save_path=image_path, title=title)
+		fe_solver.plot_mesh(save_path=image_path, plot_bc = None, title=title)
 		
 		results_list.append({
 			'name': to_problem.name,
@@ -249,7 +257,7 @@ def combine_results():
 	plt.close()
 
 if __name__ == "__main__":    
-	subFolder = "2.5D"
+	
 	optimizationMethods = [TO_METHODS.DENSITYMMA, TO_METHODS.DENSITYOC, TO_METHODS.PARETO]
 	for optimizationMethod in optimizationMethods:
 		runTOMethodOnBenchmarks(optimizationMethod)

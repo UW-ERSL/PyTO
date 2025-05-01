@@ -85,7 +85,6 @@ class DeflationSolver:
 		nGroupsDesired = min(nGroupsDesired, 
 						   int(meshData.num_nodes/(1 + self.minNodesPerGroup)))
 		
-		
 		xyz = meshData.node_xyz
 
 		xMin = np.min(xyz[:,0])
@@ -285,7 +284,7 @@ class DeflationSolver:
 									W: _Array,
 									M: _Array,
 									rtol=1e-8,
-									maxIters=1500,
+									maxIters=2000,
 									verbose=False):
 		"""Deflated Preconditioned Conjugate Gradient."""
 
@@ -309,9 +308,9 @@ class DeflationSolver:
 
 		# Initial solution
 		if (pypardiso is None):
-			mu = spy_linalg.spsolve(WKW,WT @ f) # see notes on pypardiso.spsolve
+			mu = spy_linalg.spsolve(WKW,WT @ f) 
 		else:
-			mu = pypardiso.spsolve(WKW,WT @ f)
+			mu = pypardiso.spsolve(WKW,WT @ f)# see notes on pypardiso.spsolve
 		
 		x = W @ mu
 
@@ -359,5 +358,5 @@ class DeflationSolver:
 			rz = rz_new
 		#print("Deflated PCG iterations:", iter_num + 1)
 		if (iter_num == maxIters - 1):
-			print("Warning: Maximum iterations reached in DPCG")
+			print("Warning: Maximum iterations reached in DPCG; relative residual:", np.sqrt(rz_new/rz0))
 		return x

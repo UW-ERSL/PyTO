@@ -1,4 +1,5 @@
 from topopt_common import *
+from topopt_material_model import *
 import time
 import mma
 import matplotlib.pyplot as plt
@@ -7,7 +8,6 @@ def topopt_mma(fe_solver: hex_structural_fea.HexStructuralFEA,
 			   			minMMAIterations: int = 5,
 			   			 maxMMAIterations: int = 250, 
 							timeLimit: float =3600, #1 hour
-						   penal: float = 3.0,
 							 move_limit: float = 0.2,
 							 kkt_tol: float = 1.e-6,
 							 move_tol: float = 0.025,
@@ -30,16 +30,10 @@ def topopt_mma(fe_solver: hex_structural_fea.HexStructuralFEA,
 
 	Returns: The displacement field of the optimized structure.
 	"""
-	elem_body_force = fe_solver.elem_body_force
-	if elem_body_force is None or (np.linalg.norm(elem_body_force) == 0):
-		material_model = MaterialModel.SIMP #For no body forces, using SIMP material model
-		material_model_dict = {'name': 'SIMP', 'penal': 3.0,'masspenal': 1} # Default SIMP model
-	else:
-		material_model = MaterialModel.SIMPPLUS #For body forces, using SIMPPLUS material model
-		material_model_dict = {'name': 'SIMPPLUS', 'penal':10, 'penalIncr': 0, 'alpha': 16,'masspenal':1} 
-		#  body-force model from the papers here:
-		#  https://doi.org/10.1002/nme.2499, https://doi.org/10.1016/j.cma.2017.04.021 
+	material_model = MaterialModel.SIMP 
 
+	elem_body_force = fe_solver.elem_body_force
+	
 	
 	tStart = time.time()
 	num_elems= fe_solver.mesh.num_elems
@@ -55,7 +49,7 @@ def topopt_mma(fe_solver: hex_structural_fea.HexStructuralFEA,
 	else:
 		nConstraints = 1
 
-	xmin = 0.001  # Minimum density
+	xmin = 0 # Minimum density
 	mma_params = mma.MMAParams(max_iter=maxMMAIterations,
 														kkt_tol = kkt_tol,
 														step_tol = move_tol,
@@ -93,45 +87,29 @@ def topopt_mma(fe_solver: hex_structural_fea.HexStructuralFEA,
 	success = True
 	errorMsg = ""
 	nFEAs = 0
-	while not mma_state.is_converged:
+	initialize_SIMP_PENALTY()  # Initialize the SIMP penalty for the first iteration
+	while True:
 		x = mma_state.x.reshape(-1)
 		if (plot_progress):
 			fe_solver.mesh.setPseudoDensity(x)
 			fe_solver.plot_pseudo_density(auto_close = False, title = f"Iteration {mma_state.epoch+1}")
 		timeFEAStart = time.time()
-		obj,u = compliance(x, fe_solver, material_model_dict)
+		obj,u = compliance(x, fe_solver, material_model)
 		nFEAs += 1
 		timeFEA += time.time() - timeFEAStart
 		obj = np.array([obj])
 
 		
 		ce = (np.dot(u[fe_solver.mesh.edofMat].reshape(num_elems, 24), KE) * u[fe_solver.mesh.edofMat].reshape(num_elems, 24)).sum(1)
-
-		if material_model == MaterialModel.SIMP:
-			# For SIMP material model: x**penal
-			penal = material_model_dict['penal']
-			grad_obj = (-penal * x ** (penal - 1)) * ce
-		elif material_model == MaterialModel.SIMPPLUS:
-			# Needed for body force
-			# For material model: (alpha-1)/alpha * x ** penal + (1/alpha) * x
-			alpha = material_model_dict['alpha']
-			penal = material_model_dict['penal']
-			d_elem_material_scaling_dx = (alpha - 1) / alpha * penal * x ** (penal - 1) + 1 / alpha
-			grad_obj = -d_elem_material_scaling_dx * ce
-		elif material_model == MaterialModel.GRIP:
-			# x/(2-x)**penal
-			penal = material_model_dict['penal']
-			d_elem_material_scaling_dx = 1/(2 - x)**penal + (penal*x)/(2 - x)**(penal + 1)
-			grad_obj = -d_elem_material_scaling_dx * ce
-			
+		grad_obj = -get_material_model_sensitivity(x,material_model) * ce
+		
 		if (nodal_body_force is not None):
-			massPenal = material_model_dict['masspenal']
-
 			ce_body_force = (u[fe_solver.mesh.edofMat].reshape(num_elems, 24) * nodal_body_force[fe_solver.mesh.edofMat].reshape(num_elems, 24)).sum(1)
-			grad_obj +=  massPenal*2*ce_body_force *x**(massPenal-1) 
+			grad_obj +=  2*ce_body_force
 	
-		grad_obj = (H * grad_obj)/Hs
+		
 
+		grad_obj = (H * grad_obj)/Hs
 		if (elemsWithForces.size > 0):
 			grad_obj[elemsWithForces] = min(grad_obj)
 
@@ -181,16 +159,19 @@ def topopt_mma(fe_solver: hex_structural_fea.HexStructuralFEA,
 		# Estimate the percentage of grey elements
 		grey_elements = np.sum((x > 0.05) & (x < 0.95))
 		fraction_grey = (grey_elements / num_elems) 
+		if elem_body_force is not None and (np.linalg.norm(elem_body_force) > 0):
+			update_SIMP_PENALTY(fraction_grey)
 		if (print_progress):
 			print(f"it.: {mma_state.epoch}, obj.: {obj[0]:.4g}, vf: {vf:.3f}, change: {change: 0.3f}, grey: {fraction_grey:.3f}")
 		history['compliance'].append(obj[0])
 		history['volume'].append(np.mean(x))
 		history['change'].append(change)
-
+		
 		if (len(history['compliance'])) >= minMMAIterations:
 			dJ1 = abs((history['compliance'][-1] - history['compliance'][-2]) / history['compliance'][-2])
 			# we need multiple checks else it will terminate too early for some problems such as TorquePlate
 			if dJ1 < rel_conv_tol and (np.max(cons) < rel_conv_tol) and (change < 0.2) and (fraction_grey < 0.2): # success
+				print("MMA optimization converged.")
 				break
 		if time.time() - tStart > timeLimit:
 			success = False
@@ -198,10 +179,7 @@ def topopt_mma(fe_solver: hex_structural_fea.HexStructuralFEA,
 			print("MMA optimization terminated due to time limit.")
 			break
 
-		# Reduce material_model_dict['masspenal'] by 0.1, but no less than 1
-		if 'panel' in material_model_dict:
-			material_model_dict['penal'] =  material_model_dict['penal']+material_model_dict['penalIncr']
-			material_model_dict['penal'] = max(material_model_dict['penal'], 1.0)
+
 	if mma_state.epoch >= maxMMAIterations:
 		print("MMA optimization did not converge.")
 		errorMsg = "Maximum iterations reached."
@@ -218,7 +196,7 @@ def topopt_mma(fe_solver: hex_structural_fea.HexStructuralFEA,
 	if (len(meshComponents) > 1):
 		errorMsg = "Hanging elements"
 		success = False
-	obj,u = compliance(x, fe_solver, material_model_dict)
+	obj,u = compliance(x, fe_solver, material_model)
 	history['compliance'].append(obj)
 	history['volume'].append(volfrac)
 	history['change'].append(change)
@@ -241,7 +219,7 @@ if __name__ == "__main__":
 	from topopt_benchmarks import *
 	
 	print("-" * 50)
-	to_problem = StructuralTOExamples.Mitchell_1 # Choose the TO problem
+	to_problem = StructuralTOExamples.CentrifugalPlate # Choose the TO problem
 	print(f"Running {to_problem.name}...") 
 	print("-" * 50)
 	solver = lin_solv.Solvers.PARDISO # # Choose solver. Typically PARDISO, but DPCG for DOF > 200,000
@@ -251,8 +229,10 @@ if __name__ == "__main__":
 	mesh, mat_prop, bc,elem_body_force, to_params = getStructuralTOProblem(to_problem)
 
 	dsolver = deflation.DeflationSolver()
-	# initialize the fe solver 
-	if (solver == lin_solv.Solvers.DPCG):
+	if (to_params.nDOFDesired <= 50000):#  # Choose solver. Typically PARDISO, but DPCG for large DOF problems
+		solver = lin_solv.Solvers.PARDISO
+	else:
+		solver = lin_solv.Solvers.DPCG
 		nGroups =  min(dsolver.maxGroups,max(dsolver.minGroups,round(3*mesh.num_nodes/dsolver.dofPerGroup)))
 		dsolver.create_deflation_groups(mesh, nGroups)
 		dsolver.create_delfation_matrix(mesh)
@@ -269,9 +249,10 @@ if __name__ == "__main__":
 	print('Solver: ', fe_solver.solver.name)
 	print("nDof: ", 3*fe_solver.mesh.num_nodes)
 	print("nElem: ", fe_solver.mesh.num_elems)	
-	
+	print("Close the plot to continue...")
 	title = f'nDOF: {3*fe_solver.mesh.num_nodes}, nElem: {fe_solver.mesh.num_elems}'
-	fe_solver.plot_mesh(title = title, save_path = None)
+	#fe_solver.plot_mesh(title = title, save_path = None)
+	
 	startTime = time.time()
 	print("OptimizationMethod: MMA")
 	u, history,success,errorMsg,nFEAs = topopt_mma(fe_solver = fe_solver,

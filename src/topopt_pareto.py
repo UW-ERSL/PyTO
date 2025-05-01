@@ -62,7 +62,7 @@ def topopt_pareto(fe_solver: hex_structural_fea.HexStructuralFEA,
 		nodal_body_force = None
 
 	
-	u = np.asarray(fe_solver.solve(x))
+	u =fe_solver.solve(x)
 	nFEAs = 1
 	# Store initial compliance
 	history['compliance'].append(fe_solver.total_force.T @ u)
@@ -131,7 +131,7 @@ def topopt_pareto(fe_solver: hex_structural_fea.HexStructuralFEA,
 				if (debug):
 					print("**Failed to converge, restoring previous design")
 					print(f"Previous successful vol_frac: {vol_frac_success:.5g}")
-					print(f"Decrementing vol_decr to: {vol_decr:.5g}")
+					print(f"Reducing vol_decr to: {vol_decr:.5g}")
 				if vol_decr < vol_decr_min:
 					terminatePareto = True
 				break
@@ -157,7 +157,7 @@ def topopt_pareto(fe_solver: hex_structural_fea.HexStructuralFEA,
 			JPrevPrev = JPrev  # Store previous to previous value
 			JPrev = JTemp  # Store previous value
 
-			u = np.asarray(fe_solver.solve(x))
+			u = fe_solver.solve(x)
 			nFEAs += 1
 			JTemp = float(fe_solver.total_force.T @ u)
 
@@ -214,7 +214,7 @@ if __name__ == "__main__":
 	from topopt_benchmarks import *
 	
 	print("-" * 50)
-	to_problem = StructuralTOExamples.Mitchell_1 # Choose the TO problem
+	to_problem = StructuralTOExamples.CentrifugalPlate # Choose the TO problem
 	print(f"Running {to_problem.name}...") 
 	print("-" * 50)
 	
@@ -224,8 +224,7 @@ if __name__ == "__main__":
 	mesh, mat_prop, bc,elem_body_force, to_params = getStructuralTOProblem(to_problem)
 
 	dsolver = deflation.DeflationSolver()
-	if (to_params.nDOFDesired < 50000):#  # Choose solver. Typically PARDISO, but DPCG for large DOF problems
-		print("Solver: Pardiso")
+	if (to_params.nDOFDesired <= 50000):#  # Choose solver. Typically PARDISO, but DPCG for large DOF problems
 		solver = lin_solv.Solvers.PARDISO
 	else:
 		print("Solver: DPCG")
@@ -251,10 +250,10 @@ if __name__ == "__main__":
 	print('Solver: ', fe_solver.solver.name)
 	print("nDof: ", 3*fe_solver.mesh.num_nodes)
 	print("nElem: ", fe_solver.mesh.num_elems)	
-	
+	#print("Close the plot to continue...")
 	title = f'nDOF: {3*fe_solver.mesh.num_nodes}, nElem: {fe_solver.mesh.num_elems}'
-	fe_solver.plot_mesh(title = title, save_path = None)
-
+	#fe_solver.plot_mesh(title = title, save_path = None)
+	
 	startTime = time.time()
 
 	print("OptimizationMethod: Pareto")

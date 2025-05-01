@@ -1,19 +1,17 @@
 """Optimization routines for topology optimization."""
-
 import enum
 import numpy as np
 import hex_element_stiffness
-import hex_mesher
-import hex_structural_fea 
+
 from topopt_filters import *
 import matplotlib.pyplot as plt
 import linear_solvers as lin_solv
+import hex_mesher
+import hex_structural_fea 
 import deflation
 
 
-
 _LARGE_NUMBER = 1.e9
-
 
 class TO_METHODS(enum.Enum):
 	DENSITYMMA = enum.auto()
@@ -21,9 +19,7 @@ class TO_METHODS(enum.Enum):
 	PARETO = enum.auto()
 	LEVELSET = enum.auto()
 
-class MaterialModel(enum.Enum):
-	SIMP = enum.auto()
-	SIMPPLUS = enum.auto()
+
 
 class TOParams: # These are the default parameters
     Comment = "" # Comment for the topology optimization problem
@@ -99,7 +95,7 @@ def volume_fraction_lowerlimit(density: np.ndarray,
 
 def compliance(x: np.ndarray,
 				fe_solver: hex_structural_fea.HexStructuralFEA,
-						material_model_dict = None,
+						material_model = None,
 													) -> np.ndarray:
 	"""Compute the structural compliance objective.
 
@@ -110,7 +106,7 @@ def compliance(x: np.ndarray,
 
 	Returns: The compliance objective value.
 	"""
-	u = fe_solver.solve(x, material_model_dict)
+	u = fe_solver.solve(x, material_model)
 	return np.einsum('i, i -> ', fe_solver.total_force, u), u
 
 

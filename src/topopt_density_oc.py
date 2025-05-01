@@ -1,15 +1,15 @@
 from topopt_common import *
+from topopt_material_model import *
 import time
 
 def topopt_optimality_criteria(
 							fe_solver: hex_structural_fea.HexStructuralFEA,
 							to_params,
 			  				maxIterations: int = 250,
-							penal: float = 3,
 							move: float = 0.2,
 							move_tol: float = 0.025,
 							rel_conv_tol: float = 1.e-3,
-							directLagrangeMethod: bool = False,
+							directLagrangeMethod: bool = True,
 							print_progress: bool = True,
 							plot_progress: bool = False,
 							debug: bool = False,
@@ -27,16 +27,13 @@ def topopt_optimality_criteria(
 	Returns: A tuple containing the displacement field of the optimized structure
 		and a dictionary containing the optimization history.
 	"""
+	material_model = MaterialModel.SIMP 
 	tStart = time.time()
 	elem_body_force = fe_solver.elem_body_force
 	if elem_body_force is None or (np.linalg.norm(elem_body_force) == 0):
-		material_model = MaterialModel.SIMP #For no body forces, using SIMP material model
-		material_model_dict = {'name': 'SIMP', 'penal': 3.0} # Default SIMP model
+		set_SIMP_PENALTY_MAX(3.0)
 	else:
-		material_model = MaterialModel.SIMPPLUS #For body forces, using SIMPPLUS material model
-		material_model_dict = {'name': 'SIMPPLUS', 'penal': 3.0, 'alpha': 16} 
-		#  body-force model from the papers here:
-		#  https://doi.org/10.1002/nme.2499, https://doi.org/10.1016/j.cma.2017.04.021 
+		set_SIMP_PENALTY_MAX(10.0)
 
 	num_elems = fe_solver.mesh.num_elems
 	if (print_progress):
@@ -60,7 +57,7 @@ def topopt_optimality_criteria(
 	# Initialize history
 	history = {'compliance': [], 'volume': [], 'change': []}
 	# OC parameters
-	xmin = 0.001  # Minimum density
+	xmin = 0.  # Minimum density
 	xmax = 1.0    # Maximum density
 	
 	if isinstance(fe_solver.mat_prop, list):
@@ -72,24 +69,15 @@ def topopt_optimality_criteria(
 		KE = hex_element_stiffness.hex8_stiffness_matrix_structural( fe_solver.mat_prop,fe_solver.mesh.elem_size)
 	success = True
 	errorMsg = ""
+	initialize_SIMP_PENALTY() 
 	for iter in range(maxIterations):
 		x = np.array(x)
 		if (plot_progress):
 			fe_solver.mesh.setPseudoDensity(x)
 			fe_solver.plot_pseudo_density(auto_close = False, title = f"Iteration {iter}")
-		obj,u = compliance(x, fe_solver,material_model_dict)
+		obj,u = compliance(x, fe_solver,material_model)
 		ce = (np.dot(u[fe_solver.mesh.edofMat].reshape(num_elems, 24), KE) * u[fe_solver.mesh.edofMat].reshape(num_elems, 24)).sum(1)
-		if material_model == MaterialModel.SIMP:
-			# For SIMP material model: x**penal
-			penal = material_model_dict['penal']
-			grad_obj = (-penal * x ** (penal - 1)) * ce
-		elif material_model == MaterialModel.SIMPPLUS:
-			# Needed for body force
-			# For material model: (alpha-1)/alpha * x ** penal + (1/alpha) * x
-			alpha = material_model_dict['alpha']
-			penal = material_model_dict['penal']
-			d_elem_material_scaling_dx = (alpha - 1) / alpha * penal * x ** (penal - 1) + 1 / alpha
-			grad_obj = -d_elem_material_scaling_dx * ce
+		grad_obj = -get_material_model_sensitivity(x,material_model) * ce
 
 		if (nodal_body_force is not None):
 			ce_body_force = (u[fe_solver.mesh.edofMat].reshape(num_elems, 24) * nodal_body_force[fe_solver.mesh.edofMat].reshape(num_elems, 24)).sum(1)
@@ -114,7 +102,8 @@ def topopt_optimality_criteria(
 			# Bisection loop for volume constraint
 			while (l2 - l1) > 1e-7:
 				lmid = 0.5 * (l2 + l1)
-				b = -grad_obj / lmid	
+				b = -grad_obj / lmid
+				b = np.maximum(b, 0.00) # avoid sqrt of negative numbers	
 				# OC update with damping and bounds
 				xnew = np.maximum(xmin,np.maximum(x - move,np.minimum(xmax, np.minimum(x + move, x * np.sqrt(b)))))
 				if np.sum(xnew) - to_params.DesiredVolFraction * num_elems > 0:
@@ -155,6 +144,8 @@ def topopt_optimality_criteria(
 		# Estimate the percentage of grey elements
 		grey_elements = np.sum((x > 0.05) & (x < 0.95))
 		fraction_grey = (grey_elements / num_elems) 
+		if elem_body_force is not None and (np.linalg.norm(elem_body_force) > 0):
+			update_SIMP_PENALTY(fraction_grey)
 		if (print_progress):
 			print(f"it.: {iter+1:d}, obj.: {obj:.5g}, "
 				  	f"vol.: {np.mean(xPhys):.3g}, grey: {fraction_grey:.3f}")
@@ -167,6 +158,7 @@ def topopt_optimality_criteria(
 			break
 		if (len(history['compliance'])) >= 2:
 			dJ = abs((history['compliance'][-1] - history['compliance'][-2]) / history['compliance'][-2])
+			update_SIMP_PENALTY(fraction_grey)
 			if (abs(dJ) < rel_conv_tol and abs(cons) < rel_conv_tol) and (fraction_grey < 0.1): # success
 				break
 
@@ -182,7 +174,11 @@ def topopt_optimality_criteria(
 	x = np.where(x < threshold, 0.0, 1.0)
 	volfrac = np.mean(x)
 	fe_solver.mesh.setPseudoDensity(x)
-	obj,u = compliance(x, fe_solver, material_model_dict)
+	meshComponents = fe_solver.mesh.find_connected_components()
+	if (len(meshComponents) > 1):
+		errorMsg = "Hanging elements"
+		success = False
+	obj,u = compliance(x, fe_solver, material_model)
 	history['compliance'].append(obj)
 	history['volume'].append(volfrac)
 	history['change'].append(change)
@@ -203,7 +199,7 @@ if __name__ == "__main__":
 	from topopt_benchmarks import *
 
 	print("-" * 50)
-	to_problem = StructuralTOExamples.EdgeCantilever # Choose the TO problem
+	to_problem = StructuralTOExamples.GravityPlate # Choose the TO problem
 	print(f"Running {to_problem.name}...") 
 	print("-" * 50)
 	solver = lin_solv.Solvers.PARDISO # # Choose solver. Typically PARDISO, but DPCG for DOF > 200,000
@@ -213,8 +209,10 @@ if __name__ == "__main__":
 	mesh, mat_prop, bc,elem_body_force, to_params = getStructuralTOProblem(to_problem)
 
 	dsolver = deflation.DeflationSolver()
-	# initialize the fe solver 
-	if (solver == lin_solv.Solvers.DPCG):
+	if (to_params.nDOFDesired <= 50000):#  # Choose solver. Typically PARDISO, but DPCG for large DOF problems
+		solver = lin_solv.Solvers.PARDISO
+	else:
+		solver = lin_solv.Solvers.DPCG
 		nGroups =  min(dsolver.maxGroups,max(dsolver.minGroups,round(3*mesh.num_nodes/dsolver.dofPerGroup)))
 		dsolver.create_deflation_groups(mesh, nGroups)
 		dsolver.create_delfation_matrix(mesh)
@@ -232,10 +230,10 @@ if __name__ == "__main__":
 	print('Solver: ', fe_solver.solver.name)
 	print("nDof: ", 3*fe_solver.mesh.num_nodes)
 	print("nElem: ", fe_solver.mesh.num_elems)	
-	
+	#print("Close the plot to continue...")
 	title = f'nDOF: {3*fe_solver.mesh.num_nodes}, nElem: {fe_solver.mesh.num_elems}'
-	fe_solver.plot_mesh(title = title, save_path = None)
-
+	#fe_solver.plot_mesh(title = title, save_path = None)
+	
 	startTime = time.time()		
 	
 	print("OptimizationMethod: OC")

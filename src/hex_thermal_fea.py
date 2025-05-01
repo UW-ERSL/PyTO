@@ -180,7 +180,7 @@ class HexThermalFEA:
     return 
 
 def runDOFTest():
-   
+    from hex_thermal_examples import getThermalProblem, ThermalExamples
     problem = ThermalExamples.ThickPlate
     # Create arrays to store results
     dof_sizes = [100, 200, 400, 800, 1600, 5000,10000]  # Different DOF sizes to test
