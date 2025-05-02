@@ -378,8 +378,11 @@ class HexMesher:
 		endTime = time.time()
 		self.meshing_time = endTime - startTime
 		self.volume_error = volume_error
+
+		
 		#print(f"Time taken to create mesh: {endTime - startTime:.2f} seconds")
 		#print(f"Meshing Volume Error: {volume_error:.2f}%")
+
 
 	def createMeshFromSTLFile(self, stlFileName: str,nElemsDesired: int):
 		#print("Creating mesh from STL file...")
@@ -741,6 +744,70 @@ class HexMesher:
 		
 		return nodes_on_plane
 
+	def compute_signed_distance_function(self, density_field: np.ndarray) -> np.ndarray:
+		"""Compute the signed distance function for each element to the boundary face/edge.
+		
+		Args:
+			density_field: Array of shape (num_elems,) with 0 for outside and 1 for inside.
+			
+		Returns:
+			np.ndarray: Signed distance function for each element.
+		"""
+		# Ensure density_field matches the number of elements
+		if len(density_field) != self.num_elems:
+			raise ValueError("Density field size must match the number of elements.")
+		 # Create a 3D grid of element centers
+		elem_centers = self.elem_centers
+
+		# Convert density field to a 3D grid matching the mesh structure
+		# We'll use a fast method based on distance transforms
+
+		# First, convert neighbors array to a more useful form for fast lookups
+		elem_neighbors = {i: self.elemNeighborsArray[i][self.elemNeighborsArray[i] != -1] 
+						 for i in range(self.num_elems)}
+
+		# Initialize SDF
+		sdf = np.zeros(self.num_elems)
+
+		# Identify boundary elements (elements with both 0 and 1 density neighbors)
+		boundary_elems = []
+		for i in range(self.num_elems):
+			# Check if the element is inside the shape and has outside neighbors
+			if density_field[i] == 1:
+				neighbors = elem_neighbors[i]
+				if any(density_field[n] == 0 for n in neighbors):
+					boundary_elems.append(i)
+			
+				# Add elements at the mesh boundary (with -1 as neighbors)
+				if any(self.elemNeighborsArray[i] == -1):
+					boundary_elems.append(i)
+			
+		# Remove duplicates
+		boundary_elems = list(set(boundary_elems))
+		# If no boundary elements are found, return zeros
+		if not boundary_elems:
+			print("Warning: No boundary elements found. Returning zero SDF.")
+			return sdf
+		print(f"Number of boundary elements: {len(boundary_elems)}")
+		# Compute distances from each element to the nearest boundary element
+		for i in range(self.num_elems):
+			min_dist = float('inf')
+			# Calculate all distances at once using broadcasting and find minimum
+			distances = np.linalg.norm(elem_centers[i] - elem_centers[boundary_elems], axis=1)
+			min_dist = np.min(distances)
+			# Handle potential inf values and assign appropriate sign
+			if np.isinf(min_dist):
+				sdf[i] = 0  # Default to zero if no boundary elements exist
+			else:
+				# Inside elements get positive distances, outside get negative
+				sdf[i] = -min_dist if density_field[i] == 1 else min_dist
+
+		# Normalize SDF by element size for better scaling
+		avg_elem_size = np.mean(self.elem_size)
+		sdf /= avg_elem_size
+
+		return sdf
+	
 	def createEdofMatStructural(self):
 		self.dofs_per_node = 3 # structural
 		self.edofMat = np.zeros((self.num_elems, 24), dtype = int)
@@ -986,7 +1053,8 @@ class HexMesher:
 		"""
 		# Get boundary elements
 		boundary_elems = self.get_boundary_elements()
-		
+		print(f"Number of boundary elements: {len(boundary_elems)}")
+		# For hex8 elements, each element has 6 faces, each defined by 4 nodes
 		# For hex8 elements, faces are defined by these node patterns
 		face_patterns = [
 			[0,3,2,1],  # -z face

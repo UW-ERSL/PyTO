@@ -461,8 +461,20 @@ class HexStructuralFEA:
             save_path=None,
             colormap = 'jet',
             auto_close = True,
-            fontsize=10):
+            fontsize=10,
+            cross_section=None):  # New parameter for cross-section
     """Plot element field on the mesh.
+    
+    Args:
+        elem_field: Field values for each element
+        mask_low_pseudodensity: Whether to filter out elements with low density
+        title: Plot title
+        save_path: Path to save the image
+        colormap: Color map for the field visualization
+        auto_close: Whether to auto-close the plotter
+        fontsize: Font size for the title
+        cross_section: Dict with keys 'axis' ('x', 'y', or 'z') and 'position' (float)
+                      to create a cross-section view, or None for full view
     """
     # Filter elements based on pseudo_density
     if (mask_low_pseudodensity):
@@ -502,7 +514,36 @@ class HexStructuralFEA:
         plotter = self.pyVistaPlotter
 
     else:
-      plotter = pv.Plotter( off_screen=True)
+      plotter = pv.Plotter(off_screen=True)
+
+    # If cross-section is specified, create a clipped mesh
+    if cross_section is not None:
+        axis = cross_section.get('axis', 'x').lower()
+        position = cross_section.get('position', 0.0)
+        
+        # Create a clipping plane based on the axis
+        if axis == 'x':
+            normal = (1, 0, 0)
+            origin = (position, 0, 0)
+        elif axis == 'y':
+            normal = (0, 1, 0)
+            origin = (0, position, 0)
+        elif axis == 'z':
+            normal = (0, 0, 1)
+            origin = (0, 0, position)
+        else:
+            print(f"Invalid axis '{axis}'. Using 'x' instead.")
+            normal = (1, 0, 0)
+            origin = (position, 0, 0)
+        
+        # Apply clipping
+        pv_mesh = pv_mesh.clip(normal=normal, origin=origin)
+        
+        # Update title to indicate cross-section
+        if title:
+            title += f" (Cross-section {axis}={position})"
+        else:
+            title = f"Cross-section {axis}={position}"
 
     # Add mesh to plotter
     plotter.add_mesh(

@@ -5,13 +5,20 @@ from topopt_material_model import *
 from scipy.ndimage import distance_transform_edt
 import time
 
+forward_diffx = None
+backward_diffx = None
+forward_diffy = None
+backward_diffy = None
+forward_diffz = None
+backward_diffz = None
+
+
 def topopt_levelset(fe_solver: hex_structural_fea.HexStructuralFEA,
                     to_params,
                     maxIterations: int = 250,
-                    volfrac: float = 0.5,
                     time_step: float = 0.1,
                     numReinit: int = 2,
-                    topWeight: float = 3.0,
+                    topWeight: float =0,
                     debug: bool = False) -> tuple[np.ndarray, dict]:
     """Level Set Method for Topology Optimization using Hamilton-Jacobi equation in 3D.
 
@@ -32,11 +39,20 @@ def topopt_levelset(fe_solver: hex_structural_fea.HexStructuralFEA,
     tStart = time.time()
     totalIter = 1
     mesh=fe_solver.mesh
-    nx, ny, nz = fe_solver.mesh.grid
+    global forward_diffx, backward_diffx, forward_diffy, backward_diffy, forward_diffz, backward_diffz
+    forward_diffx = XDerivative(mesh,direction="forward")
+    backward_diffx = XDerivative(mesh,direction="backward")
+    forward_diffy = YDerivative(mesh,direction="forward")
+    backward_diffy = YDerivative(mesh,direction="backward")
+    forward_diffz = ZDerivative(mesh,direction="forward")
+    backward_diffz = ZDerivative(mesh,direction="backward")
+
 
     # Initialize level set function and design variables
-    lsf = reinit(np.ones((nx, ny, nz)),(nx,ny,nz))
     rho = np.ones((fe_solver.mesh.num_elems))
+    lsf = fe_solver.mesh.compute_signed_distance_function(rho)
+    fe_solver.plot_elem_field(lsf, title = f"Sdf", save_path = None,cross_section= {'axis': 'x', 'position': 0.5})
+
     shapeSens = np.zeros((fe_solver.mesh.num_elems))
     topSens = np.zeros((fe_solver.mesh.num_elems))
 
@@ -63,7 +79,7 @@ def topopt_levelset(fe_solver: hex_structural_fea.HexStructuralFEA,
         comp,u = compliance(rho, fe_solver)
         shapeSens =(-rho)* (np.dot(u[fe_solver.mesh.edofMat].reshape(fe_solver.mesh.num_elems, 24), KE) * u[fe_solver.mesh.edofMat].reshape(fe_solver.mesh.num_elems, 24)).sum(1)
         shapeSens = (H * shapeSens)/Hs
-
+        fe_solver.plot_elem_field(shapeSens, title = f"ShapeSensitivity: Iteration {iterNum}", save_path = None)
         if (elemsWithForces.size > 0):
            shapeSens[elemsWithForces] = min(shapeSens)
 
@@ -71,8 +87,8 @@ def topopt_levelset(fe_solver: hex_structural_fea.HexStructuralFEA,
            shapeSens[to_params.ElemsToKeep] = min(shapeSens)
         # Compute topological sensitivity 
         fe_solver.postprocess()
-        topSens = computeTopologicalSensitivity(fe_solver.mat_prop.poissons_ratio,fe_solver.strainComponents,fe_solver.stressComponents,rho)
-        fe_solver.plot_elem_field(shapeSens, title = f"Density: Iteration {iterNum}", save_path = None)
+        #topSens = computeTopologicalSensitivity(fe_solver.mat_prop.poissons_ratio,fe_solver.strainComponents,fe_solver.stressComponents,rho)
+        fe_solver.plot_elem_field(lsf, title = f"LSF: Iteration {iterNum}", save_path = None)
 
         # Compute objective and volume
         
@@ -95,14 +111,13 @@ def topopt_levelset(fe_solver: hex_structural_fea.HexStructuralFEA,
             la = la - 1 / La * (volCurr - to_params.DesiredVolFraction)
             La = alpha * La
         shapeSens = shapeSens - la + 1 / La * (volCurr - to_params.DesiredVolFraction)
-        topSens = topSens + np.pi * (la - 1 / La * (volCurr - to_params.DesiredVolFraction))
-        ss3D=convert_rho(shapeSens, mesh.elem_centers, mesh.elem_size, (nx,ny,nz))
-        ts3D=convert_rho(topSens, mesh.elem_centers, mesh.elem_size, (nx,ny,nz))
-        [rho,lsf] = evolve(-ss3D, ts3D * (lsf[1:-1, 1:-1, 1:-1] < 0), lsf, time_step, topWeight,(nx,ny,nz))
-        if iterNum % numReinit == 0:
-            lsf = reinit(rho,( nx,ny,nz))
-		# Update level set function using Hamilton-Jacobi equation
-        # [rho,lsf] = update_step(lsf, shapeSens, topSens, time_step, topWeight)
+        topSens= 0
+        #topSens = topSens + np.pi * (la - 1 / La * (volCurr - to_params.DesiredVolFraction))
+        [rho,lsf] = evolve(-shapeSens, topSens * (lsf< 0), lsf, time_step, topWeight)
+        fe_solver.plot_elem_field(lsf, title = f"After evolve LSF: Iteration {iterNum}", save_path = None)
+
+        if False:
+            lsf = fe_solver.mesh.compute_signed_distance_function(rho)
         fe_solver.mesh.setPseudoDensity(np.asarray(rho))
     totalTime = time.time() - tStart
     print(f"Final Compliance: {history['compliance'][-1]:.4f}, Final Volume: {history['volume'][-1]:.3f}")
@@ -110,96 +125,255 @@ def topopt_levelset(fe_solver: hex_structural_fea.HexStructuralFEA,
 
     return u, history
 
-def evolve(v, g, lsf, step_length, w,grid):
-    nx,ny,nz=grid
-    v_full = np.zeros(np.array(v.shape) + 2)
-    v_full[1:-1, 1:-1,1:-1] = v.copy()
+def computeGradUpwind(lsf: np.ndarray,shapeSens: np.ndarray) -> np.ndarray:
+	"""Compute the upwind gradient based on the velocity field.
 
-    g_full = np.zeros(np.array(g.shape) + 2)
-    g_full[1:-1, 1:-1,1:-1] = g.copy()
-    # print("Shape of v_full:", v_full)
+	Args:
+		mesh: The mesh object.
+        lsf: Level set function array.
+		v_full: Shape sensitivity array.
 
-    dt = 0.1 / np.max(np.abs(v))
-    print("dt", dt)
-    for _ in range(int(10 * step_length)):
-        #
-        # Approximate gradient using nearest neighbors in 3D
-        dpx = np.roll(lsf, -1, axis=1) - lsf 
-        dmx = lsf - np.roll(lsf, 1, axis=1)
-        dpy = np.roll(lsf, -1, axis=0) - lsf
-        dmy = lsf - np.roll(lsf, 1, axis=0)
-        dpz = np.roll(lsf, -1, axis=2) - lsf
-        dmz = lsf - np.roll(lsf, 1, axis=2)
-        grad_plus = np.sqrt(np.maximum(dmx, 0)**2 + np.maximum(dmy, 0)**2 + np.maximum(dmz, 0)**2+np.minimum(dpx, 0)**2 + np.minimum(dpy, 0)**2 + np.minimum(dpz, 0)**2)
-        grad_minus = np.sqrt(np.maximum(dpx, 0)**2 + np.maximum(dpy, 0)**2 + np.maximum(dpz, 0)**2+np.minimum(dmx, 0)**2 + np.minimum(dmy, 0)**2 + np.minimum(dmz, 0)**2)
-        lsf -= dt * (np.minimum(v_full, 0) * grad_minus + np.maximum(v_full, 0) * grad_plus + w * g_full)
-    rhofull = (lsf.copy() < 0).astype(np.float64)
-    # print("Shape of rhofull:", rhofull.shape)
-    # print("Data type of rhofull:", rhofull.dtype)
-    rho = rhofull[1:-1, 1:-1, 1:-1].copy()
-	# Count the number of elements in lsf that are less than 0
-    num_elements_less_than_zero = np.count_nonzero(lsf[1:-1, 1:-1, 1:-1] < 0)
-    # Print the result
-    print("Number of elements in lsf < 0:", num_elements_less_than_zero)
-    print("Number of non-zero elements in rho:", np.count_nonzero(rho))
-    # print(rho)
-    # print("Shape of rho:", rho.shape)
-    # print("Data type of rho:", rho.dtype)
-    rho=convert_rho(rho.copy(), fe_solver.mesh.elem_centers, fe_solver.mesh.elem_size, (nx,ny,nz))
-    return rho, lsf
+	Returns:
+		grad_upwind: Upwind gradient array.
+	"""
+	# Compute forward and backward differences in x, y, z directions
+	
 
-def reinit(rho,grid):
-    if rho.ndim == 1:
-        rho=convert_rho(rho.copy(),fe_solver.mesh.elem_centers, fe_solver.mesh.elem_size, grid)
-    
-    # Create an expanded array with padding
-    # rho=convert_rho_to_3d(rho, np.zeros((rho.shape[0], 3)), 1, rho.shape[0], rho.shape[1], rho.shape[2])
-    rho_full = np.zeros(np.array(rho.shape) + 2, dtype=int)
-    rho_full[1:-1, 1:-1, 1:-1] = rho.copy()
+	# Compute gradients
+	dpx = forward_diffx @ lsf
+	dmx = backward_diffx @ lsf
+	dpy = forward_diffy @ lsf
+	dmy = backward_diffy @ lsf
+	dpz = forward_diffz @ lsf
+	dmz = backward_diffz @ lsf
 
-    # Compute the level set function
-    lsf = (~rho_full.astype(bool)) * (distance_transform_edt(rho_full==0) - 0.5) \
-        - rho_full * (distance_transform_edt((rho_full - 1)==0) - 0.5)
-    print("Shape of lsf:", lsf.shape)
-    print("Data type of lsf:", lsf.dtype)
+	grad_plus = np.sqrt(
+		np.maximum(dmx, 0)**2 + np.maximum(dmy, 0)**2 + np.maximum(dmz, 0)**2 +
+		np.minimum(dpx, 0)**2 + np.minimum(dpy, 0)**2 + np.minimum(dpz, 0)**2
+	)
+	grad_minus = np.sqrt(
+		np.maximum(dpx, 0)**2 + np.maximum(dpy, 0)**2 + np.maximum(dpz, 0)**2 +
+		np.minimum(dmx, 0)**2 + np.minimum(dmy, 0)**2 + np.minimum(dmz, 0)**2
+	)
+	grad_upwind = (
+		np.minimum(shapeSens, 0) * grad_minus + np.maximum(shapeSens, 0) * grad_plus
+	)
 
-    return lsf
-		
-def convert_rho(rho, element_centers, element_size, grid):
-    """
-    Converts rho between 1D and 3D formats based on its shape.
+	return grad_upwind
 
-    Parameters:
-    rho (np.array): Either a 1D or 3D array of density values.
-    element_centers (np.array): Nx3 array of element center coordinates.
-    element_size (float): Fixed size of each element (assuming cubic elements).
-    nx, ny, nz (int): Dimensions of the 3D structured grid.
+def evolve(v,g,lsf,step_length,w):
+    """Evolve the level set function using the Hamilton-Jacobi equation.
+
+    Args:
+        v: Velocity field (shape sensitivity).
+        g: topological sensitivity.
+        lsf: Level set function.
+        step_length: Time step for the evolution.
+        w: Weighting factor for the gtopological sensitivity.
 
     Returns:
-    np.array: The transformed rho array (1D if input is 3D, 3D if input is 1D).
+        Updated level set function and density field.
     """
-    nx,ny,nz=grid
-    dx,dy,dz=element_size
-    if rho.ndim == 1:  # Convert 1D to 3D
-        rho_3d = np.zeros((nx, ny, nz))
-        for idx, (x, y, z) in enumerate(element_centers):
-            i = int(x // dx)
-            j = int(y // dy)
-            k = int(z //dz)
-            rho_3d[i, j, k] = rho[idx]
-        return rho_3d
+    N = 10
+    dt = (1/N) / np.max(np.abs(v))
+    print("dt", dt)
+    for _ in range(int(N * step_length)):
+        lsf -= dt * (computeGradUpwind(lsf,v))
+    rhoneg = (lsf.copy() < 0).astype(np.float64)
+    rho = rhoneg.copy()
+    return rho,lsf
 
-    elif rho.ndim == 3:  # Convert 3D to 1D
-        rho_1d = np.zeros(len(element_centers))
-        for idx, (x, y, z) in enumerate(element_centers):
-            i = int(x // dx)
-            j = int(y // dy)
-            k = int(z // dz)
-            rho_1d[idx] = rho[i, j, k]
-        return rho_1d
+def XDerivative(mesh, direction: str = "forward") -> tuple[coo_matrix, np.ndarray]:
+	"""Create a finite-difference filter matrix approximating the spatial x derivative.
+	
+	Uses forward or backward differences to approximate the derivative.
+	
+	Args:
+		mesh: The mesh object.
+		direction: Direction of the derivative, either "forward" or "backward".
+	
+	Returns:
+		tuple containing:
+			HX: Sparse matrix operator approximating the x derivative.
+			HX_s: Array of row sums of HX matrix.
+	"""
+	if direction not in {"forward", "backward"}:
+		raise ValueError("Invalid direction. Choose either 'forward' or 'backward'.")
+	
+	num_elems = mesh.num_elems
+	dx = mesh.elem_size[0]
+	rows = []
+	cols = []
+	data = []
+	
+	for i in range(num_elems):
+		elemCenter = mesh.elem_centers[i, :]
+		if direction == "forward":
+			neighbor_point = elemCenter + np.array([dx, 0, 0])
+			neighbor_idx = mesh.get_element_near_point(neighbor_point)
+			if neighbor_idx != -1:
+				# Forward difference: (f[neighbor] - f[i]) / dx
+				rows.append(i)
+				cols.append(i)
+				data.append(-1.0 / dx)
+				
+				rows.append(i)
+				cols.append(neighbor_idx)
+				data.append(1.0 / dx)
+			else:
+				# No neighbor found in the forward x direction; set derivative to zero.
+				rows.append(i)
+				cols.append(i)
+				data.append(0.0)
+		elif direction == "backward":
+			neighbor_point = elemCenter + np.array([-dx, 0, 0])
+			neighbor_idx = mesh.get_element_near_point(neighbor_point)
+			if neighbor_idx != -1:
+				# Backward difference: (f[i] - f[neighbor]) / dx
+				rows.append(i)
+				cols.append(neighbor_idx)
+				data.append(-1.0 / dx)
+				
+				rows.append(i)
+				cols.append(i)
+				data.append(1.0 / dx)
+			else:
+				# No neighbor found in the backward x direction; set derivative to zero.
+				rows.append(i)
+				cols.append(i)
+				data.append(0.0)
+	
+	HX = coo_matrix((data, (rows, cols)), shape=(num_elems, num_elems)).tocsc()
 
-    else:
-        raise ValueError("rho must be either a 1D or 3D NumPy array")
+	return HX
+
+def YDerivative(mesh,direction: str = "forward") -> tuple[coo_matrix, np.ndarray]:
+	"""Create a finite-difference filter matrix approximating the spatial y derivative.
+	
+	Uses forward or backward differences to approximate the derivative.
+	
+	Args:
+		mesh: The mesh object.
+		direction: Direction of the derivative, either "forward" or "backward".
+	
+	Returns:
+		tuple containing:
+			HY: Sparse matrix operator approximating the y derivative.
+			HY_s: Array of row sums of HY matrix.
+	"""
+	if direction not in {"forward", "backward"}:
+		raise ValueError("Invalid direction. Choose either 'forward' or 'backward'.")
+	
+	num_elems = mesh.num_elems
+	dy = mesh.elem_size[1]
+	rows = []
+	cols = []
+	data = []
+	
+	for i in range(num_elems):
+		elemCenter = mesh.elem_centers[i, :]
+		if direction == "forward":
+			neighbor_point = elemCenter + np.array([0, dy, 0])
+			neighbor_idx = mesh.get_element_near_point(neighbor_point)
+			if neighbor_idx != -1:
+				# Forward difference: (f[neighbor] - f[i]) / dy
+				rows.append(i)
+				cols.append(i)
+				data.append(-1.0 / dy)
+				
+				rows.append(i)
+				cols.append(neighbor_idx)
+				data.append(1.0 / dy)
+			else:
+				# No neighbor found in the forward y direction; set derivative to zero.
+				rows.append(i)
+				cols.append(i)
+				data.append(0.0)
+		elif direction == "backward":
+			neighbor_point = elemCenter + np.array([0, -dy, 0])
+			neighbor_idx = mesh.get_element_near_point(neighbor_point)
+			if neighbor_idx != -1:
+				# Backward difference: (f[i] - f[neighbor]) / dy
+				rows.append(i)
+				cols.append(neighbor_idx)
+				data.append(-1.0 / dy)
+				
+				rows.append(i)
+				cols.append(i)
+				data.append(1.0 / dy)
+			else:
+				# No neighbor found in the backward y direction; set derivative to zero.
+				rows.append(i)
+				cols.append(i)
+				data.append(0.0)
+	
+	HY = coo_matrix((data, (rows, cols)), shape=(num_elems, num_elems)).tocsc()
+
+	return HY
+
+def ZDerivative(mesh,direction: str = "forward") -> tuple[coo_matrix, np.ndarray]:
+	"""Create a finite-difference filter matrix approximating the spatial z derivative.
+	
+	Uses forward or backward differences to approximate the derivative.
+	
+	Args:
+		mesh: The mesh object.
+		direction: Direction of the derivative, either "forward" or "backward".
+	
+	Returns:
+		tuple containing:
+			HZ: Sparse matrix operator approximating the z derivative.
+			HZ_s: Array of row sums of HZ matrix.
+	"""
+	if direction not in {"forward", "backward"}:
+		raise ValueError("Invalid direction. Choose either 'forward' or 'backward'.")
+	
+	num_elems = mesh.num_elems
+	dz = mesh.elem_size[2]
+	rows = []
+	cols = []
+	data = []
+	
+	for i in range(num_elems):
+		elemCenter = mesh.elem_centers[i, :]
+		if direction == "forward":
+			neighbor_point = elemCenter + np.array([0, 0, dz])
+			neighbor_idx = mesh.get_element_near_point(neighbor_point)
+			if neighbor_idx != -1:
+				# Forward difference: (f[neighbor] - f[i]) / dz
+				rows.append(i)
+				cols.append(i)
+				data.append(-1.0 / dz)
+				
+				rows.append(i)
+				cols.append(neighbor_idx)
+				data.append(1.0 / dz)
+			else:
+				# No neighbor found in the forward z direction; set derivative to zero.
+				rows.append(i)
+				cols.append(i)
+				data.append(0.0)
+		elif direction == "backward":
+			neighbor_point = elemCenter + np.array([0, 0, -dz])
+			neighbor_idx = mesh.get_element_near_point(neighbor_point)
+			if neighbor_idx != -1:
+				# Backward difference: (f[i] - f[neighbor]) / dz
+				rows.append(i)
+				cols.append(neighbor_idx)
+				data.append(-1.0 / dz)
+				
+				rows.append(i)
+				cols.append(i)
+				data.append(1.0 / dz)
+			else:
+				# No neighbor found in the backward z direction; set derivative to zero.
+				rows.append(i)
+				cols.append(i)
+				data.append(0.0)
+	
+	HZ = coo_matrix((data, (rows, cols)), shape=(num_elems, num_elems)).tocsc()
+
+	return HZ
     
 if __name__ == "__main__":    
 	
@@ -213,10 +387,9 @@ if __name__ == "__main__":
 	debug = False
 
 	# Get the structural problem
-	mesh, mat_prop, bc,elem_body_force, to_params = getStructuralTOProblem(to_problem)
+	mesh, mat_prop, bc,elem_body_force, to_params = getStructuralTOProblem(to_problem,nDOFDesired=20000)
 
-	dsolver = deflation.DeflationSolver()
-    
+
 	dsolver = deflation.DeflationSolver()
 	# initialize the fe solver 
 	if (solver == lin_solv.Solvers.DPCG):
@@ -249,7 +422,6 @@ if __name__ == "__main__":
 	u, history = topopt_levelset(fe_solver=fe_solver,
                                                     to_params=to_params,
                                                     maxIterations = 50,
-                                                    volfrac = 0.5,
                                                     time_step = 1,
                                                     numReinit = 2,
                                                     topWeight = 0,
