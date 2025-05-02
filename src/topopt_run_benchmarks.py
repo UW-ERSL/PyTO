@@ -29,13 +29,13 @@ def runTOMethodOnBenchmarks(optimizationMethod):
 						StructuralTOExamples.CentrifugalPlate]
 	
 	benchmarks_3D_problems = [StructuralTOExamples.EdgeCantilever, 
+						   StructuralTOExamples.ThreeHoleBracket, 
+						 StructuralTOExamples.Multiload,
 						   StructuralTOExamples.LBracketThickTopLoad,
 						StructuralTOExamples.LBracketThickMidLoad,
-						StructuralTOExamples.ThreeHoleBracket, 
-						 StructuralTOExamples.Multiload,
 						StructuralTOExamples.Table]
 	
-	for to_problem in benchmarks_2_5D_problems:
+	for to_problem in benchmarks_3D_problems:
 		if to_problem in benchmarks_2_5D_problems:
 			subFolder = "2.5D"
 		elif to_problem in benchmarks_3D_problems:
@@ -50,7 +50,7 @@ def runTOMethodOnBenchmarks(optimizationMethod):
 		print_progress = False
 		mesh, mat_prop, bc,elem_body_force, to_params = getStructuralTOProblem(to_problem)
 		dsolver = deflation.DeflationSolver()
-		if (to_params.nDOFDesired <= 100000):#  # Choose solver. Typically PARDISO, but DPCG for large DOF problems
+		if (to_params.nDOFDesired <= DIRECT_SOLVER_DOF_CUTOFF):#  # Choose solver. Typically PARDISO, but DPCG for large DOF problems
 			solver = lin_solv.Solvers.PARDISO
 		else:
 			solver = lin_solv.Solvers.DPCG
@@ -264,6 +264,6 @@ if __name__ == "__main__":
 		print(f"Finished {optimizationMethod.name} tests.")
 		print("-" * 50)
 		print("\n")
-	
+
 	# Combine results from all methods
 	combine_results()

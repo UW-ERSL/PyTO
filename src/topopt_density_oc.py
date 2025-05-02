@@ -30,10 +30,7 @@ def topopt_optimality_criteria(
 	material_model = MaterialModel.SIMP 
 	tStart = time.time()
 	elem_body_force = fe_solver.elem_body_force
-	if elem_body_force is None or (np.linalg.norm(elem_body_force) == 0):
-		set_SIMP_PENALTY_MAX(3.0)
-	else:
-		set_SIMP_PENALTY_MAX(10.0)
+
 
 	num_elems = fe_solver.mesh.num_elems
 	if (print_progress):
@@ -199,7 +196,7 @@ if __name__ == "__main__":
 	from topopt_benchmarks import *
 
 	print("-" * 50)
-	to_problem = StructuralTOExamples.GravityPlate # Choose the TO problem
+	to_problem = StructuralTOExamples.Table # Choose the TO problem
 	print(f"Running {to_problem.name}...") 
 	print("-" * 50)
 	solver = lin_solv.Solvers.PARDISO # # Choose solver. Typically PARDISO, but DPCG for DOF > 200,000
@@ -209,7 +206,7 @@ if __name__ == "__main__":
 	mesh, mat_prop, bc,elem_body_force, to_params = getStructuralTOProblem(to_problem)
 
 	dsolver = deflation.DeflationSolver()
-	if (to_params.nDOFDesired <= 50000):#  # Choose solver. Typically PARDISO, but DPCG for large DOF problems
+	if (to_params.nDOFDesired <= DIRECT_SOLVER_DOF_CUTOFF):#  # Choose solver. Typically PARDISO, but DPCG for large DOF problems
 		solver = lin_solv.Solvers.PARDISO
 	else:
 		solver = lin_solv.Solvers.DPCG

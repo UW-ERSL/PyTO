@@ -1811,7 +1811,7 @@ def createTableProblem(nDOFDesired: int = 10000, youngs_modulus = 1e7,
   mesh.node_indices[load_nodes, 3] = 2 # for plotting
   load_dofs = 3 * load_nodes + 1  # y direction
 
-  load_per_dof = totalLoad/len(load_nodes)
+  load_per_dof = -totalLoad/len(load_nodes)
   force = np.zeros(3*mesh.num_nodes)
   force[load_dofs] = load_per_dof
   bc = bound_cond.BC(force = force,fixed_dofs = fixed_dofs,dirichlet_values = dirichlet_values) 

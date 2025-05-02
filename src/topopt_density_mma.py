@@ -219,7 +219,7 @@ if __name__ == "__main__":
 	from topopt_benchmarks import *
 	
 	print("-" * 50)
-	to_problem = StructuralTOExamples.CentrifugalPlate # Choose the TO problem
+	to_problem = StructuralTOExamples.GravityPlate # Choose the TO problem
 	print(f"Running {to_problem.name}...") 
 	print("-" * 50)
 	solver = lin_solv.Solvers.PARDISO # # Choose solver. Typically PARDISO, but DPCG for DOF > 200,000
@@ -229,7 +229,7 @@ if __name__ == "__main__":
 	mesh, mat_prop, bc,elem_body_force, to_params = getStructuralTOProblem(to_problem)
 
 	dsolver = deflation.DeflationSolver()
-	if (to_params.nDOFDesired <= 50000):#  # Choose solver. Typically PARDISO, but DPCG for large DOF problems
+	if (to_params.nDOFDesired <= DIRECT_SOLVER_DOF_CUTOFF):#  # Choose solver. Typically PARDISO, but DPCG for large DOF problems
 		solver = lin_solv.Solvers.PARDISO
 	else:
 		solver = lin_solv.Solvers.DPCG

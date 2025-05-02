@@ -12,8 +12,8 @@ EVOID_RELATIVE = 1e-8  # Minimum Young's modulus for void elements
 
 class MaterialModel(enum.Enum):
 	SIMP = enum.auto()
-	SIMPPLUS = enum.auto()
 	RAMP = enum.auto()
+	SIMPPLUS = enum.auto()
 
 
 def set_SIMP_PENALTY_MAX(value: float) -> None:
@@ -45,7 +45,11 @@ def get_material_model_scaling(x: np.ndarray, material_model: MaterialModel) -> 
 	elif material_model == MaterialModel.SIMP:
 		return (EVOID_RELATIVE + (x**SIMP_PENALTY)*(1 - EVOID_RELATIVE))  # SIMP model
 	elif material_model == MaterialModel.RAMP:
-		return (EVOID_RELATIVE + x / (1 + (1 - x) * SIMP_PENALTY))  # RAMP model
+		return (EVOID_RELATIVE + x*(1-EVOID_RELATIVE) / (1 + (1 - x) * SIMP_PENALTY))  # RAMP model
+	elif material_model == MaterialModel.SIMPPLUS:
+		y1 = (EVOID_RELATIVE + (x**SIMP_PENALTY)*(1 - EVOID_RELATIVE))
+		y2 = EVOID_RELATIVE*x
+		return (y1+y2)/2
 	raise ValueError("Invalid material model specified.")	
 	
 def get_material_model_sensitivity(x: np.ndarray, material_model: MaterialModel) -> np.ndarray:
@@ -62,7 +66,11 @@ def get_material_model_sensitivity(x: np.ndarray, material_model: MaterialModel)
 	elif material_model == MaterialModel.SIMP:
 		return (SIMP_PENALTY*(x**(SIMP_PENALTY-1))*(1 - EVOID_RELATIVE))  # SIMP model
 	elif material_model == MaterialModel.RAMP:
-		return (1 / (1 + (1 - x) * SIMP_PENALTY)**2) * (1 + SIMP_PENALTY * (1 - x))
+		return ((1-EVOID_RELATIVE) / (1 + (1 - x) * SIMP_PENALTY)**2) * (1 + SIMP_PENALTY * (1 - x))
+	elif material_model == MaterialModel.SIMPPLUS:
+		y1 = (SIMP_PENALTY*(x**(SIMP_PENALTY-1))*(1 - EVOID_RELATIVE))
+		y2 = EVOID_RELATIVE
+		return (y1+y2)/2
 	else:			
 		raise ValueError("Invalid material model specified.")	
 	
