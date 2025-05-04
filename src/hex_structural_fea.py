@@ -622,15 +622,15 @@ if __name__ == "__main__":
   problem = StructuralExamples.LBracket
   nDOFDesired = 10000
   mesh, mat_prop, bc,elem_body_force = getStructuralProblem(problem,nDOFDesired = nDOFDesired)
-  solver = linear_solvers.Solvers.PARDISO # typically DPCG or PARDISO
-  solver = linear_solvers.Solvers.DPCG 
+  solver = linear_solvers.Solvers.DPCG # typically DPCG or PARDISO
+
   dsolver = deflation.DeflationSolver()
   startTime = time.time()
   if (solver == linear_solvers.Solvers.DPCG):
     nGroups =  min(dsolver.maxGroups,max(dsolver.minGroups,round(3*mesh.num_nodes/dsolver.dofPerGroup)))
     dsolver.create_deflation_groups(mesh, nGroups)
-    dsolver.plot_deflation_groups(mesh)
-    dsolver.create_delfation_matrix(mesh)
+    #dsolver.plot_deflation_groups(mesh)
+    dsolver.create_deflation_matrix(mesh)
     dsolver.W = dsolver.W[bc.free_dofs, :]
   
   fe_solver = HexStructuralFEA(mesh = mesh,

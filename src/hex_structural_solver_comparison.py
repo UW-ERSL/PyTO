@@ -83,7 +83,7 @@ for dofDesired in dofs:
 			solver = lin_solv.Solvers.DPCG
 			nGroups =  min(dsolver.maxGroups,max(dsolver.minGroups,round(3*mesh.num_nodes/dsolver.dofPerGroup)))
 			dsolver.create_deflation_groups(mesh, nGroups)
-			dsolver.create_delfation_matrix(mesh)
+			dsolver.create_deflation_matrix(mesh)
 			dsolver.W = dsolver.W[bc.free_dofs, :]
 		elif (linearSolver == 'pycg'):
 			solver = lin_solv.Solvers.CG

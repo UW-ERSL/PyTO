@@ -38,9 +38,9 @@ class largeDeformationFEA:
         self.solver = solver
         if (self.solver == linear_solvers.Solvers.DPCG):
             print('Using DPCG Solver')
-            nGroups =  min(2000,max(10,round(3*mesh.num_nodes/500)))
+            nGroups =  min(dsolver.maxGroups,max(dsolver.minGroups,round(3*mesh.num_nodes/dsolver.dofPerGroup)))
             dsolver.create_deflation_groups(mesh, nGroups)
-            dsolver.create_delfation_matrix(mesh)
+            dsolver.create_deflation_matrix(mesh)
             dsolver.W = dsolver.W[bc.free_dofs, :]
         elif (self.solver == linear_solvers.Solvers.PARDISO):
             print('Using Pardiso Solver')

@@ -218,7 +218,7 @@ if __name__ == "__main__":
         print('Number of deflation groups: ', nGroups)
         dsolver.create_deflation_groups(quadratic_tet_mesh, nGroups)
         #dsolver.plot_deflation_groups(quadratic_tet_mesh)
-        dsolver.create_delfation_matrix(quadratic_tet_mesh)
+        dsolver.create_deflation_matrix(quadratic_tet_mesh)
         dsolver.W = dsolver.W[bc.free_dofs, :]
   
     fe_solver = TetStructuralFEA(quadratic_tet_mesh,
