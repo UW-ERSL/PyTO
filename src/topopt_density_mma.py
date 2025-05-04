@@ -34,7 +34,6 @@ def topopt_mma(fe_solver: hex_structural_fea.HexStructuralFEA,
 
 	elem_body_force = fe_solver.elem_body_force
 	
-	
 	tStart = time.time()
 	num_elems= fe_solver.mesh.num_elems
 	history = {'compliance': [], 'volume': [], 'change': []}
@@ -99,15 +98,12 @@ def topopt_mma(fe_solver: hex_structural_fea.HexStructuralFEA,
 		timeFEA += time.time() - timeFEAStart
 		obj = np.array([obj])
 
-		
 		ce = (np.dot(u[fe_solver.mesh.edofMat].reshape(num_elems, 24), KE) * u[fe_solver.mesh.edofMat].reshape(num_elems, 24)).sum(1)
 		grad_obj = -get_material_model_sensitivity(x,material_model) * ce
 		
 		if (nodal_body_force is not None):
 			ce_body_force = (u[fe_solver.mesh.edofMat].reshape(num_elems, 24) * nodal_body_force[fe_solver.mesh.edofMat].reshape(num_elems, 24)).sum(1)
 			grad_obj +=  2*ce_body_force
-	
-		
 
 		grad_obj = (H * grad_obj)/Hs
 		if (elemsWithForces.size > 0):

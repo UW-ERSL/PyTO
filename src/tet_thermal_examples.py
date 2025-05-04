@@ -68,10 +68,10 @@ def createThickPlateThermalProblemTet(nDOFDesired: int = 10000,thermal_conductiv
     tetmesh.createTetMeshFromSTLFile(stl_file, nElemsDesired=nElemsDesired)
     
 
-    fixed_nodes = np.where(tetmesh.nodes[:, 0] == np.min(tetmesh.nodes[:, 0]) )[0] # x = xMin plane
+    fixed_nodes = np.where(tetmesh.node_xyz[:, 0] == np.min(tetmesh.node_xyz[:, 0]) )[0] # x = xMin plane
     fixed_dofs = np.array([fixed_nodes]).flatten().astype(int)
     dirichlet_values =23*np.ones_like(fixed_dofs, dtype = float)
-    load_nodes = np.where(tetmesh.nodes[:, 0] == np.max(tetmesh.nodes[:, 0]) )[0] # x = xMax plane
+    load_nodes = np.where(tetmesh.node_xyz[:, 0] == np.max(tetmesh.node_xyz[:, 0]) )[0] # x = xMax plane
     tri_surface_indices = tetmesh.get_surface_triangles_with_all_nodes_in_node_set(load_nodes)
     #tri_surface_indices =  tetmesh.get_surface_triangles_on_bounding_box(axis_dir = 0,min_plane = False)
  
@@ -166,13 +166,13 @@ def createLBracketThermalProblemTet(nDOFDesired = 10000,thermal_conductivity = 5
     tetmesh.createTetMeshFromSTLFile(stl_file, nElemsDesired)
     #tetmesh.plot()
 
-    yMax = np.max(tetmesh.nodes[:, 1])
-    fixed_nodes = np.where(tetmesh.nodes[:, 1] == yMax )[0] 
+    yMax = np.max(tetmesh.node_xyz[:, 1])
+    fixed_nodes = np.where(tetmesh.node_xyz[:, 1] == yMax )[0] 
     fixed_dofs = np.array([fixed_nodes]).flatten().astype(int)
     dirichlet_values = 0 * np.ones_like(fixed_dofs, dtype=float)
 
 
-    load_nodes = np.where(tetmesh.nodes[:, 0] == np.max(tetmesh.nodes[:, 0]) )[0] # x = xMax plane
+    load_nodes = np.where(tetmesh.node_xyz[:, 0] == np.max(tetmesh.node_xyz[:, 0]) )[0] # x = xMax plane
     tri_surface_indices = tetmesh.get_surface_triangles_with_all_nodes_in_node_set(load_nodes)
 
     force = tetmesh.integrate_over_surface_triangles(heat_load, tri_surface_indices)

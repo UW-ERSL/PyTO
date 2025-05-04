@@ -1,7 +1,6 @@
 import enum
 from hex_structural_examples import *
-import hex_structural_fea as sfea
-from topopt_common import TOParams
+from topopt_common import TOParams, find_elements_with_fixedDOF
 
 class StructuralTOExamples(enum.Enum):
 	Mitchell_1 = enum.auto()
@@ -28,28 +27,6 @@ class StructuralTOExamples(enum.Enum):
 	Table = enum.auto()
 	BliskWithBlade = enum.auto()
 	NoseCone = enum.auto()
-
-    
-def find_elements_with_fixedDOF(mesh, bc) -> np.ndarray:
-	"""Find all elements that have nodes with fixed degrees of freedom.
-	
-	Args:
-		mesh: The mesh object.
-		bc: The boundary conditions object.
-	
-	Returns:
-		Array of element indices that have nodes with fixed degrees of freedom.
-	"""
-	fixed_dofs = bc.fixed_dofs
-	fixed_nodes = set(fixed_dofs // 3)  # Convert DOFs to node indices
-	elements_with_fixed_dofs = []
-
-	for elem in range(mesh.num_elems):
-		nodes =mesh.elemArray[elem]
-		if any(node in fixed_nodes for node in nodes):
-			elements_with_fixed_dofs.append(elem)
-
-	return np.array(elements_with_fixed_dofs)
 
 def getStructuralTOProblem(to_problem: StructuralTOExamples,nDOFDesired = None, **kwargs):
     """Get the structural topology optimization problem based on the specified example.

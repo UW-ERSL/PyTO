@@ -1,6 +1,7 @@
 import time
 import numpy as np
-import linear_solvers as lin_sol
+import linear_solvers 
+import deflation
 import mat_lib
 import bound_cond
 import pyvista as pv # pip install pyvista
@@ -104,7 +105,7 @@ class TetStructuralFEA:
 							 quadratic_tet_mesh,
 							 mat_prop: mat_lib.StructuralMaterial,
 							 bc: bound_cond.BC,
-							 solver: lin_sol.Solvers,
+							 solver: linear_solvers.Solvers,
 							 **kwargs):
 
     
@@ -136,7 +137,7 @@ class TetStructuralFEA:
         
         for elem_idx in range(self.mesh.num_elems):
             # Get nodal coordinates for this element     
-            elem_nodes = self.mesh.nodes[self.mesh.elems[elem_idx]]
+            elem_nodes = self.mesh.node_xyz[self.mesh.elems[elem_idx]]
             # Calculate element stiffness matrix
             k_elem = tet10_stiffness_matrix_structural(self.mat_prop.youngs_modulus, self.mat_prop.poissons_ratio,elem_nodes)
             data.append(k_elem.flatten())
@@ -164,7 +165,7 @@ class TetStructuralFEA:
     Returns: Array of (num_dofs,) of the solution to the finite element problem.
     """
   
-    self.sol =  lin_sol.solve(self.K,
+    self.sol =  linear_solvers.solve(self.K,
                       self.bc.force,
                       self.solver,
                       self.bc,
@@ -179,14 +180,14 @@ class TetStructuralFEA:
     # Create a PyVista plotter
     plotter = pv.Plotter()
     # Create a PyVista mesh from the tetrahedral mesh
-    pv_mesh = pv.UnstructuredGrid({pv.CellType.TETRA: self.mesh.elems[:,0:4]}, self.mesh.nodes)
+    pv_mesh = pv.UnstructuredGrid({pv.CellType.TETRA: self.mesh.elems[:,0:4]}, self.mesh.node_xyz)
     
     sol = self.sol.copy()
     sol = sol.reshape((-1, 3))
    
 
     deltaMax = self.max_deformation
-    L = np.max([np.max(self.mesh.nodes[:,i]) - np.min(self.mesh.nodes[:,i]) for i in range(3)])
+    L = np.max([np.max(self.mesh.node_xyz[:,i]) - np.min(self.mesh.node_xyz[:,i]) for i in range(3)])
     scale = float(0.2*L/deltaMax)
     deformed_mesh = pv_mesh.copy()
     deformed_mesh.points += scale*sol[:,0:4]
@@ -205,14 +206,27 @@ if __name__ == "__main__":
     import time	
     from tet_structural_examples import TetStructuralExamples, getTetStructuralProblem
    
-    problem = TetStructuralExamples.BeamBending # CubeCompression, TensileBar, BeamBending
-    quadratic_tet_mesh, mat_prop, bc, elem_body_force  = getTetStructuralProblem(problem,nDOFDesired = 1000)
+    problem = TetStructuralExamples.BeamBending 
+    quadratic_tet_mesh, mat_prop, bc, elem_body_force  = getTetStructuralProblem(problem,nDOFDesired = 100000)
     
-    solver = lin_sol.Solvers.PARDISO # typically DPCG or PARDISO
+    solver = linear_solvers.Solvers.DPCG # typically DPCG or PARDISO
+
+    dsolver = deflation.DeflationSolver()
+    startTime = time.time()
+    if (solver == linear_solvers.Solvers.DPCG):
+        nGroups =  min(dsolver.maxGroups,max(dsolver.minGroups,round(3*quadratic_tet_mesh.num_nodes/dsolver.dofPerGroup)))
+        print('Number of deflation groups: ', nGroups)
+        dsolver.create_deflation_groups(quadratic_tet_mesh, nGroups)
+        #dsolver.plot_deflation_groups(quadratic_tet_mesh)
+        dsolver.create_delfation_matrix(quadratic_tet_mesh)
+        dsolver.W = dsolver.W[bc.free_dofs, :]
+  
     fe_solver = TetStructuralFEA(quadratic_tet_mesh,
                 mat_prop=mat_prop,
                 bc=bc,
-                solver=solver)
+                solver=solver,
+                dsolver=dsolver,
+                rtol = 1e-8)
 
     startTime = time.time()
     fe_solver.assemble_global_stiffness_matrix()
@@ -220,7 +234,7 @@ if __name__ == "__main__":
     delta = np.max(np.abs(fe_solver.deformation))
     
     # Store results
-    nDOF = fe_solver.mesh.num_nodes
+    nDOF = 3*fe_solver.mesh.num_nodes
     
     print('-----------------------------')
     print("nDof: ", nDOF)

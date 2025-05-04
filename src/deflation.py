@@ -12,13 +12,14 @@ from typing import TypeAlias, Union
 import numpy as np
 import scipy.sparse as spy_sprs
 import scipy.linalg as spy_linalg
+from hex_mesher import HexMesher
 # Mac does not support pypardiso, so we skip it for now
 try:
   import pypardiso # pip install pypardiso
 except ImportError:
   pypardiso = None
 import scipy
-
+import pyvista as pv
 from scipy.sparse import csr_matrix
 
 _Array: TypeAlias = Union[spy_sprs.coo_matrix,
@@ -276,7 +277,32 @@ class DeflationSolver:
 
 		#print("Finished computing W Matrix")
 		return
+	def plot_deflation_groups(self,mesh: HexMesher):
+		# Create vertices array
+		vertices = mesh.node_xyz.copy()
+		
+		# Create PyVista point cloud
+		points = pv.PolyData(vertices)
 
+		# Add group numbers as scalar data
+		points.point_data['groups'] = self.ws_nodeGroupNumber
+
+		# Create plotter
+		plotter = pv.Plotter()
+		plotter.set_background('white')
+
+		# Add points with group coloring
+		plotter.add_mesh(points, scalars='groups', 
+						point_size=7,
+						render_points_as_spheres=True,
+						cmap='rainbow')
+
+		# Add axes
+		plotter.add_axes()
+
+		# Set camera for isometric view
+		plotter.view_isometric()
+		plotter.show()
 
 	def deflatedPCG(self,
 									K: _Array,

@@ -42,26 +42,26 @@ def getTetStructuralProblem(problem: TetStructuralExamples, **kwargs):
 def createTensileBarTetStructuralProblem(nDOFDesired: int = 10000, E = 2e11, nu = 0.3, totalLoad = 100000):
     # Read the STL model, create a mesh of desired size, and a structural problem is posed on it.
     stl_file = os.path.join(script_dir, '../Models/Beam/Beam.STL')
-    nElemsDesired = nDOFDesired//3    # estimate (3 DOFs per node for structural)
+    nElemsDesired = nDOFDesired//6    # estimate (3 DOFs per node for structural)
     tetmesh = TetMesher()
     
     tetmesh.createTetMeshFromSTLFile(stl_file, nElemsDesired=nElemsDesired)
     quadratic_mesh = tetmesh.createQuadraticTetMesh()    
 
     # Fixed boundary condition at x = xMin plane (all DOFs fixed)
-    xmin = np.min(quadratic_mesh.nodes[:, 0])
+    xmin = np.min(quadratic_mesh.node_xyz[:, 0])
    
     tol = 1e-8
-    fixed_nodes = np.where(np.abs(quadratic_mesh.nodes[:, 0] - xmin) <= tol)[0]
+    fixed_nodes = np.where(np.abs(quadratic_mesh.node_xyz[:, 0] - xmin) <= tol)[0]
     fixed_dofs = np.concatenate([3*fixed_nodes, 3*fixed_nodes+1, 3*fixed_nodes+2])
     dirichlet_values = np.zeros_like(fixed_dofs, dtype=float)
     # Load application at x = xMax plane
-    xmax = np.max(quadratic_mesh.nodes[:, 0])
+    xmax = np.max(quadratic_mesh.node_xyz[:, 0])
  
-    load_nodes = np.where(np.abs(quadratic_mesh.nodes[:, 0] - xmax) <= tol)[0]
+    load_nodes = np.where(np.abs(quadratic_mesh.node_xyz[:, 0] - xmax) <= tol)[0]
     load_dof = 3*load_nodes
 
-    force = np.zeros(3 * quadratic_mesh.nodes.shape[0])
+    force = np.zeros(3 * quadratic_mesh.node_xyz.shape[0])
     force[load_dof] = totalLoad / len(load_nodes)  # x-direction load
 
     bc = bound_cond.BC(force=force, fixed_dofs=fixed_dofs, dirichlet_values=dirichlet_values)
@@ -74,25 +74,25 @@ def createTensileBarTetStructuralProblem(nDOFDesired: int = 10000, E = 2e11, nu 
 def createBeamBendingTetStructuralProblem(nDOFDesired: int = 10000, E = 2e11, nu = 0.3, totalLoad = 10000):
     # Read the STL model, create a mesh of desired size, and a structural problem is posed on it.
     stl_file = os.path.join(script_dir, '../Models/Beam/Beam.STL')
-    nElemsDesired = nDOFDesired // 3  # estimate (3 DOFs per node for structural)
+    nElemsDesired = nDOFDesired // 6 # estimate (3 DOFs per node for structural)
     tetmesh = TetMesher()
 
     tetmesh.createTetMeshFromSTLFile(stl_file, nElemsDesired=nElemsDesired)
     quadratic_mesh = tetmesh.createQuadraticTetMesh()
 
     # Fixed boundary condition at x = xMin plane (all DOFs fixed)
-    xmin = np.min(quadratic_mesh.nodes[:, 0])
+    xmin = np.min(quadratic_mesh.node_xyz[:, 0])
     tol = 1e-6
-    fixed_nodes = np.where(np.abs(quadratic_mesh.nodes[:, 0] - xmin) <= tol)[0]
+    fixed_nodes = np.where(np.abs(quadratic_mesh.node_xyz[:, 0] - xmin) <= tol)[0]
     fixed_dofs = np.concatenate([3 * fixed_nodes, 3 * fixed_nodes + 1, 3 * fixed_nodes + 2])
     dirichlet_values = np.zeros_like(fixed_dofs, dtype=float)
 
  
-    xmax = np.max(quadratic_mesh.nodes[:, 0])
-    load_nodes = np.where(np.abs(quadratic_mesh.nodes[:, 0] - xmax) <= tol)[0]
+    xmax = np.max(quadratic_mesh.node_xyz[:, 0])
+    load_nodes = np.where(np.abs(quadratic_mesh.node_xyz[:, 0] - xmax) <= tol)[0]
     load_dof = 3 * load_nodes + 1  # y-direction DOFs
 
-    force = np.zeros(3 * quadratic_mesh.nodes.shape[0])
+    force = np.zeros(3 * quadratic_mesh.node_xyz.shape[0])
     force[load_dof] = -totalLoad / len(load_nodes)  # y-direction load
 
     bc = bound_cond.BC(force=force, fixed_dofs=fixed_dofs, dirichlet_values=dirichlet_values)
@@ -105,25 +105,25 @@ def createBeamBendingTetStructuralProblem(nDOFDesired: int = 10000, E = 2e11, nu
 def createCubeCompressionTetStructuralProblem(nDOFDesired: int = 10000, E = 2e11, nu = 0.3, totalLoad = 10000):
     # Read the STL model, create a mesh of desired size, and a structural problem is posed on it.
     stl_file = os.path.join(script_dir, '../Models/Cube/Cube.STL')
-    nElemsDesired = nDOFDesired//3    # estimate (3 DOFs per node for structural)
+    nElemsDesired = nDOFDesired//6    # estimate (3 DOFs per node for structural)
     tetmesh = TetMesher()
     
     tetmesh.createTetMeshFromSTLFile(stl_file, nElemsDesired=nElemsDesired)
     quadratic_mesh = tetmesh.createQuadraticTetMesh()    
 
     # Fixed boundary condition at x = xMin plane (all DOFs fixed)
-    xmin = np.min(quadratic_mesh.nodes[:, 0])
+    xmin = np.min(quadratic_mesh.node_xyz[:, 0])
    
     tol = 1e-8
-    fixed_nodes = np.where(np.abs(quadratic_mesh.nodes[:, 0] - xmin) <= tol)[0]
+    fixed_nodes = np.where(np.abs(quadratic_mesh.node_xyz[:, 0] - xmin) <= tol)[0]
     fixed_dofs = np.concatenate([3*fixed_nodes, 3*fixed_nodes+1, 3*fixed_nodes+2])
     dirichlet_values = np.zeros_like(fixed_dofs, dtype=float)
     # Load application at x = xMax plane
-    xmax = np.max(quadratic_mesh.nodes[:, 0])
-    load_nodes = np.where(np.abs(quadratic_mesh.nodes[:, 0] - xmax) <= tol)[0]
+    xmax = np.max(quadratic_mesh.node_xyz[:, 0])
+    load_nodes = np.where(np.abs(quadratic_mesh.node_xyz[:, 0] - xmax) <= tol)[0]
     load_dof = 3*load_nodes
 
-    force = np.zeros(3 * quadratic_mesh.nodes.shape[0])
+    force = np.zeros(3 * quadratic_mesh.node_xyz.shape[0])
     force[load_dof] = -totalLoad / len(load_nodes)  # x-direction load
 
     bc = bound_cond.BC(force=force, fixed_dofs=fixed_dofs, dirichlet_values=dirichlet_values)
@@ -136,26 +136,26 @@ def createCubeCompressionTetStructuralProblem(nDOFDesired: int = 10000, E = 2e11
 def createThickPlateTetStructuralProblem(nDOFDesired: int = 10000, E = 2e11, nu = 0.3, totalLoad = 100000):
     # Read the STL model, create a mesh of desired size, and a structural problem is posed on it.
     stl_file = os.path.join(script_dir, '../Models/ThickPlate/ThickPlate.STL')
-    nElemsDesired = nDOFDesired//3    # estimate (3 DOFs per node for structural)
+    nElemsDesired = nDOFDesired//6    # estimate (3 DOFs per node for structural)
     tetmesh = TetMesher()
     
     tetmesh.createTetMeshFromSTLFile(stl_file, nElemsDesired=nElemsDesired)
     quadratic_mesh = tetmesh.createQuadraticTetMesh()    
 
     # Fixed boundary condition at x = xMin plane (all DOFs fixed)
-    xmin = np.min(quadratic_mesh.nodes[:, 0])
+    xmin = np.min(quadratic_mesh.node_xyz[:, 0])
    
     tol = 1e-8
-    fixed_nodes = np.where(np.abs(quadratic_mesh.nodes[:, 0] - xmin) <= tol)[0]
+    fixed_nodes = np.where(np.abs(quadratic_mesh.node_xyz[:, 0] - xmin) <= tol)[0]
     fixed_dofs = np.concatenate([3*fixed_nodes, 3*fixed_nodes+1, 3*fixed_nodes+2])
     dirichlet_values = np.zeros_like(fixed_dofs, dtype=float)
   
     # Load application at x = xMax plane
-    xmax = np.max(quadratic_mesh.nodes[:, 0])
-    load_nodes = np.where(np.abs(quadratic_mesh.nodes[:, 0] - xmax) <= tol)[0]
+    xmax = np.max(quadratic_mesh.node_xyz[:, 0])
+    load_nodes = np.where(np.abs(quadratic_mesh.node_xyz[:, 0] - xmax) <= tol)[0]
     load_dof = 3*load_nodes+2  
 
-    force = np.zeros(3 * quadratic_mesh.nodes.shape[0])
+    force = np.zeros(3 * quadratic_mesh.node_xyz.shape[0])
     force[load_dof] = totalLoad / len(load_nodes)  # x-direction load
 
     bc = bound_cond.BC(force=force, fixed_dofs=fixed_dofs, dirichlet_values=dirichlet_values)

@@ -19,7 +19,7 @@ class TetTransientThermalFEA:
 
         self.mesh = mesh
         self.mat_prop = mat_prop
-        self.initial_temp = T0*np.ones_like(mesh.nodes[:, 0])
+        self.initial_temp = T0*np.ones_like(mesh.node_xyz[:, 0])
         self.edofMat = np.array(self.mesh.elems[:, :4], dtype=int)
         self.node_idx = np.stack((
               np.kron(self.edofMat, np.ones((4, 1))).flatten(),
@@ -53,7 +53,7 @@ class TetTransientThermalFEA:
         start_time = time.time()
         K = self.mat_prop.thermal_conductivity
         for i in range(self.mesh.num_elems):
-            elem_nodes = self.mesh.nodes[self.mesh.elems[i]]
+            elem_nodes = self.mesh.node_xyz[self.mesh.elems[i]]
             elem_stiff = tet4_stiffness_matrix_thermal(K, elem_nodes)
             data.append(elem_stiff.flatten())
 
@@ -64,7 +64,7 @@ class TetTransientThermalFEA:
         for i in range(self.mesh.num_elems):
             elem_specific_heat =  tet4_specific_heat_matrix(self.mat_prop.specific_heat,
                                                                         self.mat_prop.mass_density, 
-                                                                        self.mesh.nodes[self.edofMat[i, :]])
+                                                                        self.mesh.node_xyz[self.edofMat[i, :]])
             datasp.append( elem_specific_heat.flatten())
 
         elem_specific_heat_stacked = np.concatenate(datasp)

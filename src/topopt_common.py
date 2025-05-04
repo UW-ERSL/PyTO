@@ -18,8 +18,6 @@ class TO_METHODS(enum.Enum):
 	PARETO = enum.auto()
 	LEVELSET = enum.auto()
 
-
-
 class TOParams: # These are the default parameters
     Comment = "" # Comment for the topology optimization problem
     nDOFDesired = 20000 # Desired number of degrees of freedom in the finite element problem
@@ -108,6 +106,28 @@ def compliance(x: np.ndarray,
 	u = fe_solver.solve(x, material_model)
 	return np.einsum('i, i -> ', fe_solver.total_force, u), u
 
+
+    
+def find_elements_with_fixedDOF(mesh, bc) -> np.ndarray:
+	"""Find all elements that have nodes with fixed degrees of freedom.
+	
+	Args:
+		mesh: The mesh object.
+		bc: The boundary conditions object.
+	
+	Returns:
+		Array of element indices that have nodes with fixed degrees of freedom.
+	"""
+	fixed_dofs = bc.fixed_dofs
+	fixed_nodes = set(fixed_dofs // 3)  # Convert DOFs to node indices
+	elements_with_fixed_dofs = []
+
+	for elem in range(mesh.num_elems):
+		nodes =mesh.elemArray[elem]
+		if any(node in fixed_nodes for node in nodes):
+			elements_with_fixed_dofs.append(elem)
+
+	return np.array(elements_with_fixed_dofs)
 
 def createFilters(fe_solver: hex_structural_fea.HexStructuralFEA,to_params):
 	# Create  filters

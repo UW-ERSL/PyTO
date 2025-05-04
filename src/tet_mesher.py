@@ -20,7 +20,7 @@ class TetMesher:
         nElemsDesired (int, optional): The desired number of tetrahedral elements. Default is 10000.
         Attributes:
         self.stlMesh (pyvista.PolyData): The cleaned and repaired STL surface mesh.
-        self.nodes (numpy.ndarray): The array of node coordinates.
+        self.node_xyz (numpy.ndarray): The array of node coordinates.
         self.elems (numpy.ndarray): The array of tetrahedral elements.
         self.num_nodes (int): The number of nodes in the mesh.
         self.num_elems (int): The number of elements in the mesh.
@@ -51,9 +51,10 @@ class TetMesher:
             nodes, elements = tet.tetrahedralize(switches=f"pq1.5a{max_tet_volume}Q")
         else:
             nodes, elements = tet.tetrahedralize(switches=f"pq1.5a{max_tet_volume}QM")
-        self.nodes = nodes
+        self.node_xyz = nodes
+        self.origin = np.min(self.node_xyz, axis=0)
         self.elems = elements
-        self.num_nodes = len(self.nodes)
+        self.num_nodes = len(self.node_xyz)
         self.num_elems = len(self.elems)
         print(f"Tetmesh: Number of nodes: {self.num_nodes}, Number of elements: {self.num_elems}")
 
@@ -88,7 +89,7 @@ class TetMesher:
 
         element_sizes = np.zeros(self.num_elems)
         for i in range(self.num_elems):
-            element_sizes[i] = np.linalg.norm(self.nodes[self.elems[i, 0], :3] - self.nodes[self.elems[i, 1], :3])
+            element_sizes[i] = np.linalg.norm(self.node_xyz[self.elems[i, 0], :3] - self.node_xyz[self.elems[i, 1], :3])
         self.elem_size = np.mean(element_sizes)
         print(f"Element size: {self.elem_size}")
 
@@ -100,7 +101,7 @@ class TetMesher:
         Parameters:
         abaqusFileName (str): The path to the Abaqus input file.
         Attributes:
-        self.nodes (numpy.ndarray): The array of node coordinates.
+        self.node_xyz (numpy.ndarray): The array of node coordinates.
         self.elems (numpy.ndarray): The array of tetrahedral elements.
         self.num_nodes (int): The number of nodes in the mesh.
         self.num_elems (int): The number of elements in the mesh.
@@ -116,8 +117,9 @@ class TetMesher:
                        if '*ELEMENT' in line.upper())
         node_lines = lines[node_start:node_end]
         nodes = np.array([list(map(float, line.split(','))) for line in node_lines])
-        self.nodes = nodes[:, 1:4]
-        self.num_nodes = len(self.nodes)
+        self.node_xyz = nodes[:, 1:4]
+        self.origin = np.min(self.node_xyz, axis=0)
+        self.num_nodes = len(self.node_xyz)
         element_start = next(i for i, line in enumerate(lines[node_end:], node_end) if '*ELEMENT' in line.upper()) + 1
         element_end = next(i for i, line in enumerate(lines[element_start:], element_start) if '*SOLID' in line.upper())
         element_lines = lines[element_start:element_end]
@@ -143,7 +145,7 @@ class TetMesher:
             Node 8 lies on the edge between vertex 1 and vertex 3.
             Node 9 lies on the edge between vertex 2 and vertex 3.
         '''
-        nodes = self.nodes.copy()
+        node_xyz = self.node_xyz.copy()
         elems = self.elems.copy()
 
         # Create edges for each element
@@ -156,11 +158,11 @@ class TetMesher:
         unique_edges = list(set(tuple(sorted(edge)) for edge in edges))
 
         # Add midpoint nodes
-        mid_nodes = nodes[unique_edges].mean(axis=1)
-        num_mid_nodes = len(mid_nodes)
+        mid_nodes_xyz = node_xyz[unique_edges].mean(axis=1)
+        num_mid_nodes = len(mid_nodes_xyz)
 
         # Update nodes array with mid-nodes
-        nodes = np.vstack((nodes, mid_nodes))
+        node_xyz = np.vstack((node_xyz, mid_nodes_xyz))
 
         # Create node mapping for edge midpoints
         edge_to_node = {tuple(sorted(edge)): i + self.num_nodes 
@@ -179,9 +181,10 @@ class TetMesher:
             quad_elems[i, 9] = edge_to_node[tuple(sorted((e[2], e[3])))]
 
         quadratic_mesh = type('QuadTetMesh', (), {
-            'nodes': nodes,
+            'node_xyz': node_xyz,
             'elems': quad_elems,
-            'num_nodes': len(nodes),
+            'origin': np.min(node_xyz, axis=0),
+            'num_nodes': len(node_xyz),
             'num_elems': self.num_elems
         })
         print(f"Quadratic Tetmesh: Number of nodes: {quadratic_mesh.num_nodes}, Number of elements: {quadratic_mesh.num_elems}")
@@ -207,7 +210,7 @@ class TetMesher:
         ------
         - The method assumes that `self.surface_triangles` is an array where each row represents a triangle 
           by storing the indices of its three nodes.
-        - The method assumes that `self.nodes` is an array where each row represents the coordinates of a node.
+        - The method assumes that `self.node_xyz` is an array where each row represents the coordinates of a node.
         - The force is distributed equally among the three nodes of each triangle.
         - The total area of the triangles is printed for debugging purposes.
         """
@@ -219,7 +222,7 @@ class TetMesher:
         total_area = 0.0
         for tri in surf_triangles:
             # Get the nodes of the triangle
-            node_coords = self.nodes[tri, :]
+            node_coords = self.node_xyz[tri, :]
             # Calculate the area of the triangle
             vec1 = node_coords[1] - node_coords[0]
             vec2 = node_coords[2] - node_coords[0]
@@ -258,7 +261,7 @@ class TetMesher:
         total_area = 0.0
         for tri in surf_triangles:
             # Get the nodes of the triangle
-            node_coords = self.nodes[tri, :]
+            node_coords = self.node_xyz[tri, :]
             # Calculate the area of the triangle
             vec1 = node_coords[1] - node_coords[0]
             vec2 = node_coords[2] - node_coords[0]
@@ -284,7 +287,7 @@ class TetMesher:
         normals = np.zeros((len(self.surface_triangles), 3))
         areas = np.zeros(len(self.surface_triangles))
         for i, tri in enumerate(self.surface_triangles):
-            p0, p1, p2 = self.nodes[tri]
+            p0, p1, p2 = self.node_xyz[tri]
             centers[i] = (p0 + p1 + p2) / 3
             v1 = p1 - p0
             v2 = p2 - p0
@@ -297,14 +300,14 @@ class TetMesher:
         return centers, normals, areas
     
     def get_nodes_from_locations(self, locations):
-        distances = np.linalg.norm(self.nodes[:, :3] - locations[:, None], axis=2)
+        distances = np.linalg.norm(self.node_xyz[:, :3] - locations[:, None], axis=2)
         return np.argmin(distances, axis=1)
     
     def get_nodes_within_annular_region(self, centerPt, axis, innerRadius, outerRadius):
         # Get the nodes within the annular region defined by the center point, axis, and radii
         axis = axis / np.linalg.norm(axis)
         axis = axis.reshape(1, 3)
-        nodes = self.nodes[:, :3] - centerPt
+        nodes = self.node_xyz[:, :3] - centerPt
         proj = np.dot(nodes, axis.T)
         nodes = nodes - proj * axis
         dist = np.linalg.norm(nodes, axis=1)
@@ -321,15 +324,15 @@ class TetMesher:
         Returns:
             np.ndarray: Indices of nodes on the specified bounding box plane.
         """
-        if not hasattr(self, 'nodes') or self.nodes is None:
+        if not hasattr(self, 'nodes') or self.node_xyz is None:
             raise ValueError("Node coordinates are not defined. Please ensure the mesh is loaded.")
 
         # Determine the plane coordinate (min or max along the specified axis)
-        plane_coord = np.min(self.nodes[:, axis]) if min_limit else np.max(self.nodes[:, axis])
+        plane_coord = np.min(self.node_xyz[:, axis]) if min_limit else np.max(self.node_xyz[:, axis])
 
         # Find nodes on the specified plane (within a small tolerance to account for floating-point errors)
         tolerance = 1e-6
-        nodes_on_plane = np.where(np.abs(self.nodes[:, axis] - plane_coord) <= tolerance)[0]
+        nodes_on_plane = np.where(np.abs(self.node_xyz[:, axis] - plane_coord) <= tolerance)[0]
 
         return nodes_on_plane
 
@@ -344,7 +347,7 @@ class TetMesher:
                 np.ndarray: Indices of nodes within the given radius
             """
             # Calculate squared distances from the point to all nodes
-            distances_sq = np.sum((self.nodes - pt)**2, axis=1)
+            distances_sq = np.sum((self.node_xyz - pt)**2, axis=1)
             
             # Find nodes within the radius (compare squared distances to squared radius)
             nodes_within_radius = np.where(distances_sq <= r**2)[0]
@@ -377,7 +380,7 @@ class TetMesher:
         # Iterate through all elements to find the one containing the point
         for elem_idx, elem_nodes in enumerate(self.elems):
             # Get vertices of the tetrahedron
-            vertices = self.nodes[elem_nodes]  # Shape: (4, 3)
+            vertices = self.node_xyz[elem_nodes]  # Shape: (4, 3)
 
             # Compute the matrix for barycentric coordinates
             bary_matrix = np.vstack([
@@ -405,7 +408,7 @@ class TetMesher:
         # Get the surface triangles within the annular region defined by the center point, axis, and radii
         axis = axis / np.linalg.norm(axis)
         axis = axis.reshape(1, 3)
-        nodes = self.nodes[:, :3] - centerPt
+        nodes = self.node_xyz[:, :3] - centerPt
         proj = np.dot(nodes, axis.T)
         nodes = nodes - proj * axis
         dist = np.linalg.norm(nodes, axis=1)
@@ -420,7 +423,7 @@ class TetMesher:
     
     def get_surface_triangles_on_bounding_box(self,  axis_dir = 0, min_plane = True):
         # Get the surface triangles within the annular region defined by the center point, axis, and radii
-        nodes = self.nodes
+        nodes = self.node_xyz
         
         if (min_plane):
             ref_val = np.min(nodes[:,axis_dir])
@@ -442,12 +445,12 @@ class TetMesher:
         return surface_tri_indices
 
     def plot(self, title = 'Tet Mesh'):
-        plotter = pv.UnstructuredGrid({pv.CellType.TETRA: self.elems}, self.nodes)
+        plotter = pv.UnstructuredGrid({pv.CellType.TETRA: self.elems}, self.node_xyz)
         plotter.plot(show_edges=True, show_scalar_bar=False, show_grid=True)
         print(f"Number of nodes: {self.num_nodes}, Number of elements: {self.num_elems}")   
 
     def plotField(self, field, show_edges =  True, show_scalar_bar = True, show_grid = False):
-        plotter = pv.UnstructuredGrid({pv.CellType.TETRA: self.elems}, self.nodes)
+        plotter = pv.UnstructuredGrid({pv.CellType.TETRA: self.elems}, self.node_xyz)
         plotter.point_data["field"] = field
         # Some common alternatives:
         plotter.plot(show_edges=show_edges, show_scalar_bar=show_scalar_bar, show_grid=show_grid, cmap="jet",
