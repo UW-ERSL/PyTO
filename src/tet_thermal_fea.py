@@ -97,7 +97,7 @@ class TetThermalFEA:
     startTime = time.time()
     K = self.mat_prop.thermal_conductivity
     for i in range(self.mesh.num_elems):
-      elem_nodes = self.mesh.nodes[self.mesh.elems[i]]
+      elem_nodes = self.mesh.node_xyz[self.mesh.elems[i]]
       ke = tet4_stiffness_matrix_thermal(K, elem_nodes)
       data.append(ke.flatten())
     
@@ -131,7 +131,7 @@ class TetThermalFEA:
     return u
   
   def plotTemperature(self, show_edges =  True, show_scalar_bar = True, show_grid = False):
-    plotter = pv.UnstructuredGrid({pv.CellType.TETRA: self.mesh.elems}, self.mesh.nodes)
+    plotter = pv.UnstructuredGrid({pv.CellType.TETRA: self.mesh.elems}, self.mesh.node_xyz)
     plotter.point_data["field"] = self.sol
     # Some common alternatives:
     plotter.plot(show_edges=show_edges, show_scalar_bar=show_scalar_bar, show_grid=show_grid, cmap="jet",
@@ -150,7 +150,7 @@ if __name__ == "__main__":
   
     
     nDOFDesired = 10000
-    problem = TetThermalExamples.AnnularPlate
+    problem = TetThermalExamples.ThickPlate
     tetmesh, mat_prop, bc = getTetThermalProblem(problem, nDOFDesired=nDOFDesired)
   
     solver = lin_sol.Solvers.PARDISO

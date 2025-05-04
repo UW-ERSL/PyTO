@@ -220,9 +220,9 @@ while True:
         # Save the mesh and results
     elif demo == pyTODemos.HexStructuralTO_DensityOC:
         to_problem = StructuralTOExamples.EdgeCantilever # Choose the TO problem
-        solver = Solvers.PARDISO # # Choose solver. Typically PARDISO, but DPCG for DOF > 200,000
+        solver = Solvers.PARDISO #
         # Get the structural problem
-        mesh, mat_prop, bc,elem_body_force, to_params = getStructuralTOProblem(to_problem)
+        mesh, mat_prop, bc,elem_body_force, to_params = getStructuralTOProblem(to_problem,nDOFDesired = 50000)
         fe_solver = HexStructuralFEA(mesh = mesh,
                     mat_prop = mat_prop,
                     bc = bc,
@@ -267,7 +267,7 @@ while True:
         fe_solver.plot_mesh(title = title)
 
     elif demo == pyTODemos.HexStructuralTO_Pareto:
-        to_problem = StructuralTOExamples.CantileverTipLoad
+        to_problem = StructuralTOExamples.LBracketTopLoad
         mesh, mat_prop, bc,elem_body_force, to_params = getStructuralTOProblem(to_problem)
         
         fe_solver = HexStructuralFEA(mesh=mesh, mat_prop=mat_prop, solver= Solvers.PARDISO, bc=bc)

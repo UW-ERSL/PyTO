@@ -4,13 +4,15 @@ import enum
 import numpy as np
 import scipy.sparse as spy_sprs
 import scipy.sparse.linalg as spy_linalg
-
+from scipy.sparse.linalg import spilu, LinearOperator
 import pyamg # pip install pyamg
 # Mac does not support pypardiso, so we skip 
 try:
   import pypardiso # pip install pypardiso
 except ImportError:
   pypardiso = None
+
+
 
 import bound_cond
 
@@ -68,7 +70,7 @@ def get_preconditioner(A: spy_sprs.coo_matrix,
     return _jacobi_preconditioner(A, **kwargs)
 
   elif preconditioner == Preconditioners.ILU:
-    return _ilu_preconditioner(A, **kwargs)
+    return _ilu_preconditioner(A,  drop_tol=1e-2, fill_factor=5, permc_spec='COLAMD',**kwargs)
 
   else:
     return spy_sprs.eye(A.shape[0])
@@ -108,7 +110,7 @@ def solve(A: spy_sprs.coo_matrix,
 
 
     if solver == Solvers.SPSOLVE:
-      x = spy_linalg.spsolve(A, b)
+      x = spy_linalg.spsolve(A, b) # very slow for large problems
 
     elif solver == Solvers.CG:
       M = _jacobi_preconditioner(A)

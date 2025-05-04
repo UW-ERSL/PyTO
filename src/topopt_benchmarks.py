@@ -1,7 +1,6 @@
 import enum
 from hex_structural_examples import *
-import hex_structural_fea as sfea
-from topopt_common import TOParams
+from topopt_common import TOParams, find_elements_with_fixedDOF
 
 class StructuralTOExamples(enum.Enum):
 	Mitchell_1 = enum.auto()
@@ -20,34 +19,14 @@ class StructuralTOExamples(enum.Enum):
 	EdgeCantilever = enum.auto()
 	Multiload = enum.auto()
 	ThreeHoleBracket = enum.auto()
+	LBracketThickTopLoad = enum.auto()
+	LBracketThickMidLoad = enum.auto()
 	CentrifugalPlate = enum.auto()
 	GravityPlate = enum.auto()
 	KnuckleAssembly = enum.auto()
 	Table = enum.auto()
 	BliskWithBlade = enum.auto()
 	NoseCone = enum.auto()
-
-    
-def find_elements_with_fixedDOF(mesh, bc) -> np.ndarray:
-	"""Find all elements that have nodes with fixed degrees of freedom.
-	
-	Args:
-		mesh: The mesh object.
-		bc: The boundary conditions object.
-	
-	Returns:
-		Array of element indices that have nodes with fixed degrees of freedom.
-	"""
-	fixed_dofs = bc.fixed_dofs
-	fixed_nodes = set(fixed_dofs // 3)  # Convert DOFs to node indices
-	elements_with_fixed_dofs = []
-
-	for elem in range(mesh.num_elems):
-		nodes =mesh.elemArray[elem]
-		if any(node in fixed_nodes for node in nodes):
-			elements_with_fixed_dofs.append(elem)
-
-	return np.array(elements_with_fixed_dofs)
 
 def getStructuralTOProblem(to_problem: StructuralTOExamples,nDOFDesired = None, **kwargs):
     """Get the structural topology optimization problem based on the specified example.
@@ -133,8 +112,8 @@ def getStructuralTOProblem(to_problem: StructuralTOExamples,nDOFDesired = None, 
         to_params.DesiredVolFraction = 0.5
     elif to_problem == StructuralTOExamples.LBracketMidLoad:
         structural_problem = StructuralExamples.LBracket
-        kwargs['topload'] = 1.5e4
-        kwargs['midload'] = 0
+        kwargs['topload'] = 0
+        kwargs['midload'] = 1.5e4
         to_params.Comment  = "Benchmark 2.5D"
         to_params.ExtrudeZ = True
         to_params.nDOFDesired = 25000 if nDOFDesired is None else nDOFDesired
@@ -156,14 +135,14 @@ def getStructuralTOProblem(to_problem: StructuralTOExamples,nDOFDesired = None, 
         structural_problem = StructuralExamples.EdgeCantilever
         to_params.Comment = "Benchmark 3D"
         to_params.YSymmetry = True
-        to_params.nDOFDesired = 50000 if nDOFDesired is None else nDOFDesired
-        to_params.DesiredVolFraction = 0.50
+        to_params.nDOFDesired = 150000 if nDOFDesired is None else nDOFDesired
+        to_params.DesiredVolFraction = 0.25
     elif to_problem == StructuralTOExamples.ThreeHoleBracket:
         structural_problem = StructuralExamples.ThreeHoleBracket
         to_params.Comment  = "Retaining Material"
         to_params.ZSymmetry = True
         to_params.KeepFixedElems = True
-        to_params.nDOFDesired = 40000 if nDOFDesired is None else nDOFDesired
+        to_params.nDOFDesired = 60000 if nDOFDesired is None else nDOFDesired
         to_params.DesiredVolFraction = 0.35
     elif to_problem == StructuralTOExamples.Multiload:
         structural_problem = StructuralExamples.Multiload
@@ -177,6 +156,7 @@ def getStructuralTOProblem(to_problem: StructuralTOExamples,nDOFDesired = None, 
         to_params.XSymmetry = True
         to_params.ExactVolumeFraction = True
         to_params.nDOFDesired = 20000 if nDOFDesired is None else nDOFDesired
+        to_params.RelativeFilterRadius = 1.5
         to_params.DesiredVolFraction = 0.25
     elif to_problem == StructuralTOExamples.CentrifugalPlate:
         structural_problem = StructuralExamples.CentrifugalPlate
@@ -187,6 +167,22 @@ def getStructuralTOProblem(to_problem: StructuralTOExamples,nDOFDesired = None, 
         to_params.nDOFDesired = 50000 if nDOFDesired is None else nDOFDesired
         to_params.DesiredVolFraction = 0.5
         to_params.KeepFixedElems = True  # Keep elements that are fixed in the centrifugal plate example
+    elif to_problem == StructuralTOExamples.LBracketThickTopLoad:
+        structural_problem = StructuralExamples.LBracketThick
+        to_params.Comment  = "3D"
+        to_params.ZSymmetry = True
+        kwargs['topload'] = 1.5e4
+        kwargs['midload'] = 0
+        to_params.nDOFDesired = 250000 if nDOFDesired is None else nDOFDesired
+        to_params.DesiredVolFraction = 0.1
+    elif to_problem == StructuralTOExamples.LBracketThickMidLoad:
+        structural_problem = StructuralExamples.LBracketThick
+        to_params.Comment  = "3D"
+        to_params.ZSymmetry = True
+        kwargs['topload'] = 0
+        kwargs['midload'] = 1.5e4
+        to_params.nDOFDesired = 250000 if nDOFDesired is None else nDOFDesired
+        to_params.DesiredVolFraction = 0.1
     elif to_problem == StructuralTOExamples.KnuckleAssembly:
         structural_problem = StructuralExamples.KnuckleAssembly
         to_params.Comment = "Retaining Components"

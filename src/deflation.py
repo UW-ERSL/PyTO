@@ -12,13 +12,14 @@ from typing import TypeAlias, Union
 import numpy as np
 import scipy.sparse as spy_sprs
 import scipy.linalg as spy_linalg
+from hex_mesher import HexMesher
 # Mac does not support pypardiso, so we skip it for now
 try:
   import pypardiso # pip install pypardiso
 except ImportError:
   pypardiso = None
 import scipy
-
+import pyvista as pv
 from scipy.sparse import csr_matrix
 
 _Array: TypeAlias = Union[spy_sprs.coo_matrix,
@@ -84,7 +85,6 @@ class DeflationSolver:
 		# Limit number of groups based on minimum nodes per group
 		nGroupsDesired = min(nGroupsDesired, 
 						   int(meshData.num_nodes/(1 + self.minNodesPerGroup)))
-		
 		
 		xyz = meshData.node_xyz
 
@@ -277,7 +277,32 @@ class DeflationSolver:
 
 		#print("Finished computing W Matrix")
 		return
+	def plot_deflation_groups(self,mesh: HexMesher):
+		# Create vertices array
+		vertices = mesh.node_xyz.copy()
+		
+		# Create PyVista point cloud
+		points = pv.PolyData(vertices)
 
+		# Add group numbers as scalar data
+		points.point_data['groups'] = self.ws_nodeGroupNumber
+
+		# Create plotter
+		plotter = pv.Plotter()
+		plotter.set_background('white')
+
+		# Add points with group coloring
+		plotter.add_mesh(points, scalars='groups', 
+						point_size=7,
+						render_points_as_spheres=True,
+						cmap='rainbow')
+
+		# Add axes
+		plotter.add_axes()
+
+		# Set camera for isometric view
+		plotter.view_isometric()
+		plotter.show()
 
 	def deflatedPCG(self,
 									K: _Array,
@@ -285,7 +310,7 @@ class DeflationSolver:
 									W: _Array,
 									M: _Array,
 									rtol=1e-8,
-									maxIters=1500,
+									maxIters=2000,
 									verbose=False):
 		"""Deflated Preconditioned Conjugate Gradient."""
 
@@ -309,9 +334,9 @@ class DeflationSolver:
 
 		# Initial solution
 		if (pypardiso is None):
-			mu = spy_linalg.spsolve(WKW,WT @ f) # see notes on pypardiso.spsolve
+			mu = spy_linalg.spsolve(WKW,WT @ f) 
 		else:
-			mu = pypardiso.spsolve(WKW,WT @ f)
+			mu = pypardiso.spsolve(WKW,WT @ f)# see notes on pypardiso.spsolve
 		
 		x = W @ mu
 
@@ -359,5 +384,5 @@ class DeflationSolver:
 			rz = rz_new
 		#print("Deflated PCG iterations:", iter_num + 1)
 		if (iter_num == maxIters - 1):
-			print("Warning: Maximum iterations reached in DPCG")
+			print("Warning: Maximum iterations reached in DPCG; relative residual:", np.sqrt(rz_new/rz0))
 		return x

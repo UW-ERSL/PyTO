@@ -1,29 +1,22 @@
 """Optimization routines for topology optimization."""
-
 import enum
 import numpy as np
 import hex_element_stiffness
-import hex_mesher
-import hex_structural_fea 
+
 from topopt_filters import *
 import matplotlib.pyplot as plt
 import linear_solvers as lin_solv
+import hex_mesher
+import hex_structural_fea 
 import deflation
 
-
-
-_LARGE_NUMBER = 1.e9
-
+DIRECT_SOLVER_DOF_CUTOFF = 50000 # 10k dof for direct solver
 
 class TO_METHODS(enum.Enum):
 	DENSITYMMA = enum.auto()
 	DENSITYOC = enum.auto()
 	PARETO = enum.auto()
 	LEVELSET = enum.auto()
-
-class MaterialModel(enum.Enum):
-	SIMP = enum.auto()
-	SIMPPLUS = enum.auto()
 
 class TOParams: # These are the default parameters
     Comment = "" # Comment for the topology optimization problem
@@ -99,7 +92,7 @@ def volume_fraction_lowerlimit(density: np.ndarray,
 
 def compliance(x: np.ndarray,
 				fe_solver: hex_structural_fea.HexStructuralFEA,
-						material_model_dict = None,
+						material_model = None,
 													) -> np.ndarray:
 	"""Compute the structural compliance objective.
 
@@ -110,9 +103,31 @@ def compliance(x: np.ndarray,
 
 	Returns: The compliance objective value.
 	"""
-	u = fe_solver.solve(x, material_model_dict)
+	u = fe_solver.solve(x, material_model)
 	return np.einsum('i, i -> ', fe_solver.total_force, u), u
 
+
+    
+def find_elements_with_fixedDOF(mesh, bc) -> np.ndarray:
+	"""Find all elements that have nodes with fixed degrees of freedom.
+	
+	Args:
+		mesh: The mesh object.
+		bc: The boundary conditions object.
+	
+	Returns:
+		Array of element indices that have nodes with fixed degrees of freedom.
+	"""
+	fixed_dofs = bc.fixed_dofs
+	fixed_nodes = set(fixed_dofs // 3)  # Convert DOFs to node indices
+	elements_with_fixed_dofs = []
+
+	for elem in range(mesh.num_elems):
+		nodes =mesh.elemArray[elem]
+		if any(node in fixed_nodes for node in nodes):
+			elements_with_fixed_dofs.append(elem)
+
+	return np.array(elements_with_fixed_dofs)
 
 def createFilters(fe_solver: hex_structural_fea.HexStructuralFEA,to_params):
 	# Create  filters

@@ -36,6 +36,195 @@ def createSmoothingFilter(mesh: hex_mesher.HexMesher, rel_filter_radius: float =
 	Hs = np.array(H.sum(1)).squeeze()
 	return H, Hs
 
+def createXDerivativeFilter(mesh: hex_mesher.HexMesher) -> tuple[coo_matrix, np.ndarray]:
+	"""Create a finite-difference filter matrix approximating the spatial x derivative.
+	
+	Uses central differences when possible and falls back on one-sided differences at boundaries.
+	
+	Args:
+		mesh: The mesh object.
+	
+	Returns:
+		tuple containing:
+			HXD: Sparse matrix operator approximating the x derivative.
+			HXD_s: Array of row sums of HXD matrix.
+	"""
+	num_elems = mesh.num_elems
+	dx = mesh.elem_size[0]
+	rows = []
+	cols = []
+	data = []
+	
+	for i in range(num_elems):
+		elemCenter = mesh.elem_centers[i, :]
+		# Query neighbors offset by one element size in x-direction
+		left_point = elemCenter + np.array([-dx, 0, 0])
+		right_point = elemCenter + np.array([dx, 0, 0])
+		left_idx = mesh.get_element_near_point(left_point)
+		right_idx = mesh.get_element_near_point(right_point)
+		
+		if left_idx != -1 and right_idx != -1:
+			# Use central difference: (f[right] - f[left]) / (2dx)
+			rows.append(i)
+			cols.append(left_idx)
+			data.append(-1.0 / (2 * dx))
+			
+			rows.append(i)
+			cols.append(right_idx)
+			data.append(1.0 / (2 * dx))
+		elif right_idx != -1:
+			# Forward difference: (f[right] - f[i]) / dx
+			rows.append(i)
+			cols.append(i)
+			data.append(-1.0 / dx)
+			
+			rows.append(i)
+			cols.append(right_idx)
+			data.append(1.0 / dx)
+		elif left_idx != -1:
+			# Backward difference: (f[i] - f[left]) / dx
+			rows.append(i)
+			cols.append(left_idx)
+			data.append(-1.0 / dx)
+			
+			rows.append(i)
+			cols.append(i)
+			data.append(1.0 / dx)
+		else:
+			# No neighbor found in the x direction; set derivative to zero.
+			rows.append(i)
+			cols.append(i)
+			data.append(0.0)
+	
+	HXD = coo_matrix((data, (rows, cols)), shape=(num_elems, num_elems)).tocsc()
+	HXD_s = np.array(HXD.sum(1)).squeeze()
+	return HXD, HXD_s
+
+def createYDerivativeFilter(mesh: hex_mesher.HexMesher) -> tuple[coo_matrix, np.ndarray]:
+	"""Create a finite-difference filter matrix approximating the spatial y derivative.
+	
+	Uses central differences when possible and falls back on one-sided differences at boundaries.
+	
+	Args:
+		mesh: The mesh object.
+	
+	Returns:
+		tuple containing:
+			HYD: Sparse matrix operator approximating the y derivative.
+			HYD_s: Array of row sums of HYD matrix.
+	"""
+	num_elems = mesh.num_elems
+	dy = mesh.elem_size[1]
+	rows = []
+	cols = []
+	data = []
+	
+	for i in range(num_elems):
+		elemCenter = mesh.elem_centers[i, :]
+		lower_point = elemCenter + np.array([0, -dy, 0])
+		upper_point = elemCenter + np.array([0, dy, 0])
+		lower_idx = mesh.get_element_near_point(lower_point)
+		upper_idx = mesh.get_element_near_point(upper_point)
+		
+		if lower_idx != -1 and upper_idx != -1:
+			# Use central difference: (f[upper] - f[lower]) / (2dy)
+			rows.append(i)
+			cols.append(lower_idx)
+			data.append(-1.0 / (2 * dy))
+			
+			rows.append(i)
+			cols.append(upper_idx)
+			data.append(1.0 / (2 * dy))
+		elif upper_idx != -1:
+			# Forward difference: (f[upper] - f[i]) / dy
+			rows.append(i)
+			cols.append(i)
+			data.append(-1.0 / dy)
+			
+			rows.append(i)
+			cols.append(upper_idx)
+			data.append(1.0 / dy)
+		elif lower_idx != -1:
+			# Backward difference: (f[i] - f[lower]) / dy
+			rows.append(i)
+			cols.append(lower_idx)
+			data.append(-1.0 / dy)
+			
+			rows.append(i)
+			cols.append(i)
+			data.append(1.0 / dy)
+		else:
+			# No neighbor found in the y direction; set derivative to zero.
+			rows.append(i)
+			cols.append(i)
+			data.append(0.0)
+			
+	HYD = coo_matrix((data, (rows, cols)), shape=(num_elems, num_elems)).tocsc()
+	HYD_s = np.array(HYD.sum(1)).squeeze()
+	return HYD, HYD_s
+
+def createZDerivativeFilter(mesh: hex_mesher.HexMesher) -> tuple[coo_matrix, np.ndarray]:
+	"""Create a finite-difference filter matrix approximating the spatial z derivative.
+	
+	Uses central differences when possible and falls back on one-sided differences at boundaries.
+	
+	Args:
+		mesh: The mesh object.
+	
+	Returns:
+		tuple containing:
+			HZD: Sparse matrix operator approximating the z derivative.
+			HZD_s: Array of row sums of HZD matrix.
+	"""
+	num_elems = mesh.num_elems
+	dz = mesh.elem_size[2]
+	rows = []
+	cols = []
+	data = []
+	
+	for i in range(num_elems):
+		elemCenter = mesh.elem_centers[i, :]
+		lower_point = elemCenter + np.array([0, 0, -dz])
+		upper_point = elemCenter + np.array([0, 0, dz])
+		lower_idx = mesh.get_element_near_point(lower_point)
+		upper_idx = mesh.get_element_near_point(upper_point)
+		
+		if lower_idx != -1 and upper_idx != -1:
+			# Use central difference: (f[upper] - f[lower]) / (2dz)
+			rows.append(i)
+			cols.append(lower_idx)
+			data.append(-1.0 / (2 * dz))
+			
+			rows.append(i)
+			cols.append(upper_idx)
+			data.append(1.0 / (2 * dz))
+		elif upper_idx != -1:
+			# Forward difference: (f[upper] - f[i]) / dz
+			rows.append(i)
+			cols.append(i)
+			data.append(-1.0 / dz)
+			
+			rows.append(i)
+			cols.append(upper_idx)
+			data.append(1.0 / dz)
+		elif lower_idx != -1:
+			# Backward difference: (f[i] - f[lower]) / dz
+			rows.append(i)
+			cols.append(lower_idx)
+			data.append(-1.0 / dz)
+			
+			rows.append(i)
+			cols.append(i)
+			data.append(1.0 / dz)
+		else:
+			# No neighbor found in the z direction; set derivative to zero.
+			rows.append(i)
+			cols.append(i)
+			data.append(0.0)
+			
+	HZD = coo_matrix((data, (rows, cols)), shape=(num_elems, num_elems)).tocsc()
+	HZD_s = np.array(HZD.sum(1)).squeeze()
+	return HZD, HZD_s
 def createXSymmetryFilter(mesh: hex_mesher.HexMesher) -> tuple[coo_matrix, np.ndarray]:
 	"""Create a symmetry filter matrix about X mid-plane.
 	
