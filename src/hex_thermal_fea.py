@@ -9,7 +9,7 @@ import bound_cond
 import os
 import pyvista as pv
 import scipy.sparse as sp
-
+from hex_thermal_examples import HexThermalExamples
 script_dir = os.path.dirname(os.path.abspath(__file__))
 
 class HexThermalFEA:
@@ -237,7 +237,7 @@ if __name__ == "__main__":
     import time	
     from hex_thermal_examples import *
 
-    problem = ThermalExamples.LBracket
+    problem = HexThermalExamples.LBracket
     nDOFDesired = 10000
     umax_values = []
     timing = []

@@ -207,9 +207,9 @@ if __name__ == "__main__":
     from tet_structural_examples import TetStructuralExamples, getTetStructuralProblem
    
     problem = TetStructuralExamples.BeamBending 
-    quadratic_tet_mesh, mat_prop, bc, elem_body_force  = getTetStructuralProblem(problem,nDOFDesired = 100000)
+    quadratic_tet_mesh, mat_prop, bc, elem_body_force  = getTetStructuralProblem(problem,nDOFDesired = 10000)
     
-    solver = linear_solvers.Solvers.DPCG # typically DPCG or PARDISO
+    solver = linear_solvers.Solvers.PARDISO # typically DPCG or PARDISO
 
     dsolver = deflation.DeflationSolver()
     startTime = time.time()
