@@ -112,7 +112,10 @@ def shape_function(shape: str, xi):
 
 
 class StructuralFEATet:
-    """Linear Structural Finite Element Analysis using 10-noded quadratic tet elements."""
+    """
+    Non Linear Structural Finite Element Analysis using 10-noded quadratic tet elements.
+    Generalzed Neo-Hookean material model is implemented.
+    """
 
     def __init__(
         self,
@@ -144,6 +147,19 @@ class StructuralFEATet:
         self.neuman_force = np.zeros((total_dofs, 1))
         self.nodal_dirichlet = np.zeros((total_dofs, 1))
         self.F = np.zeros((total_dofs, 1))
+
+        
+        self.solver = solver
+        if (self.solver == lin_sol.Solvers.DPCG):
+            print('Using DPCG Solver')
+            nGroups =  min(2000,max(10,round(3*self.mesh.num_nodes/500)))
+            dsolver.create_deflation_groups(self.mesh, nGroups)
+            dsolver.create_delfation_matrix(self.mesh)
+            dsolver.W = dsolver.W[bc.free_dofs, :]
+        elif (self.solver == lin_sol.Solvers.PARDISO):
+            print('Using Pardiso Solver')
+        else:
+            print('Solver not implemented')
 
     def createEdofMatStructural(self):
         """
@@ -199,7 +215,7 @@ class StructuralFEATet:
         bulkModulus = self.bulkModulus
 
         elemArray = self.mesh.elems
-        node_xyz = self.mesh.nodes
+        node_xyz = self.mesh.node_xyz
         sol = self.sol
         
 
@@ -215,41 +231,27 @@ class StructuralFEATet:
         # Create a PyVista plotter
         plotter = pv.Plotter()
         # Create a PyVista mesh from the tetrahedral mesh
-        pv_mesh = pv.UnstructuredGrid(
-            {pv.CellType.TETRA: self.mesh.elems[:, 0:4]}, self.mesh.nodes
-        )
-
+        pv_mesh = pv.UnstructuredGrid({pv.CellType.TETRA: self.mesh.elems[:,0:4]}, self.mesh.node_xyz)
+        
         sol = self.sol.copy()
         sol = sol.reshape((-1, 3))
+    
 
         deltaMax = self.max_deformation
-        L = np.max(
-            [
-                np.max(self.mesh.nodes[:, i]) - np.min(self.mesh.nodes[:, i])
-                for i in range(3)
-            ]
-        )
-        scale = float(0.2 * L / deltaMax)
+        L = np.max([np.max(self.mesh.node_xyz[:,i]) - np.min(self.mesh.node_xyz[:,i]) for i in range(3)])
+        scale = float(0.2*L/deltaMax)
         deformed_mesh = pv_mesh.copy()
-        deformed_mesh.points += scale * sol[:, 0:4]
+        deformed_mesh.points += scale*sol[:,0:4]
         # Add both original and deformed mesh to the plotter
-        plotter.add_mesh(
-            pv_mesh, show_edges=True, color="red", opacity=0.2, label="Original"
-        )
-        plotter.add_mesh(
-            deformed_mesh,
-            show_edges=True,
-            color="lightblue",
-            opacity=1,
-            label="Deformed",
-        )
-
+        plotter.add_mesh(pv_mesh, show_edges=True, color='red', opacity=0.2, label='Original')
+        plotter.add_mesh(deformed_mesh, show_edges=True, color='lightblue', opacity=1, label='Deformed')
+        
         # Add legend
         plotter.add_legend()
         # Add axes widget
         plotter.add_axes()
         # Show the plot
-        plotter.show()
+        plotter.show()  
 
     def solve_nonlinear_fem_force_control(self,verbose = True, n_steps = 5,max_iter = 30,tol = 1e-8):
         """
@@ -535,24 +537,34 @@ if __name__ == "__main__":
     from tet_structural_examples import TetStructuralExamples, getTetStructuralProblem
 
     jax.config.update("jax_enable_x64", True)
+    #  Inspect any OpenBLAS / MKL / BLIS pools that NumPy, SciPy, PyTorch, … create
+    from threadpoolctl import threadpool_info
+    for pool in threadpool_info():
+        print(pool["prefix"], "→", pool["num_threads"], "threads")
+
+    # Example output
+    # 'mkl' → 8 threads
+    # 'openblas' → 0 threads (not loaded)
+
 
     problem = (
-        TetStructuralExamples.TensileBar
+        TetStructuralExamples.BeamBending
     )  # CubeCompression, TensileBar, BeamBending
-    nForceSteps = 2
+    totalLoad = 400_000
+    nForceSteps = 5
 
     quadratic_tet_mesh, mat_prop, bc, elem_body_force = getTetStructuralProblem(
-        problem, nDOFDesired=1000
+        problem, nDOFDesired=104135, totalLoad = totalLoad
     )
 
-    solver = lin_sol.Solvers.PARDISO  # typically DPCG or PARDISO
+    solver = lin_sol.Solvers.DPCG  # typically DPCG or PARDISO
     fe_solver = StructuralFEATet(
         quadratic_tet_mesh, mat_prop=mat_prop, bc=bc, solver=solver
     )
 
     startTime = time.time()
     fe_solver.solve_nonlinear_fem_force_control(n_steps=nForceSteps, verbose=True)
-
+    endTime = time.time()
     delta = np.max(np.abs(fe_solver.deformation))
     
 
@@ -560,9 +572,11 @@ if __name__ == "__main__":
     nDOF = fe_solver.mesh.num_nodes
 
     print("-----------------------------")
-    print("nDof: ", nDOF)
+    print(f'Problem: {problem}')    
+    print("Total num nodes: ", nDOF)
     print("Solver: ", fe_solver.solver.name)
-    print("FEA time: ", time.time() - startTime)
+    print(f"FEA time in {__file__}: {endTime - startTime} seconds")
+    print("Total load: ", totalLoad)
     print("Max deformation: ", delta)
     print("-----------------------------")
     fe_solver.plot_deformation()
