@@ -113,13 +113,11 @@ class TetTransientThermalFEA:
         return self.u
 
 if __name__ == "__main__":
-    import hex_thermal_fea as hex_thermal_fea
     import time
     import matplotlib.pyplot as plt
     from tet_transient_thermal_examples import TetTransientThermalExamples, getTetTransientThermalProblem
 
-
-    nDOFDesired = 10000
+    nDOFDesired = 50000
     problem = TetTransientThermalExamples.ThickPlate
     tetmesh, mat_prop, bc, initialTemperature, totalTime,timeStep,transientHeatFunction,ptsOfInterest = getTetTransientThermalProblem(problem, nDOFDesired=nDOFDesired)
     nTimeSteps = int(totalTime/timeStep)+1

@@ -212,7 +212,7 @@ if __name__ == "__main__":
     solver = linear_solvers.Solvers.PARDISO # typically DPCG or PARDISO
 
     dsolver = deflation.DeflationSolver()
-    startTime = time.time()
+    
     if (solver == linear_solvers.Solvers.DPCG):
         nGroups =  min(dsolver.maxGroups,max(dsolver.minGroups,round(3*quadratic_tet_mesh.num_nodes/dsolver.dofPerGroup)))
         print('Number of deflation groups: ', nGroups)
@@ -230,6 +230,8 @@ if __name__ == "__main__":
 
     startTime = time.time()
     fe_solver.assemble_global_stiffness_matrix()
+    print("Time for assembly: ", time.time() - startTime)
+    startTime = time.time()
     fe_solver.solve()
     delta = np.max(np.abs(fe_solver.deformation))
     

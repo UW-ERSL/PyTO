@@ -156,7 +156,7 @@ def topopt_mma(fe_solver: hex_structural_fea.HexStructuralFEA,
 		grey_elements = np.sum((x > 0.05) & (x < 0.95))
 		fraction_grey = (grey_elements / num_elems) 
 		if elem_body_force is not None and (np.linalg.norm(elem_body_force) > 0):
-			update_SIMP_PENALTY(fraction_grey)
+			update_SIMP_PENALTY_for_body_force(fraction_grey)
 		if (print_progress):
 			print(f"it.: {mma_state.epoch}, obj.: {obj[0]:.4g}, vf: {vf:.3f}, change: {change: 0.3f}, grey: {fraction_grey:.3f}")
 		history['compliance'].append(obj[0])
@@ -215,7 +215,7 @@ if __name__ == "__main__":
 	from topopt_benchmarks import *
 	
 	print("-" * 50)
-	to_problem = StructuralTOExamples.GravityPlate # Choose the TO problem
+	to_problem = StructuralTOExamples.TwoBar # Choose the TO problem
 	print(f"Running {to_problem.name}...") 
 	print("-" * 50)
 	solver = lin_solv.Solvers.PARDISO # # Choose solver. Typically PARDISO, but DPCG for DOF > 200,000

@@ -35,7 +35,7 @@ def runTOMethodOnBenchmarks(optimizationMethod):
 						StructuralTOExamples.LBracketThickMidLoad,
 						StructuralTOExamples.Table]
 	
-	for to_problem in benchmarks_2_5D_problems:
+	for to_problem in benchmarks_3D_problems:
 		if to_problem in benchmarks_2_5D_problems:
 			subFolder = "2.5D"
 		elif to_problem in benchmarks_3D_problems:
@@ -264,6 +264,6 @@ if __name__ == "__main__":
 		print(f"Finished {optimizationMethod.name} tests.")
 		print("-" * 50)
 		print("\n")
-
+	subFolder = "3D"
 	# Combine results from all methods
 	combine_results() 

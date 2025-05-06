@@ -19,7 +19,7 @@ from queue import Queue
 from PyQt5.QtGui import QIcon
 from PyQt5.QtCore import QSize, Qt
 from stl_reader import STLGeom
-from hex_mesher import Mesher
+from hex_mesher import HexMesher
 import hex_structural_fea as fea
 import linear_solvers as lin_solv
 import jax
@@ -30,7 +30,7 @@ from topopt_density_oc import topopt_optimality_criteria
 from topopt_pareto import topopt_pareto
 from topopt_levelset import topopt_levelset
 from topopt_common import TOParams
-from hex_structural_fea import StructFEA
+from hex_structural_fea import HexStructuralFEA
 from hex_structural_examples import *    
 import linear_solvers as lin_solv
 import jax
@@ -1694,9 +1694,23 @@ class DisplayOptionsWindow(QtWidgets.QDialog):
             self.connect_controls()
 
     def showEvent(self, event):
-        """Override showEvent to update field options when dialog is shown"""
+        """Override showEvent to update field options and select appropriate geometry type when dialog is shown"""
         # Update field options based on available analysis results
         self.update_field_options()
+        
+        # Determine the appropriate geometry option based on current application state
+        if hasattr(self.parent, 'optimization_results') and self.parent.optimization_results is not None:
+            # If optimization has been performed, select "OptimizedDesign"
+            self.geom_combo.setCurrentText("OptimizedDesign")
+        elif hasattr(self.parent, 'mesh_actor') and self.parent.mesh_actor is not None:
+            # If mesh has been generated but no optimization yet, select "Mesh"
+            self.geom_combo.setCurrentText("Mesh")
+        elif hasattr(self.parent, 'stl_geom') and self.parent.stl_geom is not None:
+            # If only geometry is loaded, select "InitialDesign"
+            self.geom_combo.setCurrentText("InitialDesign")
+        else:
+            # If nothing is loaded, select "None"
+            self.geom_combo.setCurrentText("None")
         
         # Update enabled state of controls
         self.update_controls_enabled_state()
@@ -1782,7 +1796,6 @@ class DisplayOptionsWindow(QtWidgets.QDialog):
         self.animate_button.setEnabled(has_results and self.scale_deformation.isChecked())
         
         # Enable structural loads toggle only if we have structural loads
-        # This is the problematic line - force_actors is a list, not a boolean
         has_structural_loads = hasattr(self.parent, 'force_actors') and len(self.parent.force_actors) > 0
         self.show_structural_loads.setEnabled(has_structural_loads)
         
@@ -1793,7 +1806,7 @@ class DisplayOptionsWindow(QtWidgets.QDialog):
         self.show_thermal_loads.setEnabled(has_thermal_loads)
         
         # Enable topopt constraints toggle only if we have topopt constraints
-        has_topopt = hasattr(self.parent, 'topopt_constraint_actors') and self.parent.topopt_constraint_actors
+        has_topopt = hasattr(self.parent, 'topopt_constraint_actors') and self.parent.topopt_constraint_actors is not None
         self.show_topopt_constraints.setEnabled(has_topopt)
         
         # Enable non-design toggle only if we have non-design parts
@@ -1942,168 +1955,418 @@ class DisplayOptionsWindow(QtWidgets.QDialog):
         """Update the display based on geometry dropdown selection"""
         selected_geometry = self.geom_combo.currentText()
         
-        # First, hide all geometry and results actors to start with a clean slate
-        if hasattr(self.parent, 'stl_actor') and self.parent.stl_actor:
-            self.parent.stl_actor.SetVisibility(False)
+        # First, hide all geometry-related actors
+        actors_to_hide = {
+            'stl_actor': False,
+            'mesh_actor': False,
+            'optimized_mesh_actor': False,
+            'results_actor': False,
+            'results_mesh_actor': False,
+            'scalar_bar': False
+        }
         
-        if hasattr(self.parent, 'mesh_actor') and self.parent.mesh_actor:
-            self.parent.mesh_actor.SetVisibility(False)
+        # Hide all actors first
+        for actor_name in actors_to_hide:
+            if hasattr(self.parent, actor_name) and getattr(self.parent, actor_name):
+                getattr(self.parent, actor_name).SetVisibility(False)
+        
+        # Then show actors based on the selected geometry type
+        if selected_geometry == "None":
+            # Hide everything - already done above
+            self._handle_none_selection()
             
-        # Update settings
-        if hasattr(self.parent, 'display_settings'):
-            if selected_geometry == "None":
-                # When "None" is selected, hide all geometry and mesh
-                self.parent.display_settings['geometry'] = 'None'
-                self.parent.display_settings['show_mesh'] = False
+        elif selected_geometry == "Mesh":
+            # Show only mesh
+            if hasattr(self.parent, 'mesh_actor') and self.parent.mesh_actor:
+                self.parent.mesh_actor.SetVisibility(True)
                 
-                # Results actors are already hidden above, but for clarity:
-                if hasattr(self.parent, 'results_actor') and self.parent.results_actor:
-                    self.parent.results_actor.SetVisibility(False)
-                    
-                if hasattr(self.parent, 'results_mesh_actor') and self.parent.results_mesh_actor:
-                    self.parent.results_mesh_actor.SetVisibility(False)
-                    
-                # Hide scalar bar if it exists
-                if hasattr(self.parent, 'scalar_bar') and self.parent.scalar_bar:
-                    self.parent.scalar_bar.SetVisibility(False)
-                
-                # Hide structural loads
-                if hasattr(self.parent, 'force_actors') and self.parent.force_actors:
-                    for actor in self.parent.force_actors:
-                        if actor:  # Check if actor is not None
-                            actor.SetVisibility(False)
-                            
-                if hasattr(self.parent, 'constraint_actors') and self.parent.constraint_actors:
-                    for actor in self.parent.constraint_actors:
-                        if actor:  # Check if actor is not None
-                            actor.SetVisibility(False)
-                
-                # Hide thermal loads
-                thermal_actor_lists = [
-                    'fixed_temp_actors',
-                    'heat_flux_actors',
-                    'total_heat_actors',
-                    'heat_source_actors',
-                    'convection_actors',
-                    'radiation_actors',
-                    'internal_heat_actors'
-                ]
-                
-                for actor_list_name in thermal_actor_lists:
-                    if hasattr(self.parent, actor_list_name):
-                        actors = getattr(self.parent, actor_list_name)
-                        if actors and isinstance(actors, list):
-                            for actor in actors:
-                                if actor:  # Check if actor is not None
-                                    actor.SetVisibility(False)
-                
-                # Hide topopt constraints
-                if hasattr(self.parent, 'topopt_constraint_actors') and self.parent.topopt_constraint_actors:
-                    for actor in self.parent.topopt_constraint_actors:
-                        if actor:  # Check if actor is not None
-                            actor.SetVisibility(False)
-                            
-                # Hide non-design parts
-                if hasattr(self.parent, 'non_design_actors') and self.parent.non_design_actors:
-                    for actor in self.parent.non_design_actors:
-                        if actor:  # Check if actor is not None
-                            actor.SetVisibility(False)
-                            
-                # Update checkbox states in the UI to reflect the actual visibility
-                # Block signals temporarily to prevent recursive updates
-                self.blockAllSignals(True)
-                self.parent.display_settings['show_structural_loads'] = False
-                self.parent.display_settings['show_thermal_loads'] = False
-                self.parent.display_settings['show_topopt_constraints'] = False
-                self.parent.display_settings['show_non_design'] = False
-                
-                self.show_structural_loads.setChecked(False)
-                self.show_thermal_loads.setChecked(False)
-                self.show_topopt_constraints.setChecked(False)
-                self.show_non_design.setChecked(False)
-                self.blockAllSignals(False)
-                
-                # Add message to log
-                if hasattr(self.parent, 'message_text'):
-                    self.parent.message_text.append("Hiding all geometry and visualization elements")
-                
-            elif selected_geometry == "Mesh":
-                # When "Mesh" is selected, show mesh only
-                self.parent.display_settings['geometry'] = 'InitialDesign'
+            # Update display settings
+            if hasattr(self.parent, 'display_settings'):
+                self.parent.display_settings['geometry'] = 'Mesh'
                 self.parent.display_settings['show_mesh'] = True
-
-                # Hide geometry
-                if hasattr(self.parent, 'stl_actor') and self.parent.stl_actor:
-                    self.parent.stl_actor.SetVisibility(False)
                 
-                # Set mesh visibility
-                if hasattr(self.parent, 'mesh_actor') and self.parent.mesh_actor:
-                    self.parent.mesh_actor.SetVisibility(True)
+            # Check if results should also be shown
+            if self.field_combo.currentText() != "None":
+                self._show_results_on_mesh()
                 
+            # Restore feature visibility based on checkboxes
+            self._restore_feature_visibility()
+            
+        elif selected_geometry == "InitialDesign":
+            # Show only original geometry
+            if hasattr(self.parent, 'stl_actor') and self.parent.stl_actor:
+                self.parent.stl_actor.SetVisibility(True)
                 
-                # Check if results should be shown (only if field is not None)
-                show_results = self.field_combo.currentText() != "None"
-                if hasattr(self.parent, 'results_actor') and self.parent.results_actor:
-                    self.parent.results_actor.SetVisibility(show_results)
-                
-                if hasattr(self.parent, 'results_mesh_actor') and self.parent.results_mesh_actor:
-                    self.parent.results_mesh_actor.SetVisibility(show_results)
-                    
-                # Show scalar bar if results are visible
-                if hasattr(self.parent, 'scalar_bar') and self.parent.scalar_bar:
-                    self.parent.scalar_bar.SetVisibility(show_results)
-                
-                # Restore state of loads visibility to match checkboxes
-                self.toggle_feature('structural_loads')
-                self.toggle_feature('thermal_loads')
-                self.toggle_feature('topopt_constraints')
-                self.toggle_feature('non_design')
-                
-            else:
-                # For other geometry selections
+            # Update display settings
+            if hasattr(self.parent, 'display_settings'):
                 self.parent.display_settings['geometry'] = selected_geometry
                 self.parent.display_settings['show_mesh'] = False
                 
-                # Show geometry, hide mesh
+            # Handle results display
+            if self.field_combo.currentText() != "None":
+                self._show_results_on_geometry()
+                
+            # Restore feature visibility based on checkboxes
+            self._restore_feature_visibility()
+            
+        elif selected_geometry == "OptimizedDesign":
+            # Show ONLY optimized mesh if it exists
+            if hasattr(self.parent, 'optimized_mesh_actor') and self.parent.optimized_mesh_actor:
+                self.parent.optimized_mesh_actor.SetVisibility(True)
+                
+                # Ensure original geometry is hidden
                 if hasattr(self.parent, 'stl_actor') and self.parent.stl_actor:
-                    self.parent.stl_actor.SetVisibility(True)
-                
-                if hasattr(self.parent, 'mesh_actor') and self.parent.mesh_actor:
-                    self.parent.mesh_actor.SetVisibility(False)
-                
-                # Check if results should be shown
-                show_results = self.field_combo.currentText() != "None"
-                
-                # Set visibility of results actors based on results flag
-                if hasattr(self.parent, 'results_actor') and self.parent.results_actor:
-                    self.parent.results_actor.SetVisibility(show_results)
-                
-                if hasattr(self.parent, 'results_mesh_actor') and self.parent.results_mesh_actor:
-                    self.parent.results_mesh_actor.SetVisibility(False)  # Always hide mesh results when showing geometry
-                
-                # Show or hide scalar bar based on results visibility
-                if hasattr(self.parent, 'scalar_bar') and self.parent.scalar_bar:
-                    self.parent.scalar_bar.SetVisibility(show_results)
-                
-                # If showing results and not transparent, hide original geometry
-                if show_results and not self.show_transparent.isChecked() and hasattr(self.parent, 'stl_actor') and self.parent.stl_actor:
                     self.parent.stl_actor.SetVisibility(False)
                 
-                # Restore state of loads visibility to match checkboxes
-                self.toggle_feature('structural_loads')
-                self.toggle_feature('thermal_loads')
-                self.toggle_feature('topopt_constraints')
-                self.toggle_feature('non_design')
+            # Update display settings
+            if hasattr(self.parent, 'display_settings'):
+                self.parent.display_settings['geometry'] = selected_geometry
+                self.parent.display_settings['show_mesh'] = False
                 
-                # Add message to log
-                if hasattr(self.parent, 'message_text'):
-                    self.parent.message_text.append(f"Showing {selected_geometry}")
+            # Restore feature visibility based on checkboxes
+            self._restore_feature_visibility()
+            
+        elif selected_geometry == "Both":
+            # Show both original geometry and optimized design with proper transparency
+            if hasattr(self.parent, 'stl_actor') and self.parent.stl_actor:
+                self.parent.stl_actor.SetVisibility(True)
+                # Make original geometry semi-transparent
+                self.parent.stl_actor.GetProperty().SetOpacity(0.4)
+                
+            if hasattr(self.parent, 'optimized_mesh_actor') and self.parent.optimized_mesh_actor:
+                self.parent.optimized_mesh_actor.SetVisibility(True)
+                
+            # Update display settings
+            if hasattr(self.parent, 'display_settings'):
+                self.parent.display_settings['geometry'] = selected_geometry
+                self.parent.display_settings['show_mesh'] = False
+                
+            # Handle results display
+            if self.field_combo.currentText() != "None":
+                self._show_results_on_geometry()
+                
+            # Restore feature visibility based on checkboxes
+            self._restore_feature_visibility()
         
-        # Render the changes
+        # Add message to log
+        if hasattr(self.parent, 'message_text'):
+            self.parent.message_text.append(f"Display geometry set to: {selected_geometry}")
+        
+        # Render the changes and update settings
         self.parent.vtkWidget.GetRenderWindow().Render()
-        
-        # Update settings
         self.update_display()
+
+    def _handle_none_selection(self):
+        """Handle the case when 'None' is selected in the geometry dropdown"""
+        # Update settings
+        if hasattr(self.parent, 'display_settings'):
+            self.parent.display_settings['geometry'] = 'None'
+            self.parent.display_settings['show_mesh'] = False
+            
+            # Hide all supplementary visualizations
+            self._hide_all_features()
+            
+            # Update checkbox states in the UI
+            self.blockAllSignals(True)
+            self.show_structural_loads.setChecked(False)
+            self.show_thermal_loads.setChecked(False)
+            self.show_topopt_constraints.setChecked(False)
+            self.show_non_design.setChecked(False)
+            self.blockAllSignals(False)
+            
+            if hasattr(self.parent, 'message_text'):
+                self.parent.message_text.append("Hiding all geometry and visualization elements")
+
+    def _show_results_on_mesh(self):
+        """Show analysis results on mesh"""
+        if hasattr(self.parent, 'results_actor') and self.parent.results_actor:
+            self.parent.results_actor.SetVisibility(True)
+        
+        if hasattr(self.parent, 'results_mesh_actor') and self.parent.results_mesh_actor:
+            self.parent.results_mesh_actor.SetVisibility(True)
+            
+        # Show scalar bar if results are visible
+        if hasattr(self.parent, 'scalar_bar') and self.parent.scalar_bar:
+            self.parent.scalar_bar.SetVisibility(True)
+
+    def _show_results_on_geometry(self):
+        """Show analysis results on geometry"""
+        show_results = self.field_combo.currentText() != "None"
+        
+        # Set visibility of results actors
+        if hasattr(self.parent, 'results_actor') and self.parent.results_actor:
+            self.parent.results_actor.SetVisibility(show_results)
+        
+        # Always hide mesh results when showing geometry
+        if hasattr(self.parent, 'results_mesh_actor') and self.parent.results_mesh_actor:
+            self.parent.results_mesh_actor.SetVisibility(False)
+        
+        # Show or hide scalar bar based on results visibility
+        if hasattr(self.parent, 'scalar_bar') and self.parent.scalar_bar:
+            self.parent.scalar_bar.SetVisibility(show_results)
+        
+        # If showing results and not transparent, hide original geometry
+        if show_results and not self.show_transparent.isChecked() and hasattr(self.parent, 'stl_actor') and self.parent.stl_actor:
+            self.parent.stl_actor.SetVisibility(False)
+
+    def _restore_feature_visibility(self):
+        """Restore visibility of supplementary features based on checkboxes"""
+        self.toggle_feature('structural_loads')
+        self.toggle_feature('thermal_loads')
+        self.toggle_feature('topopt_constraints')
+        self.toggle_feature('non_design')
+
+    def _hide_all_features(self):
+        """Hide all supplementary visualization features"""
+        # Hide structural loads
+        if hasattr(self.parent, 'force_actors') and self.parent.force_actors:
+            for actor in self.parent.force_actors:
+                if actor:
+                    actor.SetVisibility(False)
+                    
+        if hasattr(self.parent, 'constraint_actors') and self.parent.constraint_actors:
+            for actor in self.parent.constraint_actors:
+                if actor:
+                    actor.SetVisibility(False)
+        
+        # Hide thermal loads
+        thermal_actor_lists = [
+            'fixed_temp_actors',
+            'heat_flux_actors',
+            'total_heat_actors',
+            'heat_source_actors',
+            'convection_actors',
+            'radiation_actors',
+            'internal_heat_actors'
+        ]
+        
+        for actor_list_name in thermal_actor_lists:
+            if hasattr(self.parent, actor_list_name):
+                actors = getattr(self.parent, actor_list_name)
+                if actors and isinstance(actors, list):
+                    for actor in actors:
+                        if actor:
+                            actor.SetVisibility(False)
+        
+        # Hide topopt constraints
+        if hasattr(self.parent, 'topopt_constraint_actors') and self.parent.topopt_constraint_actors:
+            # Handle nested structure
+            for key, actor in self.parent.topopt_constraint_actors.items():
+                if key == 'grid_patterns':
+                    # Handle grid patterns which is a dict of lists
+                    for axis, actors_list in actor.items():
+                        for grid_actor in actors_list:
+                            if grid_actor:
+                                grid_actor.SetVisibility(False)
+                elif key == 'symmetry':
+                    # Handle symmetry which is a dict
+                    for sym_axis, sym_actor in actor.items():
+                        if sym_actor:
+                            sym_actor.SetVisibility(False)
+                else:
+                    # Handle other actors
+                    if isinstance(actor, list):
+                        for sub_actor in actor:
+                            if sub_actor:
+                                sub_actor.SetVisibility(False)
+                    elif actor:
+                        actor.SetVisibility(False)
+                            
+        # Hide non-design parts
+        if hasattr(self.parent, 'non_design_actors') and self.parent.non_design_actors:
+            for actor in self.parent.non_design_actors:
+                if actor:
+                    actor.SetVisibility(False)
+        
+        # Update display settings
+        if hasattr(self.parent, 'display_settings'):
+            self.parent.display_settings['show_structural_loads'] = False
+            self.parent.display_settings['show_thermal_loads'] = False
+            self.parent.display_settings['show_topopt_constraints'] = False
+            self.parent.display_settings['show_non_design'] = False
+
+    # def update_geometry_display(self):
+    #     """Update the display based on geometry dropdown selection"""
+    #     selected_geometry = self.geom_combo.currentText()
+        
+    #     # First, hide all geometry and results actors to start with a clean slate
+    #     if hasattr(self.parent, 'stl_actor') and self.parent.stl_actor:
+    #         self.parent.stl_actor.SetVisibility(False)
+        
+    #     if hasattr(self.parent, 'mesh_actor') and self.parent.mesh_actor:
+    #         self.parent.mesh_actor.SetVisibility(False)
+        
+    #     if hasattr(self.parent, 'optimized_mesh_actor') and self.parent.optimized_mesh_actor:
+    #         self.parent.optimized_mesh_actor.SetVisibility(False)
+        
+    #     # Now show the appropriate actors based on selection
+    #     if selected_geometry == "InitialDesign" or selected_geometry == "Both":
+    #         if hasattr(self.parent, 'stl_actor') and self.parent.stl_actor:
+    #             self.parent.stl_actor.SetVisibility(True)
+        
+    #     if selected_geometry == "OptimizedDesign" or selected_geometry == "Both":
+    #         if hasattr(self.parent, 'optimized_mesh_actor') and self.parent.optimized_mesh_actor:
+    #             self.parent.optimized_mesh_actor.SetVisibility(True)
+        
+    #     if selected_geometry == "Mesh":
+    #         if hasattr(self.parent, 'mesh_actor') and self.parent.mesh_actor:
+    #             self.parent.mesh_actor.SetVisibility(True)
+            
+    #     # Update settings
+    #     if hasattr(self.parent, 'display_settings'):
+    #         if selected_geometry == "None":
+    #             # When "None" is selected, hide all geometry and mesh
+    #             self.parent.display_settings['geometry'] = 'None'
+    #             self.parent.display_settings['show_mesh'] = False
+                
+    #             # Results actors are already hidden above, but for clarity:
+    #             if hasattr(self.parent, 'results_actor') and self.parent.results_actor:
+    #                 self.parent.results_actor.SetVisibility(False)
+                    
+    #             if hasattr(self.parent, 'results_mesh_actor') and self.parent.results_mesh_actor:
+    #                 self.parent.results_mesh_actor.SetVisibility(False)
+                    
+    #             # Hide scalar bar if it exists
+    #             if hasattr(self.parent, 'scalar_bar') and self.parent.scalar_bar:
+    #                 self.parent.scalar_bar.SetVisibility(False)
+                
+    #             # Hide structural loads
+    #             if hasattr(self.parent, 'force_actors') and self.parent.force_actors:
+    #                 for actor in self.parent.force_actors:
+    #                     if actor:  # Check if actor is not None
+    #                         actor.SetVisibility(False)
+                            
+    #             if hasattr(self.parent, 'constraint_actors') and self.parent.constraint_actors:
+    #                 for actor in self.parent.constraint_actors:
+    #                     if actor:  # Check if actor is not None
+    #                         actor.SetVisibility(False)
+                
+    #             # Hide thermal loads
+    #             thermal_actor_lists = [
+    #                 'fixed_temp_actors',
+    #                 'heat_flux_actors',
+    #                 'total_heat_actors',
+    #                 'heat_source_actors',
+    #                 'convection_actors',
+    #                 'radiation_actors',
+    #                 'internal_heat_actors'
+    #             ]
+                
+    #             for actor_list_name in thermal_actor_lists:
+    #                 if hasattr(self.parent, actor_list_name):
+    #                     actors = getattr(self.parent, actor_list_name)
+    #                     if actors and isinstance(actors, list):
+    #                         for actor in actors:
+    #                             if actor:  # Check if actor is not None
+    #                                 actor.SetVisibility(False)
+                
+    #             # Hide topopt constraints
+    #             if hasattr(self.parent, 'topopt_constraint_actors') and self.parent.topopt_constraint_actors:
+    #                 for actor in self.parent.topopt_constraint_actors:
+    #                     if actor:  # Check if actor is not None
+    #                         actor.SetVisibility(False)
+                            
+    #             # Hide non-design parts
+    #             if hasattr(self.parent, 'non_design_actors') and self.parent.non_design_actors:
+    #                 for actor in self.parent.non_design_actors:
+    #                     if actor:  # Check if actor is not None
+    #                         actor.SetVisibility(False)
+                            
+    #             # Update checkbox states in the UI to reflect the actual visibility
+    #             # Block signals temporarily to prevent recursive updates
+    #             self.blockAllSignals(True)
+    #             self.parent.display_settings['show_structural_loads'] = False
+    #             self.parent.display_settings['show_thermal_loads'] = False
+    #             self.parent.display_settings['show_topopt_constraints'] = False
+    #             self.parent.display_settings['show_non_design'] = False
+                
+    #             self.show_structural_loads.setChecked(False)
+    #             self.show_thermal_loads.setChecked(False)
+    #             self.show_topopt_constraints.setChecked(False)
+    #             self.show_non_design.setChecked(False)
+    #             self.blockAllSignals(False)
+                
+    #             # Add message to log
+    #             if hasattr(self.parent, 'message_text'):
+    #                 self.parent.message_text.append("Hiding all geometry and visualization elements")
+                
+    #         elif selected_geometry == "Mesh":
+    #             # When "Mesh" is selected, show mesh only
+    #             self.parent.display_settings['geometry'] = 'InitialDesign'
+    #             self.parent.display_settings['show_mesh'] = True
+
+    #             # Hide geometry
+    #             if hasattr(self.parent, 'stl_actor') and self.parent.stl_actor:
+    #                 self.parent.stl_actor.SetVisibility(False)
+                
+    #             # Set mesh visibility
+    #             if hasattr(self.parent, 'mesh_actor') and self.parent.mesh_actor:
+    #                 self.parent.mesh_actor.SetVisibility(True)
+                
+                
+    #             # Check if results should be shown (only if field is not None)
+    #             show_results = self.field_combo.currentText() != "None"
+    #             if hasattr(self.parent, 'results_actor') and self.parent.results_actor:
+    #                 self.parent.results_actor.SetVisibility(show_results)
+                
+    #             if hasattr(self.parent, 'results_mesh_actor') and self.parent.results_mesh_actor:
+    #                 self.parent.results_mesh_actor.SetVisibility(show_results)
+                    
+    #             # Show scalar bar if results are visible
+    #             if hasattr(self.parent, 'scalar_bar') and self.parent.scalar_bar:
+    #                 self.parent.scalar_bar.SetVisibility(show_results)
+                
+    #             # Restore state of loads visibility to match checkboxes
+    #             self.toggle_feature('structural_loads')
+    #             self.toggle_feature('thermal_loads')
+    #             self.toggle_feature('topopt_constraints')
+    #             self.toggle_feature('non_design')
+                
+    #         else:
+    #             # For other geometry selections
+    #             self.parent.display_settings['geometry'] = selected_geometry
+    #             self.parent.display_settings['show_mesh'] = False
+                
+    #             # Show geometry, hide mesh
+    #             if hasattr(self.parent, 'stl_actor') and self.parent.stl_actor:
+    #                 self.parent.stl_actor.SetVisibility(True)
+                
+    #             if hasattr(self.parent, 'mesh_actor') and self.parent.mesh_actor:
+    #                 self.parent.mesh_actor.SetVisibility(False)
+                
+    #             # Check if results should be shown
+    #             show_results = self.field_combo.currentText() != "None"
+                
+    #             # Set visibility of results actors based on results flag
+    #             if hasattr(self.parent, 'results_actor') and self.parent.results_actor:
+    #                 self.parent.results_actor.SetVisibility(show_results)
+                
+    #             if hasattr(self.parent, 'results_mesh_actor') and self.parent.results_mesh_actor:
+    #                 self.parent.results_mesh_actor.SetVisibility(False)  # Always hide mesh results when showing geometry
+                
+    #             # Show or hide scalar bar based on results visibility
+    #             if hasattr(self.parent, 'scalar_bar') and self.parent.scalar_bar:
+    #                 self.parent.scalar_bar.SetVisibility(show_results)
+                
+    #             # If showing results and not transparent, hide original geometry
+    #             if show_results and not self.show_transparent.isChecked() and hasattr(self.parent, 'stl_actor') and self.parent.stl_actor:
+    #                 self.parent.stl_actor.SetVisibility(False)
+                
+    #             # Restore state of loads visibility to match checkboxes
+    #             self.toggle_feature('structural_loads')
+    #             self.toggle_feature('thermal_loads')
+    #             self.toggle_feature('topopt_constraints')
+    #             self.toggle_feature('non_design')
+                
+    #             # Add message to log
+    #             if hasattr(self.parent, 'message_text'):
+    #                 self.parent.message_text.append(f"Showing {selected_geometry}")
+        
+    #     # Render the changes
+    #     self.parent.vtkWidget.GetRenderWindow().Render()
+        
+    #     # Update settings
+    #     self.update_display()
 
     def update_field_display(self):
         """Update the display based on field dropdown selection"""
@@ -2423,10 +2686,35 @@ class DisplayOptionsWindow(QtWidgets.QDialog):
             self.toggle_bounding_box(self.show_bounding_box.isChecked())
                 
         elif feature_name == 'topopt_constraints':
-            # Implement logic to show/hide optimization constraints
+            
             if hasattr(self.parent, 'topopt_constraint_actors'):
-                for actor in self.parent.topopt_constraint_actors:
-                    actor.SetVisibility(self.show_topopt_constraints.isChecked())
+                is_checked = self.show_topopt_constraints.isChecked()
+                
+                # Update settings dictionary
+                if hasattr(self.parent, 'display_settings'):
+                    self.parent.display_settings['show_topopt_constraints'] = is_checked
+                    
+                # Handle the nested structure of topopt_constraint_actors
+                for key, actor in self.parent.topopt_constraint_actors.items():
+                    if key == 'grid_patterns':
+                        # Handle grid patterns which is a dict of lists
+                        for axis, actors_list in actor.items():
+                            for grid_actor in actors_list:
+                                if grid_actor:  # Check if not None
+                                    grid_actor.SetVisibility(is_checked)
+                    elif key == 'symmetry':
+                        # Handle symmetry which is a dict
+                        for sym_axis, sym_actor in actor.items():
+                            if sym_actor:  # Check if not None
+                                sym_actor.SetVisibility(is_checked)
+                    else:
+                        # Handle other actors which might be individual actors or lists
+                        if isinstance(actor, list):
+                            for sub_actor in actor:
+                                if sub_actor:  # Check if not None
+                                    sub_actor.SetVisibility(is_checked)
+                        elif actor:  # Check if not None and not a list
+                            actor.SetVisibility(is_checked)
                     
         elif feature_name == 'thermal_loads':
             # Handle all types of thermal load visualization actors
@@ -2980,9 +3268,6 @@ class DisplayOptionsWindow(QtWidgets.QDialog):
             self.parent.vtkWidget.GetRenderWindow().Render()
             if hasattr(self.parent, 'message_text'):
                 self.parent.message_text.append("View reset to default")
-        
-
-    
 #---------------------------------------------------------------------------------
 class MaterialWindow(QtWidgets.QDialog):
     def __init__(self, parent):
@@ -4247,6 +4532,10 @@ class AnalysisWindow(QtWidgets.QDialog):
         self.structural_button.clicked.connect(self.run_structural_analysis)
         layout.addWidget(self.structural_button)
 
+        # self.density_button = QtWidgets.QPushButton("Density Visualization")
+        # self.density_button.clicked.connect(self.visualize_density)
+        # layout.addWidget(self.density_button)
+
     def update_elements_count(self, index):
         """Update the number of elements based on mesh quality selection"""
         element_counts = {
@@ -4307,7 +4596,7 @@ class AnalysisWindow(QtWidgets.QDialog):
                 return
                     
             # Use the mesher to create the mesh
-            self.parent.analysis_mesher = Mesher()
+            self.parent.analysis_mesher = HexMesher()
             self.parent.analysis_mesher.createMeshFromSTLFile(self.parent.stl_filepath, num_elements)
             self.parent.analysis_mesher.createEdofMatStructural()
             
@@ -4729,7 +5018,7 @@ class AnalysisWindow(QtWidgets.QDialog):
             self.parent.message_text.append("Creating thermal solver...")
             
             # Create solver with properly processed mesh
-            fe_solver = hex_thermal_fea.ThermalFEA(
+            fe_solver = hex_thermal_fea.HexThermalFEA(
                 mesh=mesh,
                 mat_prop=mat_prop,
                 bc=bc,
@@ -4987,7 +5276,7 @@ class AnalysisWindow(QtWidgets.QDialog):
                     return
 
             # Create FE solver using the data from generate_analysis_mesh
-            fe_solver = fea.StructFEA(
+            fe_solver = fea.HexStructuralFEA(
                 mesh=self.parent.analysis_mesher,
                 mat_prop=self.parent.material_props,
                 bc=self.parent.boundary_conditions,
@@ -5057,8 +5346,148 @@ class AnalysisWindow(QtWidgets.QDialog):
             print(f"Detailed error: {str(e)}")
 
 
+    # def visualize_results(self):
+    #     """Visualize structural analysis results with node displacements"""
+    #     try:
+    #         if not hasattr(self.parent, 'analysis_results'):
+    #             QtWidgets.QMessageBox.warning(self, "Error", "No analysis results available")
+    #             return
+
+    #         # Get displacement results
+    #         u = self.parent.analysis_results['displacements']
+    #         delta = self.parent.analysis_results['delta']
+            
+    #         # Calculate scaling factor based on model size
+    #         model_size = np.max(self.parent.analysis_mesher.node_xyz.max(axis=0) - 
+    #                         self.parent.analysis_mesher.node_xyz.min(axis=0))
+    #         max_disp = np.max(delta)
+    #         scale_factor = 0.1 * model_size / max_disp if max_disp > 0 else 1.0
+            
+    #         # Create points for deformed mesh
+    #         points = vtk.vtkPoints()
+    #         cells = vtk.vtkCellArray()
+            
+    #         # Add points with scaled displacements
+    #         for i in range(self.parent.analysis_mesher.num_nodes):
+    #             original_pos = self.parent.analysis_mesher.node_xyz[i]
+    #             dx = u[3*i] * scale_factor
+    #             dy = u[3*i + 1] * scale_factor                             
+    #             dz = u[3*i + 2] * scale_factor
+    #             points.InsertNextPoint(
+    #                 original_pos[0] + dx,
+    #                 original_pos[1] + dy,
+    #                 original_pos[2] + dz
+    #             )
+            
+    #         # Add hex elements
+    #         for elem in self.parent.analysis_mesher.elemArray:
+    #             hex_cell = vtk.vtkHexahedron()
+    #             for i in range(8):
+    #                 hex_cell.GetPointIds().SetId(i, elem[i])
+    #             cells.InsertNextCell(hex_cell)
+            
+    #         # Create mesh structure
+    #         mesh = vtk.vtkUnstructuredGrid()
+    #         mesh.SetPoints(points)
+    #         mesh.SetCells(vtk.VTK_HEXAHEDRON, cells)
+            
+    #         # Add displacement magnitude as scalars
+    #         scalars = vtk.vtkFloatArray()
+    #         scalars.SetNumberOfComponents(1)
+    #         scalars.SetName("Displacement")
+    #         for d in delta:
+    #             scalars.InsertNextValue(d)
+            
+    #         mesh.GetPointData().SetScalars(scalars)
+            
+    #         # Create mapper with improved color mapping
+    #         mapper = vtk.vtkDataSetMapper()
+    #         mapper.SetInputData(mesh)
+    #         mapper.SetScalarRange(0, np.max(delta))
+            
+    #         # Create custom color lookup table
+    #         lut = vtk.vtkLookupTable()
+    #         lut.SetHueRange(0.667, 0.0)  # Blue to red
+    #         lut.SetSaturationRange(1.0, 1.0)
+    #         lut.SetValueRange(1.0, 1.0)
+    #         lut.SetNumberOfTableValues(256)
+    #         lut.Build()
+    #         mapper.SetLookupTable(lut)
+            
+    #         # Create actor for deformed mesh
+    #         if hasattr(self.parent, 'results_actor'):
+    #             self.parent.renderer.RemoveActor(self.parent.results_actor)
+            
+    #         self.parent.results_actor = vtk.vtkActor()
+    #         self.parent.results_actor.SetMapper(mapper)
+    #         self.parent.results_actor.GetProperty().EdgeVisibilityOn()
+    #         self.parent.results_actor.GetProperty().SetEdgeColor(0.1, 0.1, 0.1)
+    #         self.parent.results_actor.GetProperty().SetLineWidth(1)
+            
+    #         # Create enhanced scalar bar
+    #         if hasattr(self.parent, 'scalar_bar'):
+    #             self.parent.renderer.RemoveActor(self.parent.scalar_bar)
+            
+    #         # Get unit string for the scalar bar title
+    #         length_unit = self.parent.settings.get_length_unit_string()
+            
+    #         scalar_bar = vtk.vtkScalarBarActor()
+    #         scalar_bar.SetLookupTable(mapper.GetLookupTable())
+    #         scalar_bar.SetTitle(f"Displacement ({length_unit})")  # Use the proper length unit
+    #         scalar_bar.SetNumberOfLabels(5)
+    #         scalar_bar.SetPosition(0.85, 0.05)
+    #         scalar_bar.SetWidth(0.1)
+    #         scalar_bar.SetHeight(0.8)
+
+    #         # UNCONSTRAIN FONT SIZES
+    #         scalar_bar.UnconstrainedFontSizeOn()
+            
+    #         # Create title text property
+    #         title_text_prop = vtk.vtkTextProperty()
+    #         title_text_prop.SetFontFamilyToArial()
+    #         title_text_prop.SetFontSize(22)
+    #         title_text_prop.SetBold(True)
+    #         title_text_prop.SetColor(0, 0, 0)
+
+    #         # Create label text property
+    #         label_text_prop = vtk.vtkTextProperty()
+    #         label_text_prop.SetFontFamilyToArial()
+    #         label_text_prop.SetFontSize(18)
+    #         label_text_prop.SetBold(False)
+    #         label_text_prop.SetColor(0, 0, 0)
+
+    #         # Apply the text properties
+    #         scalar_bar.SetTitleTextProperty(title_text_prop)
+    #         scalar_bar.SetLabelTextProperty(label_text_prop)
+
+    #         # Save and add actor
+    #         self.parent.scalar_bar = scalar_bar
+    #         self.parent.renderer.AddActor(scalar_bar)
+
+    #         # Hide original mesh
+    #         if hasattr(self.parent, 'mesh_actor'):
+    #             self.parent.mesh_actor.SetVisibility(False)
+            
+    #         # Add actors to renderer
+    #         self.parent.renderer.AddActor(self.parent.results_actor)
+    #         self.parent.renderer.AddActor(self.parent.scalar_bar)
+            
+    #         # Reset camera and render
+    #         self.parent.renderer.ResetCamera()
+    #         self.parent.vtkWidget.GetRenderWindow().Render()
+            
+    #         # Add results summary with proper units
+    #         length_unit = self.parent.settings.get_length_unit_string()
+    #         display_max_disp = self.parent.analysis_results.get('display_max_displacement', np.max(delta))
+            
+    #         self.parent.message_text.append(f"Maximum displacement: {display_max_disp:.6f} {length_unit}")
+    #         self.parent.message_text.append(f"Scale factor: {scale_factor:.2f}")
+            
+    #     except Exception as e:
+    #         QtWidgets.QMessageBox.critical(self, "Error", f"Failed to visualize results: {str(e)}")
+
     def visualize_results(self):
-        """Visualize structural analysis results with node displacements"""
+        """Visualize structural analysis results with node displacements and element density"""
         try:
             if not hasattr(self.parent, 'analysis_results'):
                 QtWidgets.QMessageBox.warning(self, "Error", "No analysis results available")
@@ -5090,17 +5519,9 @@ class AnalysisWindow(QtWidgets.QDialog):
                     original_pos[2] + dz
                 )
             
-            # Add hex elements
-            for elem in self.parent.analysis_mesher.elemArray:
-                hex_cell = vtk.vtkHexahedron()
-                for i in range(8):
-                    hex_cell.GetPointIds().SetId(i, elem[i])
-                cells.InsertNextCell(hex_cell)
-            
-            # Create mesh structure
+            # Create unstructured grid for the full mesh
             mesh = vtk.vtkUnstructuredGrid()
             mesh.SetPoints(points)
-            mesh.SetCells(vtk.VTK_HEXAHEDRON, cells)
             
             # Add displacement magnitude as scalars
             scalars = vtk.vtkFloatArray()
@@ -5110,6 +5531,44 @@ class AnalysisWindow(QtWidgets.QDialog):
                 scalars.InsertNextValue(d)
             
             mesh.GetPointData().SetScalars(scalars)
+            
+            # DENSITY VISUALIZATION (similar to your PyVista code)
+            # Define hexahedron face indices
+            faceIndex = np.array([
+                [0, 4, 7, 3],  # Face 1
+                [0, 1, 5, 4],  # Face 2
+                [0, 3, 2, 1],  # Face 3
+                [1, 2, 6, 5],  # Face 4
+                [2, 3, 7, 6],  # Face 5
+                [4, 5, 6, 7]   # Face 6
+            ], dtype=np.int32)
+            
+            # Check if elemPseudoDensity exists
+            has_density = hasattr(self.parent.analysis_mesher, 'elemPseudoDensity')
+            
+            # For each hex element, add it to the mesh
+            for e, elem in enumerate(self.parent.analysis_mesher.elemArray):
+                # Skip low-density elements if density data exists
+                if has_density and self.parent.analysis_mesher.elemPseudoDensity[e] < 0.5:
+                    continue
+                    
+                # Skip interior elements (surrounded by full-density elements)
+                if (has_density and 
+                    hasattr(self.parent.analysis_mesher, 'elemNeighborsArray') and
+                    np.all(self.parent.analysis_mesher.elemNeighborsArray[e] > 0) and 
+                    np.all(self.parent.analysis_mesher.elemPseudoDensity[
+                        [int(elem) for elem in self.parent.analysis_mesher.elemNeighborsArray[e]]
+                    ] > 0.5)):
+                    continue
+                    
+                # Add the hexahedron element
+                hex_cell = vtk.vtkHexahedron()
+                for i in range(8):
+                    hex_cell.GetPointIds().SetId(i, elem[i])
+                cells.InsertNextCell(hex_cell)
+            
+            # Add cells to the mesh
+            mesh.SetCells(vtk.VTK_HEXAHEDRON, cells)
             
             # Create mapper with improved color mapping
             mapper = vtk.vtkDataSetMapper()
@@ -5196,6 +5655,164 @@ class AnalysisWindow(QtWidgets.QDialog):
             
         except Exception as e:
             QtWidgets.QMessageBox.critical(self, "Error", f"Failed to visualize results: {str(e)}")
+            traceback.print_exc()
+
+    # def visualize_density(self):
+    #     """Visualize element density and topology optimization results"""
+    #     try:
+    #         if not hasattr(self.parent, 'analysis_mesher'):
+    #             QtWidgets.QMessageBox.warning(self, "Error", "No mesh available")
+    #             return
+                
+    #         # Check if we have density information
+    #         if not hasattr(self.parent.analysis_mesher, 'elemPseudoDensity'):
+    #             QtWidgets.QMessageBox.warning(self, "Error", "No element density information available")
+    #             return
+                
+    #         # Create points for the mesh
+    #         points = vtk.vtkPoints()
+    #         cells = vtk.vtkCellArray()
+            
+    #         # Add points
+    #         for node in self.parent.analysis_mesher.node_xyz:
+    #             points.InsertNextPoint(node)
+            
+    #         # Add cell data for density
+    #         density_array = vtk.vtkFloatArray()
+    #         density_array.SetName("Density")
+            
+    #         # Define hexahedron face indices for surface extraction
+    #         faceIndex = np.array([
+    #             [0, 4, 7, 3],  # Face 1
+    #             [0, 1, 5, 4],  # Face 2
+    #             [0, 3, 2, 1],  # Face 3
+    #             [1, 2, 6, 5],  # Face 4
+    #             [2, 3, 7, 6],  # Face 5
+    #             [4, 5, 6, 7]   # Face 6
+    #         ], dtype=np.int32)
+            
+    #         # For each hex element, check density and add visible faces
+    #         for e, elem in enumerate(self.parent.analysis_mesher.elemArray):
+    #             # Skip elements with density below threshold
+    #             if self.parent.analysis_mesher.elemPseudoDensity[e] < 0.5:
+    #                 continue
+                    
+    #             # Check if this is an interior element (surrounded by full-density elements)
+    #             is_interior = False
+    #             if hasattr(self.parent.analysis_mesher, 'elemNeighborsArray'):
+    #                 neighbors = self.parent.analysis_mesher.elemNeighborsArray[e]
+    #                 if np.all(neighbors > 0):  # Has neighbors in all directions
+    #                     # Check if all neighbors have high density
+    #                     neighbor_densities = [
+    #                         self.parent.analysis_mesher.elemPseudoDensity[int(n)] 
+    #                         for n in neighbors if int(n) < len(self.parent.analysis_mesher.elemPseudoDensity)
+    #                     ]
+    #                     if len(neighbor_densities) == len(neighbors) and np.all(np.array(neighbor_densities) > 0.5):
+    #                         is_interior = True
+                
+    #             # Skip interior elements for better visualization
+    #             if is_interior:
+    #                 continue
+                
+    #             # Add the hexahedron element
+    #             hex_cell = vtk.vtkHexahedron()
+    #             for i in range(8):
+    #                 hex_cell.GetPointIds().SetId(i, elem[i])
+    #             cells.InsertNextCell(hex_cell)
+                
+    #             # Add the density value
+    #             density_array.InsertNextValue(self.parent.analysis_mesher.elemPseudoDensity[e])
+                
+    #         # Create mesh structure
+    #         mesh = vtk.vtkUnstructuredGrid()
+    #         mesh.SetPoints(points)
+    #         mesh.SetCells(vtk.VTK_HEXAHEDRON, cells)
+    #         mesh.GetCellData().SetScalars(density_array)
+            
+    #         # Create mapper with color mapping for density
+    #         mapper = vtk.vtkDataSetMapper()
+    #         mapper.SetInputData(mesh)
+    #         mapper.SetScalarRange(0.5, 1.0)  # Minimum visualization density to full density
+            
+    #         # Create custom color lookup table
+    #         lut = vtk.vtkLookupTable()
+    #         lut.SetHueRange(0.0, 0.667)  # Red (low density) to blue (high density)
+    #         lut.SetSaturationRange(1.0, 1.0)
+    #         lut.SetValueRange(1.0, 1.0)
+    #         lut.SetNumberOfTableValues(256)
+    #         lut.Build()
+    #         mapper.SetLookupTable(lut)
+            
+    #         # Create actor for visualization
+    #         if hasattr(self.parent, 'results_actor'):
+    #             self.parent.renderer.RemoveActor(self.parent.results_actor)
+            
+    #         self.parent.results_actor = vtk.vtkActor()
+    #         self.parent.results_actor.SetMapper(mapper)
+    #         self.parent.results_actor.GetProperty().EdgeVisibilityOn()
+    #         self.parent.results_actor.GetProperty().SetEdgeColor(0.1, 0.1, 0.1)
+    #         self.parent.results_actor.GetProperty().SetLineWidth(1)
+            
+    #         # Create scalar bar
+    #         if hasattr(self.parent, 'scalar_bar'):
+    #             self.parent.renderer.RemoveActor(self.parent.scalar_bar)
+            
+    #         scalar_bar = vtk.vtkScalarBarActor()
+    #         scalar_bar.SetLookupTable(mapper.GetLookupTable())
+    #         scalar_bar.SetTitle("Element Density")
+    #         scalar_bar.SetNumberOfLabels(5)
+    #         scalar_bar.SetPosition(0.85, 0.05)
+    #         scalar_bar.SetWidth(0.1)
+    #         scalar_bar.SetHeight(0.8)
+            
+    #         # Unconstrain font sizes
+    #         scalar_bar.UnconstrainedFontSizeOn()
+            
+    #         # Create title text property
+    #         title_text_prop = vtk.vtkTextProperty()
+    #         title_text_prop.SetFontFamilyToArial()
+    #         title_text_prop.SetFontSize(22)
+    #         title_text_prop.SetBold(True)
+    #         title_text_prop.SetColor(0, 0, 0)
+            
+    #         # Create label text property
+    #         label_text_prop = vtk.vtkTextProperty()
+    #         label_text_prop.SetFontFamilyToArial()
+    #         label_text_prop.SetFontSize(18)
+    #         label_text_prop.SetBold(False)
+    #         label_text_prop.SetColor(0, 0, 0)
+            
+    #         # Apply the text properties
+    #         scalar_bar.SetTitleTextProperty(title_text_prop)
+    #         scalar_bar.SetLabelTextProperty(label_text_prop)
+            
+    #         # Save and add actor
+    #         self.parent.scalar_bar = scalar_bar
+    #         self.parent.renderer.AddActor(scalar_bar)
+            
+    #         # Hide original mesh
+    #         if hasattr(self.parent, 'mesh_actor'):
+    #             self.parent.mesh_actor.SetVisibility(False)
+            
+    #         # Hide original geometry
+    #         if hasattr(self.parent, 'stl_actor'):
+    #             self.parent.stl_actor.SetVisibility(False)
+            
+    #         # Add actors to renderer
+    #         self.parent.renderer.AddActor(self.parent.results_actor)
+    #         self.parent.renderer.AddActor(self.parent.scalar_bar)
+            
+    #         # Reset camera and render
+    #         self.parent.renderer.ResetCamera()
+    #         self.parent.vtkWidget.GetRenderWindow().Render()
+            
+    #         # Add results summary
+    #         self.parent.message_text.append(f"Visualizing element density")
+    #         self.parent.message_text.append(f"Display threshold: 0.5")
+            
+    #     except Exception as e:
+    #         QtWidgets.QMessageBox.critical(self, "Error", f"Failed to visualize density: {str(e)}")
+    #         traceback.print_exc()
 
     def visualize_stress(self, display_mode="Geometry"):
         """Visualize von Mises stress from structural analysis"""
@@ -6908,7 +7525,7 @@ class OptimizeTopologyWindow(QtWidgets.QDialog):
             )
             return False
 
-        # If mesh is available in analysis_mesher but not in mesh, create the reference
+        # mesh
         if hasattr(self.parent, 'analysis_mesher') and self.parent.analysis_mesher is not None:
             if not hasattr(self.parent, 'mesh') or self.parent.mesh is None:
                 self.parent.mesh = self.parent.analysis_mesher
@@ -7112,7 +7729,7 @@ class OptimizeTopologyWindow(QtWidgets.QDialog):
             solver = lin_solv.Solvers.PARDISO
             
             # Create FE solver
-            fe_solver = StructFEA(
+            fe_solver = HexStructuralFEA(
                 mesh=mesh,
                 mat_prop=mat_prop,
                 bc=bc,
@@ -7221,6 +7838,21 @@ class OptimizeTopologyWindow(QtWidgets.QDialog):
             # Visualize results
             # Visualize results using the method within this class
             self.visualize_optimized_topology()
+
+            # Update display options toggle states to match actual visibility
+            if hasattr(self.parent, 'display_settings'):
+                self.parent.display_settings['show_structural_loads'] = False
+                self.parent.display_settings['show_topopt_constraints'] = False
+                
+                # Find and update any open display options window
+                for child in self.parent.findChildren(QtWidgets.QDialog):
+                    if isinstance(child, DisplayOptionsWindow):
+                        # Update the toggle states to match actual visibility
+                        child.blockAllSignals(True)
+                        child.show_structural_loads.setChecked(False)
+                        child.show_topopt_constraints.setChecked(False)
+                        child.blockAllSignals(False)
+                        break
             
         else:
             self.log_message(f"Optimization failed: {error_msg}")
@@ -7259,29 +7891,25 @@ class OptimizeTopologyWindow(QtWidgets.QDialog):
             results = self.parent.optimization_results
             history = results.get('history', {})
             method = results.get('method', 'Unknown')
-            # Use default value of 0.5 if volume_fraction is not available
             volume_fraction = results.get('volume_fraction', 0.5)
             
-            # Get the density field (optimization result 'u' contains the density values)
+            # Get the mesh and density field
             if not hasattr(self.parent, 'fe_solver') or self.parent.fe_solver is None:
                 self.parent.message_text.append("Error: No FE solver with optimized mesh available")
                 return
             
-            # Get element densities from the optimization results
-            # The optimization result 'u' contains the density values directly
             mesh = self.parent.fe_solver.mesh
-            if 'u' in results:
-                # Use the optimization result directly
-                densities = results['u']
-            else:
-                # Try to get densities from the mesh if they were stored there
-                if hasattr(mesh, 'densities'):
-                    densities = np.array(mesh.densities)
-                else:
-                    self.parent.message_text.append("Error: No density data found in optimization results")
-                    return
             
-            threshold = 0.5  # Default threshold for visualization
+            # Get element densities from the optimization results
+            if 'u' in results:
+                densities = results['u']  # For density-based methods
+            elif hasattr(mesh, 'densities'):
+                densities = np.array(mesh.densities)
+            elif hasattr(mesh, 'elemPseudoDensity'):
+                densities = np.array(mesh.elemPseudoDensity)
+            else:
+                self.parent.message_text.append("Error: No density data found in optimization results")
+                return
             
             # Log progress
             self.parent.message_text.append("\nVisualizing optimized topology...")
@@ -7293,292 +7921,510 @@ class OptimizeTopologyWindow(QtWidgets.QDialog):
                 if 'compliance' in history and history['compliance']:
                     self.parent.message_text.append(f"Final compliance: {history['compliance'][-1]:.4e}")
             
-            # Remove any existing optimization visualization
-            if hasattr(self.parent, 'optimized_mesh_actor') and self.parent.optimized_mesh_actor is not None:
-                self.parent.renderer.RemoveActor(self.parent.optimized_mesh_actor)
-                self.parent.optimized_mesh_actor = None
+            # Remove any existing visualization
+            self.clear_previous_visualization()
             
-            # Remove any scalar bar from previous visualization
-            if hasattr(self.parent, 'scalar_bar') and self.parent.scalar_bar is not None:
-                self.parent.renderer.RemoveActor(self.parent.scalar_bar)
-                self.parent.scalar_bar = None
+            # Get displacement field if available
+            u = results.get('u', None)
             
-            # Hide mesh actor if exists
-            if hasattr(self.parent, 'mesh_actor') and self.parent.mesh_actor is not None:
-                self.parent.mesh_actor.SetVisibility(False)
+            # Import plotting functions without showing a window
+            import pyvista as pv
+            pv.set_plot_theme("document")  # Use a simple theme
+            pv.OFF_SCREEN = True  # Set global off-screen rendering
             
-            # Hide stl actor if exists
-            if hasattr(self.parent, 'stl_actor') and self.parent.stl_actor is not None:
-                self.parent.stl_actor.SetVisibility(False)
+            # First try to create an isocontour (smooth visualization)
+            try:
+                from plots import plotIsocontour
+                
+                # Create a plotter object without the off_screen parameter
+                plotter = plotIsocontour(
+                    mesh,
+                    u=u,
+                    isovalue=0.5,
+                    show_edges=False,
+                    resolution=2,
+                    title=f"{method}: Vol={volume_fraction:.2f}"
+                    # Removed off_screen parameter
+                )
+                
+                # Extract the mesh from the plotter and add it directly to our renderer
+                actor = self.extract_actor_from_plotter(plotter)
+                if actor:
+                    self.parent.renderer.AddActor(actor)
+                    self.parent.optimized_mesh_actor = actor
+            except Exception as e:
+                # Fallback to simpler visualization if isocontour fails
+                self.parent.message_text.append(f"Could not create isocontour: {str(e)}")
+                
+                try:
+                    from plots import plotMesh
+                    
+                    # Create a plotter object with the optimized mesh without the off_screen parameter
+                    plotter = plotMesh(
+                        mesh,
+                        u=u,
+                        title=f"{method}: Vol={volume_fraction:.2f}"
+                        # Removed off_screen parameter
+                    )
+                    
+                    # Extract actor
+                    actor = self.extract_actor_from_plotter(plotter)
+                    if actor:
+                        self.parent.renderer.AddActor(actor)
+                        self.parent.optimized_mesh_actor = actor
+                except Exception as e2:
+                    self.parent.message_text.append(f"Could not visualize mesh: {str(e2)}")
+                    return
             
-            # Create points for visualization
-            points = vtk.vtkPoints()
-            cells = vtk.vtkCellArray()
-            
-            # Add points
-            for i in range(mesh.num_nodes):
-                points.InsertNextPoint(mesh.node_xyz[i])
-            
-            # Add hex elements
-            for elem in mesh.elemArray:
-                hex_cell = vtk.vtkHexahedron()
-                for i in range(8):
-                    hex_cell.GetPointIds().SetId(i, elem[i])
-                cells.InsertNextCell(hex_cell)
-            
-            # Create mesh structure
-            vtk_mesh = vtk.vtkUnstructuredGrid()
-            vtk_mesh.SetPoints(points)
-            vtk_mesh.SetCells(vtk.VTK_HEXAHEDRON, cells)
-            
-            # Add density as scalars - map element-based values to cells
-            scalars = vtk.vtkFloatArray()
-            scalars.SetNumberOfComponents(1)
-            scalars.SetName("Density")
-            
-            for density in densities:
-                scalars.InsertNextValue(density)
-            
-            vtk_mesh.GetCellData().SetScalars(scalars)
-            
-            # Create mapper with color mapping
-            mapper = vtk.vtkDataSetMapper()
-            mapper.SetInputData(vtk_mesh)
-            mapper.SetScalarRange(0, 1) # Density range is typically 0-1
-            
-            # Create custom color lookup table
-            lut = vtk.vtkLookupTable()
-            lut.SetHueRange(0.667, 0.0)  # Blue (low density) to red (high density)
-            lut.SetSaturationRange(1.0, 1.0)
-            lut.SetValueRange(1.0, 1.0)
-            lut.SetNumberOfTableValues(256)
-            lut.Build()
-            mapper.SetLookupTable(lut)
-            
-            # Create the optimized mesh actor
-            self.parent.optimized_mesh_actor = vtk.vtkActor()
-            self.parent.optimized_mesh_actor.SetMapper(mapper)
-            self.parent.optimized_mesh_actor.GetProperty().EdgeVisibilityOn()
-            self.parent.optimized_mesh_actor.GetProperty().SetEdgeColor(0.1, 0.1, 0.1)
-            self.parent.optimized_mesh_actor.GetProperty().SetLineWidth(1)
-            
-            # Create a scalar bar
-            scalar_bar = vtk.vtkScalarBarActor()
-            scalar_bar.SetLookupTable(mapper.GetLookupTable())
-            scalar_bar.SetTitle("Element Density")
-            scalar_bar.SetNumberOfLabels(5)
-            scalar_bar.SetPosition(0.85, 0.05)
-            scalar_bar.SetWidth(0.1)
-            scalar_bar.SetHeight(0.8)
-
-            # Improve font appearance
-            scalar_bar.UnconstrainedFontSizeOn()
-            
-            # Create title text property
-            title_text_prop = vtk.vtkTextProperty()
-            title_text_prop.SetFontFamilyToArial()
-            title_text_prop.SetFontSize(22)
-            title_text_prop.SetBold(True)
-            title_text_prop.SetColor(0, 0, 0)
-
-            # Create label text property
-            label_text_prop = vtk.vtkTextProperty()
-            label_text_prop.SetFontFamilyToArial()
-            label_text_prop.SetFontSize(18)
-            label_text_prop.SetBold(False)
-            label_text_prop.SetColor(0, 0, 0)
-
-            # Apply the text properties
-            scalar_bar.SetTitleTextProperty(title_text_prop)
-            scalar_bar.SetLabelTextProperty(label_text_prop)
-            
-            # Store and add actor
-            self.parent.scalar_bar = scalar_bar
-            
-            # Add title for the optimization result
-            title = f"Optimized topology (Vol.Frac: {volume_fraction:.3f})"
-            if not hasattr(self.parent, 'title_actor') or self.parent.title_actor is None:
-                title_actor = vtk.vtkTextActor()
-                title_actor.SetPosition(10, 10)
-                title_actor.GetTextProperty().SetColor(1.0, 1.0, 1.0)
-                title_actor.GetTextProperty().SetFontSize(16)
-                title_actor.GetTextProperty().SetBold(True)
-                self.parent.title_actor = title_actor
-                self.parent.renderer.AddActor2D(title_actor)
-            
-            self.parent.title_actor.SetInput(title)
-            
-            # Add actors to renderer
-            self.parent.renderer.AddActor(self.parent.optimized_mesh_actor)
-            self.parent.renderer.AddActor(self.parent.scalar_bar)
-            
-            # Reset camera and render
-            self.parent.renderer.ResetCamera()
+            # Render the updated scene
             self.parent.vtkWidget.GetRenderWindow().Render()
             
         except Exception as e:
             self.parent.message_text.append(f"Error visualizing optimized topology: {str(e)}")
             import traceback
             traceback.print_exc()
-
-    def visualize_isosurface(self, mesh, densities, threshold=0.5):
-        """Create a smooth isosurface visualization of the optimized topology"""
-        try:
-            # Check if mesh has structured grid dimensions
-            is_structured = hasattr(mesh, 'nx') and hasattr(mesh, 'ny') and hasattr(mesh, 'nz')
-            
-            if is_structured:
-                # Structured mesh approach
-                nx, ny, nz = mesh.nx, mesh.ny, mesh.nz
-                
-                # Create image data
-                image_data = vtk.vtkImageData()
-                image_data.SetDimensions(nx+1, ny+1, nz+1)
-                image_data.SetOrigin(mesh.x_min, mesh.y_min, mesh.z_min)
-                image_data.SetSpacing(
-                    (mesh.x_max - mesh.x_min) / nx,
-                    (mesh.y_max - mesh.y_min) / ny,
-                    (mesh.z_max - mesh.z_min) / nz
-                )
-                
-                # Assign density values to cell data
-                cell_data = vtk.vtkFloatArray()
-                cell_data.SetName("Density")
-                cell_data.SetNumberOfComponents(1)
-                cell_data.SetNumberOfTuples(nx * ny * nz)
-                
-                for i in range(len(densities)):
-                    cell_data.SetValue(i, densities[i])
-                    
-                image_data.GetCellData().AddArray(cell_data)
-                image_data.GetCellData().SetActiveScalars("Density")
-                
-                # Convert cell data to point data for smoother isosurface
-                cell_to_point = vtk.vtkCellDataToPointData()
-                cell_to_point.SetInputData(image_data)
-                cell_to_point.PassCellDataOn()
-                cell_to_point.Update()
-                
-                # Create isosurface using contour filter
-                contour = vtk.vtkContourFilter()
-                contour.SetInputConnection(cell_to_point.GetOutputPort())
-                contour.SetValue(0, threshold)  # Isovalue = threshold
-                contour.SetInputArrayToProcess(0, 0, 0, vtk.vtkDataObject.FIELD_ASSOCIATION_POINTS, "Density")
-                contour.Update()
-                
-            else:
-                # Unstructured grid approach
-                # Create a vtkUnstructuredGrid from the mesh
-                points = vtk.vtkPoints()
-                for node_coords in mesh.node_xyz:
-                    points.InsertNextPoint(node_coords)
-                    
-                grid = vtk.vtkUnstructuredGrid()
-                grid.SetPoints(points)
-                
-                # Add hexahedral cells with density values
-                density_array = vtk.vtkFloatArray()
-                density_array.SetName("Density")
-                
-                for elem_idx, elem in enumerate(mesh.elemArray):
-                    if elem_idx < len(densities):  # Safety check
-                        hex_elem = vtk.vtkHexahedron()
-                        for i, node_id in enumerate(elem):
-                            if i < 8:  # Ensure we only use 8 points for a hexahedron
-                                hex_elem.GetPointIds().SetId(i, node_id)
+        
+    def clear_previous_visualization(self):
+        """Remove any previous topology optimization visualization"""
+        # Remove optimized mesh actor if it exists
+        if hasattr(self.parent, 'optimized_mesh_actor') and self.parent.optimized_mesh_actor is not None:
+            self.parent.renderer.RemoveActor(self.parent.optimized_mesh_actor)
+            self.parent.optimized_mesh_actor = None
+        
+        # Remove any scalar bar
+        if hasattr(self.parent, 'scalar_bar') and self.parent.scalar_bar is not None:
+            self.parent.renderer.RemoveActor(self.parent.scalar_bar)
+            self.parent.scalar_bar = None
+        
+        # Hide original mesh actor if exists
+        if hasattr(self.parent, 'mesh_actor') and self.parent.mesh_actor is not None:
+            self.parent.mesh_actor.SetVisibility(False)
+        
+        # Hide STL actor if exists
+        if hasattr(self.parent, 'stl_actor') and self.parent.stl_actor is not None:
+            self.parent.stl_actor.SetVisibility(False)
+        
+        # Hide structural analysis results if they exist
+        if hasattr(self.parent, 'results_actor') and self.parent.results_actor is not None:
+            self.parent.results_actor.SetVisibility(False)
+        
+        # Hide thermal analysis results if they exist
+        if hasattr(self.parent, 'thermal_results') and hasattr(self.parent, 'thermal_results_actor') and self.parent.thermal_results_actor is not None:
+            self.parent.thermal_results_actor.SetVisibility(False)
+        
+        # Hide structural loads (force actors)
+        if hasattr(self.parent, 'force_actors') and self.parent.force_actors:
+            for actor in self.parent.force_actors:
+                actor.SetVisibility(False)
+        
+        # Hide structural constraints
+        if hasattr(self.parent, 'constraint_actors') and self.parent.constraint_actors:
+            for actor in self.parent.constraint_actors:
+                actor.SetVisibility(False)
+        
+        # Hide topology optimization constraints
+        if hasattr(self.parent, 'topopt_constraint_actors') and self.parent.topopt_constraint_actors:
+            # Hide direct actors like extrude, draw_direction, bounding_box
+            for key, actor in self.parent.topopt_constraint_actors.items():
+                if key not in ['grid_patterns', 'symmetry']:
+                    if isinstance(actor, list):
+                        for sub_actor in actor:
+                            if sub_actor:
+                                sub_actor.SetVisibility(False)
+                    elif actor:
+                        actor.SetVisibility(False)
                         
-                        cell_id = grid.InsertNextCell(hex_elem.GetCellType(), hex_elem.GetPointIds())
-                        density_array.InsertNextValue(densities[elem_idx])
-                
-                grid.GetCellData().AddArray(density_array)
-                grid.GetCellData().SetActiveScalars("Density")
-                
-                # Convert cell data to point data
-                cell_to_point = vtk.vtkCellDataToPointData()
-                cell_to_point.SetInputData(grid)
-                cell_to_point.PassCellDataOn()
-                cell_to_point.Update()
-                
-                # Create isosurface using contour filter
-                contour = vtk.vtkContourFilter()
-                contour.SetInputData(cell_to_point.GetOutput())
-                contour.SetValue(0, threshold)
-                contour.SetInputArrayToProcess(0, 0, 0, vtk.vtkDataObject.FIELD_ASSOCIATION_POINTS, "Density")
-                contour.Update()
+            # Hide grid pattern actors
+            if 'grid_patterns' in self.parent.topopt_constraint_actors:
+                for axis, actors in self.parent.topopt_constraint_actors['grid_patterns'].items():
+                    for actor in actors:
+                        if actor:
+                            actor.SetVisibility(False)
             
-            # Clean up mesh and generate normals for better visualization
-            clean = vtk.vtkCleanPolyData()
-            clean.SetInputConnection(contour.GetOutputPort())
-            clean.Update()
-            
-            normals = vtk.vtkPolyDataNormals()
-            normals.SetInputConnection(clean.GetOutputPort())
-            normals.SetFeatureAngle(60)
-            normals.SplittingOff()
-            normals.Update()
-            
-            # Create mapper and actor
-            mapper = vtk.vtkPolyDataMapper()
-            mapper.SetInputConnection(normals.GetOutputPort())
-            
-            # Create actor with material properties
-            self.optimized_mesh_actor = vtk.vtkActor()
-            self.optimized_mesh_actor.SetMapper(mapper)
-            self.optimized_mesh_actor.GetProperty().SetColor(0.2, 0.7, 0.9)  # Blue color
-            self.optimized_mesh_actor.GetProperty().SetAmbient(0.2)
-            self.optimized_mesh_actor.GetProperty().SetDiffuse(0.8)
-            self.optimized_mesh_actor.GetProperty().SetSpecular(0.5)
-            self.optimized_mesh_actor.GetProperty().SetSpecularPower(20)
-            
-            # Add to renderer
-            self.renderer.AddActor(self.optimized_mesh_actor)
-            
-        except Exception as e:
-            self.message_text.append(f"Error creating isosurface: {str(e)}")
-            traceback.print_exc()
+            # Hide symmetry actors
+            if 'symmetry' in self.parent.topopt_constraint_actors:
+                for axis, actor in self.parent.topopt_constraint_actors['symmetry'].items():
+                    if actor:
+                        actor.SetVisibility(False)
+                        
+        # Hide thermal loads if they exist
+        thermal_actor_lists = [
+            'fixed_temp_actors',
+            'heat_source_actors',
+            'total_heat_actors',
+            'convection_actors',
+            'radiation_actors',
+            'internal_heat_actors'
+        ]
+        
+        # Hide all thermal load visualization actors
+        for actor_list_name in thermal_actor_lists:
+            if hasattr(self.parent, actor_list_name) and getattr(self.parent, actor_list_name):
+                actors = getattr(self.parent, actor_list_name)
+                if isinstance(actors, list):
+                    for actor in actors:
+                        if actor:
+                            actor.SetVisibility(False)
+                elif actors:  # If it's a single actor
+                    actors.SetVisibility(False)
 
-    def visualize_elements(self, mesh, densities, threshold=0.5):
-        """Create an element-based visualization of the optimized topology"""
+    def extract_actor_from_plotter(self, plotter):
+        """Extract the main actor from a PyVista plotter for use in VTK renderer"""
         try:
-            # Create points for the mesh nodes
-            points = vtk.vtkPoints()
-            for node_coords in mesh.node_xyz:
-                points.InsertNextPoint(node_coords)
+            # Get the actors from the plotter
+            actors = plotter.renderer.GetActors()
+            actors.InitTraversal()
             
-            # Create unstructured grid
-            grid = vtk.vtkUnstructuredGrid()
-            grid.SetPoints(points)
-            
-            # Add cells (elements) with density above threshold
-            for elem_idx, elem in enumerate(mesh.elemArray):
-                if elem_idx < len(densities) and densities[elem_idx] > threshold:
-                    hex_elem = vtk.vtkHexahedron()
-                    for i, node_id in enumerate(elem):
-                        if i < 8:  # Hexahedron needs 8 points
-                            hex_elem.GetPointIds().SetId(i, node_id)
-                    
-                    grid.InsertNextCell(hex_elem.GetCellType(), hex_elem.GetPointIds())
-            
-            # Create mapper and actor
-            mapper = vtk.vtkDataSetMapper()
-            mapper.SetInputData(grid)
-            
-            self.optimized_mesh_actor = vtk.vtkActor()
-            self.optimized_mesh_actor.SetMapper(mapper)
-            self.optimized_mesh_actor.GetProperty().SetColor(0.2, 0.7, 0.9)
-            self.optimized_mesh_actor.GetProperty().SetAmbient(0.2)
-            self.optimized_mesh_actor.GetProperty().SetDiffuse(0.8)
-            self.optimized_mesh_actor.GetProperty().SetOpacity(1.0)
-            self.optimized_mesh_actor.GetProperty().EdgeVisibilityOn()
-            self.optimized_mesh_actor.GetProperty().SetEdgeColor(0.0, 0.0, 0.0)
-            self.optimized_mesh_actor.GetProperty().SetLineWidth(1.0)
-            
-            # Add to renderer
-            self.renderer.AddActor(self.optimized_mesh_actor)
-            
+            # Get the first actor (usually the mesh)
+            actor = actors.GetNextActor()
+            if actor:
+                # Create a copy of the actor to use in our renderer
+                vtk_actor = vtk.vtkActor()
+                vtk_actor.SetMapper(actor.GetMapper())
+                vtk_actor.GetProperty().DeepCopy(actor.GetProperty())
+                
+                # Close the plotter to free resources
+                plotter.close()
+                
+                return vtk_actor
+                
+            return None
         except Exception as e:
-            self.message_text.append(f"Error creating element visualization: {str(e)}")
-            traceback.print_exc()
+            self.parent.message_text.append(f"Error extracting actor: {str(e)}")
+            return None
+
+    # def visualize_optimized_topology(self):
+    #     """Visualize the optimized topology in the 3D viewer after optimization completes"""
+    #     try:
+    #         # Check if we have optimization results
+    #         if not hasattr(self.parent, 'optimization_results') or self.parent.optimization_results is None:
+    #             self.parent.message_text.append("Error: No optimization results available to visualize")
+    #             return
+            
+    #         # Get optimization results
+    #         results = self.parent.optimization_results
+    #         history = results.get('history', {})
+    #         method = results.get('method', 'Unknown')
+    #         # Use default value of 0.5 if volume_fraction is not available
+    #         volume_fraction = results.get('volume_fraction', 0.5)
+            
+    #         # Get the density field (optimization result 'u' contains the density values)
+    #         if not hasattr(self.parent, 'fe_solver') or self.parent.fe_solver is None:
+    #             self.parent.message_text.append("Error: No FE solver with optimized mesh available")
+    #             return
+            
+    #         # Get element densities from the optimization results
+    #         # The optimization result 'u' contains the density values directly
+    #         mesh = self.parent.fe_solver.mesh
+    #         if 'u' in results:
+    #             # Use the optimization result directly
+    #             densities = results['u']
+    #         else:
+    #             # Try to get densities from the mesh if they were stored there
+    #             if hasattr(mesh, 'densities'):
+    #                 densities = np.array(mesh.densities)
+    #             else:
+    #                 self.parent.message_text.append("Error: No density data found in optimization results")
+    #                 return
+            
+    #         threshold = 0.5  # Default threshold for visualization
+            
+    #         # Log progress
+    #         self.parent.message_text.append("\nVisualizing optimized topology...")
+    #         self.parent.message_text.append(f"Method: {method}")
+    #         self.parent.message_text.append(f"Volume fraction: {volume_fraction:.3f}")
+    #         if history:
+    #             if 'volume' in history and history['volume']:
+    #                 self.parent.message_text.append(f"Final volume: {history['volume'][-1]:.3f}")
+    #             if 'compliance' in history and history['compliance']:
+    #                 self.parent.message_text.append(f"Final compliance: {history['compliance'][-1]:.4e}")
+            
+    #         # Remove any existing optimization visualization
+    #         if hasattr(self.parent, 'optimized_mesh_actor') and self.parent.optimized_mesh_actor is not None:
+    #             self.parent.renderer.RemoveActor(self.parent.optimized_mesh_actor)
+    #             self.parent.optimized_mesh_actor = None
+            
+    #         # Remove any scalar bar from previous visualization
+    #         if hasattr(self.parent, 'scalar_bar') and self.parent.scalar_bar is not None:
+    #             self.parent.renderer.RemoveActor(self.parent.scalar_bar)
+    #             self.parent.scalar_bar = None
+            
+    #         # Hide mesh actor if exists
+    #         if hasattr(self.parent, 'mesh_actor') and self.parent.mesh_actor is not None:
+    #             self.parent.mesh_actor.SetVisibility(False)
+            
+    #         # Hide stl actor if exists
+    #         if hasattr(self.parent, 'stl_actor') and self.parent.stl_actor is not None:
+    #             self.parent.stl_actor.SetVisibility(False)
+            
+    #         # Create points for visualization
+    #         points = vtk.vtkPoints()
+    #         cells = vtk.vtkCellArray()
+            
+    #         # Add points
+    #         for i in range(mesh.num_nodes):
+    #             points.InsertNextPoint(mesh.node_xyz[i])
+            
+    #         # Add hex elements
+    #         for elem in mesh.elemArray:
+    #             hex_cell = vtk.vtkHexahedron()
+    #             for i in range(8):
+    #                 hex_cell.GetPointIds().SetId(i, elem[i])
+    #             cells.InsertNextCell(hex_cell)
+            
+    #         # Create mesh structure
+    #         vtk_mesh = vtk.vtkUnstructuredGrid()
+    #         vtk_mesh.SetPoints(points)
+    #         vtk_mesh.SetCells(vtk.VTK_HEXAHEDRON, cells)
+            
+    #         # Add density as scalars - map element-based values to cells
+    #         scalars = vtk.vtkFloatArray()
+    #         scalars.SetNumberOfComponents(1)
+    #         scalars.SetName("Density")
+            
+    #         for density in densities:
+    #             scalars.InsertNextValue(density)
+            
+    #         vtk_mesh.GetCellData().SetScalars(scalars)
+            
+    #         # Create mapper with color mapping
+    #         mapper = vtk.vtkDataSetMapper()
+    #         mapper.SetInputData(vtk_mesh)
+    #         mapper.SetScalarRange(0, 1) # Density range is typically 0-1
+            
+    #         # Create custom color lookup table
+    #         lut = vtk.vtkLookupTable()
+    #         lut.SetHueRange(0.667, 0.0)  # Blue (low density) to red (high density)
+    #         lut.SetSaturationRange(1.0, 1.0)
+    #         lut.SetValueRange(1.0, 1.0)
+    #         lut.SetNumberOfTableValues(256)
+    #         lut.Build()
+    #         mapper.SetLookupTable(lut)
+            
+    #         # Create the optimized mesh actor
+    #         self.parent.optimized_mesh_actor = vtk.vtkActor()
+    #         self.parent.optimized_mesh_actor.SetMapper(mapper)
+    #         self.parent.optimized_mesh_actor.GetProperty().EdgeVisibilityOn()
+    #         self.parent.optimized_mesh_actor.GetProperty().SetEdgeColor(0.1, 0.1, 0.1)
+    #         self.parent.optimized_mesh_actor.GetProperty().SetLineWidth(1)
+            
+    #         # Create a scalar bar
+    #         scalar_bar = vtk.vtkScalarBarActor()
+    #         scalar_bar.SetLookupTable(mapper.GetLookupTable())
+    #         scalar_bar.SetTitle("Element Density")
+    #         scalar_bar.SetNumberOfLabels(5)
+    #         scalar_bar.SetPosition(0.85, 0.05)
+    #         scalar_bar.SetWidth(0.1)
+    #         scalar_bar.SetHeight(0.8)
+
+    #         # Improve font appearance
+    #         scalar_bar.UnconstrainedFontSizeOn()
+            
+    #         # Create title text property
+    #         title_text_prop = vtk.vtkTextProperty()
+    #         title_text_prop.SetFontFamilyToArial()
+    #         title_text_prop.SetFontSize(22)
+    #         title_text_prop.SetBold(True)
+    #         title_text_prop.SetColor(0, 0, 0)
+
+    #         # Create label text property
+    #         label_text_prop = vtk.vtkTextProperty()
+    #         label_text_prop.SetFontFamilyToArial()
+    #         label_text_prop.SetFontSize(18)
+    #         label_text_prop.SetBold(False)
+    #         label_text_prop.SetColor(0, 0, 0)
+
+    #         # Apply the text properties
+    #         scalar_bar.SetTitleTextProperty(title_text_prop)
+    #         scalar_bar.SetLabelTextProperty(label_text_prop)
+            
+    #         # Store and add actor
+    #         self.parent.scalar_bar = scalar_bar
+            
+    #         # Add title for the optimization result
+    #         title = f"Optimized topology (Vol.Frac: {volume_fraction:.3f})"
+    #         if not hasattr(self.parent, 'title_actor') or self.parent.title_actor is None:
+    #             title_actor = vtk.vtkTextActor()
+    #             title_actor.SetPosition(10, 10)
+    #             title_actor.GetTextProperty().SetColor(1.0, 1.0, 1.0)
+    #             title_actor.GetTextProperty().SetFontSize(16)
+    #             title_actor.GetTextProperty().SetBold(True)
+    #             self.parent.title_actor = title_actor
+    #             self.parent.renderer.AddActor2D(title_actor)
+            
+    #         self.parent.title_actor.SetInput(title)
+            
+    #         # Add actors to renderer
+    #         self.parent.renderer.AddActor(self.parent.optimized_mesh_actor)
+    #         self.parent.renderer.AddActor(self.parent.scalar_bar)
+            
+    #         # Reset camera and render
+    #         self.parent.renderer.ResetCamera()
+    #         self.parent.vtkWidget.GetRenderWindow().Render()
+            
+    #     except Exception as e:
+    #         self.parent.message_text.append(f"Error visualizing optimized topology: {str(e)}")
+    #         import traceback
+    #         traceback.print_exc()
+
+    # def visualize_isosurface(self, mesh, densities, threshold=0.5):
+    #     """Create a smooth isosurface visualization of the optimized topology"""
+    #     try:
+    #         # Check if mesh has structured grid dimensions
+    #         is_structured = hasattr(mesh, 'nx') and hasattr(mesh, 'ny') and hasattr(mesh, 'nz')
+            
+    #         if is_structured:
+    #             # Structured mesh approach
+    #             nx, ny, nz = mesh.nx, mesh.ny, mesh.nz
+                
+    #             # Create image data
+    #             image_data = vtk.vtkImageData()
+    #             image_data.SetDimensions(nx+1, ny+1, nz+1)
+    #             image_data.SetOrigin(mesh.x_min, mesh.y_min, mesh.z_min)
+    #             image_data.SetSpacing(
+    #                 (mesh.x_max - mesh.x_min) / nx,
+    #                 (mesh.y_max - mesh.y_min) / ny,
+    #                 (mesh.z_max - mesh.z_min) / nz
+    #             )
+                
+    #             # Assign density values to cell data
+    #             cell_data = vtk.vtkFloatArray()
+    #             cell_data.SetName("Density")
+    #             cell_data.SetNumberOfComponents(1)
+    #             cell_data.SetNumberOfTuples(nx * ny * nz)
+                
+    #             for i in range(len(densities)):
+    #                 cell_data.SetValue(i, densities[i])
+                    
+    #             image_data.GetCellData().AddArray(cell_data)
+    #             image_data.GetCellData().SetActiveScalars("Density")
+                
+    #             # Convert cell data to point data for smoother isosurface
+    #             cell_to_point = vtk.vtkCellDataToPointData()
+    #             cell_to_point.SetInputData(image_data)
+    #             cell_to_point.PassCellDataOn()
+    #             cell_to_point.Update()
+                
+    #             # Create isosurface using contour filter
+    #             contour = vtk.vtkContourFilter()
+    #             contour.SetInputConnection(cell_to_point.GetOutputPort())
+    #             contour.SetValue(0, threshold)  # Isovalue = threshold
+    #             contour.SetInputArrayToProcess(0, 0, 0, vtk.vtkDataObject.FIELD_ASSOCIATION_POINTS, "Density")
+    #             contour.Update()
+                
+    #         else:
+    #             # Unstructured grid approach
+    #             # Create a vtkUnstructuredGrid from the mesh
+    #             points = vtk.vtkPoints()
+    #             for node_coords in mesh.node_xyz:
+    #                 points.InsertNextPoint(node_coords)
+                    
+    #             grid = vtk.vtkUnstructuredGrid()
+    #             grid.SetPoints(points)
+                
+    #             # Add hexahedral cells with density values
+    #             density_array = vtk.vtkFloatArray()
+    #             density_array.SetName("Density")
+                
+    #             for elem_idx, elem in enumerate(mesh.elemArray):
+    #                 if elem_idx < len(densities):  # Safety check
+    #                     hex_elem = vtk.vtkHexahedron()
+    #                     for i, node_id in enumerate(elem):
+    #                         if i < 8:  # Ensure we only use 8 points for a hexahedron
+    #                             hex_elem.GetPointIds().SetId(i, node_id)
+                        
+    #                     cell_id = grid.InsertNextCell(hex_elem.GetCellType(), hex_elem.GetPointIds())
+    #                     density_array.InsertNextValue(densities[elem_idx])
+                
+    #             grid.GetCellData().AddArray(density_array)
+    #             grid.GetCellData().SetActiveScalars("Density")
+                
+    #             # Convert cell data to point data
+    #             cell_to_point = vtk.vtkCellDataToPointData()
+    #             cell_to_point.SetInputData(grid)
+    #             cell_to_point.PassCellDataOn()
+    #             cell_to_point.Update()
+                
+    #             # Create isosurface using contour filter
+    #             contour = vtk.vtkContourFilter()
+    #             contour.SetInputData(cell_to_point.GetOutput())
+    #             contour.SetValue(0, threshold)
+    #             contour.SetInputArrayToProcess(0, 0, 0, vtk.vtkDataObject.FIELD_ASSOCIATION_POINTS, "Density")
+    #             contour.Update()
+            
+    #         # Clean up mesh and generate normals for better visualization
+    #         clean = vtk.vtkCleanPolyData()
+    #         clean.SetInputConnection(contour.GetOutputPort())
+    #         clean.Update()
+            
+    #         normals = vtk.vtkPolyDataNormals()
+    #         normals.SetInputConnection(clean.GetOutputPort())
+    #         normals.SetFeatureAngle(60)
+    #         normals.SplittingOff()
+    #         normals.Update()
+            
+    #         # Create mapper and actor
+    #         mapper = vtk.vtkPolyDataMapper()
+    #         mapper.SetInputConnection(normals.GetOutputPort())
+            
+    #         # Create actor with material properties
+    #         self.optimized_mesh_actor = vtk.vtkActor()
+    #         self.optimized_mesh_actor.SetMapper(mapper)
+    #         self.optimized_mesh_actor.GetProperty().SetColor(0.2, 0.7, 0.9)  # Blue color
+    #         self.optimized_mesh_actor.GetProperty().SetAmbient(0.2)
+    #         self.optimized_mesh_actor.GetProperty().SetDiffuse(0.8)
+    #         self.optimized_mesh_actor.GetProperty().SetSpecular(0.5)
+    #         self.optimized_mesh_actor.GetProperty().SetSpecularPower(20)
+            
+    #         # Add to renderer
+    #         self.renderer.AddActor(self.optimized_mesh_actor)
+            
+    #     except Exception as e:
+    #         self.message_text.append(f"Error creating isosurface: {str(e)}")
+    #         traceback.print_exc()
+
+    # def visualize_elements(self, mesh, densities, threshold=0.5):
+    #     """Create an element-based visualization of the optimized topology"""
+    #     try:
+    #         # Create points for the mesh nodes
+    #         points = vtk.vtkPoints()
+    #         for node_coords in mesh.node_xyz:
+    #             points.InsertNextPoint(node_coords)
+            
+    #         # Create unstructured grid
+    #         grid = vtk.vtkUnstructuredGrid()
+    #         grid.SetPoints(points)
+            
+    #         # Add cells (elements) with density above threshold
+    #         for elem_idx, elem in enumerate(mesh.elemArray):
+    #             if elem_idx < len(densities) and densities[elem_idx] > threshold:
+    #                 hex_elem = vtk.vtkHexahedron()
+    #                 for i, node_id in enumerate(elem):
+    #                     if i < 8:  # Hexahedron needs 8 points
+    #                         hex_elem.GetPointIds().SetId(i, node_id)
+                    
+    #                 grid.InsertNextCell(hex_elem.GetCellType(), hex_elem.GetPointIds())
+            
+    #         # Create mapper and actor
+    #         mapper = vtk.vtkDataSetMapper()
+    #         mapper.SetInputData(grid)
+            
+    #         self.optimized_mesh_actor = vtk.vtkActor()
+    #         self.optimized_mesh_actor.SetMapper(mapper)
+    #         self.optimized_mesh_actor.GetProperty().SetColor(0.2, 0.7, 0.9)
+    #         self.optimized_mesh_actor.GetProperty().SetAmbient(0.2)
+    #         self.optimized_mesh_actor.GetProperty().SetDiffuse(0.8)
+    #         self.optimized_mesh_actor.GetProperty().SetOpacity(1.0)
+    #         self.optimized_mesh_actor.GetProperty().EdgeVisibilityOn()
+    #         self.optimized_mesh_actor.GetProperty().SetEdgeColor(0.0, 0.0, 0.0)
+    #         self.optimized_mesh_actor.GetProperty().SetLineWidth(1.0)
+            
+    #         # Add to renderer
+    #         self.renderer.AddActor(self.optimized_mesh_actor)
+            
+    #     except Exception as e:
+    #         self.message_text.append(f"Error creating element visualization: {str(e)}")
+    #         traceback.print_exc()
     
 # ---------------------------------------------------------------------------------
 
@@ -8938,288 +9784,6 @@ class ThermalTopOptWindow(QtWidgets.QDialog):
             return False
             
         return True
-
-#---------------------------------------------------------------------------------
-# class TopologyOptimizationVisualization:
-#     """Class for visualizing topology optimization results in the PyTO GUI."""
-    
-#     def __init__(self, parent=None):
-#         """Initialize visualization class with parent window reference."""
-#         self.parent = parent
-#         self.history = None
-#         self.mesh = None
-#         self.optimization_complete = False
-#         self.threshold = 0.5  # Default density threshold for visualization
-        
-#     def display_results(self, fe_solver, history, elapsed_time):
-#         """Display optimization results in the main window.
-        
-#         Args:
-#             fe_solver: The FEA solver with optimized mesh
-#             history: Dictionary containing optimization history
-#             elapsed_time: Total optimization time in seconds
-#         """
-#         self.history = history
-#         self.mesh = fe_solver.mesh
-#         self.optimization_complete = True
-        
-#         # Update status in UI
-#         self.parent.message_text.append(f"Topology optimization complete in {elapsed_time:.2f} seconds")
-#         self.parent.message_text.append(f"Final volume fraction: {history['volume'][-1]:.4f}")
-#         self.parent.message_text.append(f"Final compliance: {history['compliance'][-1]:.4f}")
-        
-#         # Update visualization in main window viewport
-#         self.display_optimized_mesh()
-        
-#         # Create a history plot if available
-#         if self.parent.enable_plot_window and len(history['volume']) > 1:
-#             self.plot_optimization_history()
-            
-#     def display_optimized_mesh(self):
-#         """Display the optimized mesh in the main window viewport."""
-#         if not self.optimization_complete or self.mesh is None:
-#             return
-        
-#         # Clear previous visualization actors
-#         if hasattr(self.parent, 'optimized_mesh_actor') and self.parent.optimized_mesh_actor:
-#             self.parent.renderer.RemoveActor(self.parent.optimized_mesh_actor)
-            
-#         # Convert the density field to a VTK mesh for visualization
-#         import vtk
-#         import numpy as np
-        
-#         # Get element densities
-#         densities = np.array(self.mesh.densities)
-        
-#         # Create geometry - use isosurface or direct density visualization
-#         if hasattr(self.parent, 'smooth_surface') and self.parent.smooth_surface:
-#             # Create isosurface visualization (smoother)
-#             self.create_isosurface_visualization(densities)
-#         else:
-#             # Create direct element visualization (blocky)
-#             self.create_element_visualization(densities)
-            
-#         # Update render window
-#         self.parent.vtkWidget.GetRenderWindow().Render()
-        
-#     def create_isosurface_visualization(self, densities):
-#         """Create a smooth isosurface visualization of the optimized topology.
-        
-#         Args:
-#             densities: Array of element densities
-#         """
-#         import vtk
-#         import numpy as np
-        
-#         # Create structured points for the density field
-#         nx, ny, nz = self.mesh.nx, self.mesh.ny, self.mesh.nz
-        
-#         # Create image data
-#         image_data = vtk.vtkImageData()
-#         image_data.SetDimensions(nx+1, ny+1, nz+1)
-#         image_data.SetOrigin(self.mesh.x_min, self.mesh.y_min, self.mesh.z_min)
-#         image_data.SetSpacing(
-#             (self.mesh.x_max - self.mesh.x_min) / nx,
-#             (self.mesh.y_max - self.mesh.y_min) / ny,
-#             (self.mesh.z_max - self.mesh.z_min) / nz
-#         )
-        
-#         # Assign density values to cell data
-#         cell_data = vtk.vtkFloatArray()
-#         cell_data.SetName("Density")
-#         cell_data.SetNumberOfComponents(1)
-#         cell_data.SetNumberOfTuples(nx * ny * nz)
-        
-#         for i in range(len(densities)):
-#             cell_data.SetValue(i, densities[i])
-            
-#         image_data.GetCellData().AddArray(cell_data)
-#         image_data.GetCellData().SetActiveScalars("Density")
-        
-#         # Convert cell data to point data for smoother isosurface
-#         cell_to_point = vtk.vtkCellDataToPointData()
-#         cell_to_point.SetInputData(image_data)
-#         cell_to_point.PassCellDataOn()
-#         cell_to_point.Update()
-        
-#         # Create isosurface using contour filter
-#         contour = vtk.vtkContourFilter()
-#         contour.SetInputConnection(cell_to_point.GetOutputPort())
-#         contour.SetValue(0, self.threshold)  # Isovalue = threshold
-#         contour.SetInputArrayToProcess(0, 0, 0, vtk.vtkDataObject.FIELD_ASSOCIATION_POINTS, "Density")
-#         contour.Update()
-        
-#         # Clean up mesh and generate normals
-#         clean = vtk.vtkCleanPolyData()
-#         clean.SetInputConnection(contour.GetOutputPort())
-        
-#         normals = vtk.vtkPolyDataNormals()
-#         normals.SetInputConnection(clean.GetOutputPort())
-#         normals.SetFeatureAngle(60)
-#         normals.SplittingOff()
-        
-#         # Create mapper and actor
-#         mapper = vtk.vtkPolyDataMapper()
-#         mapper.SetInputConnection(normals.GetOutputPort())
-        
-#         self.parent.optimized_mesh_actor = vtk.vtkActor()
-#         self.parent.optimized_mesh_actor.SetMapper(mapper)
-#         self.parent.optimized_mesh_actor.GetProperty().SetColor(0.2, 0.7, 1.0)
-        
-#         # Add to renderer
-#         self.parent.renderer.AddActor(self.parent.optimized_mesh_actor)
-        
-#     def create_element_visualization(self, densities):
-#         """Create a direct element-based visualization of the optimized topology.
-        
-#         Args:
-#             densities: Array of element densities
-#         """
-#         import vtk
-#         import numpy as np
-        
-#         # Create unstructured grid from mesh elements
-#         points = vtk.vtkPoints()
-#         for i in range(len(self.mesh.nodeCoords)):
-#             x, y, z = self.mesh.nodeCoords[i]
-#             points.InsertNextPoint(x, y, z)
-            
-#         # Create grid
-#         grid = vtk.vtkUnstructuredGrid()
-#         grid.SetPoints(points)
-        
-#         # Add cells (elements) with density above threshold
-#         density_array = vtk.vtkFloatArray()
-#         density_array.SetName("Density")
-#         density_array.SetNumberOfComponents(1)
-        
-#         for i in range(len(densities)):
-#             if densities[i] > self.threshold:
-#                 # Get element nodes
-#                 elem_nodes = self.mesh.elemArray[i]
-                
-#                 # Create hexahedron (for hex elements)
-#                 hex_elem = vtk.vtkHexahedron()
-#                 for j in range(len(elem_nodes)):
-#                     hex_elem.GetPointIds().SetId(j, elem_nodes[j])
-                    
-#                 # Add to grid
-#                 grid.InsertNextCell(hex_elem.GetCellType(), hex_elem.GetPointIds())
-#                 density_array.InsertNextValue(densities[i])
-                
-#         # Add density data
-#         grid.GetCellData().AddArray(density_array)
-#         grid.GetCellData().SetActiveScalars("Density")
-        
-#         # Create mapper and actor
-#         mapper = vtk.vtkDataSetMapper()
-#         mapper.SetInputData(grid)
-#         mapper.ScalarVisibilityOff()
-        
-#         self.parent.optimized_mesh_actor = vtk.vtkActor()
-#         self.parent.optimized_mesh_actor.SetMapper(mapper)
-#         self.parent.optimized_mesh_actor.GetProperty().SetColor(0.2, 0.7, 1.0)
-        
-#         # Add to renderer
-#         self.parent.renderer.AddActor(self.parent.optimized_mesh_actor)
-    
-#     def plot_optimization_history(self):
-#         """Create a plot of the optimization history."""
-#         import matplotlib.pyplot as plt
-#         from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg
-#         from PyQt5.QtWidgets import QDialog, QVBoxLayout
-        
-#         # Create figure
-#         fig = plt.figure(figsize=(8, 6))
-        
-#         # Plot compliance history
-#         plt.subplot(2, 1, 1)
-#         plt.plot(self.history['compliance'], 'bo-')
-#         plt.ylabel('Compliance')
-#         plt.title('Topology Optimization History')
-#         plt.grid(True)
-        
-#         # Plot volume history
-#         plt.subplot(2, 1, 2)
-#         plt.plot(self.history['volume'], 'ro-')
-#         plt.xlabel('Iteration')
-#         plt.ylabel('Volume Fraction')
-#         plt.grid(True)
-        
-#         # Create dialog
-#         dialog = QDialog(self.parent)
-#         dialog.setWindowTitle("Optimization History")
-#         dialog.resize(800, 600)
-        
-#         # Create canvas for matplotlib figure
-#         canvas = FigureCanvasQTAgg(fig)
-        
-#         # Add to layout
-#         layout = QVBoxLayout(dialog)
-#         layout.addWidget(canvas)
-        
-#         # Show dialog
-#         dialog.show()
-    
-#     def update_optimization_progress(self, iteration, total_iterations, volume, compliance):
-#         """Update the visualization during optimization (for interactive feedback).
-        
-#         Args:
-#             iteration: Current iteration number
-#             total_iterations: Total expected iterations
-#             volume: Current volume fraction
-#             compliance: Current compliance value
-#         """
-#         # Update progress bar if available
-#         if hasattr(self.parent, 'progress_bar'):
-#             progress = int(100 * iteration / total_iterations)
-#             self.parent.progress_bar.setValue(progress)
-        
-#         # Update status message
-#         self.parent.message_text.append(f"Iteration {iteration}: vol={volume:.4f}, compliance={compliance:.4f}")
-        
-#         # Update visualization once every few iterations (not every iteration to avoid slowdowns)
-#         if iteration % 5 == 0 and hasattr(self.parent, 'mesh'):
-#             self.display_optimized_mesh()
-    
-#     def export_optimized_model(self, filename):
-#         """Export the optimized model to an STL file.
-        
-#         Args:
-#             filename: Path to save the STL file
-#         """
-#         if not self.optimization_complete or self.mesh is None:
-#             self.parent.message_text.append("No optimized model available to export")
-#             return False
-            
-#         import vtk
-        
-#         # Get the current visualization actor
-#         if hasattr(self.parent, 'optimized_mesh_actor') and self.parent.optimized_mesh_actor:
-#             # Create STL writer
-#             writer = vtk.vtkSTLWriter()
-#             writer.SetFileName(filename)
-            
-#             # Get the mapper's input
-#             mapper = self.parent.optimized_mesh_actor.GetMapper()
-            
-#             # If it's a dataset mapper, we need to get its input data
-#             if isinstance(mapper, vtk.vtkDataSetMapper):
-#                 # Convert unstructured grid to polydata
-#                 geom_filter = vtk.vtkGeometryFilter()
-#                 geom_filter.SetInputData(mapper.GetInput())
-#                 geom_filter.Update()
-#                 writer.SetInputData(geom_filter.GetOutput())
-#             else:
-#                 # It's already a polydata mapper
-#                 writer.SetInputData(mapper.GetInput())
-                
-#             writer.Write()
-#             self.parent.message_text.append(f"Optimized model exported to {filename}")
-#             return True
-        
-#         self.parent.message_text.append("No visualization available to export")
-#         return False
 
 #---------------------------------------------------------------------------------
 class ProjectData:

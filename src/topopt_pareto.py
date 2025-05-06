@@ -214,7 +214,7 @@ if __name__ == "__main__":
 	from topopt_benchmarks import *
 	
 	print("-" * 50)
-	to_problem = StructuralTOExamples.CentrifugalPlate # Choose the TO problem
+	to_problem = StructuralTOExamples.TwoBar # Choose the TO problem
 	print(f"Running {to_problem.name}...") 
 	print("-" * 50)
 	
@@ -236,8 +236,6 @@ if __name__ == "__main__":
 		dsolver.create_deflation_matrix(mesh)
 		dsolver.W = dsolver.W[bc.free_dofs, :]
 	 
-	
-
 	fe_solver = hex_structural_fea.HexStructuralFEA(mesh = mesh,
 				mat_prop = mat_prop,
 				bc = bc,

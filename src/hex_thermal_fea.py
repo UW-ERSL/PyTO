@@ -47,6 +47,9 @@ class HexThermalFEA:
     elem_stiff_mtrx = np.einsum('ij, e -> eij',
                                  self.elem_stiff, x).flatten(order = 'C')
 
+    print("elem stiffness shape", elem_stiff_mtrx.shape)
+    print("node idx shape", self.node_idx.shape)
+    print("num dofs", bc.num_dofs)
     stiff_mtrx = sp.coo_matrix((elem_stiff_mtrx, (self.node_idx[:, 0], self.node_idx[:, 1])),
                                 shape=(self.bc.num_dofs, self.bc.num_dofs))
     
@@ -237,7 +240,7 @@ if __name__ == "__main__":
     import time	
     from hex_thermal_examples import *
 
-    problem = HexThermalExamples.LBracket
+    problem = HexThermalExamples.ThickPlate
     nDOFDesired = 10000
     umax_values = []
     timing = []
@@ -245,7 +248,7 @@ if __name__ == "__main__":
     
     mesh, mat_prop, bc = getThermalProblem(problem, nDOFDesired=nDOFDesired)
     
-    fe_solver =HexThermalFEA(mesh=mesh,
+    fe_solver = HexThermalFEA(mesh=mesh,
                   mat_prop=mat_prop,
                   bc=bc,
                   solver=solver)

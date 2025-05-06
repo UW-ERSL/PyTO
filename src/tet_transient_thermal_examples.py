@@ -47,17 +47,19 @@ def createThickPlateTransientThermalProblemTet(nDOFDesired: int = 10000,thermal_
     tetmesh = TetMesher()
 	
     tetmesh.createTetMeshFromSTLFile(stl_file, nElemsDesired=nElemsDesired)
-    
+    print(f"Number of elements: {tetmesh.num_elems}")
+    print(f"Number of nodes: {tetmesh.num_nodes}")
 
     fixed_nodes = np.where(tetmesh.node_xyz[:, 0] == np.min(tetmesh.node_xyz[:, 0]) )[0] # x = xMin plane
     fixed_dofs = np.array([fixed_nodes]).flatten().astype(int)
     dirichlet_values = 23*np.ones_like(fixed_dofs, dtype = float)
     load_nodes = np.where(tetmesh.node_xyz[:, 0] == np.max(tetmesh.node_xyz[:, 0]) )[0] # x = xMax plane
-    tri_surface_indices = tetmesh.get_surface_triangles_with_all_nodes_in_node_set(load_nodes)
+    #tri_surface_indices = tetmesh.get_surface_triangles_with_all_nodes_in_node_set(load_nodes)
     #tri_surface_indices =  tetmesh.get_surface_triangles_on_bounding_box(axis_dir = 0,min_plane = False)
  
-    force = tetmesh.integrate_over_surface_triangles(heat_load, tri_surface_indices)
-   
+    #force = tetmesh.integrate_over_surface_triangles(heat_load, tri_surface_indices)
+    force = np.zeros_like(tetmesh.node_xyz[:, 0])
+    force[load_nodes] = heat_load/len(load_nodes)
     bc = bound_cond.BC(force = force,fixed_dofs = fixed_dofs,dirichlet_values = dirichlet_values) 
 
     mat_prop = mat_lib.ThermalMaterial(thermal_conductivity=thermal_conductivity,mass_density=7850,specific_heat=500)
@@ -67,9 +69,8 @@ def createThickPlateTransientThermalProblemTet(nDOFDesired: int = 10000,thermal_
     def transientHeatFunction(timeIndex, timeStep, tetmesh):
         """Transient heat function for the problem."""
         # Example: Apply a time-dependent heat load
-        time = timeIndex * timeStep
-        heat_at_time = heat_load *time/totalTime  # Example: sinusoidal variation
-        q = tetmesh.integrate_over_surface_triangles(heat_at_time, tri_surface_indices)
+        currentTime = timeIndex * timeStep
+        q = force*currentTime/totalTime 
         return q
     
     

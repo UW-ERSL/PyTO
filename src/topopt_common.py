@@ -10,7 +10,7 @@ import hex_mesher
 import hex_structural_fea 
 import deflation
 
-DIRECT_SOLVER_DOF_CUTOFF = 50000 # 10k dof for direct solver
+DIRECT_SOLVER_DOF_CUTOFF = 50000 #  dof for direct solver
 
 class TO_METHODS(enum.Enum):
 	DENSITYMMA = enum.auto()

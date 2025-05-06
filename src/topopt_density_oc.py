@@ -1,3 +1,4 @@
+
 from topopt_common import *
 from topopt_material_model import *
 import time
@@ -9,7 +10,7 @@ def topopt_optimality_criteria(
 							move: float = 0.2,
 							move_tol: float = 0.025,
 							rel_conv_tol: float = 1.e-3,
-							directLagrangeMethod: bool = True,
+							directLagrangeMethod: bool = False,
 							print_progress: bool = True,
 							plot_progress: bool = False,
 							debug: bool = False,
@@ -54,7 +55,7 @@ def topopt_optimality_criteria(
 	# Initialize history
 	history = {'compliance': [], 'volume': [], 'change': []}
 	# OC parameters
-	xmin = 0.  # Minimum density
+	xmin = 0.001  # Minimum density
 	xmax = 1.0    # Maximum density
 	
 	if isinstance(fe_solver.mat_prop, list):
@@ -107,25 +108,25 @@ def topopt_optimality_criteria(
 					l1 = lmid
 				else:
 					l2 = lmid	
-			x = xnew
-			xPhys = x
+			x = xnew.copy()
+			xPhys = x.copy()
 		else: # direct method
 			#Reference: https://link.springer.com/article/10.1007/s00158-020-02740-y
 			setChange = True
 			eta = 0.5
 			varIn = np.ones(num_elems, dtype = bool)
-			xMax = np.minimum(x+move, 1.0)
-			xMin = np.maximum(x-move,0.001)
+			xMaxVec = np.minimum(x+move, xmax)
+			xMinVec = np.maximum(x-move,xmin)
 			volToDistribute = to_params.DesiredVolFraction*num_elems
 			varTimesGrad = x*(abs(grad_obj))**eta
 			while setChange:
-				xnew = varTimesGrad/((np.sum(varTimesGrad[varIn])+1e-12) /(volToDistribute+1e-12)) 
-				volToDistribute = to_params.DesiredVolFraction*num_elems -np.sum(xMax[xnew>=xMax]) -np.sum(xMin[xnew<=xMin])
-				setChange = not np.array_equal((xnew<xMax) & (xnew>xMin), varIn)
-				varIn = (xnew < xMax) & (xnew > xMin)
+				xnew = varTimesGrad/((np.sum(varTimesGrad[varIn])+1e-9) /(volToDistribute+1e-9)) 
+				volToDistribute = to_params.DesiredVolFraction*num_elems -np.sum(xMaxVec[xnew>=xMaxVec]) -np.sum(xMinVec[xnew<=xMinVec])
+				setChange = not np.array_equal((xnew<xMaxVec) & (xnew>xMinVec), varIn)
+				varIn = (xnew < xMaxVec) & (xnew > xMinVec)
 			
-			xnew[xnew>xMax] = xMax[xnew>xMax]
-			xnew[xnew<xMin] = xMin[xnew<xMin]
+			xnew[xnew>xMaxVec] = xMaxVec[xnew>xMaxVec]
+			xnew[xnew<xMinVec] = xMinVec[xnew<xMinVec]
 			x = xnew
 			xPhys = xnew.copy()
 
@@ -142,7 +143,7 @@ def topopt_optimality_criteria(
 		grey_elements = np.sum((x > 0.05) & (x < 0.95))
 		fraction_grey = (grey_elements / num_elems) 
 		if elem_body_force is not None and (np.linalg.norm(elem_body_force) > 0):
-			update_SIMP_PENALTY(fraction_grey)
+			update_SIMP_PENALTY_for_body_force(fraction_grey)
 		if (print_progress):
 			print(f"it.: {iter+1:d}, obj.: {obj:.5g}, "
 				  	f"vol.: {np.mean(xPhys):.3g}, grey: {fraction_grey:.3f}")
@@ -155,7 +156,6 @@ def topopt_optimality_criteria(
 			break
 		if (len(history['compliance'])) >= 2:
 			dJ = abs((history['compliance'][-1] - history['compliance'][-2]) / history['compliance'][-2])
-			update_SIMP_PENALTY(fraction_grey)
 			if (abs(dJ) < rel_conv_tol and abs(cons) < rel_conv_tol) and (fraction_grey < 0.1): # success
 				break
 
@@ -196,7 +196,7 @@ if __name__ == "__main__":
 	from topopt_benchmarks import *
 
 	print("-" * 50)
-	to_problem = StructuralTOExamples.Table # Choose the TO problem
+	to_problem = StructuralTOExamples.MBBB # Choose the TO problem
 	print(f"Running {to_problem.name}...") 
 	print("-" * 50)
 	solver = lin_solv.Solvers.PARDISO # # Choose solver. Typically PARDISO, but DPCG for DOF > 200,000

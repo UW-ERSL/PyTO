@@ -324,7 +324,7 @@ class TetMesher:
         Returns:
             np.ndarray: Indices of nodes on the specified bounding box plane.
         """
-        if not hasattr(self, 'nodes') or self.node_xyz is None:
+        if not hasattr(self, 'node_xyz') or self.node_xyz is None:
             raise ValueError("Node coordinates are not defined. Please ensure the mesh is loaded.")
 
         # Determine the plane coordinate (min or max along the specified axis)
@@ -467,11 +467,15 @@ if __name__ == "__main__":
     import os
     tetmesh = TetMesher()
     script_dir = os.path.dirname(os.path.abspath(__file__))
-    stlFileName = os.path.join(script_dir, '../Models/Overhang/Overhang.STL')
-    tetmesh.createTetMeshFromSTLFile(stlFileName, nElemsDesired=20000)
+    # stlFileName = os.path.join(script_dir, '../Models/Overhang/Overhang.STL')
+    # tetmesh.createTetMeshFromSTLFile(stlFileName, nElemsDesired=20000)
+    # tetmesh.plot()
+    # stlFileName = os.path.join(script_dir, '../Models/Overhang/OverhangSplitLine.STL')
+    # tetmesh.createTetMeshFromSTLFile(stlFileName, nElemsDesired=20000,mergeFacets=False)
+    # tetmesh.plot()
+    inputFileName = os.path.join(script_dir, '../Models/HexPlate/hex3cv4.INP')
+    tetmesh.read_Abaqus_linear_tetmesh(inputFileName)
     tetmesh.plot()
-    stlFileName = os.path.join(script_dir, '../Models/Overhang/OverhangSplitLine.STL')
-    tetmesh.createTetMeshFromSTLFile(stlFileName, nElemsDesired=20000,mergeFacets=False)
-    tetmesh.plot()
+
 
 

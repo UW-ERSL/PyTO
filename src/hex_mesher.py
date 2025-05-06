@@ -1134,6 +1134,10 @@ class HexMesher:
 			plotter.add_legend()
 		plotter.add_axes()
 		plotter.show_grid()
+		if (self.stlMesh is not None) and (self.stlMesh.n_faces > 0):
+			# Add the original STL mesh for reference
+			plotter.add_mesh(self.stlMesh, color='red', show_edges=True, opacity=0.7, label='Original STL')
+		
 		plotter.show()
 	
 	
@@ -1143,8 +1147,8 @@ if __name__ == "__main__":
     mesh = HexMesher()
     script_dir = os.path.dirname(os.path.abspath(__file__))
     stlFileName = os.path.join(script_dir, '../Models/LBracket/LBracket.STL')
-    stlFileName = os.path.join(script_dir, '../Models/FilletedBeam/FilletedBeam.STL')
-    mesh.createMeshFromSTLFile(stlFileName, nElemsDesired=10000)
+    stlFileName = os.path.join(script_dir, '../Models/Overhang/Overhang.STL')
+    mesh.createMeshFromSTLFile(stlFileName, nElemsDesired=12100)
     mesh.plot()
 
 

@@ -93,7 +93,7 @@ def getStructuralTOProblem(to_problem: StructuralTOExamples,nDOFDesired = None, 
     elif to_problem == StructuralTOExamples.MBBB:
         structural_problem = StructuralExamples.MBBB
         to_params.Comment  = "Benchmark 2.5D"
-        to_params.nDOFDesired = 60000 if nDOFDesired is None else nDOFDesired
+        to_params.nDOFDesired = 40000 if nDOFDesired is None else nDOFDesired
         to_params.DesiredVolFraction = 0.25
     elif to_problem == StructuralTOExamples.DistributedLoad:
         structural_problem = StructuralExamples.DistributedLoad
@@ -122,6 +122,7 @@ def getStructuralTOProblem(to_problem: StructuralTOExamples,nDOFDesired = None, 
         structural_problem = StructuralExamples.TwoBar
         to_params.Comment  = "Benchmark 2.5D"
         to_params.ExtrudeZ = True
+        to_params.YSymmetry = True  # Symmetry about the Y-axis
         to_params.nDOFDesired = 25000 if nDOFDesired is None else nDOFDesired
         to_params.DesiredVolFraction = 0.25
     elif to_problem == StructuralTOExamples.TorquePlate:
@@ -135,7 +136,7 @@ def getStructuralTOProblem(to_problem: StructuralTOExamples,nDOFDesired = None, 
         structural_problem = StructuralExamples.EdgeCantilever
         to_params.Comment = "Benchmark 3D"
         to_params.YSymmetry = True
-        to_params.nDOFDesired = 150000 if nDOFDesired is None else nDOFDesired
+        to_params.nDOFDesired = 70000 if nDOFDesired is None else nDOFDesired
         to_params.DesiredVolFraction = 0.25
     elif to_problem == StructuralTOExamples.ThreeHoleBracket:
         structural_problem = StructuralExamples.ThreeHoleBracket
@@ -173,7 +174,7 @@ def getStructuralTOProblem(to_problem: StructuralTOExamples,nDOFDesired = None, 
         to_params.ZSymmetry = True
         kwargs['topload'] = 1.5e4
         kwargs['midload'] = 0
-        to_params.nDOFDesired = 250000 if nDOFDesired is None else nDOFDesired
+        to_params.nDOFDesired = 70000 if nDOFDesired is None else nDOFDesired
         to_params.DesiredVolFraction = 0.1
     elif to_problem == StructuralTOExamples.LBracketThickMidLoad:
         structural_problem = StructuralExamples.LBracketThick
@@ -181,7 +182,7 @@ def getStructuralTOProblem(to_problem: StructuralTOExamples,nDOFDesired = None, 
         to_params.ZSymmetry = True
         kwargs['topload'] = 0
         kwargs['midload'] = 1.5e4
-        to_params.nDOFDesired = 250000 if nDOFDesired is None else nDOFDesired
+        to_params.nDOFDesired = 70000 if nDOFDesired is None else nDOFDesired
         to_params.DesiredVolFraction = 0.1
     elif to_problem == StructuralTOExamples.KnuckleAssembly:
         structural_problem = StructuralExamples.KnuckleAssembly
@@ -195,7 +196,7 @@ def getStructuralTOProblem(to_problem: StructuralTOExamples,nDOFDesired = None, 
         to_params.Comment = "Thin Structure"
         to_params.XSymmetry = True
         to_params.ZSymmetry = True
-        to_params.nDOFDesired = 100000 if nDOFDesired is None else nDOFDesired
+        to_params.nDOFDesired = 70000 if nDOFDesired is None else nDOFDesired
         to_params.DesiredVolFraction = 0.1
     elif to_problem == StructuralTOExamples.BliskWithBlade:
         structural_problem = StructuralExamples.BliskWithBlade
