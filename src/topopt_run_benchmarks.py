@@ -10,6 +10,7 @@ import pandas as pd
 subFolder = "2.5D"
 def runTOMethodOnBenchmarks(optimizationMethod):
 	# Create a list to store results
+	global subFolder
 	results_list = []
 	dsolver = deflation.DeflationSolver()
 
@@ -35,7 +36,7 @@ def runTOMethodOnBenchmarks(optimizationMethod):
 						StructuralTOExamples.LBracketThickMidLoad,
 						StructuralTOExamples.Table]
 	
-	for to_problem in benchmarks_2_5D_problems:
+	for to_problem in [StructuralTOExamples.MBBB]:
 		if to_problem in benchmarks_2_5D_problems:
 			subFolder = "2.5D"
 		elif to_problem in benchmarks_3D_problems:
@@ -103,9 +104,38 @@ def runTOMethodOnBenchmarks(optimizationMethod):
 			'success': success,
 			'error': errorMsg
 		})
+		# Check if a previous CSV result exists for this method and problem
+		result_csv_file = f"{output_dir}/{optimizationMethod.name}_summary.csv"
+		if os.path.exists(result_csv_file):
+			# Read the existing CSV file
+			existing_df = pd.read_csv(result_csv_file)
+						
+			# Find if this problem already exists in the CSV
+			problem_index = existing_df[existing_df['name'] == to_problem.name].index
+						
+			if len(problem_index) > 0:
+				# Update the existing entry
+				existing_df.loc[problem_index[0]] = results_list[-1]
+			else:
+				# Append the new entry
+				existing_df = pd.concat([existing_df, pd.DataFrame([results_list[-1]])], ignore_index=True)
+						
+			# Save the updated DataFrame back to CSV
+			existing_df.to_csv(result_csv_file, index=False)
 
+		else:
+			# If the CSV file does not exist, create it with the new entry
+			pd.DataFrame([results_list[-1]]).to_csv(result_csv_file, index=False)
+		
+	
 	# Convert results_list to a DataFrame for better visualization
-	results_df = pd.DataFrame(results_list)
+
+	# Read the results from the existing CSV file if it exists, otherwise create a new DataFrame
+	result_csv_file = f"{output_dir}/{optimizationMethod.name}_summary.csv"
+	if os.path.exists(result_csv_file):
+		results_df = pd.read_csv(result_csv_file)
+	else:
+		results_df = pd.DataFrame(results_list)
 
 	# Format
 	results_df['volume'] = results_df['volume'].map(lambda x: f"{x:.2g}")
@@ -128,9 +158,7 @@ def runTOMethodOnBenchmarks(optimizationMethod):
 	
 	# Save the table as an image
 	results_path = f"{output_dir}/{optimizationMethod.name}_summary.png"
-	# Save the table as a CSV file
-	csv_path = f"{output_dir}/{optimizationMethod.name}_summary.csv"
-	results_df.to_csv(csv_path, index=False)
+
 	plt.savefig(results_path, bbox_inches='tight')
 
 def combine_results():
@@ -259,11 +287,11 @@ def combine_results():
 if __name__ == "__main__":    
 	
 	optimizationMethods = [TO_METHODS.DENSITYMMA, TO_METHODS.DENSITYOC, TO_METHODS.PARETO]
-	for optimizationMethod in [TO_METHODS.DENSITYMMA]:
+	for optimizationMethod in optimizationMethods:
 		runTOMethodOnBenchmarks(optimizationMethod)
 		print(f"Finished {optimizationMethod.name} tests.")
 		print("-" * 50)
 		print("\n")
-	subFolder = "3D"
+	
 	# Combine results from all methods
 	combine_results() 

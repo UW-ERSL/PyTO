@@ -2,8 +2,8 @@
 
 from topopt_common import *
 from topopt_material_model import *
-from scipy.ndimage import distance_transform_edt
 import time
+import hex_structural_fea
 
 forward_diffx = None
 backward_diffx = None
@@ -378,7 +378,7 @@ def ZDerivative(mesh,direction: str = "forward") -> tuple[coo_matrix, np.ndarray
 if __name__ == "__main__":    
 	
 	from topopt_benchmarks import *
-	# jax.config.update("jax_enable_x64", True)
+
 	print("-" * 50)
 	to_problem = StructuralTOExamples.Mitchell_1 # Choose the TO problem
 	print(f"Running {to_problem.name}...") 
@@ -398,7 +398,7 @@ if __name__ == "__main__":
 		dsolver.create_delfation_matrix(mesh)
 		dsolver.W = dsolver.W[bc.free_dofs, :]
 
-	fe_solver = sfea.HexStructuralFEA(mesh = mesh,
+	fe_solver = hex_structural_fea.HexStructuralFEA(mesh = mesh,
 				mat_prop = mat_prop,
 				bc = bc,
 				solver = solver,
