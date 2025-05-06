@@ -519,21 +519,29 @@ class HexStructuralFEA:
     # If cross-section is specified, create a clipped mesh
     if cross_section is not None:
         axis = cross_section.get('axis', 'x').lower()
-        position = cross_section.get('position', 0.0)
-        
+        rel_position = cross_section.get('position', 0.0)
+        # Convert relative position to actual position based on bounding box
+        bbox_min = pv_mesh.bounds[::2]  # [xmin, ymin, zmin]
+        bbox_max = pv_mesh.bounds[1::2]  # [xmax, ymax, zmax]
+
+  
         # Create a clipping plane based on the axis
         if axis == 'x':
             normal = (1, 0, 0)
+            position = bbox_min[0] + (bbox_max[0] - bbox_min[0]) * (rel_position + 1) / 2
             origin = (position, 0, 0)
         elif axis == 'y':
             normal = (0, 1, 0)
+            position = bbox_min[1] + (bbox_max[1] - bbox_min[1]) * (rel_position + 1) / 2
             origin = (0, position, 0)
         elif axis == 'z':
             normal = (0, 0, 1)
+            position = bbox_min[2] + (bbox_max[2] - bbox_min[2]) * (rel_position + 1) / 2
             origin = (0, 0, position)
         else:
             print(f"Invalid axis '{axis}'. Using 'x' instead.")
             normal = (1, 0, 0)
+            position = 0
             origin = (position, 0, 0)
         
         # Apply clipping

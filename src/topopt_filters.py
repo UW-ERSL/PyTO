@@ -97,8 +97,8 @@ def createXDerivativeFilter(mesh: hex_mesher.HexMesher) -> tuple[coo_matrix, np.
 			data.append(0.0)
 	
 	HXD = coo_matrix((data, (rows, cols)), shape=(num_elems, num_elems)).tocsc()
-	HXD_s = np.array(HXD.sum(1)).squeeze()
-	return HXD, HXD_s
+
+	return HXD
 
 def createYDerivativeFilter(mesh: hex_mesher.HexMesher) -> tuple[coo_matrix, np.ndarray]:
 	"""Create a finite-difference filter matrix approximating the spatial y derivative.
@@ -160,8 +160,8 @@ def createYDerivativeFilter(mesh: hex_mesher.HexMesher) -> tuple[coo_matrix, np.
 			data.append(0.0)
 			
 	HYD = coo_matrix((data, (rows, cols)), shape=(num_elems, num_elems)).tocsc()
-	HYD_s = np.array(HYD.sum(1)).squeeze()
-	return HYD, HYD_s
+
+	return HYD
 
 def createZDerivativeFilter(mesh: hex_mesher.HexMesher) -> tuple[coo_matrix, np.ndarray]:
 	"""Create a finite-difference filter matrix approximating the spatial z derivative.
@@ -223,8 +223,8 @@ def createZDerivativeFilter(mesh: hex_mesher.HexMesher) -> tuple[coo_matrix, np.
 			data.append(0.0)
 			
 	HZD = coo_matrix((data, (rows, cols)), shape=(num_elems, num_elems)).tocsc()
-	HZD_s = np.array(HZD.sum(1)).squeeze()
-	return HZD, HZD_s
+
+	return HZD
 def createXSymmetryFilter(mesh: hex_mesher.HexMesher) -> tuple[coo_matrix, np.ndarray]:
 	"""Create a symmetry filter matrix about X mid-plane.
 	

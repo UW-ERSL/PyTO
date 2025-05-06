@@ -799,9 +799,16 @@ class HexMesher:
 			if np.isinf(min_dist):
 				sdf[i] = 0  # Default to zero if no boundary elements exist
 			else:
+				# Determine the direction of the minimum distance
+				direction = np.argmin(np.abs(self.elem_centers[i] - elem_centers[boundary_elems]), axis=1)
+				# print("Direction:", direction)
+				correction = 0.5 * self.elem_size[0]
+				# print("Self.elem_size:", self.elem_size)
 				# Inside elements get positive distances, outside get negative
-				sdf[i] = -min_dist if density_field[i] == 1 else min_dist
+				sdf[i] = -min_dist-correction if density_field[i] == 1 else min_dist+correction
 
+
+		
 		# Normalize SDF by element size for better scaling
 		avg_elem_size = np.mean(self.elem_size)
 		sdf /= avg_elem_size
