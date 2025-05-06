@@ -90,6 +90,7 @@ def topopt_optimality_criteria(
 			grad_obj[to_params.ElemsToKeep] = min(grad_obj)
 
 		cons = volume_fraction_upperlimit(x, to_params.DesiredVolFraction)
+		grad_obj /= np.max(np.abs(grad_obj)) # Scaling the gradient to avoid numerical issues
 		# Optimality criteria update
 		xold = x.copy()
 		if  not directLagrangeMethod: # bisection method
@@ -196,7 +197,7 @@ if __name__ == "__main__":
 	from topopt_benchmarks import *
 
 	print("-" * 50)
-	to_problem = StructuralTOExamples.MBBB # Choose the TO problem
+	to_problem = StructuralTOExamples.Mitchell_1 # Choose the TO problem
 	print(f"Running {to_problem.name}...") 
 	print("-" * 50)
 	solver = lin_solv.Solvers.PARDISO # # Choose solver. Typically PARDISO, but DPCG for DOF > 200,000

@@ -42,7 +42,7 @@ def getStructuralTOProblem(to_problem: StructuralTOExamples,nDOFDesired = None, 
     to_params = TOParams()
     if to_problem == StructuralTOExamples.Mitchell_1:
         structural_problem = StructuralExamples.Mitchell
-        kwargs['load1'] = 5.6e4
+        kwargs['load1'] = 5.6e12
         kwargs['load2'] = 0
         to_params.Comment = "Benchmark 2.5D"
         to_params.ExtrudeZ = True

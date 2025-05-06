@@ -114,6 +114,7 @@ def topopt_mma(fe_solver: hex_structural_fea.HexStructuralFEA,
 			#x[to_params.ElemsToKeep] = 1.0
 
 		vf = np.mean(x)
+		grad_obj /= np.max(np.abs(grad_obj)) # Scaling the gradient to avoid numerical issues
 		if (to_params.ExactVolumeFraction):
 			uppervolfraction =  to_params.DesiredVolFraction + 0.001
 			consUpper = volume_fraction_upperlimit(x, uppervolfraction)
@@ -215,7 +216,7 @@ if __name__ == "__main__":
 	from topopt_benchmarks import *
 	
 	print("-" * 50)
-	to_problem = StructuralTOExamples.TwoBar # Choose the TO problem
+	to_problem = StructuralTOExamples.Mitchell_1 # Choose the TO problem
 	print(f"Running {to_problem.name}...") 
 	print("-" * 50)
 	solver = lin_solv.Solvers.PARDISO # # Choose solver. Typically PARDISO, but DPCG for DOF > 200,000

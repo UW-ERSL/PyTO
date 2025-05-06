@@ -85,6 +85,8 @@ def topopt_pareto(fe_solver: hex_structural_fea.HexStructuralFEA,
 		T[to_params.ElemsToKeep] = np.max(T)
 	T = (H * T) / Hs
 
+	T /= np.max(np.abs(T))  # Normalize sensitivity
+
 	if (print_progress):
 		print(f"vf={history['volume'][-1]:.3f}, J={history['compliance'][-1]:.3g}, #FEA={totalIter:2d}")
 	vol_decr = vol_decr_max
@@ -174,7 +176,7 @@ def topopt_pareto(fe_solver: hex_structural_fea.HexStructuralFEA,
 				T += 2*T_body
 
 			T = (H * T) / Hs
-			
+			T /= np.max(np.abs(T))  # Normalize sensitivity
 			T = ((1-wtDamping)*T + wtDamping*TPrev)  # Damping
 
 			if (elemsWithForces.size > 0):
@@ -214,7 +216,7 @@ if __name__ == "__main__":
 	from topopt_benchmarks import *
 	
 	print("-" * 50)
-	to_problem = StructuralTOExamples.TwoBar # Choose the TO problem
+	to_problem = StructuralTOExamples.Mitchell_1 # Choose the TO problem
 	print(f"Running {to_problem.name}...") 
 	print("-" * 50)
 	
