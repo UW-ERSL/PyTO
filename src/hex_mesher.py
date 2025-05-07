@@ -788,7 +788,7 @@ class HexMesher:
 		if not boundary_elems:
 			print("Warning: No boundary elements found. Returning zero SDF.")
 			return sdf
-		print(f"Number of boundary elements: {len(boundary_elems)}")
+
 		# Compute distances from each element to the nearest boundary element
 		for i in range(self.num_elems):
 			min_dist = float('inf')
