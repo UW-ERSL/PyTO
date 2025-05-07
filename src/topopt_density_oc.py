@@ -74,6 +74,10 @@ def topopt_optimality_criteria(
 			fe_solver.mesh.setPseudoDensity(x)
 			fe_solver.plot_pseudo_density(auto_close = False, title = f"Iteration {iter}")
 		obj,u = compliance(x, fe_solver,material_model)
+		if (len(history['compliance']) == 0):
+			objScaling = 0.1*obj
+		obj = obj/objScaling # Scale the objective function to avoid numerical issues
+
 		ce = (np.dot(u[fe_solver.mesh.edofMat].reshape(num_elems, 24), KE) * u[fe_solver.mesh.edofMat].reshape(num_elems, 24)).sum(1)
 		grad_obj = -get_material_model_sensitivity(x,material_model) * ce
 
@@ -90,7 +94,7 @@ def topopt_optimality_criteria(
 			grad_obj[to_params.ElemsToKeep] = min(grad_obj)
 
 		cons = volume_fraction_upperlimit(x, to_params.DesiredVolFraction)
-		grad_obj /= np.max(np.abs(grad_obj)) # Scaling the gradient to avoid numerical issues
+		grad_obj /= objScaling
 		# Optimality criteria update
 		xold = x.copy()
 		if  not directLagrangeMethod: # bisection method
@@ -137,7 +141,7 @@ def topopt_optimality_criteria(
 
 		fe_solver.mesh.setPseudoDensity(np.asarray(xPhys))
 	
-		history['compliance'].append(obj)
+		history['compliance'].append(obj*objScaling)
 		history['volume'].append(np.mean(xPhys))
 		history['change'].append(change)
 		# Estimate the percentage of grey elements
@@ -146,7 +150,7 @@ def topopt_optimality_criteria(
 		if elem_body_force is not None and (np.linalg.norm(elem_body_force) > 0):
 			update_SIMP_PENALTY_for_body_force(fraction_grey)
 		if (print_progress):
-			print(f"it.: {iter+1:d}, obj.: {obj:.5g}, "
+			print(f"it.: {iter+1:d}, obj.: {(obj*objScaling):.3f}, "
 				  	f"vol.: {np.mean(xPhys):.3g}, grey: {fraction_grey:.3f}")
 		if np.isnan(obj):
 			print("Objective function became NaN. Exiting optimization.")

@@ -29,14 +29,14 @@ def runTOMethodOnBenchmarks(optimizationMethod):
 	benchmarks_bodyforce_problems = [StructuralTOExamples.GravityPlate,
 						StructuralTOExamples.CentrifugalPlate]
 	
-	benchmarks_3D_problems = [StructuralTOExamples.EdgeCantilever, 
+	benchmarks_3D_problems = [ StructuralTOExamples.EdgeCantilever, 
 						   StructuralTOExamples.ThreeHoleBracket, 
 						 StructuralTOExamples.Multiload,
 						   StructuralTOExamples.LBracketThickTopLoad,
 						StructuralTOExamples.LBracketThickMidLoad,
 						StructuralTOExamples.Table]
 	
-	for to_problem in [StructuralTOExamples.EdgeCantilever]:
+	for to_problem in [StructuralTOExamples.Table]:
 		if to_problem in benchmarks_2_5D_problems:
 			subFolder = "2.5D"
 		elif to_problem in benchmarks_3D_problems:

@@ -87,6 +87,7 @@ def topopt_mma(fe_solver: hex_structural_fea.HexStructuralFEA,
 	errorMsg = ""
 	nFEAs = 0
 	initialize_SIMP_PENALTY()  # Initialize the SIMP penalty for the first iteration
+
 	while True:
 		x = mma_state.x.reshape(-1)
 		if (plot_progress):
@@ -94,6 +95,9 @@ def topopt_mma(fe_solver: hex_structural_fea.HexStructuralFEA,
 			fe_solver.plot_pseudo_density(auto_close = False, title = f"Iteration {mma_state.epoch+1}")
 		timeFEAStart = time.time()
 		obj,u = compliance(x, fe_solver, material_model)
+		if (len(history['compliance']) == 0):
+			objScaling = 0.1*obj
+		obj = obj/objScaling # Normalize the objective function
 		nFEAs += 1
 		timeFEA += time.time() - timeFEAStart
 		obj = np.array([obj])
@@ -114,7 +118,8 @@ def topopt_mma(fe_solver: hex_structural_fea.HexStructuralFEA,
 			#x[to_params.ElemsToKeep] = 1.0
 
 		vf = np.mean(x)
-		grad_obj /= np.max(np.abs(grad_obj)) # Scaling the gradient to avoid numerical issues
+		grad_obj /=objScaling
+		#grad_obj /= np.max(np.abs(grad_obj)) # Scaling the gradient to avoid numerical issues
 		if (to_params.ExactVolumeFraction):
 			uppervolfraction =  to_params.DesiredVolFraction + 0.001
 			consUpper = volume_fraction_upperlimit(x, uppervolfraction)
@@ -159,8 +164,8 @@ def topopt_mma(fe_solver: hex_structural_fea.HexStructuralFEA,
 		if elem_body_force is not None and (np.linalg.norm(elem_body_force) > 0):
 			update_SIMP_PENALTY_for_body_force(fraction_grey)
 		if (print_progress):
-			print(f"it.: {mma_state.epoch}, obj.: {obj[0]:.4g}, vf: {vf:.3f}, change: {change: 0.3f}, grey: {fraction_grey:.3f}")
-		history['compliance'].append(obj[0])
+			print(f"it.: {mma_state.epoch}, obj.: {obj[0]*objScaling:.4g}, vf: {vf:.3f}, change: {change: 0.3f}, grey: {fraction_grey:.3f}")
+		history['compliance'].append(obj[0]*objScaling)
 		history['volume'].append(np.mean(x))
 		history['change'].append(change)
 		
@@ -175,12 +180,14 @@ def topopt_mma(fe_solver: hex_structural_fea.HexStructuralFEA,
 			errorMsg = "Time limit exceeded."
 			print("MMA optimization terminated due to time limit.")
 			break
+		if len(history['compliance']) >= maxMMAIterations:
+			success = False
+			errorMsg = "Maximum iterations reached."
+			print("MMA optimization terminated due to maximum iterations.")
+			break
 
 
-	if mma_state.epoch >= maxMMAIterations:
-		print("MMA optimization did not converge.")
-		errorMsg = "Maximum iterations reached."
-		success = False
+
 	
 	# Find threshold that preserves volume fraction
 	target_vf = to_params.DesiredVolFraction
@@ -216,7 +223,7 @@ if __name__ == "__main__":
 	from topopt_benchmarks import *
 	
 	print("-" * 50)
-	to_problem = StructuralTOExamples.Mitchell_1 # Choose the TO problem
+	to_problem = StructuralTOExamples.EdgeCantilever # Choose the TO problem
 	print(f"Running {to_problem.name}...") 
 	print("-" * 50)
 	solver = lin_solv.Solvers.PARDISO # # Choose solver. Typically PARDISO, but DPCG for DOF > 200,000
@@ -246,7 +253,7 @@ if __name__ == "__main__":
 	print('Solver: ', fe_solver.solver.name)
 	print("nDof: ", 3*fe_solver.mesh.num_nodes)
 	print("nElem: ", fe_solver.mesh.num_elems)	
-	print("Close the plot to continue...")
+	
 	title = f'nDOF: {3*fe_solver.mesh.num_nodes}, nElem: {fe_solver.mesh.num_elems}'
 	#fe_solver.plot_mesh(title = title, save_path = None)
 	
