@@ -9,7 +9,7 @@ import time
 def topopt_levelset(fe_solver: hex_structural_fea.HexStructuralFEA,
                     to_params,
                     maxIterations: int = 250,
-                    numReinit: int = 10,
+                    numReinit: int = 1,
                     plot_progress: bool = False,
                     debug: bool = False) -> tuple[np.ndarray, dict]:
     """Level Set Method for Topology Optimization using Hamilton-Jacobi equation in 3D.
@@ -66,15 +66,17 @@ def topopt_levelset(fe_solver: hex_structural_fea.HexStructuralFEA,
         KE = hex_element_stiffness.hex8_stiffness_matrix_structural( fe_solver.mat_prop,fe_solver.mesh.elem_size)
     volCurr = 1.0
     volDecrementWeight = 0.1
+
     for iterNum in range(maxIterations):
         if (plot_progress):
             fe_solver.plot_mesh(plot_bc = False,auto_close = False, title = f'Volfrac: {volCurr:0.3f}')
 
         comp,u = compliance(rho, fe_solver)
         shapeSens =(-rho)* (np.dot(u[fe_solver.mesh.edofMat].reshape(fe_solver.mesh.num_elems, 24), KE) * u[fe_solver.mesh.edofMat].reshape(fe_solver.mesh.num_elems, 24)).sum(1)
+ 
         shapeSens = (H * shapeSens)/Hs
         shapeSens /= np.max(np.abs(shapeSens))
-
+        
         if (elemsWithForces.size > 0):
            shapeSens[elemsWithForces] = min(shapeSens)
 
@@ -92,14 +94,15 @@ def topopt_levelset(fe_solver: hex_structural_fea.HexStructuralFEA,
              break
        
         shapeSens = shapeSens + volDecrementWeight * (volCurr - to_params.DesiredVolFraction)
-       
+        
         gradMag = GradientMagnitude(lsf,HXD,HYD,HZD)
         gradMagSmooth = H*gradMag/Hs
+
         lsf += (shapeSens*gradMagSmooth)
         
         rho = (lsf < 0).astype(np.float64)
         fe_solver.mesh.setPseudoDensity(np.asarray(rho))
-        if (np.max(np.abs(lsf)) > 100):
+        if (iterNum % numReinit == 0):
             print("Reinitializing level set function")
             lsf = fe_solver.mesh.compute_signed_distance_function(rho)
         lsf /= np.max(np.abs(lsf))
