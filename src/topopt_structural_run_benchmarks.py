@@ -3,14 +3,14 @@ from topopt_density_mma import topopt_mma
 from topopt_density_oc import topopt_optimality_criteria	
 from topopt_pareto import topopt_pareto
 from topopt_levelset import topopt_levelset	
-from topopt_benchmarks import *
+from topopt_structural_benchmarks import *
 import time
 import glob
 import pandas as pd
-subFolder = "2.5D"
-def runTOMethodOnBenchmarks(optimizationMethod):
+
+def runTOMethodOnStructuralBenchmarks(optimizationMethod):
 	# Create a list to store results
-	global subFolder
+
 	results_list = []
 	dsolver = deflation.DeflationSolver()
 
@@ -24,19 +24,20 @@ def runTOMethodOnBenchmarks(optimizationMethod):
 						StructuralTOExamples.TwoBar, 
 						StructuralTOExamples.DistributedLoad,
 						StructuralTOExamples.TorquePlate]
-	
-	
-	benchmarks_bodyforce_problems = [StructuralTOExamples.GravityPlate,
-						StructuralTOExamples.CentrifugalPlate]
-	
+
 	benchmarks_3D_problems = [ StructuralTOExamples.EdgeCantilever, 
 						   StructuralTOExamples.ThreeHoleBracket, 
 						 StructuralTOExamples.Multiload,
 						   StructuralTOExamples.LBracketThickTopLoad,
 						StructuralTOExamples.LBracketThickMidLoad,
 						StructuralTOExamples.Table]
+		
 	
-	for to_problem in benchmarks_3D_problems:
+	benchmarks_bodyforce_problems = [StructuralTOExamples.GravityPlate,
+						StructuralTOExamples.CentrifugalPlate]
+	
+	
+	for to_problem in benchmarks_2_5D_problems:
 		if to_problem in benchmarks_2_5D_problems:
 			subFolder = "2.5D"
 		elif to_problem in benchmarks_3D_problems:
@@ -84,7 +85,7 @@ def runTOMethodOnBenchmarks(optimizationMethod):
 													to_params = to_params)
 		timeTaken = time.time() - startTime
 		# Create the directory if it does not exist
-		output_dir = f"./Results/Results_{time.strftime('%Y-%m-%d')}/{subFolder}/{optimizationMethod.name}"
+		output_dir = f"./Results/Results_{time.strftime('%Y-%m-%d')}/Structural/{subFolder}/{optimizationMethod.name}"
 		if not os.path.exists(output_dir):
 			os.makedirs(output_dir)
 
@@ -163,132 +164,143 @@ def runTOMethodOnBenchmarks(optimizationMethod):
 
 def combine_results():
 	# Get the latest results directory
-	results_dir = sorted(glob.glob(f"./Results/Results_{time.strftime('%Y-%m-%d')}/{subFolder}"))[-1]
-	print(f"Combining results from {results_dir}")
-	# Read all CSV files
-	dataframes = {}
-	for method in TO_METHODS:
-		csv_path = f"{results_dir}/{method.name}/{method.name}_summary.csv"
-		if os.path.exists(csv_path):
-			df = pd.read_csv(csv_path)
-			# Convert compliance and time strings to float
-			df['compliance'] = df['compliance'].astype(float)
-			df['time (s)'] = df['time (s)'].astype(float)
-			dataframes[method.name] = df
+	for subFolder in ["2.5D", "3D"]:
+		# Get the latest results directory for the given subfolder
+		# Use glob to find all matching directories and sort them
+		# Use time.strftime to get the current date in the format YYYY-MM-DD
+		# Sort the directories and take the last one (most recent)
+		#results_dir = sorted(glob.glob(f"./Results/Results_{time.strftime('%Y-%m-%d')}/{subFolder}"))[-1]
+		# If you want to combine results from all subfolders, uncomment the line below
+		results_dirs = sorted(glob.glob(f"./Results/Results_{time.strftime('%Y-%m-%d')}/Structural/{subFolder}"))
+		if not results_dirs:
+			print(f"No results directory found for {subFolder}. Skipping...")
+			continue
+		results_dir = results_dirs[-1]
+		print(f"Combining results from {results_dir}")
+		# Read all CSV files
+		dataframes = {}
+		for method in TO_METHODS:
+			csv_path = f"{results_dir}/{method.name}/{method.name}_summary.csv"
+			if os.path.exists(csv_path):
+				df = pd.read_csv(csv_path)
+				# Convert compliance and time strings to float
+				df['compliance'] = df['compliance'].astype(float)
+				df['time (s)'] = df['time (s)'].astype(float)
+				dataframes[method.name] = df
 
-	if not dataframes:
-		return
+		if not dataframes:
+			return
 
-	# Create compliance summary
-	problems = dataframes['DENSITYMMA']['name']
-	compliance_data = {}
-	fea_data = {}
-	time_data = {}
-	
-	# Get reference values from DENSITYMMA
-	reference_compliance = dict(zip(
-		dataframes['DENSITYMMA']['name'],
-		dataframes['DENSITYMMA']['compliance']
-	))
-	reference_time = dict(zip(
-		dataframes['DENSITYMMA']['name'],
-		dataframes['DENSITYMMA']['time (s)']
-	))
-
-	# Calculate normalized compliance, time and get #FEAs for each method
-	for method, df in dataframes.items():
-		compliance_data[method] = [
-			row['compliance'] / reference_compliance[row['name']]
-			for _, row in df.iterrows()
-		]
-		time_data[method] = [
-			row['time (s)'] / reference_time[row['name']]
-			for _, row in df.iterrows()
-		]
-		# Get reference values for #FEAs from DENSITYMMA
-		reference_feas = dict(zip(
+		# Create compliance summary
+		problems = dataframes['DENSITYMMA']['name']
+		compliance_data = {}
+		fea_data = {}
+		time_data = {}
+		
+		# Get reference values from DENSITYMMA
+		reference_compliance = dict(zip(
 			dataframes['DENSITYMMA']['name'],
-			dataframes['DENSITYMMA']['#FEAs']
+			dataframes['DENSITYMMA']['compliance']
 		))
-		# Calculate normalized #FEAs
-		fea_data[method] = [
-			row['#FEAs'] / reference_feas[row['name']]
-			for _, row in df.iterrows()
-		]
+		reference_time = dict(zip(
+			dataframes['DENSITYMMA']['name'],
+			dataframes['DENSITYMMA']['time (s)']
+		))
 
-	# Create and save normalized compliance summary
-	compliance_df = pd.DataFrame(compliance_data, index=problems)
-	#compliance_df.to_csv(f"{results_dir}/compliance_summary.csv")
+		# Calculate normalized compliance, time and get #FEAs for each method
+		for method, df in dataframes.items():
+			compliance_data[method] = [
+				row['compliance'] / reference_compliance[row['name']]
+				for _, row in df.iterrows()
+			]
+			time_data[method] = [
+				row['time (s)'] / reference_time[row['name']]
+				for _, row in df.iterrows()
+			]
+			# Get reference values for #FEAs from DENSITYMMA
+			reference_feas = dict(zip(
+				dataframes['DENSITYMMA']['name'],
+				dataframes['DENSITYMMA']['#FEAs']
+			))
+			# Calculate normalized #FEAs
+			fea_data[method] = [
+				row['#FEAs'] / reference_feas[row['name']]
+				for _, row in df.iterrows()
+			]
 
-	# Create and save normalized time summary
-	time_df = pd.DataFrame(time_data, index=problems)
-	#time_df.to_csv(f"{results_dir}/time_summary.csv")
+		# Create and save normalized compliance summary
+		compliance_df = pd.DataFrame(compliance_data, index=problems)
+		#compliance_df.to_csv(f"{results_dir}/compliance_summary.csv")
 
-	# Create and save #FEAs summary
-	fea_df = pd.DataFrame(fea_data, index=problems)
-	#fea_df.to_csv(f"{results_dir}/fea_summary.csv")
-	# Create separate plots for compliance, time and FEAs
-	
-	# Plot normalized compliance
-	plt.figure(figsize=(12, 6))
-	compliance_df.plot(kind='bar', width=0.8)
-	plt.title('Relative Compliance', fontsize=12, fontweight='bold')
-	plt.ylabel('Relative to DENSITYMMA', fontsize=10)
-	plt.xticks(rotation=45, fontsize=8, ha='right')
-	plt.legend(title='Method', fontsize=8, bbox_to_anchor=(1.05, 1), loc='upper left')
-	plt.grid(True, alpha=0.3)
-	plt.subplots_adjust(right=0.85)  # Make room for legend
-	plt.tight_layout()
-	plt.savefig(f"{results_dir}/compliance_comparison.png", dpi=300, bbox_inches='tight')
-	plt.close()
+		# Create and save normalized time summary
+		time_df = pd.DataFrame(time_data, index=problems)
+		#time_df.to_csv(f"{results_dir}/time_summary.csv")
 
-	# Plot normalized time
-	plt.figure(figsize=(10, 6))
-	time_df.plot(kind='bar', width=0.8)
-	plt.title('Relative Computation Time', fontsize=12, fontweight='bold') 
-	plt.ylabel('Relative to DENSITYMMA', fontsize=10)
-	plt.xticks(rotation=45, fontsize=8, ha='right')
-	plt.legend(title='Method', fontsize=8, bbox_to_anchor=(1.05, 1), loc='upper left')
-	plt.grid(True, alpha=0.3)
-	plt.tight_layout()
-	plt.savefig(f"{results_dir}/time_comparison.png", dpi=300, bbox_inches='tight')
-	plt.close()
+		# Create and save #FEAs summary
+		fea_df = pd.DataFrame(fea_data, index=problems)
+		#fea_df.to_csv(f"{results_dir}/fea_summary.csv")
+		# Create separate plots for compliance, time and FEAs
+		
+		# Plot normalized compliance
+		plt.figure(figsize=(12, 6))
+		compliance_df.plot(kind='bar', width=0.8)
+		plt.title('Relative Compliance', fontsize=12, fontweight='bold')
+		plt.ylabel('Relative to DENSITYMMA', fontsize=10)
+		plt.xticks(rotation=45, fontsize=8, ha='right')
+		plt.legend(title='Method', fontsize=8, bbox_to_anchor=(1.05, 1), loc='upper left')
+		plt.grid(True, alpha=0.3)
+		plt.subplots_adjust(right=0.85)  # Make room for legend
+		plt.tight_layout()
+		plt.savefig(f"{results_dir}/compliance_comparison.png", dpi=300, bbox_inches='tight')
+		plt.close()
 
-	# Plot number of FEAs
-	plt.figure(figsize=(10, 6))
-	fea_df.plot(kind='bar', width=0.8)
-	plt.title('Relative Num. of FEAs', fontsize=12, fontweight='bold')
-	plt.ylabel('Relative to DENSITYMMA', fontsize=10)
-	plt.xticks(rotation=45, fontsize=8, ha='right')
-	plt.legend(title='Method', fontsize=8, bbox_to_anchor=(1.05, 1), loc='upper left')
-	plt.grid(True, alpha=0.3)
-	plt.tight_layout()
-	plt.savefig(f"{results_dir}/fea_comparison.png", dpi=300, bbox_inches='tight')
-	plt.close()
+		# Plot normalized time
+		plt.figure(figsize=(10, 6))
+		time_df.plot(kind='bar', width=0.8)
+		plt.title('Relative Computation Time', fontsize=12, fontweight='bold') 
+		plt.ylabel('Relative to DENSITYMMA', fontsize=10)
+		plt.xticks(rotation=45, fontsize=8, ha='right')
+		plt.legend(title='Method', fontsize=8, bbox_to_anchor=(1.05, 1), loc='upper left')
+		plt.grid(True, alpha=0.3)
+		plt.tight_layout()
+		plt.savefig(f"{results_dir}/time_comparison.png", dpi=300, bbox_inches='tight')
+		plt.close()
 
-	# Create and plot normalized volume fraction summary
-	volume_data = {}
-	for method, df in dataframes.items():
-		volume_data[method] = [float(vol) for vol in df['volume']]
-	
-	volume_df = pd.DataFrame(volume_data, index=problems)
-	
-	plt.figure(figsize=(10, 6))
-	volume_df.plot(kind='bar', width=0.8)
-	plt.title('Volume Fraction', fontsize=12, fontweight='bold')
-	plt.ylabel('Volume Fraction', fontsize=10)
-	plt.xticks(rotation=45, fontsize=8, ha='right')
-	plt.legend(title='Method', fontsize=8, bbox_to_anchor=(1.05, 1), loc='upper left')
-	plt.grid(True, alpha=0.3)
-	plt.tight_layout()
-	plt.savefig(f"{results_dir}/volume_comparison.png", dpi=300, bbox_inches='tight')
-	plt.close()
+		# Plot number of FEAs
+		plt.figure(figsize=(10, 6))
+		fea_df.plot(kind='bar', width=0.8)
+		plt.title('Relative Num. of FEAs', fontsize=12, fontweight='bold')
+		plt.ylabel('Relative to DENSITYMMA', fontsize=10)
+		plt.xticks(rotation=45, fontsize=8, ha='right')
+		plt.legend(title='Method', fontsize=8, bbox_to_anchor=(1.05, 1), loc='upper left')
+		plt.grid(True, alpha=0.3)
+		plt.tight_layout()
+		plt.savefig(f"{results_dir}/fea_comparison.png", dpi=300, bbox_inches='tight')
+		plt.close()
+
+		# Create and plot normalized volume fraction summary
+		volume_data = {}
+		for method, df in dataframes.items():
+			volume_data[method] = [float(vol) for vol in df['volume']]
+		
+		volume_df = pd.DataFrame(volume_data, index=problems)
+		
+		plt.figure(figsize=(10, 6))
+		volume_df.plot(kind='bar', width=0.8)
+		plt.title('Volume Fraction', fontsize=12, fontweight='bold')
+		plt.ylabel('Volume Fraction', fontsize=10)
+		plt.xticks(rotation=45, fontsize=8, ha='right')
+		plt.legend(title='Method', fontsize=8, bbox_to_anchor=(1.05, 1), loc='upper left')
+		plt.grid(True, alpha=0.3)
+		plt.tight_layout()
+		plt.savefig(f"{results_dir}/volume_comparison.png", dpi=300, bbox_inches='tight')
+		plt.close()
 
 if __name__ == "__main__":    
 	
-	optimizationMethods = [TO_METHODS.DENSITYMMA, TO_METHODS.DENSITYOC, TO_METHODS.PARETO]
+	optimizationMethods = [TO_METHODS.DENSITYMMA, TO_METHODS.DENSITYOC, TO_METHODS.PARETO,TO_METHODS.LEVELSET]
 	for optimizationMethod in optimizationMethods:
-		runTOMethodOnBenchmarks(optimizationMethod)
+		runTOMethodOnStructuralBenchmarks(optimizationMethod)
 		print(f"Finished {optimizationMethod.name} tests.")
 		print("-" * 50)
 		print("\n")

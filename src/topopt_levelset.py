@@ -6,10 +6,10 @@ from scipy.ndimage import distance_transform_edt
 import time
 
 
-def topopt_levelset(fe_solver: hex_structural_fea.HexStructuralFEA,
+def topopt_levelset(fe_solver,
                     to_params,
                     maxIterations: int = 250,
-                    numReinit: int = 1,
+                    numReinit: int = 10000,
                     plot_progress: bool = False,
                     debug: bool = False) -> tuple[np.ndarray, dict]:
     """Level Set Method for Topology Optimization using Hamilton-Jacobi equation in 3D.
@@ -28,8 +28,13 @@ def topopt_levelset(fe_solver: hex_structural_fea.HexStructuralFEA,
         A tuple containing the displacement field of the optimized structure
         and a dictionary containing the optimization history.
     """
+    if isinstance(fe_solver, hex_structural_fea.HexStructuralFEA):
+        nDOFPerNode = 3
+    else:
+        nDOFPerNode = 1
+            
     tStart = time.time()
-   
+    material_model = MaterialModel.SIMP 
     mesh=fe_solver.mesh
 
 
@@ -55,7 +60,7 @@ def topopt_levelset(fe_solver: hex_structural_fea.HexStructuralFEA,
     mat_prop = fe_solver.mat_prop
     # if (print_progress):
     
-    elemsWithForces = find_elements_with_forces(fe_solver.mesh, fe_solver.bc.force)
+    elemsWithForces = find_elements_with_forces(fe_solver.mesh, fe_solver.bc.force,nDOFPerNode)
    
     if isinstance(fe_solver.mat_prop, list):
         KE_list = [hex_element_stiffness.hex8_stiffness_matrix_structural( mp,fe_solver.mesh.elem_size)
@@ -66,13 +71,15 @@ def topopt_levelset(fe_solver: hex_structural_fea.HexStructuralFEA,
         KE = hex_element_stiffness.hex8_stiffness_matrix_structural( fe_solver.mat_prop,fe_solver.mesh.elem_size)
     volCurr = 1.0
     volDecrementWeight = 0.1
-
+    success = True
+    errorMsg = ""    
     for iterNum in range(maxIterations):
         if (plot_progress):
             fe_solver.plot_mesh(plot_bc = False,auto_close = False, title = f'Volfrac: {volCurr:0.3f}')
 
-        comp,u = compliance(rho, fe_solver)
-        shapeSens =(-rho)* (np.dot(u[fe_solver.mesh.edofMat].reshape(fe_solver.mesh.num_elems, 24), KE) * u[fe_solver.mesh.edofMat].reshape(fe_solver.mesh.num_elems, 24)).sum(1)
+        sol = fe_solver.solve(rho, material_model)
+        obj, grad_obj = compliance(sol,rho, fe_solver,KE, material_model)
+        shapeSens =(-rho)* (np.dot(sol[fe_solver.mesh.edofMat].reshape(fe_solver.mesh.num_elems, 24), KE) * sol[fe_solver.mesh.edofMat].reshape(fe_solver.mesh.num_elems, 24)).sum(1)
  
         shapeSens = (H * shapeSens)/Hs
         shapeSens /= np.max(np.abs(shapeSens))
@@ -87,34 +94,55 @@ def topopt_levelset(fe_solver: hex_structural_fea.HexStructuralFEA,
         fe_solver.postprocess()
 
         volCurr = np.mean(rho)
-        history['compliance'].append(comp)
+        history['compliance'].append(obj)
         history['volume'].append(volCurr)
-        print(f"Iter: {iterNum}, Compliance: {comp:.4f}, Volume: {volCurr:.3f}")
-        if (abs(volCurr - to_params.DesiredVolFraction) < 0.01):
+        
+        print(f"Iter: {iterNum}, Compliance: {obj:.4f}, Volume: {volCurr:.3f}")
+        if (abs(volCurr - to_params.DesiredVolFraction) < 0.001):
              break
-       
-        shapeSens = shapeSens + volDecrementWeight * (volCurr - to_params.DesiredVolFraction)
-        
-        gradMag = GradientMagnitude(lsf,HXD,HYD,HZD)
-        gradMagSmooth = H*gradMag/Hs
+        beta  = 0.35
+        adjustedWeight = volDecrementWeight * (1 - abs(volCurr - to_params.DesiredVolFraction))
+        shapeSens = shapeSens + adjustedWeight * (volCurr - to_params.DesiredVolFraction+beta)
 
-        lsf += (shapeSens*gradMagSmooth)
+        gradMag = GradientMagnitude(lsf,HXD,HYD,HZD)      
+        gradMagSmooth = H*gradMag/Hs        
         
+        lsf += (shapeSens*gradMagSmooth)
         rho = (lsf < 0).astype(np.float64)
         fe_solver.mesh.setPseudoDensity(np.asarray(rho))
         if (iterNum % numReinit == 0):
             print("Reinitializing level set function")
             lsf = fe_solver.mesh.compute_signed_distance_function(rho)
+    
         lsf /= np.max(np.abs(lsf))
         lsf = H*lsf/Hs
-        volDecrementWeight += 0.0025
+        if(volCurr - to_params.DesiredVolFraction > 0.001):
+            volDecrementWeight += 0.0025
+        else:
+            volDecrementWeight -= 0.005
         
+    sol = fe_solver.solve(rho, material_model)
+    obj, grad_obj = compliance(sol,rho, fe_solver,KE, material_model)
+    history['compliance'].append(obj)
+    history['volume'].append(volCurr)
+    if iterNum == maxIterations - 1:
+        errorMsg = "Maximum iterations reached"
+        print(errorMsg)
+        success = False
+    if (obj > 2*history['compliance'][-2]):
+        errorMsg = "Disconnected topology"
+        success = False
+    volfrac = history['volume'][-1]  # Define volfrac based on the last volume in history
+    if volfrac > 1.1 * to_params.DesiredVolFraction:
+        errorMsg = f"vf {to_params.DesiredVolFraction:0.3f} not reached"
+        success = False
 
+    nFEAs = iterNum + 1
     totalTime = time.time() - tStart
     print(f"Final Compliance: {history['compliance'][-1]:.4f}, Final Volume: {history['volume'][-1]:.3f}")
     print(f"Total Time: {totalTime:.2f} s")
 
-    return u, history
+    return sol, history, success, errorMsg, nFEAs
 
 def GradientMagnitude(lsf: np.ndarray,HXD,HYD,HZD):
 		"""Create a filter matrix to compute the magnitude of the gradient of a scalar field.
@@ -136,17 +164,19 @@ def GradientMagnitude(lsf: np.ndarray,HXD,HYD,HZD):
     
 if __name__ == "__main__":    
 	
-	from topopt_benchmarks import *
+	from topopt_structural_benchmarks import *
 	# jax.config.update("jax_enable_x64", True)
 	print("-" * 50)
-	to_problem = StructuralTOExamples.LBracketThickTopLoad # Choose the TO problem
+	to_problem = StructuralTOExamples.Mitchell_1# Choose the TO problem
+     
+	# to_problem = StructuralTOExamples.LBracketThickMidLoad # Choose the TO problem
 	print(f"Running {to_problem.name}...") 
 	print("-" * 50)
 	solver = lin_solv.Solvers.PARDISO # # Choose solver. Typically PARDISO, but DPCG for DOF > 200,000
 	debug = False
 
 	# Get the structural problem
-	mesh, mat_prop, bc,elem_body_force, to_params = getStructuralTOProblem(to_problem,nDOFDesired=20000)
+	mesh, mat_prop, bc,elem_body_force, to_params = getStructuralTOProblem(to_problem,nDOFDesired=25000)
 
 
 	dsolver = deflation.DeflationSolver()
@@ -177,9 +207,9 @@ if __name__ == "__main__":
 	startTime = time.time()
 	
 	print("OptimizationMethod: Level Set")
-	u, history = topopt_levelset(fe_solver=fe_solver,
+	u, history, success,errorMsg,nFEAs = topopt_levelset(fe_solver=fe_solver,
                                                     to_params=to_params,
-                                                    maxIterations = 200,
+                                                    maxIterations = 300,
                                                     plot_progress = True,
                                                     debug = False)
 	timeTaken = time.time() - startTime

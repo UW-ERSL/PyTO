@@ -472,7 +472,7 @@ if __name__ == "__main__":
     # Topopt demo
 
     jax.config.update("jax_enable_x64", True)
-    from topopt_benchmarks import *
+    from topopt_structural_benchmarks import *
     import time
 
     print("-" * 50)

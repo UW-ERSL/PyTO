@@ -8,6 +8,8 @@ import matplotlib.pyplot as plt
 import linear_solvers as lin_solv
 import hex_mesher
 import hex_structural_fea 
+from topopt_material_model import *
+import hex_thermal_fea 
 import deflation
 
 DIRECT_SOLVER_DOF_CUTOFF = 150000 #  dof limit for direct solver, for greater number of dof, iterative solver is used
@@ -38,7 +40,7 @@ class TOParams: # These are the default parameters
     AMBuildConstraint = False
     ElemsToKeep = None
 
-def find_elements_with_forces(mesh: hex_mesher.HexMesher, force) -> np.ndarray:
+def find_elements_with_forces(mesh: hex_mesher.HexMesher, force,nDOFPerNode) -> np.ndarray:
 	"""Find all elements that have nodes on which force has been applied.
 	
 	Args:
@@ -49,7 +51,7 @@ def find_elements_with_forces(mesh: hex_mesher.HexMesher, force) -> np.ndarray:
 		Array of element indices that have nodes with applied forces.
 	"""
 	force_dofs = np.where(force != 0)[0]
-	forced_nodes = set(force_dofs // 3)  # Convert DOFs to node indices
+	forced_nodes = set(force_dofs // nDOFPerNode)  # Convert DOFs to node indices
 	elements_with_forces = []
 
 	for elem in range(mesh.num_elems):
@@ -90,11 +92,11 @@ def volume_fraction_lowerlimit(density: np.ndarray,
 	"""
 	return 1- (np.mean(density)/volfracLower)
 
-def compliance(x: np.ndarray,
-				fe_solver: hex_structural_fea.HexStructuralFEA,
-						material_model = None,
+def compliance(sol: np.ndarray, x: np.ndarray,
+				fe_solver, KE,
+				material_model = None,
 													) -> np.ndarray:
-	"""Compute the structural compliance objective.
+	"""Compute the  compliance objective.
 
 	Args:
 		density: Array of (num_elems,) containing the element densities.
@@ -103,8 +105,24 @@ def compliance(x: np.ndarray,
 
 	Returns: The compliance objective value.
 	"""
-	u = fe_solver.solve(x, material_model)
-	return np.einsum('i, i -> ', fe_solver.total_force, u), u
+	dofMat = fe_solver.mesh.edofMat
+	num_elems = fe_solver.mesh.num_elems
+	nRows = KE.shape[0]
+	ce = (np.dot(sol[dofMat].reshape(num_elems, nRows), KE) * sol[dofMat].reshape(num_elems, nRows)).sum(1)
+	
+	if (nRows == 24): # structural hex
+		materialScaling = get_structural_material_model_scaling(x, material_model)
+		compliance_grad = -get_structural_material_model_sensitivity(x,material_model) * ce
+	
+	elif (nRows == 8): # thermal hex
+		materialScaling = get_thermal_material_model_scaling(x, material_model)
+		compliance_grad = -get_thermal_material_model_sensitivity(x,material_model) * ce
+	else:
+		raise ValueError("Invalid number of rows in element stiffness matrix.")
+	
+	
+	compliance = np.sum(materialScaling * ce)
+	return compliance, compliance_grad
 
 
     
@@ -167,7 +185,7 @@ def createFilters(fe_solver: hex_structural_fea.HexStructuralFEA,to_params):
 	return H, Hs
 
 
-def computeTopologicalSensitivity(poissons_ratio,strains,stresses,x):
+def computeStructuralTopologicalSensitivity(poissons_ratio,strains,stresses,x):
 	stress_tensor = x[:, None, None] * np.array([
 		[stresses[:, 0], stresses[:, 3], stresses[:, 4]],
 		[stresses[:, 3], stresses[:, 1], stresses[:, 5]],
@@ -196,5 +214,22 @@ def computeTopologicalSensitivity(poissons_ratio,strains,stresses,x):
 		nu = poissons_ratio
 		T = (4 / (1 + nu) * np.sum(stress_tensor * strain_tensor, axis=(1, 2)) -
 			(1 - 3 * nu) / (1 - nu**2) * trace_stress * trace_strain)
+	return T
+
+
+def computeThermalTopologicalSensitivity(conductivity,strains,x):
+	# For thermal problems, topological sensitivity is related to conductivity * gradient^2
+	# Multiply by density (x) to scale based on material distribution
+	if isinstance(conductivity, list):
+		# Handle multiple materials
+		# Using the first conductivity value for now - this would need to be updated
+		# to properly handle multiple materials
+		k = conductivity[0]
+	else:
+		# Single material case
+		k = conductivity
+		
+	T = x * k * np.sum(strains**2, axis=0)
+
 	return T
 

@@ -8,6 +8,8 @@ import enum
 script_dir = os.path.dirname(os.path.abspath(__file__))
 
 class HexThermalExamples(enum.Enum):
+    HeatPlate = enum.auto()
+    FourCornersThermal = enum.auto()
     ThickPlate = enum.auto()
     AnnularPlate = enum.auto()
     LBracket = enum.auto()
@@ -29,18 +31,117 @@ def getThermalProblem(problem: HexThermalExamples, **kwargs):
   tuple
     A tuple containing the mesh, material properties, and boundary conditions for the problem.
   """
-  if problem == HexThermalExamples.LBracket:
+  print("problem", problem)
+  if problem == HexThermalExamples.HeatPlate:
+    return createHeatPlateThermalProblem(**kwargs)
+  
+  elif problem == HexThermalExamples.FourCornersThermal:
+    return createFourCornersThermalProblem(**kwargs)
+  
+  elif problem == HexThermalExamples.LBracket:
     return createLBracketThermalProblem(**kwargs)
+  
+  elif problem == HexThermalExamples.LBracket:
+    return createLBracketThermalProblem(**kwargs)
+  
   elif problem == HexThermalExamples.ThickPlate:
     return createThickPlateThermalProblem(**kwargs)
+  
   elif problem == HexThermalExamples.AnnularPlate:
     return createAnnularPlateThermalProblem(**kwargs)
+  
   elif problem == HexThermalExamples.Moran:
     return createMoranBenchMark(**kwargs)
+  
   elif problem == HexThermalExamples.BliskWithBlade:
     return createBliskWithBladeProblem(**kwargs)
+  
   else:
-    raise ValueError("Invalid structural example name.")
+    raise ValueError("Invalid thermal example name.")
+
+
+
+def createHeatPlateThermalProblem(nDOFDesired: int = 25000,thermal_conductivity = 50,
+                                         heat_load = 1, T0 = 23):
+    """
+	"""
+	# Read the STL model, create a mesh of desired size, and a structural problem is posed on it.
+    stl_file = os.path.join(script_dir, '../Models/HeatPlate/HeatPlate.STL')
+    nElemsDesired = nDOFDesired //3	# estimate
+    mesh = hex_mesher.HexMesher()
+	
+    mesh.createMeshFromSTLFile(stl_file, nElemsDesired=nElemsDesired)
+    mesh.createEdofMatThermal()
+    node_pts = mesh.node_xyz
+	
+    fixed_nodes = np.where(node_pts[:, 1] == np.max(node_pts[:, 1]) )[0] # y = yMax plane
+    fixed_dofs = np.array([fixed_nodes]).flatten().astype(int)
+    dirichlet_values = T0*np.ones_like(fixed_dofs, dtype = float)
+  
+    load_nodes = np.where((node_pts[:, 1] == np.min(node_pts[:, 1])) & 
+                (node_pts[:, 0] >= 0.475) & 
+                (node_pts[:, 0] <= 0.525))[0] 
+    
+    load_dofs = load_nodes
+    force = np.zeros(mesh.num_nodes)
+    force[load_dofs] = heat_load/len(load_nodes)
+
+    dirichlet_values = T0*np.ones_like(fixed_dofs, dtype = float)
+    bc = bound_cond.BC(force = force,fixed_dofs = fixed_dofs,dirichlet_values = dirichlet_values) 
+
+    mat_prop = mat_lib.ThermalMaterial(thermal_conductivity=thermal_conductivity)
+    elem_body_force = None
+    return mesh, mat_prop, bc, elem_body_force
+
+
+def createFourCornersThermalProblem(nDOFDesired: int = 25000,thermal_conductivity = 50,
+                                         T0 = 23):
+    """
+	"""
+	# Read the STL model, create a mesh of desired size, and a structural problem is posed on it.
+    stl_file = os.path.join(script_dir, '../Models/FourCornersThermal/FourCornersThermal.STL')
+    nElemsDesired = nDOFDesired //3	# estimate
+    mesh = hex_mesher.HexMesher()
+	
+    mesh.createMeshFromSTLFile(stl_file, nElemsDesired=nElemsDesired)
+    mesh.createEdofMatThermal()
+    node_pts = mesh.node_xyz
+	
+    tol = 1e-6
+
+    xmin = np.min(node_pts[:, 0])
+    xmax = np.max(node_pts[:, 0])
+    ymin = np.min(node_pts[:, 1])
+    ymax = np.max(node_pts[:, 1])
+    
+    fixed_nodes_1 = np.where((np.abs(node_pts[:, 0] - xmin) < tol) & 
+                 (node_pts[:, 1] < 0.04))[0].astype(int)  # x = xmin and y < 0.1
+    
+    fixed_nodes_2 = np.where((np.abs(node_pts[:, 1] - ymax) < tol) & 
+                 (node_pts[:, 0] < 0.04))[0].astype(int)  # y = ymax and x < 0.1
+     
+    fixed_nodes_3 = np.where((np.abs(node_pts[:, 0] - xmax) < tol) & 
+                 (node_pts[:, 1] > 0.06))[0].astype(int)  # x = xmax and y > 0.9
+    
+    fixed_nodes_4 = np.where((np.abs(node_pts[:, 1] - ymin) < tol) & 
+                 (node_pts[:, 0] > 0.06))[0].astype(int)  # y = ymin and x > 0.9
+  
+
+    fixed_dofs = np.concatenate([fixed_nodes_1, fixed_nodes_2, fixed_nodes_3, fixed_nodes_4]).astype(int)
+    dirichlet_values = np.zeros_like(fixed_dofs, dtype = float)
+
+    dirichlet_values[0:len(fixed_nodes_1)] = 0
+    dirichlet_values[len(fixed_nodes_1):len(fixed_nodes_1)+len(fixed_nodes_2)] = 100
+    dirichlet_values[len(fixed_nodes_1)+len(fixed_nodes_2):len(fixed_nodes_1)+len(fixed_nodes_2)+len(fixed_nodes_3)] = 0 
+    dirichlet_values[len(fixed_nodes_1)+len(fixed_nodes_2)+len(fixed_nodes_3):] = 100
+  
+
+    force = np.zeros(mesh.num_nodes)
+    bc = bound_cond.BC(force = force,fixed_dofs = fixed_dofs,dirichlet_values = dirichlet_values) 
+
+    mat_prop = mat_lib.ThermalMaterial(thermal_conductivity=thermal_conductivity)
+    elem_body_force = None
+    return mesh, mat_prop, bc, elem_body_force
 
 
 def createThickPlateThermalProblem(nDOFDesired: int = 10000,thermal_conductivity = 50, heat_load = 1000, T0 = 23):

@@ -2,7 +2,7 @@ from topopt_common import *
 from topopt_filters import imposeZCastFilter
 import time
 import numpy as np
-def topopt_pareto(fe_solver: hex_structural_fea.HexStructuralFEA,
+def topopt_pareto(fe_solver,
 				  to_params,
 							rel_err: float = 0.02,
 							vol_decr_max: float = 0.05,
@@ -31,7 +31,10 @@ def topopt_pareto(fe_solver: hex_structural_fea.HexStructuralFEA,
 	Returns: A tuple containing the displacement field of the optimized structure
 		and a dictionary containing the optimization history.
 	"""
-
+	if isinstance(fe_solver, hex_structural_fea.HexStructuralFEA):
+		nDOFPerNode = 3
+	else:
+		nDOFPerNode = 1
 	tStart = time.time()
 	
 	removeHangingElems = to_params.RemoveHangingElems
@@ -49,7 +52,7 @@ def topopt_pareto(fe_solver: hex_structural_fea.HexStructuralFEA,
 		print("Computing Filters ...")
 	[H,Hs] = createFilters(fe_solver, to_params)
 
-	elemsWithForces = find_elements_with_forces(fe_solver.mesh, fe_solver.bc.force)
+	elemsWithForces = find_elements_with_forces(fe_solver.mesh, fe_solver.bc.force,nDOFPerNode)
 
 	if (fe_solver.elem_body_force is not None):
 		elem_force = fe_solver.elem_body_force.copy()
@@ -62,21 +65,41 @@ def topopt_pareto(fe_solver: hex_structural_fea.HexStructuralFEA,
 		nodal_body_force = None
 
 	
-	u =fe_solver.solve(x)
+	if isinstance(fe_solver.mat_prop, list): # multiple materials
+		if isinstance(fe_solver, hex_structural_fea.HexStructuralFEA):
+			KE_list = [hex_element_stiffness.hex8_stiffness_matrix_structural( mp,fe_solver.mesh.elem_size)
+				for mp in fe_solver.mat_prop]
+			KE = KE_list[0]
+		elif isinstance(fe_solver, hex_thermal_fea.HexThermalFEA):
+			KE_list = [hex_element_stiffness.hex8_stiffness_matrix_thermal( mp,fe_solver.mesh.elem_size)
+				for mp in fe_solver.mat_prop]
+			KE = KE_list[0]	
+		print("Assuming all elements have the same material properties")
+	else:
+		if isinstance(fe_solver, hex_structural_fea.HexStructuralFEA):
+			KE = hex_element_stiffness.hex8_stiffness_matrix_structural( fe_solver.mat_prop,fe_solver.mesh.elem_size)
+		elif isinstance(fe_solver, hex_thermal_fea.HexThermalFEA):
+			KE = hex_element_stiffness.hex8_stiffness_matrix_thermal( fe_solver.mat_prop,fe_solver.mesh.elem_size)
+	
+	sol = fe_solver.solve(x)
 	nFEAs = 1
 	# Store initial compliance
-	history['compliance'].append(fe_solver.total_force.T @ u)
+	obj, _ = compliance(sol,x, fe_solver,KE)
+	history['compliance'].append( obj)
 	history['volume'].append(volfrac)
 	fe_solver.postprocess() # compute stresses and strains for the initial design
 	# Compute initial topological sensitivity
-	T = computeTopologicalSensitivity(fe_solver.mat_prop.poissons_ratio,fe_solver.strainComponents,fe_solver.stressComponents,x)
-	
+	if isinstance(fe_solver, hex_structural_fea.HexStructuralFEA):
+		T = computeStructuralTopologicalSensitivity(fe_solver.mat_prop.poissons_ratio,fe_solver.strainComponents,fe_solver.stressComponents,x)
+	else:
+		T = computeThermalTopologicalSensitivity(fe_solver.mat_prop.thermal_conductivity,fe_solver.strain,x)
+			
 	# Add contribution from body force to topological sensitivity if present
 	if (nodal_body_force is not None):
 		T_body = np.zeros(fe_solver.mesh.num_elems)
 		for elem in range(fe_solver.mesh.num_elems):
 			edof = fe_solver.mesh.edofMat[elem]
-			T_body[elem] =  (x[elem]*u[edof] * nodal_body_force[edof]).sum()
+			T_body[elem] =  (x[elem]*sol[edof] * nodal_body_force[edof]).sum()
 		T += 2*T_body
 
 	if (elemsWithForces.size > 0): #For pure body forces, this may be empty
@@ -159,20 +182,24 @@ def topopt_pareto(fe_solver: hex_structural_fea.HexStructuralFEA,
 			JPrevPrev = JPrev  # Store previous to previous value
 			JPrev = JTemp  # Store previous value
 
-			u = fe_solver.solve(x)
+			sol = fe_solver.solve(x)
 			nFEAs += 1
-			JTemp = float(fe_solver.total_force.T @ u)
+			JTemp, _ = compliance(sol,x, fe_solver,KE)
+
 
 			# Update sensitivity
 			fe_solver.postprocess()
-			T = computeTopologicalSensitivity(fe_solver.mat_prop.poissons_ratio,fe_solver.strainComponents,fe_solver.stressComponents,x)
-		
+			if isinstance(fe_solver, hex_structural_fea.HexStructuralFEA):
+				T = computeStructuralTopologicalSensitivity(fe_solver.mat_prop.poissons_ratio,fe_solver.strainComponents,fe_solver.stressComponents,x)
+			else:
+				T = computeThermalTopologicalSensitivity(fe_solver.mat_prop.thermal_conductivity,fe_solver.strain,x)
+			
 			# Add contribution from body force to topological sensitivity if present
 			if (nodal_body_force is not None):
 				T_body = np.zeros(fe_solver.mesh.num_elems)
 				for elem in range(fe_solver.mesh.num_elems):
 					edof = fe_solver.mesh.edofMat[elem]
-					T_body[elem] =  (x[elem]*u[edof] * nodal_body_force[edof]).sum()
+					T_body[elem] =  (x[elem]*sol[edof] * nodal_body_force[edof]).sum()
 				T += 2*T_body
 
 			T = (H * T) / Hs
@@ -209,21 +236,27 @@ def topopt_pareto(fe_solver: hex_structural_fea.HexStructuralFEA,
 
 	print(f"Final vf: {history['volume'][-1]:.3f},  objective: {history['compliance'][-1]:.4g}")
 	print(f"Total Time: {totalTime:.2f} s")
-	return u, history, success,errorMsg,nFEAs
+	return sol, history, success,errorMsg,nFEAs
 
 
 if __name__ == "__main__":    
-	from topopt_benchmarks import *
+	from topopt_structural_benchmarks import *
+	from topopt_thermal_benchmarks import *
 	
 	print("-" * 50)
 	to_problem = StructuralTOExamples.Mitchell_1 # Choose the TO problem
+	to_problem = ThermalTOExamples.FourCornersThermal # Choose the TO problem
+
+	if (to_problem in StructuralTOExamples):
+		mesh, mat_prop, bc,elem_body_force, to_params = getStructuralTOProblem(to_problem)
+	elif (to_problem in ThermalTOExamples):
+		mesh, mat_prop, bc,elem_body_force, to_params = getThermalTOProblem(to_problem)
+
 	print(f"Running {to_problem.name}...") 
 	print("-" * 50)
 	
 	debug = False
 
-	# Get the structural problem
-	mesh, mat_prop, bc,elem_body_force, to_params = getStructuralTOProblem(to_problem)
 
 	dsolver = deflation.DeflationSolver()
 	if (to_params.nDOFDesired <= DIRECT_SOLVER_DOF_CUTOFF):#  # Choose solver. Typically PARDISO, but DPCG for large DOF problems
@@ -238,14 +271,23 @@ if __name__ == "__main__":
 		dsolver.create_deflation_matrix(mesh)
 		dsolver.W = dsolver.W[bc.free_dofs, :]
 	 
-	fe_solver = hex_structural_fea.HexStructuralFEA(mesh = mesh,
-				mat_prop = mat_prop,
-				bc = bc,
-				solver = solver,
-				dsolver = dsolver,
-				rtol = 1e-8,
-        		elem_body_force = elem_body_force)
 	
+	if (to_problem in StructuralTOExamples):
+		fe_solver = hex_structural_fea.HexStructuralFEA(mesh = mesh,
+					mat_prop = mat_prop,
+					bc = bc,
+					solver = solver,
+					dsolver = dsolver,
+					rtol = 1e-8,
+					elem_body_force = elem_body_force)
+	elif (to_problem in ThermalTOExamples):
+		fe_solver = hex_thermal_fea.HexThermalFEA(mesh = mesh,
+					mat_prop = mat_prop,
+					bc = bc,
+					solver = solver,
+					dsolver = dsolver,
+					rtol = 1e-8,
+					elem_body_force = elem_body_force)
 
 	print('Solver: ', fe_solver.solver.name)
 	print("nDof: ", 3*fe_solver.mesh.num_nodes)
@@ -257,7 +299,7 @@ if __name__ == "__main__":
 	startTime = time.time()
 
 	print("OptimizationMethod: Pareto")
-	u, history, success,errorMsg,nFEAs = topopt_pareto(fe_solver = fe_solver,
+	sol, history, success,errorMsg,nFEAs = topopt_pareto(fe_solver = fe_solver,
 									to_params = to_params,
 									plot_progress= True,
 									debug = debug)
@@ -271,10 +313,6 @@ if __name__ == "__main__":
 	fe_solver.plot_mesh(title = title, save_path = None)
 
 		
-	# plot other quantities over the optimized mesh
-	fe_solver.plot_deformation()
-	fe_solver.plot_vonMisesStress()
-
 	# Plot volume vs compliance history
 	plt.figure()
 	plt.plot(history['volume'], history['compliance'], marker='o')

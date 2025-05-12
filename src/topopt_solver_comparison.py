@@ -11,7 +11,7 @@ from topopt_density_oc import topopt_optimality_criteria
 from topopt_pareto import topopt_pareto
 from hex_structural_examples import *
 from topopt_common import *
-from topopt_benchmarks import *
+from topopt_structural_benchmarks import *
 import itertools
 
 dsolver = deflation.DeflationSolver()

@@ -4,7 +4,7 @@ from topopt_material_model import *
 import time
 
 def topopt_optimality_criteria(
-							fe_solver: hex_structural_fea.HexStructuralFEA,
+							fe_solver, #hex_structural_fea.HexStructuralFEA or hex_thermal_fea.HexThermalFEA
 							to_params,
 			  				maxIterations: int = 250,
 							move: float = 0.2,
@@ -28,6 +28,10 @@ def topopt_optimality_criteria(
 	Returns: A tuple containing the displacement field of the optimized structure
 		and a dictionary containing the optimization history.
 	"""
+	if isinstance(fe_solver, hex_structural_fea.HexStructuralFEA):
+		nDOFPerNode = 3
+	else:
+		nDOFPerNode = 1
 	material_model = MaterialModel.SIMP 
 	tStart = time.time()
 	elem_body_force = fe_solver.elem_body_force
@@ -37,7 +41,7 @@ def topopt_optimality_criteria(
 	if (print_progress):
 		print("Computing Filters ...")
 	[H,Hs] = createFilters(fe_solver, to_params)
-	elemsWithForces = find_elements_with_forces(fe_solver.mesh, fe_solver.bc.force)
+	elemsWithForces = find_elements_with_forces(fe_solver.mesh, fe_solver.bc.force,nDOFPerNode)
 
 	# Initialize design variables
 	x = to_params.DesiredVolFraction * np.ones(num_elems, dtype = float)
@@ -58,13 +62,22 @@ def topopt_optimality_criteria(
 	xmin = 0.001  # Minimum density
 	xmax = 1.0    # Maximum density
 	
-	if isinstance(fe_solver.mat_prop, list):
-		KE_list = [hex_element_stiffness.hex8_stiffness_matrix_structural( mp,fe_solver.mesh.elem_size)
-			 for mp in fe_solver.mat_prop]
-		KE = KE_list[0]
-		print("Density-OC: Assuming all elements have the same material properties")
+	if isinstance(fe_solver.mat_prop, list): # multiple materials
+		if isinstance(fe_solver, hex_structural_fea.HexStructuralFEA):
+			KE_list = [hex_element_stiffness.hex8_stiffness_matrix_structural( mp,fe_solver.mesh.elem_size)
+				for mp in fe_solver.mat_prop]
+			KE = KE_list[0]
+		elif isinstance(fe_solver, hex_thermal_fea.HexThermalFEA):
+			KE_list = [hex_element_stiffness.hex8_stiffness_matrix_thermal( mp,fe_solver.mesh.elem_size)
+				for mp in fe_solver.mat_prop]
+			KE = KE_list[0]	
+		print("Assuming all elements have the same material properties")
 	else:
-		KE = hex_element_stiffness.hex8_stiffness_matrix_structural( fe_solver.mat_prop,fe_solver.mesh.elem_size)
+		if isinstance(fe_solver, hex_structural_fea.HexStructuralFEA):
+			KE = hex_element_stiffness.hex8_stiffness_matrix_structural( fe_solver.mat_prop,fe_solver.mesh.elem_size)
+		elif isinstance(fe_solver, hex_thermal_fea.HexThermalFEA):
+			KE = hex_element_stiffness.hex8_stiffness_matrix_thermal( fe_solver.mat_prop,fe_solver.mesh.elem_size)
+	
 	success = True
 	errorMsg = ""
 	initialize_SIMP_PENALTY() 
@@ -73,16 +86,18 @@ def topopt_optimality_criteria(
 		if (plot_progress):
 			fe_solver.mesh.setPseudoDensity(x)
 			fe_solver.plot_pseudo_density(auto_close = False, title = f"Iteration {iter}")
-		obj,u = compliance(x, fe_solver,material_model)
+		
+		
+		sol = fe_solver.solve(x, material_model)
+		obj, grad_obj = compliance(sol,x, fe_solver,KE, material_model)
+
 		if (len(history['compliance']) == 0):
 			objScaling = 0.1*obj
 		obj = obj/objScaling # Scale the objective function to avoid numerical issues
 
-		ce = (np.dot(u[fe_solver.mesh.edofMat].reshape(num_elems, 24), KE) * u[fe_solver.mesh.edofMat].reshape(num_elems, 24)).sum(1)
-		grad_obj = -get_material_model_sensitivity(x,material_model) * ce
-
+	
 		if (nodal_body_force is not None):
-			ce_body_force = (u[fe_solver.mesh.edofMat].reshape(num_elems, 24) * nodal_body_force[fe_solver.mesh.edofMat].reshape(num_elems, 24)).sum(1)
+			ce_body_force = (sol[fe_solver.mesh.edofMat].reshape(num_elems, 24) * nodal_body_force[fe_solver.mesh.edofMat].reshape(num_elems, 24)).sum(1)
 			grad_obj +=  2*ce_body_force
 			
 		grad_obj = (H * grad_obj)/Hs
@@ -180,7 +195,9 @@ def topopt_optimality_criteria(
 	if (len(meshComponents) > 1):
 		errorMsg = "Hanging elements"
 		success = False
-	obj,u = compliance(x, fe_solver, material_model)
+	sol = fe_solver.solve(x, material_model)
+	obj, grad_obj = compliance(sol,x, fe_solver,KE, material_model)
+
 	history['compliance'].append(obj)
 	history['volume'].append(volfrac)
 	history['change'].append(change)
@@ -194,21 +211,27 @@ def topopt_optimality_criteria(
 	nFEAs = iter + 1
 	print(f"Final objective: {obj:.4g}, vf: {np.mean(x):.3f}")
 	print(f"Total Time: {totalTime:.2f} s")
-	return np.asarray(u), history, success, errorMsg, nFEAs
+	return sol, history, success, errorMsg, nFEAs
 
 	
 if __name__ == "__main__":    
-	from topopt_benchmarks import *
+	from topopt_structural_benchmarks import *
+	from topopt_thermal_benchmarks import *
 
 	print("-" * 50)
 	to_problem = StructuralTOExamples.Mitchell_1 # Choose the TO problem
+	to_problem = ThermalTOExamples.FourCornersThermal # Choose the TO problem
+
+	if (to_problem in StructuralTOExamples):
+		mesh, mat_prop, bc,elem_body_force, to_params = getStructuralTOProblem(to_problem)
+	elif (to_problem in ThermalTOExamples):
+		mesh, mat_prop, bc,elem_body_force, to_params = getThermalTOProblem(to_problem)
+
 	print(f"Running {to_problem.name}...") 
 	print("-" * 50)
 	solver = lin_solv.Solvers.PARDISO # # Choose solver. Typically PARDISO, but DPCG for DOF > 200,000
 	debug = False
 
-	# Get the structural problem
-	mesh, mat_prop, bc,elem_body_force, to_params = getStructuralTOProblem(to_problem)
 
 	dsolver = deflation.DeflationSolver()
 	if (to_params.nDOFDesired <= DIRECT_SOLVER_DOF_CUTOFF):#  # Choose solver. Typically PARDISO, but DPCG for large DOF problems
@@ -220,13 +243,22 @@ if __name__ == "__main__":
 		dsolver.create_deflation_matrix(mesh)
 		dsolver.W = dsolver.W[bc.free_dofs, :]
 
-	fe_solver = hex_structural_fea.HexStructuralFEA(mesh = mesh,
-				mat_prop = mat_prop,
-				bc = bc,
-				solver = solver,
-				dsolver = dsolver,
-				rtol = 1e-8,
-        		elem_body_force = elem_body_force)
+	if (to_problem in StructuralTOExamples):
+		fe_solver = hex_structural_fea.HexStructuralFEA(mesh = mesh,
+					mat_prop = mat_prop,
+					bc = bc,
+					solver = solver,
+					dsolver = dsolver,
+					rtol = 1e-8,
+					elem_body_force = elem_body_force)
+	elif (to_problem in ThermalTOExamples):
+		fe_solver = hex_thermal_fea.HexThermalFEA(mesh = mesh,
+					mat_prop = mat_prop,
+					bc = bc,
+					solver = solver,
+					dsolver = dsolver,
+					rtol = 1e-8,
+					elem_body_force = elem_body_force)
 	
 
 	print('Solver: ', fe_solver.solver.name)
@@ -239,7 +271,7 @@ if __name__ == "__main__":
 	startTime = time.time()		
 	
 	print("OptimizationMethod: OC")
-	u, history, success,errorMsg,nFEAs = topopt_optimality_criteria(fe_solver = fe_solver,
+	sol, history, success,errorMsg,nFEAs = topopt_optimality_criteria(fe_solver = fe_solver,
 											to_params = to_params,
 											plot_progress = True,
 											debug = debug)
@@ -253,11 +285,6 @@ if __name__ == "__main__":
 	
 	# plot the optimized mesh
 	fe_solver.plot_mesh(title = title, plot_bc = False, save_path = None)
-
-	# plot other quantities over the optimized mesh
-	fe_solver.plot_deformation()
-	fe_solver.postprocess()
-	fe_solver.plot_vonMisesStress()
 
 	fig, ax1 = plt.subplots()
 

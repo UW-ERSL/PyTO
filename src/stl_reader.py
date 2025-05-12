@@ -718,7 +718,7 @@ if __name__ == "__main__":
 
     script_dir = os.path.dirname(os.path.abspath(__file__))
     stl_file = os.path.join(script_dir, '../Models/ThickPlate/ThickPlate.STL')
-  
+    stl_file = os.path.join(script_dir, '../Models/BliskModel/BliskSectionWithBlade.STL')
     stl_geom = STLGeom(stl_file)
 
     [area, volume, cg, inertia] = stl_geom.compute_mass_properties()

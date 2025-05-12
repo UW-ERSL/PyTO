@@ -81,7 +81,7 @@ class HexStructuralFEA:
       x = np.ones((self.mesh.num_elems,))
 
 
-    elem_material_scaling = get_material_model_scaling(x, material_model)
+    elem_material_scaling = get_structural_material_model_scaling(x, material_model)
     # Handle different shapes of elem_stiff
     if self.elem_stiff.shape[0] == 1:
       # Single material case (1,N,N)
