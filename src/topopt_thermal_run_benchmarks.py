@@ -15,7 +15,8 @@ def runTOMethodOnThermalBenchmarks(optimizationMethod):
 	dsolver = deflation.DeflationSolver()
 
 
-	benchmarks_2_5D_problems = [ThermalTOExamples.HeatPlate, ThermalTOExamples.FourCornersThermal]
+	benchmarks_2_5D_problems = [ThermalTOExamples.HeatPlate, ThermalTOExamples.FourCornersThermal,
+							 ThermalTOExamples.BridgeThermal]	
 	
 	for to_problem in benchmarks_2_5D_problems:
 		if to_problem in benchmarks_2_5D_problems:
@@ -58,7 +59,7 @@ def runTOMethodOnThermalBenchmarks(optimizationMethod):
 													to_params = to_params,print_progress = print_progress)
 		elif optimizationMethod == TO_METHODS.LEVELSET:
 			u, history, success,errorMsg,nFEAs = topopt_levelset(fe_solver = fe_solver,
-													to_params = to_params)
+													to_params = to_params,print_progress = print_progress)
 		timeTaken = time.time() - startTime
 		# Create the directory if it does not exist
 		output_dir = f"./Results/Results_{time.strftime('%Y-%m-%d')}/Thermal/{subFolder}/{optimizationMethod.name}"
@@ -274,7 +275,7 @@ def combine_results():
 
 if __name__ == "__main__":    
 	
-	optimizationMethods = [TO_METHODS.DENSITYMMA, TO_METHODS.DENSITYOC, TO_METHODS.PARETO]
+	optimizationMethods = [TO_METHODS.DENSITYMMA, TO_METHODS.DENSITYOC, TO_METHODS.PARETO, TO_METHODS.LEVELSET]
 	for optimizationMethod in optimizationMethods:
 		runTOMethodOnThermalBenchmarks(optimizationMethod)
 		print(f"Finished {optimizationMethod.name} tests.")

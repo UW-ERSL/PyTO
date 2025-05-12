@@ -11,6 +11,7 @@ def topopt_levelset(fe_solver,
                     maxIterations: int = 250,
                     numReinit: int = 10000,
                     plot_progress: bool = False,
+                    print_progress : bool = True,
                     debug: bool = False) -> tuple[np.ndarray, dict]:
     """Level Set Method for Topology Optimization using Hamilton-Jacobi equation in 3D.
 
@@ -38,12 +39,14 @@ def topopt_levelset(fe_solver,
     mesh=fe_solver.mesh
 
 
-    print("Computing Derivative Filters ...")
+    if (print_progress):
+        print("Computing Derivative Filters ...")
     HXD = createXDerivativeFilter(mesh)
     HYD = createYDerivativeFilter(mesh)
     HZD = createZDerivativeFilter(mesh)
 
-    print("Computing Smoothing Filters ...")
+    if (print_progress):
+        print("Computing Smoothing Filters ...")
     [H,Hs] = createFilters(fe_solver, to_params)
 
     # Initialize level set function and design variables
@@ -52,8 +55,7 @@ def topopt_levelset(fe_solver,
     lsf /= np.max(np.abs(lsf))
 
     shapeSens = np.zeros((fe_solver.mesh.num_elems))
-    topSens = np.zeros((fe_solver.mesh.num_elems))
-
+   
     history = {'compliance': [], 'volume': []}
 
     # Material properties
@@ -62,13 +64,21 @@ def topopt_levelset(fe_solver,
     
     elemsWithForces = find_elements_with_forces(fe_solver.mesh, fe_solver.bc.force,nDOFPerNode)
    
-    if isinstance(fe_solver.mat_prop, list):
-        KE_list = [hex_element_stiffness.hex8_stiffness_matrix_structural( mp,fe_solver.mesh.elem_size)
-			 for mp in fe_solver.mat_prop]
-        KE = KE_list[0]
-        print("Density-OC: Assuming all elements have the same material properties")
+    if isinstance(fe_solver.mat_prop, list): # multiple materials
+        if isinstance(fe_solver, hex_structural_fea.HexStructuralFEA):
+            KE_list = [hex_element_stiffness.hex8_stiffness_matrix_structural( mp,fe_solver.mesh.elem_size)
+				for mp in fe_solver.mat_prop]
+            KE = KE_list[0]
+        elif isinstance(fe_solver, hex_thermal_fea.HexThermalFEA):
+            KE_list = [hex_element_stiffness.hex8_stiffness_matrix_thermal( mp,fe_solver.mesh.elem_size)
+				for mp in fe_solver.mat_prop]
+            KE = KE_list[0]	
+        print("Assuming all elements have the same material properties")
     else:
-        KE = hex_element_stiffness.hex8_stiffness_matrix_structural( fe_solver.mat_prop,fe_solver.mesh.elem_size)
+        if isinstance(fe_solver, hex_structural_fea.HexStructuralFEA):
+            KE = hex_element_stiffness.hex8_stiffness_matrix_structural( fe_solver.mat_prop,fe_solver.mesh.elem_size)
+        elif isinstance(fe_solver, hex_thermal_fea.HexThermalFEA):
+            KE = hex_element_stiffness.hex8_stiffness_matrix_thermal( fe_solver.mat_prop,fe_solver.mesh.elem_size)
     volCurr = 1.0
     volDecrementWeight = 0.1
     success = True
@@ -79,7 +89,7 @@ def topopt_levelset(fe_solver,
 
         sol = fe_solver.solve(rho, material_model)
         obj, grad_obj = compliance(sol,rho, fe_solver,KE, material_model)
-        shapeSens =(-rho)* (np.dot(sol[fe_solver.mesh.edofMat].reshape(fe_solver.mesh.num_elems, 24), KE) * sol[fe_solver.mesh.edofMat].reshape(fe_solver.mesh.num_elems, 24)).sum(1)
+        shapeSens =(-rho)* (np.dot(sol[fe_solver.mesh.edofMat].reshape(fe_solver.mesh.num_elems, 8*nDOFPerNode), KE) * sol[fe_solver.mesh.edofMat].reshape(fe_solver.mesh.num_elems, 8*nDOFPerNode)).sum(1)
  
         shapeSens = (H * shapeSens)/Hs
         shapeSens /= np.max(np.abs(shapeSens))
@@ -90,14 +100,13 @@ def topopt_levelset(fe_solver,
         if (to_params.ElemsToKeep is not None):
            shapeSens[to_params.ElemsToKeep] = min(shapeSens)
 
-        # Compute topological sensitivity 
-        fe_solver.postprocess()
 
         volCurr = np.mean(rho)
         history['compliance'].append(obj)
         history['volume'].append(volCurr)
         
-        print(f"Iter: {iterNum}, Compliance: {obj:.4f}, Volume: {volCurr:.3f}")
+        if (print_progress):
+            print(f"Iter: {iterNum}, Compliance: {obj:.4f}, Volume: {volCurr:.3f}")
         if (abs(volCurr - to_params.DesiredVolFraction) < 0.001):
              break
         beta  = 0.35
@@ -165,19 +174,23 @@ def GradientMagnitude(lsf: np.ndarray,HXD,HYD,HZD):
 if __name__ == "__main__":    
 	
 	from topopt_structural_benchmarks import *
-	# jax.config.update("jax_enable_x64", True)
+	from topopt_thermal_benchmarks import *
+	
 	print("-" * 50)
-	to_problem = StructuralTOExamples.Mitchell_1# Choose the TO problem
+	to_problem = StructuralTOExamples.Mitchell_1 # Choose the TO problem
+	to_problem = ThermalTOExamples.BridgeThermal # Choose the TO problem
+	
      
-	# to_problem = StructuralTOExamples.LBracketThickMidLoad # Choose the TO problem
+
 	print(f"Running {to_problem.name}...") 
 	print("-" * 50)
 	solver = lin_solv.Solvers.PARDISO # # Choose solver. Typically PARDISO, but DPCG for DOF > 200,000
 	debug = False
 
-	# Get the structural problem
-	mesh, mat_prop, bc,elem_body_force, to_params = getStructuralTOProblem(to_problem,nDOFDesired=25000)
-
+	if (to_problem in StructuralTOExamples):
+		mesh, mat_prop, bc,elem_body_force, to_params = getStructuralTOProblem(to_problem)
+	elif (to_problem in ThermalTOExamples):
+		mesh, mat_prop, bc,elem_body_force, to_params = getThermalTOProblem(to_problem)
 
 	dsolver = deflation.DeflationSolver()
 	# initialize the fe solver 
@@ -187,13 +200,22 @@ if __name__ == "__main__":
 		dsolver.create_delfation_matrix(mesh)
 		dsolver.W = dsolver.W[bc.free_dofs, :]
 
-	fe_solver = hex_structural_fea.HexStructuralFEA(mesh = mesh,
-				mat_prop = mat_prop,
-				bc = bc,
-				solver = solver,
-				dsolver = dsolver,
-				rtol = 1e-8,
-        		elem_body_force = elem_body_force)
+	if (to_problem in StructuralTOExamples):
+		fe_solver = hex_structural_fea.HexStructuralFEA(mesh = mesh,
+					mat_prop = mat_prop,
+					bc = bc,
+					solver = solver,
+					dsolver = dsolver,
+					rtol = 1e-8,
+					elem_body_force = elem_body_force)
+	elif (to_problem in ThermalTOExamples):
+		fe_solver = hex_thermal_fea.HexThermalFEA(mesh = mesh,
+					mat_prop = mat_prop,
+					bc = bc,
+					solver = solver,
+					dsolver = dsolver,
+					rtol = 1e-8,
+					elem_body_force = elem_body_force)
 	
 
 	print('Solver: ', fe_solver.solver.name)

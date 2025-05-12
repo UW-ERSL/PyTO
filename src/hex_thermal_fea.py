@@ -574,8 +574,8 @@ if __name__ == "__main__":
     import time	
     from hex_thermal_examples import *
 
-    problem = HexThermalExamples.FourCornersThermal
-    nDOFDesired = 10000
+    problem = HexThermalExamples.BridgeThermal
+    nDOFDesired = 25000
 
    
     solver = lin_solv.Solvers.PARDISO
