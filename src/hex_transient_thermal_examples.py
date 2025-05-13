@@ -18,7 +18,7 @@ def getHexTransientThermalProblem(problem: HexTransientThermalExamples, **kwargs
     raise ValueError("Invalid hex transient thermal example name.")
 
 
-def createThickPlateTransientThermalProblemHex(nDOFDesired: int = 10000,thermal_conductivity = 50, heat_load = 100000):
+def createThickPlateTransientThermalProblemHex(nDOFDesired: int = 10000, heat_load = 100000):
     """
   
 	"""
@@ -40,7 +40,7 @@ def createThickPlateTransientThermalProblemHex(nDOFDesired: int = 10000,thermal_
     force[load_nodes] = heat_load/len(load_nodes)
     bc = bound_cond.BC(force = force,fixed_dofs = fixed_dofs,dirichlet_values = dirichlet_values) 
 
-    mat_prop = mat_lib.ThermalMaterial(thermal_conductivity=thermal_conductivity,mass_density=7850,specific_heat=500)
+    mat_prop = mat_lib.get_material("Steel")
     initialTemperature = 23
     timeStep = 60
     totalTime = 6000

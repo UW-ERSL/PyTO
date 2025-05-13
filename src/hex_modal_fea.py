@@ -7,7 +7,6 @@ import hex_element_stiffness as elem_stiff
 import mat_lib
 import bound_cond
 import linear_solvers as lin_solv
-import mat_lib
 import os
 import scipy.sparse
 from scipy.sparse.linalg import eigsh
@@ -20,7 +19,7 @@ class ModalFEA:
 
   def __init__(self,
 							 mesh,
-							 mat_prop: mat_lib.StructuralMaterial,
+							 mat_prop: mat_lib.Material,
 							 bc: bound_cond.BC,
 							 solver: lin_sol.Solvers,
 							 **kwargs):

@@ -20,7 +20,7 @@ class HexStructuralFEA:
 
   def __init__(self,
          mesh,
-         mat_prop: mat_lib.StructuralMaterial | list[mat_lib.StructuralMaterial],
+         mat_prop: mat_lib.Material | list[mat_lib.Material],
          bc: bound_cond.BC,
          solver: linear_solvers.Solvers,
          dsolver: deflation.DeflationSolver = None,

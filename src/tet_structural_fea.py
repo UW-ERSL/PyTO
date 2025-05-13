@@ -103,7 +103,7 @@ class TetStructuralFEA:
 
   def __init__(self,
 							 quadratic_tet_mesh,
-							 mat_prop: mat_lib.StructuralMaterial,
+							 mat_prop: mat_lib.Material,
 							 bc: bound_cond.BC,
 							 solver: linear_solvers.Solvers,
 							 **kwargs):

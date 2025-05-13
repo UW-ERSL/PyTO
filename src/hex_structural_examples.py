@@ -2,7 +2,6 @@ import numpy as np
 import mat_lib
 import bound_cond
 import hex_mesher
-import mat_lib
 import os
 import enum
 script_dir = os.path.dirname(os.path.abspath(__file__))
@@ -121,8 +120,7 @@ def getStructuralProblem(problem: StructuralExamples, **kwargs):
     raise ValueError("Invalid structural example name.")
   
 
-def createTensileBarProblem(nDOFDesired: int = 10000, L: float = [10, 1, 1],youngs_modulus = 2e11, 
-                            poissons_ratio = 0.3,tensileForce = 10000):
+def createTensileBarProblem(nDOFDesired: int = 10000, L: float = [10, 1, 1],tensileForce = 10000):
   """Creates a tensile problem with approximate desired DOFs.
 
   Parameters:
@@ -144,10 +142,7 @@ def createTensileBarProblem(nDOFDesired: int = 10000, L: float = [10, 1, 1],youn
     - mat_prop: Material properties object
     - bc: Boundary conditions with fixed left face and load on right face
   """
-  print('-----------------------------')
-  print("Theoretical max displacement: {:.2g}".format(tensileForce*L[0]/(youngs_modulus*L[1]*L[2])))
-  print("Theoretical max stress: {:.2g}".format(tensileForce/(L[1]*L[2])))
-  print('-----------------------------')
+ 
   nVoxelsDesired = nDOFDesired/3    
   # Let the number of voxels be proportional to the length in each direction
   alpha = (nVoxelsDesired/(L[0]*L[1]*L[2]))**(1/3)
@@ -211,15 +206,18 @@ def createTensileBarProblem(nDOFDesired: int = 10000, L: float = [10, 1, 1],youn
             fixed_dofs = fixed_dofs,
             dirichlet_values = dirichlet_values) 
 
-  mat_prop = mat_lib.StructuralMaterial(youngs_modulus=youngs_modulus,
-                      poissons_ratio=poissons_ratio)
+  mat_prop = mat_lib.get_material("Steel")  
   
   elem_body_force = None
 
+  print('-----------------------------')
+  print("Theoretical max displacement: {:.2g}".format(tensileForce*L[0]/(mat_prop.youngs_modulus*L[1]*L[2])))
+  print("Theoretical max stress: {:.2g}".format(tensileForce/(L[1]*L[2])))
+  print('-----------------------------')
+
   return mesh, mat_prop, bc, elem_body_force
 
-def createTorsionBarProblem(nDOFDesired: int = 10000, L: float = [1, 0.2, 0.2], 
-                youngs_modulus = 2e7, poissons_ratio = 0.3, totalLoad = 1000):
+def createTorsionBarProblem(nDOFDesired: int = 10000, L: float = [1, 0.2, 0.2], totalLoad = 1000):
     """Creates a torsion bar problem with approximate desired DOFs.
 
     Parameters:
@@ -294,16 +292,13 @@ def createTorsionBarProblem(nDOFDesired: int = 10000, L: float = [1, 0.2, 0.2],
         fixed_dofs = fixed_dofs,
         dirichlet_values = dirichlet_values) 
 
-    mat_prop = mat_lib.StructuralMaterial(youngs_modulus=youngs_modulus,
-              poissons_ratio=poissons_ratio)
-    
+    mat_prop = mat_lib.get_material("Steel") 
     elem_body_force = None
 
     return mesh, mat_prop, bc, elem_body_force
   # ----------------------------------------
 
-def createBeamBendingProblem(nDOFDesired: int = 10000, L: float = [10, 1, 1],youngs_modulus = 2e11, 
-                            poissons_ratio = 0.3,tensileForce = 10000):
+def createBeamBendingProblem(nDOFDesired: int = 10000, L: float = [10, 1, 1],tensileForce = 10000):
   """Creates a tensile problem with approximate desired DOFs.
 
   Parameters:
@@ -325,14 +320,7 @@ def createBeamBendingProblem(nDOFDesired: int = 10000, L: float = [10, 1, 1],you
     - mat_prop: Material properties object
     - bc: Boundary conditions with fixed left face and load on right face
   """
-  print('-----------------------------')
-  # For a beam with rectangular cross-section under end load P
-  # Maximum deflection = PL^3/(3EI) where I = (w*h^3)/12
-  I = (L[1]*L[2]**3)/12
-  print("Theoretical max deflection: {:.2g}".format(tensileForce*L[0]**3/(3*youngs_modulus*I)))
-  # Maximum bending stress = My/I where M = PL and y = h/2
-  print("Theoretical max stress: {:.2g}".format(tensileForce*L[0]*L[2]/(2*I)))
-  print('-----------------------------')
+ 
   nVoxelsDesired = nDOFDesired/3    
   # Let the number of voxels be proportional to the length in each direction
   alpha = (nVoxelsDesired/(L[0]*L[1]*L[2]))**(1/3)
@@ -396,17 +384,24 @@ def createBeamBendingProblem(nDOFDesired: int = 10000, L: float = [10, 1, 1],you
             fixed_dofs = fixed_dofs,
             dirichlet_values = dirichlet_values) 
 
-  mat_prop = mat_lib.StructuralMaterial(youngs_modulus=youngs_modulus,
-                      poissons_ratio=poissons_ratio)
+  mat_prop = mat_lib.get_material("Steel") 
   elem_body_force = None
+
+  print('-----------------------------')
+  # For a beam with rectangular cross-section under end load P
+  # Maximum deflection = PL^3/(3EI) where I = (w*h^3)/12
+  I = (L[1]*L[2]**3)/12
+  print("Theoretical max deflection: {:.2g}".format(tensileForce*L[0]**3/(3*mat_prop.youngs_modulus*I)))
+  # Maximum bending stress = My/I where M = PL and y = h/2
+  print("Theoretical max stress: {:.2g}".format(tensileForce*L[0]*L[2]/(2*I)))
+  print('-----------------------------')
  
   return mesh, mat_prop, bc, elem_body_force
 
   # ----------------------------------------
 
 
-def createShearBlockProblem(nDOFDesired: int = 10000, L: float = [1, 1, 1],youngs_modulus = 2e11, 
-                            poissons_ratio = 0.3,shearForce = 1000):
+def createShearBlockProblem(nDOFDesired: int = 10000, L: float = [1, 1, 1],shearForce = 1000):
   """Creates a shear problem with approximate desired DOFs.
 
   Parameters:
@@ -465,8 +460,7 @@ def createShearBlockProblem(nDOFDesired: int = 10000, L: float = [1, 1, 1],young
             fixed_dofs = fixed_dofs,
             dirichlet_values = dirichlet_values) 
 
-  mat_prop = mat_lib.StructuralMaterial(youngs_modulus=youngs_modulus,
-                      poissons_ratio=poissons_ratio)
+  mat_prop = mat_lib.get_material("Steel") 
   
   elem_body_force = None
 
@@ -539,8 +533,7 @@ S. Ivvan Valdez, et al. Arch Computat Methods Eng (2017) 24:803–839, DOI 10.10
             fixed_dofs = fixed_dofs,
             dirichlet_values = dirichlet_values) 
 
-  mat_prop = mat_lib.StructuralMaterial(youngs_modulus=youngs_modulus,
-                      poissons_ratio=poissons_ratio)
+  mat_prop = mat_lib.get_material("Steel") 
   
   elem_body_force = None
 
@@ -550,8 +543,7 @@ S. Ivvan Valdez, et al. Arch Computat Methods Eng (2017) 24:803–839, DOI 10.10
   # ----------------------------------------
 
 
-def createEdgeCantileverProblem(nDOFDesired: int = 10000, L: float = [0.4, 0.2, 0.1],
-                                youngs_modulus = 2e11, poissons_ratio = 0.3,totalLoad = 10000):
+def createEdgeCantileverProblem(nDOFDesired: int = 10000, L: float = [0.4, 0.2, 0.1],totalLoad = 10000):
   """Creates a edge loaded cantilever beam problem with approximate desired DOFs.
 
   Parameters:
@@ -605,16 +597,14 @@ def createEdgeCantileverProblem(nDOFDesired: int = 10000, L: float = [0.4, 0.2, 
             fixed_dofs = fixed_dofs,
             dirichlet_values = dirichlet_values) 
 
-  mat_prop = mat_lib.StructuralMaterial(youngs_modulus=youngs_modulus,
-                      poissons_ratio=poissons_ratio)
+  mat_prop = mat_lib.get_material("Steel") 
   elem_body_force = None
   return mesh, mat_prop, bc, elem_body_force
 
   # ----------------------------------------
 
   
-def createShortCantileverMidLoadProblem(nDOFDesired: int = 10000,
-                               youngs_modulus = 2e11, poissons_ratio = 0.3,totalLoad = 9e4):
+def createShortCantileverMidLoadProblem(nDOFDesired: int = 10000,totalLoad = 9e4):
   """Creates a edge loaded cantilever beam problem with approximate desired DOFs.
 
   Parameters:
@@ -670,16 +660,14 @@ def createShortCantileverMidLoadProblem(nDOFDesired: int = 10000,
             fixed_dofs = fixed_dofs,
             dirichlet_values = dirichlet_values) 
 
-  mat_prop = mat_lib.StructuralMaterial(youngs_modulus=youngs_modulus,
-                      poissons_ratio=poissons_ratio)
+  mat_prop = mat_lib.get_material("Steel") 
   elem_body_force = None
   return mesh, mat_prop, bc, elem_body_force
 
   # ----------------------------------------
 
 
-def createShortCantileverTipLoadProblem(nDOFDesired: int = 10000, 
-                               youngs_modulus = 2e11, poissons_ratio = 0.3,totalLoad = 5.8e4):
+def createShortCantileverTipLoadProblem(nDOFDesired: int = 10000, totalLoad = 5.8e4):
   """Creates a edge loaded cantilever beam problem with approximate desired DOFs.
 
   Parameters:
@@ -735,16 +723,14 @@ def createShortCantileverTipLoadProblem(nDOFDesired: int = 10000,
             fixed_dofs = fixed_dofs,
             dirichlet_values = dirichlet_values) 
 
-  mat_prop = mat_lib.StructuralMaterial(youngs_modulus=youngs_modulus,
-                      poissons_ratio=poissons_ratio)
+  mat_prop = mat_lib.get_material("Steel") 
   elem_body_force = None
   return mesh, mat_prop, bc, elem_body_force
 
   # ----------------------------------------
   
 
-def createCantileverMidLoadProblem(nDOFDesired: int = 10000,
-                               youngs_modulus = 2e11, poissons_ratio = 0.3,totalLoad = 9e4):
+def createCantileverMidLoadProblem(nDOFDesired: int = 10000,totalLoad = 9e4):
   """Creates a edge loaded cantilever beam problem with approximate desired DOFs.
 
   Parameters:
@@ -800,16 +786,14 @@ def createCantileverMidLoadProblem(nDOFDesired: int = 10000,
             fixed_dofs = fixed_dofs,
             dirichlet_values = dirichlet_values) 
 
-  mat_prop = mat_lib.StructuralMaterial(youngs_modulus=youngs_modulus,
-                      poissons_ratio=poissons_ratio)
+  mat_prop = mat_lib.get_material("Steel") 
   elem_body_force = None
   return mesh, mat_prop, bc, elem_body_force
 
   # ----------------------------------------
 
 
-def createCantileverTipLoadProblem(nDOFDesired: int = 10000,
-                               youngs_modulus = 2e11, poissons_ratio = 0.3,totalLoad = 5.8e4):
+def createCantileverTipLoadProblem(nDOFDesired: int = 10000,totalLoad = 5.8e4):
   """Creates a edge loaded cantilever beam problem with approximate desired DOFs.
 
   Parameters:
@@ -865,15 +849,13 @@ def createCantileverTipLoadProblem(nDOFDesired: int = 10000,
             fixed_dofs = fixed_dofs,
             dirichlet_values = dirichlet_values) 
 
-  mat_prop = mat_lib.StructuralMaterial(youngs_modulus=youngs_modulus,
-                      poissons_ratio=poissons_ratio)
+  mat_prop = mat_lib.get_material("Steel")
   elem_body_force = None
   return mesh, mat_prop, bc, elem_body_force
 
   # ----------------------------------------
 
-def createTwoBarProblem(nDOFDesired: int = 10000,
-                               youngs_modulus = 2e11, poissons_ratio = 0.3,totalLoad = 9e4):
+def createTwoBarProblem(nDOFDesired: int = 10000,totalLoad = 9e4):
   """Creates a edge loaded cantilever beam problem with approximate desired DOFs.
 
   Parameters:
@@ -929,8 +911,7 @@ def createTwoBarProblem(nDOFDesired: int = 10000,
             fixed_dofs = fixed_dofs,
             dirichlet_values = dirichlet_values) 
 
-  mat_prop = mat_lib.StructuralMaterial(youngs_modulus=youngs_modulus,
-                      poissons_ratio=poissons_ratio)
+  mat_prop = mat_lib.get_material("Steel") 
   elem_body_force = None
   return mesh, mat_prop, bc, elem_body_force
 
@@ -938,8 +919,7 @@ def createTwoBarProblem(nDOFDesired: int = 10000,
 
 
 
-def createMBBBProblem(nDOFDesired: int = 10000, youngs_modulus = 2e11, 
-                      poissons_ratio = 0.3,load = 2.7e4):
+def createMBBBProblem(nDOFDesired: int = 10000, load = 2.7e4):
   ''' 
     See: Topology Optimization Benchmarks in 2D: Results for Minimum Compliance and Minimum Volume in Planar Stress Problems
   S. Ivvan Valdez, et al. Arch Computat Methods Eng (2017) 24:803–839, DOI 10.1007/s11831-016-9190-3
@@ -975,15 +955,14 @@ def createMBBBProblem(nDOFDesired: int = 10000, youngs_modulus = 2e11,
             fixed_dofs = fixed_dofs,
             dirichlet_values = dirichlet_values) 
 
-  mat_prop = mat_lib.StructuralMaterial(youngs_modulus=youngs_modulus,
-                      poissons_ratio=poissons_ratio)
+  mat_prop = mat_lib.get_material("Steel") 
   elem_body_force = None
 
   return mesh, mat_prop, bc, elem_body_force
 
   # ----------------------------------------
   
-def createDistributedLoadProblem(nDOFDesired: int = 10000, L: float = [1.0, 0.5, 0.025],youngs_modulus = 2e11, poissons_ratio = 0.3):
+def createDistributedLoadProblem(nDOFDesired: int = 10000, L: float = [1.0, 0.5, 0.025]):
   stl_file = os.path.join(script_dir, '../Models/DistributedLoad/DistributedLoad.STL')
   nElemsDesired = nDOFDesired/3    # estimate
   mesh = hex_mesher.HexMesher()
@@ -1014,15 +993,14 @@ def createDistributedLoadProblem(nDOFDesired: int = 10000, L: float = [1.0, 0.5,
             fixed_dofs = fixed_dofs,
             dirichlet_values = dirichlet_values) 
 
-  mat_prop = mat_lib.StructuralMaterial(youngs_modulus=youngs_modulus,
-                      poissons_ratio=poissons_ratio)
+  mat_prop = mat_lib.get_material("Steel") 
   elem_body_force = None
 
   return mesh, mat_prop, bc, elem_body_force
 
   # ----------------------------------------
   
-def createMultiloadProblem(nDOFDesired: int = 10000, L: float = [0.4, 0.2, 0.1],youngs_modulus = 2e11, poissons_ratio = 0.3):
+def createMultiloadProblem(nDOFDesired: int = 10000, L: float = [0.4, 0.2, 0.1]):
   # This is an example where a grid mesh is created, and a structural problem is posed on it.
   # For a perfect cube, an estimate of the number of elements is made, and a grid mesh is created.
   nVoxelsDesired = nDOFDesired/3    
@@ -1058,15 +1036,14 @@ def createMultiloadProblem(nDOFDesired: int = 10000, L: float = [0.4, 0.2, 0.1],
             fixed_dofs = fixed_dofs,
             dirichlet_values = dirichlet_values) 
 
-  mat_prop = mat_lib.StructuralMaterial(youngs_modulus=youngs_modulus,
-                      poissons_ratio=poissons_ratio)
+  mat_prop = mat_lib.get_material("Steel") 
   elem_body_force = None
 
   return mesh, mat_prop, bc, elem_body_force
 
   # ----------------------------------------
   
-def createLBracketProblem(nDOFDesired: int = 10000, youngs_modulus = 2.1e11, poissons_ratio = 0.3,topload = 1000,midload = 0):
+def createLBracketProblem(nDOFDesired: int = 10000, topload = 1000,midload = 0):
   """Creates a structural problem setup for an L-bracket topology optimization.
   This function sets up a finite element mesh and boundary conditions for an L-bracket
   structural problem from an STL file. The mesh is created with approximately the desired
@@ -1119,15 +1096,14 @@ def createLBracketProblem(nDOFDesired: int = 10000, youngs_modulus = 2.1e11, poi
 
   bc = bound_cond.BC(force = force,fixed_dofs = fixed_dofs,dirichlet_values = dirichlet_values) 
 
-  mat_prop = mat_lib.StructuralMaterial(youngs_modulus=youngs_modulus,
-                      poissons_ratio=poissons_ratio)
+  mat_prop = mat_lib.get_material("Steel") 
   elem_body_force = None
 
   return mesh, mat_prop, bc, elem_body_force
 
   # ----------------------------------------
 
-def createGravityBarProblem(nDOFDesired: int = 10000, youngs_modulus = 2.1e11, poissons_ratio = 0.28, material_density = 7700):
+def createGravityBarProblem(nDOFDesired: int = 10000, material_density = 7700):
   """Creates a structural problem setup for a vertical bar under gravity loading.
   This function sets up a finite element analysis problem for a vertical bar by:
   1. Reading an STL file of a vertical bar
@@ -1181,15 +1157,13 @@ def createGravityBarProblem(nDOFDesired: int = 10000, youngs_modulus = 2.1e11, p
 
   boundaryForce = np.zeros(3*mesh.num_nodes) # no boundary force
   bc = bound_cond.BC(force = boundaryForce,fixed_dofs = fixed_dofs,dirichlet_values = dirichlet_values) 
-  mat_prop = mat_lib.StructuralMaterial(youngs_modulus=youngs_modulus,
-                      poissons_ratio=poissons_ratio)
+  mat_prop = mat_lib.get_material("Steel") 
 
   return mesh, mat_prop, bc, elem_body_force
 
   # ----------------------------------------
   
 def createGravityPlateProblem(nDOFDesired: int = 10000, L: float = [1.0, 0.5, 0.01],
-                               youngs_modulus = 2e11, poissons_ratio = 0.3,material_density = 7700,
                                verticalForcePercent = 0):
   nVoxelsDesired = nDOFDesired/3    
   # Let the number of voxels be proportional to the length in each direction
@@ -1212,7 +1186,8 @@ def createGravityPlateProblem(nDOFDesired: int = 10000, L: float = [1.0, 0.5, 0.
   dirichlet_values = 0*np.ones_like(fixed_dofs, dtype = float)
   mesh.node_indices[fixed_nodes, 3] = 1
   elem_body_force = np.zeros(3*mesh.num_elems)
-  elem_body_force[1::3] = -9.81*material_density*np.prod(mesh.elem_size)    # Apply gravity in -y direction to each element
+  mat_prop = mat_lib.get_material("Steel") 
+  elem_body_force[1::3] = -9.81*mat_prop.mass_density*np.prod(mesh.elem_size)    # Apply gravity in -y direction to each element
 
   verticalForce = verticalForcePercent*np.linalg.norm(elem_body_force)
   boundary_force = np.zeros(3*mesh.num_nodes)
@@ -1225,16 +1200,12 @@ def createGravityPlateProblem(nDOFDesired: int = 10000, L: float = [1.0, 0.5, 0.
   bc = bound_cond.BC(force = boundary_force,
             fixed_dofs = fixed_dofs,
             dirichlet_values = dirichlet_values) 
-
-  mat_prop = mat_lib.StructuralMaterial(youngs_modulus=youngs_modulus,
-                      poissons_ratio=poissons_ratio)
-  
   
   return mesh, mat_prop, bc, elem_body_force
 
   # ----------------------------------------
   
-def createArrowHeadProblem(nDOFDesired: int = 10000, youngs_modulus = 2.1e11, poissons_ratio = 0.3,totalLoad = 1000):
+def createArrowHeadProblem(nDOFDesired: int = 10000, totalLoad = 1000):
   """Creates a structural problem setup for an arrowhead-shaped bracket.
 
   This function sets up a finite element analysis problem for an arrowhead bracket by:
@@ -1292,15 +1263,14 @@ def createArrowHeadProblem(nDOFDesired: int = 10000, youngs_modulus = 2.1e11, po
 
   bc = bound_cond.BC(force = force,fixed_dofs = fixed_dofs,dirichlet_values = dirichlet_values) 
 
-  mat_prop = mat_lib.StructuralMaterial(youngs_modulus=youngs_modulus,
-                      poissons_ratio=poissons_ratio)
+  mat_prop = mat_lib.get_material("Steel")
   elem_body_force = None
 
   return mesh, mat_prop, bc, elem_body_force
 
   # ----------------------------------------
   
-def createCompliantMechanismProblem(nDOFDesired: int = 10000, youngs_modulus = 2.1e5, poissons_ratio = 0.3,totalLoad = 1e3):
+def createCompliantMechanismProblem(nDOFDesired: int = 10000, totalLoad = 1e3):
   """Creates a structural problem setup for an Compliant Mechanism 
   This function sets up a finite element mesh and boundary conditions for an Compliant Mechanism
   structural problem from an STL file. The mesh is created with approximately the desired
@@ -1346,16 +1316,14 @@ def createCompliantMechanismProblem(nDOFDesired: int = 10000, youngs_modulus = 2
   bc = bound_cond.BC(force = force,fixed_dofs = fixed_dofs,dirichlet_values = dirichlet_values) 
 
   
-  mat_prop = mat_lib.StructuralMaterial(youngs_modulus=youngs_modulus,
-                      poissons_ratio=poissons_ratio)
+  mat_prop = mat_lib.get_material("Steel")
   elem_body_force = None
 
   return mesh, mat_prop, bc, elem_body_force
 
   # ---------------------------------------
   
-def createBeamSurfaceLoadProblem(nDOFDesired: int = 20000, L: float = [0.1, 0.01, 0.01],
-                  youngs_modulus = 3e7, poissons_ratio = 0.3,totalLoad = 30000):
+def createBeamSurfaceLoadProblem(nDOFDesired: int = 20000, L: float = [0.1, 0.01, 0.01],totalLoad = 30000):
   # This is for large deformation
   nVoxelsDesired = int(nDOFDesired/5)
   print(nVoxelsDesired)
@@ -1391,14 +1359,13 @@ def createBeamSurfaceLoadProblem(nDOFDesired: int = 20000, L: float = [0.1, 0.01
             fixed_dofs = fixed_dofs,
             dirichlet_values = dirichlet_values) 
 
-  mat_prop = mat_lib.StructuralMaterial(youngs_modulus=youngs_modulus,
-                      poissons_ratio=poissons_ratio)
+  mat_prop = mat_lib.get_material("Steel")
   elem_body_force = None
 
   return mesh, mat_prop, bc, elem_body_force
   # ----------------------------------------
   
-def createFilletedBeamProblem(nDOFDesired=50000, youngs_modulus = 2.1e5, poissons_ratio = 0.3,totalLoad = 1):
+def createFilletedBeamProblem(nDOFDesired=50000, totalLoad = 1):
   stl_file = os.path.join(script_dir, '../Models/FilletedBeam/FilletedBeam.STL')
 
   mesh = hex_mesher.HexMesher()
@@ -1443,16 +1410,14 @@ def createFilletedBeamProblem(nDOFDesired=50000, youngs_modulus = 2.1e5, poisson
 
   bc = bound_cond.BC(force = force,fixed_dofs = fixed_dofs,dirichlet_values = dirichlet_values) 
 
-  mat_prop = mat_lib.StructuralMaterial(youngs_modulus=youngs_modulus,
-                      poissons_ratio=poissons_ratio)
+  mat_prop = mat_lib.get_material("Steel")
   elem_body_force = None
 
   return mesh, mat_prop, bc, elem_body_force
 
   # ----------------------------------------
   
-def createCentrifugalPlateProblem(nDOFDesired: int = 10000, youngs_modulus = 2e11, 
-                               poissons_ratio = 0.28, material_density = 7700,
+def createCentrifugalPlateProblem(nDOFDesired: int = 10000,
                                rpm = 10000, verticalLoad = 100):
  
   # Read the STL model, create a mesh of desired size, and a structural problem is posed on it.
@@ -1481,9 +1446,10 @@ def createCentrifugalPlateProblem(nDOFDesired: int = 10000, youngs_modulus = 2e1
    # Apply centrifugal and gravity on all elements
   elem_body_force = np.zeros(3*mesh.num_elems)
   omega = 2*np.pi*rpm/60
+  mat_prop = mat_lib.get_material("Steel")
   for e in range(mesh.num_elems):
     center = mesh.elem_centers[e]
-    elem_body_force[3*e:3*e+2] = (material_density * np.prod(mesh.elem_size)) * omega**2 * center[:2]
+    elem_body_force[3*e:3*e+2] = (mat_prop.mass_density * np.prod(mesh.elem_size)) * omega**2 * center[:2]
   
   boundaryForce = np.zeros(3*mesh.num_nodes)   
   outerRadius = 0.05
@@ -1499,15 +1465,12 @@ def createCentrifugalPlateProblem(nDOFDesired: int = 10000, youngs_modulus = 2e1
   
   bc = bound_cond.BC(force = boundaryForce,fixed_dofs = fixed_dofs,dirichlet_values = dirichlet_values) 
 
-  mat_prop = mat_lib.StructuralMaterial(youngs_modulus=youngs_modulus,
-                      poissons_ratio=poissons_ratio)
+  
   
   return mesh, mat_prop, bc, elem_body_force
-
 # ----------------------------------------
 
-def createTorquePlateProblem(nDOFDesired: int = 10000, youngs_modulus = 2e11, 
-                               poissons_ratio = 0.28, torque =  500):
+def createTorquePlateProblem(nDOFDesired: int = 10000, torque =  500):
  
   # Read the STL model, create a mesh of desired size, and a structural problem is posed on it.
   stl_file = os.path.join(script_dir, '../Models/CircularPlateHole/CircularPlateHole.STL')
@@ -1552,15 +1515,13 @@ def createTorquePlateProblem(nDOFDesired: int = 10000, youngs_modulus = 2e11,
       boundaryForce[3*node + 1] = torque/(r*len(load_nodes)) * tangent_dir[1]
   bc = bound_cond.BC(force = boundaryForce,fixed_dofs = fixed_dofs,dirichlet_values = dirichlet_values) 
 
-  mat_prop = mat_lib.StructuralMaterial(youngs_modulus=youngs_modulus,
-                      poissons_ratio=poissons_ratio)
+  mat_prop = mat_lib.get_material("Steel")
   
   return mesh, mat_prop, bc, elem_body_force
 
 # ----------------------------------------
 
-def createThreeHoleBracketProblem(nDOFDesired: int = 10000, youngs_modulus = 2e11, 
-                               poissons_ratio = 0.28, totalLoad =  10000):
+def createThreeHoleBracketProblem(nDOFDesired: int = 10000, totalLoad =  10000):
  
   # Read the STL model, create a mesh of desired size, and a structural problem is posed on it.
   stl_file = os.path.join(script_dir, '../Models/ThreeHoleBracket/ThreeHoleBracket.STL')
@@ -1609,16 +1570,14 @@ def createThreeHoleBracketProblem(nDOFDesired: int = 10000, youngs_modulus = 2e1
   force[load_dofs] = load_per_dof
   bc = bound_cond.BC(force = force,fixed_dofs = fixed_dofs,dirichlet_values = dirichlet_values) 
 
-  mat_prop = mat_lib.StructuralMaterial(youngs_modulus=youngs_modulus,
-                      poissons_ratio=poissons_ratio)
+  mat_prop = mat_lib.get_material("Steel")
   
   return mesh, mat_prop, bc, elem_body_force
 
 
 # ----------------------------------------
 
-def createBliskQuarterProblem(nDOFDesired: int = 10000, youngs_modulus = 2.1e11, 
-                               poissons_ratio = 0.28, material_density = 7700,rpm = 10000,radialForce =10000,
+def createBliskQuarterProblem(nDOFDesired: int = 10000,rpm = 10000,radialForce =10000,
 																	   downwardForce = 0):
  
   # Read the STL model, create a mesh of desired size, and a structural problem is posed on it.
@@ -1645,9 +1604,10 @@ def createBliskQuarterProblem(nDOFDesired: int = 10000, youngs_modulus = 2.1e11,
 
   elem_body_force = np.zeros(3*mesh.num_elems)
   omega = 2*np.pi*rpm/60
+  mat_prop = mat_lib.get_material("Steel")
   for e in range(mesh.num_elems):
     center = mesh.elem_centers[e]
-    elem_body_force[3*e:3*e+2] = (material_density*np.prod(mesh.elem_size)) * omega**2 *  center[:2]
+    elem_body_force[3*e:3*e+2] = (mat_prop.mass_density*np.prod(mesh.elem_size)) * omega**2 *  center[:2]
 
   print("total body force ",np.sum(elem_body_force[3::3]))
   # Apply centrifugal force on each node on the circumference
@@ -1672,16 +1632,14 @@ def createBliskQuarterProblem(nDOFDesired: int = 10000, youngs_modulus = 2.1e11,
       boundaryForce[3*node + 2] = -downwardForce/len(load_nodes) 
   bc = bound_cond.BC(force = boundaryForce,fixed_dofs = fixed_dofs,dirichlet_values = dirichlet_values) 
 
-  mat_prop = mat_lib.StructuralMaterial(youngs_modulus=youngs_modulus,
-                      poissons_ratio=poissons_ratio)
+  
   
   return mesh, mat_prop, bc, elem_body_force
 
 
 # ----------------------------------------
 
-def createBliskSectionWithBlade(nDOFDesired: int = 10000, youngs_modulus = 2.1e11, 
-                               poissons_ratio = 0.28, material_density = 7700,rpm = 10000,radialForce =0):
+def createBliskSectionWithBlade(nDOFDesired: int = 10000, material_density = 7700,rpm = 10000,radialForce =0):
  
   # Read the STL model, create a mesh of desired size, and a structural problem is posed on it.
   stl_file = os.path.join(script_dir, '../Models/BliskModel/BliskSectionWithBlade.STL')
@@ -1734,8 +1692,7 @@ def createBliskSectionWithBlade(nDOFDesired: int = 10000, youngs_modulus = 2.1e1
   
   bc = bound_cond.BC(force = boundaryForce,fixed_dofs = fixed_dofs,dirichlet_values = dirichlet_values) 
 
-  mat_prop = mat_lib.StructuralMaterial(youngs_modulus=youngs_modulus,
-                      poissons_ratio=poissons_ratio)
+  mat_prop = mat_lib.get_material("Steel")
    
   return mesh, mat_prop, bc, elem_body_force
 
@@ -1777,16 +1734,13 @@ def createKnuckleAssemblyProblem(nDOFDesired: int = 10000, youngs_modulus = [2e1
   # There are 2 components in the assembly
   # Assign material properties to each component
   mat_prop = 2*[None]
-  mat_prop[0] = mat_lib.StructuralMaterial(youngs_modulus=youngs_modulus[0],
-                      poissons_ratio=poissons_ratio[0]) # Knuckle
-  mat_prop[1] = mat_lib.StructuralMaterial(youngs_modulus=youngs_modulus[1],
-                      poissons_ratio=poissons_ratio[1]) # Shaft
+  mat_prop[0] = mat_lib.get_material("Steel") # Knuckle
+  mat_prop[1] = mat_lib.get_material("Aluminum")# Shaft
   elem_body_force = None
   return mesh, mat_prop, bc, elem_body_force
 
 
-def createTableProblem(nDOFDesired: int = 10000, youngs_modulus = 1e7, 
-                               poissons_ratio = 0.28, totalLoad =  1000):
+def createTableProblem(nDOFDesired: int = 10000, totalLoad =  1000):
  
   # Read the STL model, create a mesh of desired size, and a structural problem is posed on it.
   stl_file = os.path.join(script_dir, '../Models/Table/Table.STL')
@@ -1816,15 +1770,14 @@ def createTableProblem(nDOFDesired: int = 10000, youngs_modulus = 1e7,
   force[load_dofs] = load_per_dof
   bc = bound_cond.BC(force = force,fixed_dofs = fixed_dofs,dirichlet_values = dirichlet_values) 
 
-  mat_prop = mat_lib.StructuralMaterial(youngs_modulus=youngs_modulus,
-                      poissons_ratio=poissons_ratio)
+  mat_prop = mat_lib.get_material("Steel")
   
   elem_body_force = None
   return mesh, mat_prop, bc, elem_body_force
 
 
 
-def createLBracketThickProblem(nDOFDesired: int = 80000, youngs_modulus = 2.1e11, poissons_ratio = 0.3,topload = 1000,midload = 0):
+def createLBracketThickProblem(nDOFDesired: int = 80000,topload = 1000,midload = 0):
   """Creates a structural problem setup for an L-bracket topology optimization.
   This function sets up a finite element mesh and boundary conditions for an L-bracket
   structural problem from an STL file. The mesh is created with approximately the desired
@@ -1880,15 +1833,13 @@ def createLBracketThickProblem(nDOFDesired: int = 80000, youngs_modulus = 2.1e11
 
   bc = bound_cond.BC(force = force,fixed_dofs = fixed_dofs,dirichlet_values = dirichlet_values) 
 
-  mat_prop = mat_lib.StructuralMaterial(youngs_modulus=youngs_modulus,
-                      poissons_ratio=poissons_ratio)
+  mat_prop = mat_lib.get_material("Steel")
   elem_body_force = None
 
   return mesh, mat_prop, bc, elem_body_force
 
   # ----------------------------------------
-def createNoseconeProblem(nDOFDesired: int = 10000, youngs_modulus = 1e7, 
-                               poissons_ratio = 0.28, totalLoad =  1000):
+def createNoseconeProblem(nDOFDesired: int = 10000,  totalLoad =  1000):
  
   # Read the STL model, create a mesh of desired size, and a structural problem is posed on it.
   stl_file = os.path.join(script_dir, '../Models/Nosecone/HollowNoseCone.STL')
@@ -1919,8 +1870,7 @@ def createNoseconeProblem(nDOFDesired: int = 10000, youngs_modulus = 1e7,
   force[load_dofs] = load_per_dof
   bc = bound_cond.BC(force = force,fixed_dofs = fixed_dofs,dirichlet_values = dirichlet_values) 
 
-  mat_prop = mat_lib.StructuralMaterial(youngs_modulus=youngs_modulus,
-                      poissons_ratio=poissons_ratio)
+  mat_prop = mat_lib.get_material("Steel")
   
   elem_body_force = None
   return mesh, mat_prop, bc, elem_body_force

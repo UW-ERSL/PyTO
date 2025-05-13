@@ -470,12 +470,10 @@ if __name__ == "__main__":
     # stlFileName = os.path.join(script_dir, '../Models/Overhang/Overhang.STL')
     # tetmesh.createTetMeshFromSTLFile(stlFileName, nElemsDesired=20000)
     # tetmesh.plot()
-    # stlFileName = os.path.join(script_dir, '../Models/Overhang/OverhangSplitLine.STL')
-    # tetmesh.createTetMeshFromSTLFile(stlFileName, nElemsDesired=20000,mergeFacets=False)
-    # tetmesh.plot()
-    inputFileName = os.path.join(script_dir, '../Models/HexPlate/hex3cv4.INP')
-    tetmesh.read_Abaqus_linear_tetmesh(inputFileName)
+    stlFileName = os.path.join(script_dir, '../Models/Overhang/OverhangSplitLine.STL')
+    tetmesh.createTetMeshFromSTLFile(stlFileName, nElemsDesired=20000,mergeFacets=False)
     tetmesh.plot()
+   
 
 
 

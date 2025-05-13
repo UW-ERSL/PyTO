@@ -200,7 +200,7 @@ _isotropic_constitutive_matrix = lambda e, nu: (
 
 
 def hex8_stiffness_matrix_structural(
-              mat_prop: mat_lib.StructuralMaterial,
+              mat_prop: mat_lib.Material,
               elem_size: tuple[float, float, float],
               gauss_order: int = 6,
             ) -> np.ndarray:
@@ -259,7 +259,7 @@ def hex8_stiffness_matrix_structural(
   return ke
 
 def hex8_mass_matrix_structural(
-        mat_prop: mat_lib.StructuralMaterial, 
+        mat_prop: mat_lib.Material, 
         elem_size: tuple[float, float, float],
         gauss_order: int = 6,
       ) -> np.ndarray:
@@ -310,7 +310,7 @@ def hex8_mass_matrix_structural(
   return me
 
 def hex8_stiffness_matrix_thermal(
-              mat_prop: mat_lib.ThermalMaterial,
+              mat_prop: mat_lib.Material,
               elem_size: tuple[float, float, float],
               gauss_order: int = 6,
             ) -> np.ndarray:
@@ -361,7 +361,7 @@ def hex8_stiffness_matrix_thermal(
   return ke
 
 def hex8_specific_heat_matrix(
-        mat_prop: mat_lib.ThermalMaterial,
+        mat_prop: mat_lib.Material,
         elem_size: tuple[float, float, float],
         gauss_order: int = 6,
       ) -> np.ndarray:
@@ -409,17 +409,11 @@ def hex8_specific_heat_matrix(
 
 if __name__ == "__main__":
   # Define the material properties
-  mat_prop = mat_lib.StructuralMaterial(youngs_modulus=1e6,
-                                        poissons_ratio=0.3)
+  mat_prop = mat_lib.get_material("Steel")
   print("Material Properties:")
   print(mat_prop)
   elem_size = (1, 1, 1)
   ke = hex8_stiffness_matrix_structural(mat_prop, elem_size)
-
-
   me = hex8_mass_matrix_structural(mat_prop, elem_size)
-  
-  # Test thermal stiffness matrix
-  thermal_mat_prop = mat_lib.ThermalMaterial(thermal_conductivity=1.0)
-  ke_thermal = hex8_stiffness_matrix_thermal(thermal_mat_prop, elem_size)
- 
+  ke_thermal = hex8_stiffness_matrix_thermal(mat_prop, elem_size)
+  ce = hex8_specific_heat_matrix(mat_prop, elem_size)

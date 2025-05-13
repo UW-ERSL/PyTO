@@ -18,7 +18,7 @@ def getTetTransientThermalProblem(problem: TetTransientThermalExamples, **kwargs
     raise ValueError("Invalid tet transient thermal example name.")
 
 
-def createThickPlateTransientThermalProblemTet(nDOFDesired: int = 10000,thermal_conductivity = 50, heat_load = 100000):
+def createThickPlateTransientThermalProblemTet(nDOFDesired: int = 10000, heat_load = 100000):
     """Creates a thermal problem setup for an L-bracket topology optimization.
     This function sets up a finite element mesh and boundary conditions for an L-bracket
     thermal problem from an STL file. The mesh is created with approximately the desired
@@ -62,7 +62,7 @@ def createThickPlateTransientThermalProblemTet(nDOFDesired: int = 10000,thermal_
     force[load_nodes] = heat_load/len(load_nodes)
     bc = bound_cond.BC(force = force,fixed_dofs = fixed_dofs,dirichlet_values = dirichlet_values) 
 
-    mat_prop = mat_lib.ThermalMaterial(thermal_conductivity=thermal_conductivity,mass_density=7850,specific_heat=500)
+    mat_prop = mat_lib.get_material("Steel")
     initialTemperature = 23
     timeStep = 60
     totalTime = 6000

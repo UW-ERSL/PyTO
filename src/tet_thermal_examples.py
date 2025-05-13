@@ -37,7 +37,7 @@ def getTetThermalProblem(problem: TetThermalExamples, **kwargs):
   
 
 
-def createThickPlateThermalProblemTet(nDOFDesired: int = 10000,thermal_conductivity = 50, heat_load = 100000):
+def createThickPlateThermalProblemTet(nDOFDesired: int = 10000, heat_load = 100000):
     """Creates a thermal problem setup for an L-bracket topology optimization.
     This function sets up a finite element mesh and boundary conditions for an L-bracket
     thermal problem from an STL file. The mesh is created with approximately the desired
@@ -79,11 +79,11 @@ def createThickPlateThermalProblemTet(nDOFDesired: int = 10000,thermal_conductiv
    
     bc = bound_cond.BC(force = force,fixed_dofs = fixed_dofs,dirichlet_values = dirichlet_values) 
 
-    mat_prop = mat_lib.ThermalMaterial(thermal_conductivity=thermal_conductivity,mass_density=7850,specific_heat=500)
+    mat_prop = mat_lib.get_material("Steel")
     return tetmesh, mat_prop, bc
 
 
-def createAnnularPlateThermalProblemTet(nDOFDesired: int = 10000,thermal_conductivity = 50, heat_load = 100):
+def createAnnularPlateThermalProblemTet(nDOFDesired: int = 10000, heat_load = 100):
     """Creates a thermal problem setup for an L-bracket topology optimization.
     This function sets up a finite element mesh and boundary conditions for an L-bracket
     thermal problem from an STL file. The mesh is created with approximately the desired
@@ -132,10 +132,10 @@ def createAnnularPlateThermalProblemTet(nDOFDesired: int = 10000,thermal_conduct
     force = tetmesh.integrate_over_surface_triangles(heat_load, tri_surface_indices)
     bc = bound_cond.BC(force = force,fixed_dofs = fixed_dofs,dirichlet_values = dirichlet_values) 
 
-    mat_prop = mat_lib.ThermalMaterial(thermal_conductivity=thermal_conductivity,mass_density=7850,specific_heat=500)
+    mat_prop = mat_lib.get_material("Steel")
     return tetmesh, mat_prop, bc
 
-def createLBracketThermalProblemTet(nDOFDesired = 10000,thermal_conductivity = 50, heat_load = 10):
+def createLBracketThermalProblemTet(nDOFDesired = 10000, heat_load = 10):
     """Creates a thermal problem setup for an L-bracket topology optimization.
     This function sets up a finite element mesh and boundary conditions for an L-bracket
     thermal problem from an STL file. The mesh is created with approximately the desired
@@ -179,5 +179,5 @@ def createLBracketThermalProblemTet(nDOFDesired = 10000,thermal_conductivity = 5
 
     bc = bound_cond.BC(force = force,fixed_dofs = fixed_dofs,dirichlet_values = dirichlet_values) 
 
-    mat_prop = mat_lib.ThermalMaterial(thermal_conductivity=thermal_conductivity,mass_density=7850,specific_heat=500)
+    mat_prop = mat_lib.get_material("Steel")
     return tetmesh, mat_prop, bc

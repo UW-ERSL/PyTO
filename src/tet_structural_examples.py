@@ -39,7 +39,7 @@ def getTetStructuralProblem(problem: TetStructuralExamples, **kwargs):
     raise ValueError("Invalid structural tet example name.")
   
 
-def createTensileBarTetStructuralProblem(nDOFDesired: int = 10000, E = 2e11, nu = 0.3, totalLoad = 100000):
+def createTensileBarTetStructuralProblem(nDOFDesired: int = 10000, totalLoad = 100000):
     # Read the STL model, create a mesh of desired size, and a structural problem is posed on it.
     stl_file = os.path.join(script_dir, '../Models/Beam/Beam.STL')
     nElemsDesired = nDOFDesired//6    # estimate (3 DOFs per node for structural)
@@ -66,12 +66,12 @@ def createTensileBarTetStructuralProblem(nDOFDesired: int = 10000, E = 2e11, nu 
 
     bc = bound_cond.BC(force=force, fixed_dofs=fixed_dofs, dirichlet_values=dirichlet_values)
     
-    mat_prop = mat_lib.StructuralMaterial(youngs_modulus=E,poissons_ratio=nu)
+    mat_prop = mat_lib.get_material("Steel")
     elem_body_force = None
     return quadratic_mesh, mat_prop, bc, elem_body_force
 
 
-def createBeamBendingTetStructuralProblem(nDOFDesired: int = 10000, E = 2e11, nu = 0.3, totalLoad = 10000):
+def createBeamBendingTetStructuralProblem(nDOFDesired: int = 10000, totalLoad = 10000):
     # Read the STL model, create a mesh of desired size, and a structural problem is posed on it.
     stl_file = os.path.join(script_dir, '../Models/Beam/Beam.STL')
     nElemsDesired = nDOFDesired // 6 # estimate (3 DOFs per node for structural)
@@ -97,12 +97,12 @@ def createBeamBendingTetStructuralProblem(nDOFDesired: int = 10000, E = 2e11, nu
 
     bc = bound_cond.BC(force=force, fixed_dofs=fixed_dofs, dirichlet_values=dirichlet_values)
 
-    mat_prop = mat_lib.StructuralMaterial(youngs_modulus=E, poissons_ratio=nu)
+    mat_prop = mat_lib.get_material("Steel")
     elem_body_force = None
     return quadratic_mesh, mat_prop, bc, elem_body_force
 
 
-def createCubeCompressionTetStructuralProblem(nDOFDesired: int = 10000, E = 2e11, nu = 0.3, totalLoad = 10000):
+def createCubeCompressionTetStructuralProblem(nDOFDesired: int = 10000,  totalLoad = 10000):
     # Read the STL model, create a mesh of desired size, and a structural problem is posed on it.
     stl_file = os.path.join(script_dir, '../Models/Cube/Cube.STL')
     nElemsDesired = nDOFDesired//6    # estimate (3 DOFs per node for structural)
@@ -128,12 +128,12 @@ def createCubeCompressionTetStructuralProblem(nDOFDesired: int = 10000, E = 2e11
 
     bc = bound_cond.BC(force=force, fixed_dofs=fixed_dofs, dirichlet_values=dirichlet_values)
     
-    mat_prop = mat_lib.StructuralMaterial(youngs_modulus=E,poissons_ratio=nu)
+    mat_prop = mat_lib.get_material("Steel")
     elem_body_force = None
     return quadratic_mesh, mat_prop, bc, elem_body_force
 
 
-def createThickPlateTetStructuralProblem(nDOFDesired: int = 10000, E = 2e11, nu = 0.3, totalLoad = 100000):
+def createThickPlateTetStructuralProblem(nDOFDesired: int = 10000, totalLoad = 100000):
     # Read the STL model, create a mesh of desired size, and a structural problem is posed on it.
     stl_file = os.path.join(script_dir, '../Models/ThickPlate/ThickPlate.STL')
     nElemsDesired = nDOFDesired//6    # estimate (3 DOFs per node for structural)
@@ -160,17 +160,17 @@ def createThickPlateTetStructuralProblem(nDOFDesired: int = 10000, E = 2e11, nu 
 
     bc = bound_cond.BC(force=force, fixed_dofs=fixed_dofs, dirichlet_values=dirichlet_values)
     
-    mat_prop = mat_lib.StructuralMaterial(youngs_modulus=E,poissons_ratio=nu)
+    mat_prop = mat_lib.get_material("Steel")
     elem_body_force = None
     return quadratic_mesh, mat_prop, bc, elem_body_force
 
-def createGEGrabCADTetStructuralProblem(nDOFDesired: int = 10000, E = 2e11, nu = 0.3, totalLoad = 100000):
+def createGEGrabCADTetStructuralProblem(nDOFDesired: int = 10000, totalLoad = 100000):
     
     tetmesh = TetMesher()
     
     tetmesh.read_Abaqus_linear_tetmesh(os.path.join(script_dir, '../Models/GEGrabCAD/GEGrabCADLinearTetMesh.inp'))
     quadratic_mesh = tetmesh.createQuadraticTetMesh()    
-    mat_prop = mat_lib.StructuralMaterial(youngs_modulus=E,poissons_ratio=nu)
+    mat_prop = mat_lib.get_material("Steel")
     bc = None
     elem_body_force = None
    

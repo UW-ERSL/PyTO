@@ -10,7 +10,7 @@ import scipy.sparse as sp
 class TetTransientThermalFEA:
     def __init__(self,
                  mesh,
-                 mat_prop: mat_lib.ThermalMaterial,
+                 mat_prop: mat_lib.Material,
                  bc: bound_cond.BC,
                  solver = lin_sol.Solvers.PARDISO,
                  T0=0.0, # initial temperature

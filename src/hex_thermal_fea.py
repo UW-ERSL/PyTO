@@ -19,7 +19,7 @@ class HexThermalFEA:
 
   def __init__(self,
 							 mesh,
-							 mat_prop: mat_lib.ThermalMaterial,
+							 mat_prop: mat_lib.Material,
 							 bc: bound_cond.BC,
 							 solver: lin_sol.Solvers,
                dsolver: deflation.DeflationSolver = None,

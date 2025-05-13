@@ -65,7 +65,7 @@ def getThermalProblem(problem: HexThermalExamples, **kwargs):
 
 
 
-def createHeatPlateThermalProblem(nDOFDesired: int = 25000,thermal_conductivity = 50,
+def createHeatPlateThermalProblem(nDOFDesired: int = 25000,
                                          heat_load = 1, T0 = 23):
     """
 	"""
@@ -93,13 +93,12 @@ def createHeatPlateThermalProblem(nDOFDesired: int = 25000,thermal_conductivity 
     dirichlet_values = T0*np.ones_like(fixed_dofs, dtype = float)
     bc = bound_cond.BC(force = force,fixed_dofs = fixed_dofs,dirichlet_values = dirichlet_values) 
 
-    mat_prop = mat_lib.ThermalMaterial(thermal_conductivity=thermal_conductivity)
+    mat_prop = mat_lib.get_material("Steel")
     elem_body_force = None
     return mesh, mat_prop, bc, elem_body_force
 
 
-def createFourCornersThermalProblem(nDOFDesired: int = 25000,thermal_conductivity = 50,
-                                         T0 = 23):
+def createFourCornersThermalProblem(nDOFDesired: int = 25000,T0 = 100):
     """
 	"""
 	# Read the STL model, create a mesh of desired size, and a structural problem is posed on it.
@@ -135,21 +134,21 @@ def createFourCornersThermalProblem(nDOFDesired: int = 25000,thermal_conductivit
     dirichlet_values = np.zeros_like(fixed_dofs, dtype = float)
 
     dirichlet_values[0:len(fixed_nodes_1)] = 0
-    dirichlet_values[len(fixed_nodes_1):len(fixed_nodes_1)+len(fixed_nodes_2)] = 100
+    dirichlet_values[len(fixed_nodes_1):len(fixed_nodes_1)+len(fixed_nodes_2)] = T0
     dirichlet_values[len(fixed_nodes_1)+len(fixed_nodes_2):len(fixed_nodes_1)+len(fixed_nodes_2)+len(fixed_nodes_3)] = 0 
-    dirichlet_values[len(fixed_nodes_1)+len(fixed_nodes_2)+len(fixed_nodes_3):] = 100
+    dirichlet_values[len(fixed_nodes_1)+len(fixed_nodes_2)+len(fixed_nodes_3):] = T0
   
 
     force = np.zeros(mesh.num_nodes)
     bc = bound_cond.BC(force = force,fixed_dofs = fixed_dofs,dirichlet_values = dirichlet_values) 
 
-    mat_prop = mat_lib.ThermalMaterial(thermal_conductivity=thermal_conductivity)
+    mat_prop = mat_lib.get_material("Steel")
     elem_body_force = None
     return mesh, mat_prop, bc, elem_body_force
 
 
 
-def createBridgeThermalProblem(nDOFDesired: int = 25000,thermal_conductivity = 50):
+def createBridgeThermalProblem(nDOFDesired: int = 25000):
     """
 	"""
 	# Read the STL model, create a mesh of desired size, and a structural problem is posed on it.
@@ -183,13 +182,13 @@ def createBridgeThermalProblem(nDOFDesired: int = 25000,thermal_conductivity = 5
  
     bc = bound_cond.BC(force = force,fixed_dofs = fixed_dofs,dirichlet_values = dirichlet_values) 
 
-    mat_prop = mat_lib.ThermalMaterial(thermal_conductivity=thermal_conductivity)
+    mat_prop = mat_lib.get_material("Steel")
     elem_body_force = None
     return mesh, mat_prop, bc, elem_body_force
 
 
 
-def createThickPlateThermalProblem(nDOFDesired: int = 10000,thermal_conductivity = 50, heat_load = 1000, T0 = 23):
+def createThickPlateThermalProblem(nDOFDesired: int = 10000, heat_load = 1000, T0 = 23):
     """Creates a thermal problem setup for an L-bracket topology optimization.
     This function sets up a finite element mesh and boundary conditions for an L-bracket
     thermal problem from an STL file. The mesh is created with approximately the desired
@@ -239,11 +238,11 @@ def createThickPlateThermalProblem(nDOFDesired: int = 10000,thermal_conductivity
 
     bc = bound_cond.BC(force = force,fixed_dofs = fixed_dofs,dirichlet_values = dirichlet_values) 
 
-    mat_prop = mat_lib.ThermalMaterial(thermal_conductivity=thermal_conductivity)
+    mat_prop = mat_lib.get_material("Steel")
     return mesh, mat_prop, bc
 
 
-def createAnnularPlateThermalProblem(nDOFDesired: int = 10000,thermal_conductivity = 50, heat_load = 100, T0 = 23):
+def createAnnularPlateThermalProblem(nDOFDesired: int = 10000, heat_load = 100, T0 = 23):
     """Creates a thermal problem setup for an L-bracket topology optimization.
     This function sets up a finite element mesh and boundary conditions for an L-bracket
     thermal problem from an STL file. The mesh is created with approximately the desired
@@ -296,11 +295,11 @@ def createAnnularPlateThermalProblem(nDOFDesired: int = 10000,thermal_conductivi
 
     bc = bound_cond.BC(force = force,fixed_dofs = fixed_dofs,dirichlet_values = dirichlet_values) 
 
-    mat_prop = mat_lib.ThermalMaterial(thermal_conductivity=thermal_conductivity)
+    mat_prop = mat_lib.get_material("Steel")
     return mesh, mat_prop, bc
 
 
-def createLBracketThermalProblem(nDOFDesired: int = 10000,thermal_conductivity = 50, heat_load = 10, T0 = 23):
+def createLBracketThermalProblem(nDOFDesired: int = 10000, heat_load = 10, T0 = 23):
     """Creates a thermal problem setup for an L-bracket topology optimization.
     This function sets up a finite element mesh and boundary conditions for an L-bracket
     thermal problem from an STL file. The mesh is created with approximately the desired
@@ -351,10 +350,10 @@ def createLBracketThermalProblem(nDOFDesired: int = 10000,thermal_conductivity =
 
     bc = bound_cond.BC(force = force,fixed_dofs = fixed_dofs,dirichlet_values = dirichlet_values) 
 
-    mat_prop = mat_lib.ThermalMaterial(thermal_conductivity=thermal_conductivity)
+    mat_prop = mat_lib.get_material("Steel")
     return mesh, mat_prop, bc
 
-def createBliskWithBladeProblem(nDOFDesired: int = 10000,thermal_conductivity = 50, heat_load = 10, T0 = 23):
+def createBliskWithBladeProblem(nDOFDesired: int = 10000, heat_load = 10, T0 = 23):
    # Read the STL model, create a mesh of desired size, and a structural problem is posed on it.
   stl_file = os.path.join(script_dir, '../Models/BliskModel/BliskSectionWithBlade.STL')
 
@@ -383,7 +382,7 @@ def createBliskWithBladeProblem(nDOFDesired: int = 10000,thermal_conductivity = 
   force[load_dofs] = totalHeat/len(load_nodes)
   bc = bound_cond.BC(force = force,fixed_dofs = fixed_dofs,dirichlet_values = dirichlet_values) 
 
-  mat_prop = mat_lib.ThermalMaterial(thermal_conductivity=thermal_conductivity)
+  mat_prop = mat_lib.get_material("Steel")
   return mesh, mat_prop, bc
 
 def createMoranBenchMark(nDOFDesired: int = 10000,T0 = 23):
@@ -437,5 +436,5 @@ def createMoranBenchMark(nDOFDesired: int = 10000,T0 = 23):
 
 	mesh.translate(0, 0, -0.002)
     # see Table 1 in Paper 
-	mat_prop = mat_lib.ThermalMaterial(thermal_conductivity = 27, mass_density = 4420,specific_heat = 750,)
+	mat_prop = mat_lib.get_material("Steel")
 	return mesh, mat_prop, bc
