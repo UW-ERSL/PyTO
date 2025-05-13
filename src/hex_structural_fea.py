@@ -64,8 +64,19 @@ class HexStructuralFEA:
     # Enable anti-aliasing for better quality
     self.pyVistaPlotter.enable_anti_aliasing()
     
-
 #################################################################
+  def set_structural_material(self, mat_prop: mat_lib.Material | list[mat_lib.Material]):
+    
+    if isinstance(mat_prop, list):
+    # Create element stiffness matrix for each material
+      elem_stiff_list = [hex_element_stiffness.hex8_stiffness_matrix_structural(mp, mesh.elem_size) 
+                for mp in mat_prop]
+      self.elem_stiff = np.stack(elem_stiff_list)
+    else:
+      self.elem_stiff = np.expand_dims(
+          hex_element_stiffness.hex8_stiffness_matrix_structural(mat_prop, mesh.elem_size), axis=0)
+
+  #################################################################
   def solve(self,
             x: np.ndarray = None,
             material_model: MaterialModel = None) -> np.ndarray:

@@ -955,7 +955,7 @@ def createMBBBProblem(nDOFDesired: int = 10000, load = 2.7e4):
             fixed_dofs = fixed_dofs,
             dirichlet_values = dirichlet_values) 
 
-  mat_prop = mat_lib.get_material("Steel") 
+  mat_prop = mat_lib.get_material("Aluminum") 
   elem_body_force = None
 
   return mesh, mat_prop, bc, elem_body_force
