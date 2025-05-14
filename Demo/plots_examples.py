@@ -1,5 +1,6 @@
 
 import enum
+import pyvista as pv
 
 class ExamplesCAD(enum.Enum):
 	EdgeCantileverDemo = enum.auto()
@@ -16,22 +17,27 @@ class ExamplesCAD(enum.Enum):
 	FilletedBeam = enum.auto()
 	ThreeHoleBracket = enum.auto()
 	CircularPlateHole = enum.auto()
+	TorquePlate = enum.auto()
+	CentrifugalPlate = enum.auto()
+	BasePlateOptimizableVol = enum.auto()
+  
+  
 
    
   
-def get_example_cad(example: ExamplesCAD):
+def get_example_cad(example: ExamplesCAD, plot: bool = False):
   fp_stl_folder = "../Models/"
   fp_vtu_mesh_folder = "../CadRecoveryResults/"
   fp_output_folder = "../CadRecoveryResults/results/"
   if example == ExamplesCAD.EdgeCantileverDemo:
-    str_output_name = "EdgeCantilever"
+    str_output_name = "EdgeCantileverDemo"
     fp_original_stl = fp_stl_folder + "EdgeCantilever/EdgeCantilever.STL"
     fp_vtu_mesh = fp_vtu_mesh_folder + f'{str_output_name}.vtu'
     fp_outputstlpath = fp_output_folder + f'{str_output_name}Recovered.stl'
     fp_outputfixedstlpath = fp_output_folder + f'{str_output_name}RecoveredFixed.stl'
   elif example == ExamplesCAD.BliskSectionWithBlade:
     fp_original_stl = fp_stl_folder + "Saketh/BliskSectionWithBlade2test.STL"
-    fp_vtu_mesh = "../Models/Saketh/test1.vtu"
+    fp_vtu_mesh = "../Models/Saketh/test.vtu"
     fp_outputstlpath = "../Models/Saketh/BliskSectionWithBlade2Recovered.stl"
     fp_outputfixedstlpath = "../Models/Saketh/BliskSectionWithBlade2RecoveredFixed.stl"
   elif example == ExamplesCAD.KnuckleAssembly:
@@ -105,6 +111,43 @@ def get_example_cad(example: ExamplesCAD):
     fp_vtu_mesh = fp_vtu_mesh_folder + f'{str_output_name}.vtu'
     fp_outputstlpath = fp_output_folder + f'{str_output_name}Recovered.stl'
     fp_outputfixedstlpath = fp_output_folder + f'{str_output_name}RecoveredFixed.stl' 
+  elif example == ExamplesCAD.TorquePlate:
+    str_output_name = "TorquePlate"
+    fp_original_stl = fp_stl_folder + "CircularPlateHole/CircularPlateHole.STL"
+    fp_vtu_mesh = fp_vtu_mesh_folder + f'{str_output_name}.vtu'
+    fp_outputstlpath = fp_output_folder + f'{str_output_name}Recovered.stl'
+    fp_outputfixedstlpath = fp_output_folder + f'{str_output_name}RecoveredFixed.stl'
+  elif example == ExamplesCAD.CentrifugalPlate:
+    str_output_name = "CentrifugalPlate"
+    fp_original_stl = fp_stl_folder + "CircularPlateHole/CircularPlateHole.STL"
+    fp_vtu_mesh = fp_vtu_mesh_folder + f'{str_output_name}.vtu'
+    fp_outputstlpath = fp_output_folder + f'{str_output_name}Recovered.stl'
+    fp_outputfixedstlpath = fp_output_folder + f'{str_output_name}RecoveredFixed.stl'
+  elif example == ExamplesCAD.BasePlateOptimizableVol:
+    str_output_name = "BasePlateOptimizableVol"
+    fp_stl_folder = fp_stl_folder + "Rocket/BasePlateOptimizableVol/"
+    fp_original_stl = fp_stl_folder + "BasePlateOptimizableVol.STL"
+    fp_vtu_mesh = fp_stl_folder + f'{str_output_name}.vtu'
+    fp_outputstlpath = fp_output_folder + f'{str_output_name}Recovered.stl'
+    fp_outputfixedstlpath = fp_output_folder + f'{str_output_name}RecoveredFixed.stl'
   else:
     raise ValueError(f"Unknown example: {example}")
+  
+  if plot:
+    meshA = pv.read(fp_original_stl)
+    meshB = pv.read(fp_vtu_mesh)
+    # --- 4) Visualize everything together in one Plotter ---
+    pl = pv.Plotter()
+    pl.add_text("Marching Cubes Reconstruction", font_size=14)
+    pl.add_mesh(meshA, color="lightblue")
+    #pl.add_mesh(meshB, color="red")
+    pl.show()
+
   return fp_original_stl, fp_vtu_mesh, fp_outputstlpath, fp_outputfixedstlpath
+
+
+if __name__ == "__main__":    
+   
+  example = ExamplesCAD.BliskSectionWithBlade 
+  input_stl, input_vtu, output_stl, out_stl_fixed = get_example_cad(example, True)
+  pv.read(output_stl).plot()

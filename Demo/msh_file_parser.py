@@ -3,7 +3,7 @@ import pyvista as pv
 
 # File path
 fp_stl_folder = "../Models/"
-fp_msh = fp_stl_folder + "EdgeCantilever/EdgeCantilever_mshForCADRecovery_50Elems.mesh"
+fp_msh = fp_stl_folder + "EdgeCantilever/BasePlateOptimizableVol_0.75.mesh"
 
 # Read all lines
 with open(fp_msh, 'r') as file:
@@ -40,9 +40,14 @@ cells_vtk = np.hstack([[8] + list(elem) for elem in hex_elements])
 cell_types = np.full(len(hex_elements), pv.CellType.HEXAHEDRON)
 
 grid = pv.UnstructuredGrid(cells_vtk, cell_types, nodes)
-grid.cell_data["PseudoDensity"] = pseudo_density[:len(hex_elements)]
+grid.cell_data["density"] = pseudo_density[:len(hex_elements)]
 
 # 4. Plot
 plotter = pv.Plotter()
-plotter.add_mesh(grid, scalars="PseudoDensity", cmap="viridis", show_edges=True)
+plotter.add_mesh(grid, scalars="density", cmap="viridis", show_edges=True)
 plotter.show()
+
+# 5. Save to VTU format. It will store Pseudo Density as cell data "density".
+output_path = fp_stl_folder + "EdgeCantilever/BasePlateOptimizableVol.vtu"
+grid.save(output_path)
+
