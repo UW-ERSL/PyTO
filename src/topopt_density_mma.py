@@ -126,32 +126,12 @@ def topopt_mma(fe_solver, #hex_structural_fea.HexStructuralFEA or hex_thermal_fe
 
 		vf = np.mean(x)
 		grad_obj /=objScaling
-		if (to_params.ExactVolumeFraction):
-			uppervolfraction =  to_params.DesiredVolFraction + 0.001
-			consUpper = volume_fraction_upperlimit(x, uppervolfraction)
-			grad_cons_upper = np.ones(num_elems)/uppervolfraction/num_elems
+	
+		cons = np.array(volume_fraction_upperlimit(x, to_params.DesiredVolFraction))
+		grad_cons = np.ones(num_elems)/to_params.DesiredVolFraction/num_elems
 
-			lowervolfraction =  to_params.DesiredVolFraction -0.001
-			consLower = volume_fraction_lowerlimit(x, lowervolfraction)
-			grad_cons_lower = -np.ones(num_elems)/lowervolfraction/num_elems
-
-			cons = np.array([consUpper, consLower]).reshape((2, 1))
-			grad_cons = np.array([grad_cons_upper, grad_cons_lower]).reshape((2, num_elems))
-
-			timeMMAStart = time.time()
-			mma_state = mma.update_mma(mma_state,
-										mma_params,
-										np.array([obj]),
-										np.array([grad_obj]).reshape((num_elems, 1)),
-										cons,
-										grad_cons
-										)
-		else:
-			cons = np.array(volume_fraction_upperlimit(x, to_params.DesiredVolFraction))
-			grad_cons = np.ones(num_elems)/to_params.DesiredVolFraction/num_elems
-
-			timeMMAStart = time.time()
-			mma_state = mma.update_mma(mma_state,
+		timeMMAStart = time.time()
+		mma_state = mma.update_mma(mma_state,
 										mma_params,
 										np.array([obj]),
 										np.array([grad_obj]).reshape((num_elems, 1)),
