@@ -91,22 +91,23 @@ def topopt_optimality_criteria(
 		if (len(history['objective']) == 0):
 			objScaling = 0.1*obj
 		obj = obj/objScaling # Scale the objective function to avoid numerical issues
-
+		grad_obj /= objScaling
 	
-		if (nodal_body_force is not None):
+		if (nodal_body_force is not None): #additional body force term
 			ce_body_force = (sol[fe_solver.mesh.edofMat].reshape(num_elems, 24) * nodal_body_force[fe_solver.mesh.edofMat].reshape(num_elems, 24)).sum(1)
 			grad_obj +=  2*ce_body_force
 			
-		grad_obj = (H * grad_obj)/Hs
+		grad_obj = (H * grad_obj)/Hs # apply filter
 
 		if (elemsWithForces.size > 0):
-			grad_obj[elemsWithForces] = min(grad_obj)
+			grad_obj[elemsWithForces] = min(grad_obj) # retain elements that have nodes with external forces
 
 		if (to_params.ElemsToKeep is not None):
-			grad_obj[to_params.ElemsToKeep] = min(grad_obj)
+			grad_obj[to_params.ElemsToKeep] = min(grad_obj) # also retain elements that are in the keep list
 
-		cons = volume_fraction_upperlimit(x, to_params.DesiredVolFraction)
-		grad_obj /= objScaling
+	
+		volConstraint, volConstraint_gradient = compute_volume_constraint_and_gradient(x, to_params.DesiredVolFraction)
+
 		# Optimality criteria update
 		xold = x.copy()
 		if  not directLagrangeMethod: # bisection method
@@ -148,7 +149,6 @@ def topopt_optimality_criteria(
 			xPhys = xnew.copy()
 
 		# Calculate change and update densities
-		#change = np.linalg.norm(x - xold, np.inf)
 		change = np.max(np.abs(x - xold))
 
 		fe_solver.mesh.setPseudoDensity(np.asarray(xPhys))
@@ -159,8 +159,7 @@ def topopt_optimality_criteria(
 		# Estimate the percentage of grey elements
 		grey_elements = np.sum((x > 0.05) & (x < 0.95))
 		fraction_grey = (grey_elements / num_elems) 
-		if elem_body_force is not None and (np.linalg.norm(elem_body_force) > 0):
-			update_SIMP_PENALTY_for_body_force(fraction_grey)
+
 		if (print_progress):
 			print(f"it.: {iter+1:d}, obj.: {(obj*objScaling):.3f}, "
 				  	f"vol.: {np.mean(xPhys):.3g}, grey: {fraction_grey:.3f}")
@@ -173,7 +172,7 @@ def topopt_optimality_criteria(
 			break
 		if (len(history['objective'])) >= 2:
 			dJ = abs((history['objective'][-1] - history['objective'][-2]) / history['objective'][-2])
-			if (abs(dJ) < rel_conv_tol and abs(cons) < rel_conv_tol) and (fraction_grey < 0.1): # success
+			if (abs(dJ) < rel_conv_tol and abs(volConstraint) < rel_conv_tol) and (fraction_grey < 0.1): # success
 				break
 		
 	if iter == maxIterations - 1:

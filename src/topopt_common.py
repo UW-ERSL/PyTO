@@ -19,10 +19,9 @@ class TO_METHODS(enum.Enum):
 	PARETO = enum.auto()
 	LEVELSET = enum.auto()
 
-class TO_OBJECTIVES(enum.Enum): # What to minimize? Not implemented yet
+class TO_OBJECTIVES(enum.Enum): # What to minimize?
 	COMPLIANCE = enum.auto()
-	VOLUME = enum.auto()
-	DISPLACEMENT = enum.auto()
+	SOLUTION_DOTPRODUCT = enum.auto() # g'* u
 	PNORM_STRESS = enum.auto()
 
 class TOParams: # These are the default parameters
@@ -89,7 +88,7 @@ def find_elements_with_fixedDOF(mesh, bc,nDOFPerNode ) -> np.ndarray:
 
 	return np.array(elements_with_fixed_dofs)
 
-def volume_fraction_upperlimit(density: np.ndarray,
+def compute_volume_constraint_and_gradient(x: np.ndarray,
 											 volfracUpper: float,
 											 )-> np.ndarray:
 	"""Compute the volume constraint.
@@ -102,27 +101,15 @@ def volume_fraction_upperlimit(density: np.ndarray,
 		returned value is zero. The constraint is inactive when the returned
 		value is negative.
 	"""
-	return (np.mean(density)/volfracUpper) - 1.0
 
-def volume_fraction_lowerlimit(density: np.ndarray,
-											 volfracLower: float,
-											 )-> np.ndarray:
-	"""Compute the volume constraint.
-	
-	Args:
-		density: Array of (num_elems,) containing the element densities.
-		volfrac: The target volume fraction.
-	
-	Returns: The volume constraint. The constraint is satisfied when the
-		returned value is zero. The constraint is inactive when the returned
-		value is negative.
-	"""
-	return 1- (np.mean(density)/volfracLower)
+	volConstraint = (np.mean(x)/volfracUpper) - 1.0
+	volConstraint_gradient = np.ones_like(x) / volfracUpper/ x.size
+	return volConstraint, volConstraint_gradient
+
 
 def compute_compliance_and_gradient(sol: np.ndarray, x: np.ndarray,
 				fe_solver, KE,
-				material_model = None,
-													) -> np.ndarray:
+				material_model = None) -> np.ndarray:
 	"""Compute the  compliance objective.
 
 	Args:
@@ -152,12 +139,47 @@ def compute_compliance_and_gradient(sol: np.ndarray, x: np.ndarray,
 	return compliance, compliance_grad
 
 
+def compute_displacement_and_gradient(sol: np.ndarray, x: np.ndarray,
+				fe_solver, KE,
+				material_model = None) -> np.ndarray:
+	"""Compute the  compliance objective.
+
+	Args:
+		density: Array of (num_elems,) containing the element densities.
+		fe_solver: The structural FEA solver object.
+		penal: The penalization factor for the SIMP method.
+
+	Returns: The compliance objective value.
+	"""
+	print("Not implemented yet")
+	return 0, 0
+	dofMat = fe_solver.mesh.edofMat
+	num_elems = fe_solver.mesh.num_elems
+	nRows = KE.shape[0]
+	ce = (np.dot(sol[dofMat].reshape(num_elems, nRows), KE) * sol[dofMat].reshape(num_elems, nRows)).sum(1)
+	
+	if (nRows == 24): # structural hex
+		materialScaling = get_structural_material_model_scaling(x, material_model)
+		compliance_grad = -get_structural_material_model_sensitivity(x,material_model) * ce
+	
+	elif (nRows == 8): # thermal hex
+		materialScaling = get_thermal_material_model_scaling(x, material_model)
+		compliance_grad = -get_thermal_material_model_sensitivity(x,material_model) * ce
+	else:
+		raise ValueError("Invalid number of rows in element stiffness matrix.")
+	
+	
+	compliance = np.sum(materialScaling * ce)
+	return compliance, compliance_grad
+
 def compute_objective_and_gradient(to_params, sol: np.ndarray, x: np.ndarray,	fe_solver, KE,
 				material_model = None) -> tuple:
 							
-
 	if (to_params.Objective == TO_OBJECTIVES.COMPLIANCE):
 		compliance, compliance_grad = compute_compliance_and_gradient(sol, x, fe_solver, KE, material_model)
+		return compliance, compliance_grad
+	elif (to_params.Objective == TO_OBJECTIVES.SOLUTION_DOTPRODUCT):
+		compliance, compliance_grad = compute_displacement_and_gradient(sol, x, fe_solver, KE, material_model)
 		return compliance, compliance_grad
 	elif (to_params.Objective == TO_OBJECTIVES.VOLUME):
 		# Volume is not implemented yet

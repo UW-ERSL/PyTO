@@ -43,8 +43,7 @@ def topopt_mma(fe_solver, #hex_structural_fea.HexStructuralFEA or hex_thermal_fe
 	[H,Hs] = createFilters(fe_solver, to_params)
 
 	elemsWithForces = find_elements_with_forces(fe_solver.mesh, fe_solver.bc.force,nDOFPerNode)
-
-	nConstraints = 2 if to_params.ExactVolumeFraction else 1
+	nConstraints = 1
 
 	xmin = 0 # Minimum density
 	mma_params = mma.MMAParams(max_iter=maxMMAIterations,
@@ -95,8 +94,7 @@ def topopt_mma(fe_solver, #hex_structural_fea.HexStructuralFEA or hex_thermal_fe
 	errorMsg = ""
 	nFEAs = 0
 	initialize_SIMP_PENALTY()  # Initialize the SIMP penalty for the first iteration
-		
-
+	
 	while True:
 		x = mma_state.x.reshape(-1)
 		if (plot_progress):
@@ -105,19 +103,21 @@ def topopt_mma(fe_solver, #hex_structural_fea.HexStructuralFEA or hex_thermal_fe
 		timeFEAStart = time.time()
 
 		sol = fe_solver.solve(x, material_model)
-		obj, grad_obj = compute_objective_and_gradient(to_params,sol,x, fe_solver,KE, material_model)
-		
-		if (len(history['objective']) == 0):
-			objScaling = 0.1*obj 
-		obj = obj/objScaling # Scale the objective function to be in the range of 10
 		nFEAs += 1
 		timeFEA += time.time() - timeFEAStart
 
-		if (nodal_body_force is not None):
+		obj, grad_obj = compute_objective_and_gradient(to_params,sol,x, fe_solver,KE, material_model)
+		
+		if (len(history['objective']) == 0):
+			objScaling = 0.1*obj   # Scale the objective function to be in the range of 10
+		obj = obj/objScaling
+		grad_obj /=objScaling
+
+		if (nodal_body_force is not None): # additional body force term
 			ce_body_force = (sol[fe_solver.mesh.edofMat].reshape(num_elems, 24) * nodal_body_force[fe_solver.mesh.edofMat].reshape(num_elems, 24)).sum(1)
 			grad_obj +=  2*ce_body_force*get_material_model_rho_sensitivity(x,material_model)
 
-		grad_obj = (H * grad_obj)/Hs
+		grad_obj = (H * grad_obj)/Hs # apply filter
 		if (elemsWithForces.size > 0):
 			grad_obj[elemsWithForces] = min(grad_obj) # retain elements that have nodes with external forces
 
@@ -125,18 +125,17 @@ def topopt_mma(fe_solver, #hex_structural_fea.HexStructuralFEA or hex_thermal_fe
 			grad_obj[to_params.ElemsToKeep] = min(grad_obj) # also retain elements that are in the keep list
 
 		vf = np.mean(x)
-		grad_obj /=objScaling
-	
-		cons = np.array(volume_fraction_upperlimit(x, to_params.DesiredVolFraction))
-		grad_cons = np.ones(num_elems)/to_params.DesiredVolFraction/num_elems
+		
+		
+		volConstraint, volConstraint_gradient = compute_volume_constraint_and_gradient(x, to_params.DesiredVolFraction)
 
 		timeMMAStart = time.time()
 		mma_state = mma.update_mma(mma_state,
 										mma_params,
 										np.array([obj]),
 										np.array([grad_obj]).reshape((num_elems, 1)),
-										np.array([cons]).reshape((1, 1)),
-										grad_cons.reshape((1, num_elems))
+										np.array([volConstraint]).reshape((1, 1)),
+										volConstraint_gradient.reshape((1, num_elems))
 										)
 			
 
@@ -147,8 +146,7 @@ def topopt_mma(fe_solver, #hex_structural_fea.HexStructuralFEA or hex_thermal_fe
 		# Estimate the percentage of grey elements
 		grey_elements = np.sum((x > 0.05) & (x < 0.95))
 		fraction_grey = (grey_elements / num_elems) 
-		if ( elem_body_force is not None) and np.linalg.norm(elem_body_force) > 0:
-			update_SIMP_PENALTY_for_body_force(fraction_grey)
+
 		if (print_progress):
 			print(f"it.: {mma_state.epoch}, obj.: {obj*objScaling:.4g}, vf: {vf:.3f}, change: {change: 0.3f}, grey: {fraction_grey:.3f}")
 		history['objective'].append(obj*objScaling)
@@ -158,7 +156,7 @@ def topopt_mma(fe_solver, #hex_structural_fea.HexStructuralFEA or hex_thermal_fe
 		if (len(history['objective'])) >= minMMAIterations:
 			dJ1 = abs((history['objective'][-1] - history['objective'][-2]) / history['objective'][-2])
 			# we need multiple checks else it will terminate too early 
-			if dJ1 < rel_conv_tol and (np.max(cons) < rel_conv_tol) and (change < 0.2) and (fraction_grey < 0.2): # success
+			if dJ1 < rel_conv_tol and (abs(volConstraint) < rel_conv_tol) and (change < 0.2) and (fraction_grey < 0.2): # success
 				print("MMA optimization converged.")
 				break
 		if time.time() - tStart > timeLimit:
@@ -208,7 +206,7 @@ if __name__ == "__main__":
 	from topopt_thermal_benchmarks import *
  
 	print("-" * 50)
-	to_problem = StructuralTOExamples.Mitchell_1 # Choose the TO problem
+	to_problem = StructuralTOExamples.LBracketMidLoad # Choose the TO problem
 	#to_problem = ThermalTOExamples.FourCornersThermal # Choose the TO problem
 
 	if (to_problem in StructuralTOExamples):
@@ -230,7 +228,6 @@ if __name__ == "__main__":
 		dsolver.create_deflation_matrix(mesh)
 		dsolver.W = dsolver.W[bc.free_dofs, :]
 
-	solver = lin_solv.Solvers.PCG
 	if (to_problem in StructuralTOExamples):
 		fe_solver = hex_structural_fea.HexStructuralFEA(mesh = mesh,
 					mat_prop = mat_prop,
