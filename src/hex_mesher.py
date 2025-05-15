@@ -1155,6 +1155,7 @@ if __name__ == "__main__":
     script_dir = os.path.dirname(os.path.abspath(__file__))
     stlFileName = os.path.join(script_dir, '../Models/LBracket/LBracket.STL')
     stlFileName = os.path.join(script_dir, '../Models/Overhang/Overhang.STL')
+    stlFileName = os.path.join(script_dir, '../Models/Inverter/Inverter.STL')
     mesh.createMeshFromSTLFile(stlFileName, nElemsDesired=12100)
     mesh.plot()
 

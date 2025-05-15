@@ -28,10 +28,7 @@ def topopt_optimality_criteria(
 	Returns: A tuple containing the displacement field of the optimized structure
 		and a dictionary containing the optimization history.
 	"""
-	if isinstance(fe_solver, hex_structural_fea.HexStructuralFEA):
-		nDOFPerNode = 3
-	else:
-		nDOFPerNode = 1
+	nDOFPerNode = 3 if isinstance(fe_solver, hex_structural_fea.HexStructuralFEA) else 1
 	material_model = MaterialModel.SIMP 
 	tStart = time.time()
 	elem_body_force = fe_solver.elem_body_force
@@ -57,7 +54,7 @@ def topopt_optimality_criteria(
 	else:
 		nodal_body_force = None
 	# Initialize history
-	history = {'compliance': [], 'volume': [], 'change': []}
+	history = {'objective': [], 'volume': [], 'change': []}
 	# OC parameters
 	xmin = 0.001  # Minimum density
 	xmax = 1.0    # Maximum density
@@ -89,9 +86,9 @@ def topopt_optimality_criteria(
 		
 		
 		sol = fe_solver.solve(x, material_model)
-		obj, grad_obj = compliance(sol,x, fe_solver,KE, material_model)
+		obj, grad_obj = compute_objective_and_gradient(to_params,sol,x, fe_solver,KE, material_model)
 
-		if (len(history['compliance']) == 0):
+		if (len(history['objective']) == 0):
 			objScaling = 0.1*obj
 		obj = obj/objScaling # Scale the objective function to avoid numerical issues
 
@@ -156,7 +153,7 @@ def topopt_optimality_criteria(
 
 		fe_solver.mesh.setPseudoDensity(np.asarray(xPhys))
 	
-		history['compliance'].append(obj*objScaling)
+		history['objective'].append(obj*objScaling)
 		history['volume'].append(np.mean(xPhys))
 		history['change'].append(change)
 		# Estimate the percentage of grey elements
@@ -174,11 +171,11 @@ def topopt_optimality_criteria(
 			break
 		if (change < move_tol):# success
 			break
-		if (len(history['compliance'])) >= 2:
-			dJ = abs((history['compliance'][-1] - history['compliance'][-2]) / history['compliance'][-2])
+		if (len(history['objective'])) >= 2:
+			dJ = abs((history['objective'][-1] - history['objective'][-2]) / history['objective'][-2])
 			if (abs(dJ) < rel_conv_tol and abs(cons) < rel_conv_tol) and (fraction_grey < 0.1): # success
 				break
-
+		
 	if iter == maxIterations - 1:
 		errorMsg = "Maximum iterations reached"
 		print(errorMsg)
@@ -196,12 +193,12 @@ def topopt_optimality_criteria(
 		errorMsg = "Hanging elements"
 		success = False
 	sol = fe_solver.solve(x, material_model)
-	obj, grad_obj = compliance(sol,x, fe_solver,KE, material_model)
+	obj, grad_obj = compute_objective_and_gradient(to_params,sol,x, fe_solver,KE, material_model)
 
-	history['compliance'].append(obj)
+	history['objective'].append(obj)
 	history['volume'].append(volfrac)
 	history['change'].append(change)
-	if (obj > 2*history['compliance'][-2]):
+	if (obj > 2*history['objective'][-2]):
 		errorMsg = "Disconnected topology"
 		success = False
 	if (volfrac > 1.1*to_params.DesiredVolFraction):
@@ -219,8 +216,8 @@ if __name__ == "__main__":
 	from topopt_thermal_benchmarks import *
 
 	print("-" * 50)
-	to_problem = StructuralTOExamples.Mitchell_1 # Choose the TO problem
-	to_problem = ThermalTOExamples.FourCornersThermal # Choose the TO problem
+	to_problem = StructuralTOExamples.LBracketMidLoad # Choose the TO problem
+	#to_problem = ThermalTOExamples.FourCornersThermal # Choose the TO problem
 
 	if (to_problem in StructuralTOExamples):
 		mesh, mat_prop, bc,elem_body_force, to_params = getStructuralTOProblem(to_problem)
@@ -234,9 +231,7 @@ if __name__ == "__main__":
 
 
 	dsolver = deflation.DeflationSolver()
-	if (to_params.nDOFDesired <= DIRECT_SOLVER_DOF_CUTOFF):#  # Choose solver. Typically PARDISO, but DPCG for large DOF problems
-		solver = lin_solv.Solvers.PARDISO
-	else:
+	if (to_params.nDOFDesired > DIRECT_SOLVER_DOF_CUTOFF):#  # Choose solver. Typically PARDISO, but DPCG for large DOF problems
 		solver = lin_solv.Solvers.DPCG
 		nGroups =  min(dsolver.maxGroups,max(dsolver.minGroups,round(3*mesh.num_nodes/dsolver.dofPerGroup)))
 		dsolver.create_deflation_groups(mesh, nGroups)
@@ -280,7 +275,7 @@ if __name__ == "__main__":
 	if not success:
 		print(f"Error: {errorMsg}")
 
-	title = f"OC: nDOF: {3*fe_solver.mesh.num_nodes}, vol: {history['volume'][-1]:0.2f}, J: {history['compliance'][-1]:.3g}, time: {timeTaken:.0f} s"
+	title = f"OC: nDOF: {3*fe_solver.mesh.num_nodes}, vol: {history['volume'][-1]:0.2f}, J: {history['objective'][-1]:.3g}, time: {timeTaken:.0f} s"
 
 	
 	# plot the optimized mesh
@@ -290,8 +285,8 @@ if __name__ == "__main__":
 
 	# Plot compliance on left y-axis
 	ax1.set_xlabel('Iterations')
-	ax1.set_ylabel('Compliance', color='tab:blue')
-	ax1.plot(history['compliance'], color='tab:blue', label='Compliance')
+	ax1.set_ylabel('objective', color='tab:blue')
+	ax1.plot(history['objective'], color='tab:blue', label='objective')
 	ax1.tick_params(axis='y', labelcolor='tab:blue')
 
 	# Plot volume fraction on right y-axis with dotted line

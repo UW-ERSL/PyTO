@@ -31,26 +31,20 @@ def topopt_mma(fe_solver, #hex_structural_fea.HexStructuralFEA or hex_thermal_fe
 	Returns: The displacement field of the optimized structure.
 	"""
 
-	if isinstance(fe_solver, hex_structural_fea.HexStructuralFEA):
-		nDOFPerNode = 3
-	else:
-		nDOFPerNode = 1
+	nDOFPerNode = 3 if isinstance(fe_solver, hex_structural_fea.HexStructuralFEA) else 1
 	material_model = MaterialModel.SIMP 
 
 	elem_body_force = fe_solver.elem_body_force
 	tStart = time.time()
 	num_elems= fe_solver.mesh.num_elems
-	history = {'compliance': [], 'volume': [], 'change': []}
+	history = {'objective': [], 'volume': [], 'change': []}
 	if (print_progress):
 		print("Computing Filters ...")
 	[H,Hs] = createFilters(fe_solver, to_params)
 
 	elemsWithForces = find_elements_with_forces(fe_solver.mesh, fe_solver.bc.force,nDOFPerNode)
 
-	if (to_params.ExactVolumeFraction):
-		nConstraints = 2
-	else:
-		nConstraints = 1
+	nConstraints = 2 if to_params.ExactVolumeFraction else 1
 
 	xmin = 0 # Minimum density
 	mma_params = mma.MMAParams(max_iter=maxMMAIterations,
@@ -73,7 +67,7 @@ def topopt_mma(fe_solver, #hex_structural_fea.HexStructuralFEA or hex_thermal_fe
 				for mp in fe_solver.mat_prop]
 			KE = KE_list[0]	
 		print("Assuming all elements have the same material properties")
-	else:
+	else: # single material
 		if isinstance(fe_solver, hex_structural_fea.HexStructuralFEA):
 			KE = hex_element_stiffness.hex8_stiffness_matrix_structural( fe_solver.mat_prop,fe_solver.mesh.elem_size)
 		elif isinstance(fe_solver, hex_thermal_fea.HexThermalFEA):
@@ -111,15 +105,13 @@ def topopt_mma(fe_solver, #hex_structural_fea.HexStructuralFEA or hex_thermal_fe
 		timeFEAStart = time.time()
 
 		sol = fe_solver.solve(x, material_model)
-		obj, grad_obj = compliance(sol,x, fe_solver,KE, material_model)
-
-		if (len(history['compliance']) == 0):
-			objScaling = 0.1*obj
-		obj = obj/objScaling # Normalize the objective function
+		obj, grad_obj = compute_objective_and_gradient(to_params,sol,x, fe_solver,KE, material_model)
+		
+		if (len(history['objective']) == 0):
+			objScaling = 0.1*obj 
+		obj = obj/objScaling # Scale the objective function to be in the range of 10
 		nFEAs += 1
 		timeFEA += time.time() - timeFEAStart
-		obj = np.array([obj])
-
 
 		if (nodal_body_force is not None):
 			ce_body_force = (sol[fe_solver.mesh.edofMat].reshape(num_elems, 24) * nodal_body_force[fe_solver.mesh.edofMat].reshape(num_elems, 24)).sum(1)
@@ -127,15 +119,13 @@ def topopt_mma(fe_solver, #hex_structural_fea.HexStructuralFEA or hex_thermal_fe
 
 		grad_obj = (H * grad_obj)/Hs
 		if (elemsWithForces.size > 0):
-			grad_obj[elemsWithForces] = min(grad_obj)
+			grad_obj[elemsWithForces] = min(grad_obj) # retain elements that have nodes with external forces
 
 		if (to_params.ElemsToKeep is not None):
-			grad_obj[to_params.ElemsToKeep] = min(grad_obj)
-			#x[to_params.ElemsToKeep] = 1.0
+			grad_obj[to_params.ElemsToKeep] = min(grad_obj) # also retain elements that are in the keep list
 
 		vf = np.mean(x)
 		grad_obj /=objScaling
-		#grad_obj /= np.max(np.abs(grad_obj)) # Scaling the gradient to avoid numerical issues
 		if (to_params.ExactVolumeFraction):
 			uppervolfraction =  to_params.DesiredVolFraction + 0.001
 			consUpper = volume_fraction_upperlimit(x, uppervolfraction)
@@ -151,7 +141,7 @@ def topopt_mma(fe_solver, #hex_structural_fea.HexStructuralFEA or hex_thermal_fe
 			timeMMAStart = time.time()
 			mma_state = mma.update_mma(mma_state,
 										mma_params,
-										obj,
+										np.array([obj]),
 										np.array([grad_obj]).reshape((num_elems, 1)),
 										cons,
 										grad_cons
@@ -163,7 +153,7 @@ def topopt_mma(fe_solver, #hex_structural_fea.HexStructuralFEA or hex_thermal_fe
 			timeMMAStart = time.time()
 			mma_state = mma.update_mma(mma_state,
 										mma_params,
-										obj,
+										np.array([obj]),
 										np.array([grad_obj]).reshape((num_elems, 1)),
 										np.array([cons]).reshape((1, 1)),
 										grad_cons.reshape((1, num_elems))
@@ -180,14 +170,14 @@ def topopt_mma(fe_solver, #hex_structural_fea.HexStructuralFEA or hex_thermal_fe
 		if ( elem_body_force is not None) and np.linalg.norm(elem_body_force) > 0:
 			update_SIMP_PENALTY_for_body_force(fraction_grey)
 		if (print_progress):
-			print(f"it.: {mma_state.epoch}, obj.: {obj[0]*objScaling:.4g}, vf: {vf:.3f}, change: {change: 0.3f}, grey: {fraction_grey:.3f}")
-		history['compliance'].append(obj[0]*objScaling)
+			print(f"it.: {mma_state.epoch}, obj.: {obj*objScaling:.4g}, vf: {vf:.3f}, change: {change: 0.3f}, grey: {fraction_grey:.3f}")
+		history['objective'].append(obj*objScaling)
 		history['volume'].append(np.mean(x))
 		history['change'].append(change)
 		
-		if (len(history['compliance'])) >= minMMAIterations:
-			dJ1 = abs((history['compliance'][-1] - history['compliance'][-2]) / history['compliance'][-2])
-			# we need multiple checks else it will terminate too early for some problems such as TorquePlate
+		if (len(history['objective'])) >= minMMAIterations:
+			dJ1 = abs((history['objective'][-1] - history['objective'][-2]) / history['objective'][-2])
+			# we need multiple checks else it will terminate too early 
 			if dJ1 < rel_conv_tol and (np.max(cons) < rel_conv_tol) and (change < 0.2) and (fraction_grey < 0.2): # success
 				print("MMA optimization converged.")
 				break
@@ -196,7 +186,7 @@ def topopt_mma(fe_solver, #hex_structural_fea.HexStructuralFEA or hex_thermal_fe
 			errorMsg = "Time limit exceeded."
 			print("MMA optimization terminated due to time limit.")
 			break
-		if len(history['compliance']) >= maxMMAIterations:
+		if len(history['objective']) >= maxMMAIterations:
 			success = False
 			errorMsg = "Maximum iterations reached."
 			print("MMA optimization terminated due to maximum iterations.")
@@ -214,11 +204,11 @@ def topopt_mma(fe_solver, #hex_structural_fea.HexStructuralFEA or hex_thermal_fe
 		errorMsg = "Hanging elements"
 		success = False
 	sol = fe_solver.solve(x, material_model)
-	obj, grad_obj = compliance(sol,x, fe_solver,KE, material_model)
-	history['compliance'].append(obj)
+	obj, grad_obj = compute_objective_and_gradient(to_params,sol,x, fe_solver,KE, material_model)
+	history['objective'].append(obj)
 	history['volume'].append(volfrac)
 	history['change'].append(change)
-	if (obj > 2*history['compliance'][-2]):
+	if (obj > 2*history['objective'][-2]):
 		errorMsg = "Disconnected topology"
 		success = False
 	if (volfrac > 1.1*to_params.DesiredVolFraction):
@@ -239,7 +229,7 @@ if __name__ == "__main__":
  
 	print("-" * 50)
 	to_problem = StructuralTOExamples.Mitchell_1 # Choose the TO problem
-	to_problem = ThermalTOExamples.FourCornersThermal # Choose the TO problem
+	#to_problem = ThermalTOExamples.FourCornersThermal # Choose the TO problem
 
 	if (to_problem in StructuralTOExamples):
 		mesh, mat_prop, bc,elem_body_force, to_params = getStructuralTOProblem(to_problem)
@@ -252,18 +242,15 @@ if __name__ == "__main__":
 	solver = lin_solv.Solvers.PARDISO # # Choose solver. Typically PARDISO, but DPCG for DOF > 200,000
 	debug = False
 
-	
-
 	dsolver = deflation.DeflationSolver()
-	if (to_params.nDOFDesired <= DIRECT_SOLVER_DOF_CUTOFF):#  # Choose solver. Typically PARDISO, but DPCG for large DOF problems
-		solver = lin_solv.Solvers.PARDISO
-	else:
+	if (to_params.nDOFDesired > DIRECT_SOLVER_DOF_CUTOFF):# Typically PARDISO, but DPCG for large DOF problems
 		solver = lin_solv.Solvers.DPCG
 		nGroups =  min(dsolver.maxGroups,max(dsolver.minGroups,round(3*mesh.num_nodes/dsolver.dofPerGroup)))
 		dsolver.create_deflation_groups(mesh, nGroups)
 		dsolver.create_deflation_matrix(mesh)
 		dsolver.W = dsolver.W[bc.free_dofs, :]
 
+	solver = lin_solv.Solvers.PCG
 	if (to_problem in StructuralTOExamples):
 		fe_solver = hex_structural_fea.HexStructuralFEA(mesh = mesh,
 					mat_prop = mat_prop,
@@ -299,7 +286,7 @@ if __name__ == "__main__":
 	if not success:
 		print(f"Error: {errorMsg}")
 
-	title = f"MMA: nDOF: {3*fe_solver.mesh.num_nodes}, vol: {history['volume'][-1]:0.2f}, J: {history['compliance'][-1]:.3g}, time: {timeTaken:.0f} s"
+	title = f"MMA: nDOF: {3*fe_solver.mesh.num_nodes}, vol: {history['volume'][-1]:0.2f}, J: {history['objective'][-1]:.3g}, time: {timeTaken:.0f} s"
 	fe_solver.plot_mesh(title = title, plot_bc = False, save_path = None)
 	
 
@@ -307,8 +294,8 @@ if __name__ == "__main__":
 
 	# Plot compliance on left y-axis
 	ax1.set_xlabel('Iterations')
-	ax1.set_ylabel('Compliance', color='tab:blue')
-	ax1.plot(history['compliance'], color='tab:blue', label='Compliance')
+	ax1.set_ylabel('objective', color='tab:blue')
+	ax1.plot(history['objective'], color='tab:blue', label='objective')
 	ax1.tick_params(axis='y', labelcolor='tab:blue')
 
 	# Plot volume fraction on right y-axis with dotted line

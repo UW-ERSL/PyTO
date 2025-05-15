@@ -1,6 +1,6 @@
 import enum
 from hex_structural_examples import *
-from topopt_common import TOParams, find_elements_with_fixedDOF
+from topopt_common import *
 
 class StructuralTOExamples(enum.Enum):
 	Mitchell_1 = enum.auto()
@@ -11,6 +11,7 @@ class StructuralTOExamples(enum.Enum):
 	CantileverTipLoad = enum.auto()
 	CantileverMidLoad = enum.auto()
 	MBBB = enum.auto()
+	Inverter = enum.auto()
 	LBracketTopLoad = enum.auto()
 	LBracketMidLoad = enum.auto()
 	TwoBar = enum.auto()
@@ -102,6 +103,14 @@ def getStructuralTOProblem(to_problem: StructuralTOExamples,nDOFDesired = None, 
         to_params.ExtrudeZ = True
         to_params.nDOFDesired = 50000 if nDOFDesired is None else nDOFDesired
         to_params.DesiredVolFraction = 0.5
+    elif to_problem == StructuralTOExamples.Inverter:
+        structural_problem = StructuralExamples.Inverter
+        to_params.Comment  = "Compliant Mechanism"
+        to_params.XSymmetry = True 
+        to_params.ExtrudeZ = True
+        to_params.nDOFDesired = 50000 if nDOFDesired is None else nDOFDesired
+        to_params.DesiredVolFraction = 0.5
+        to_params.Objective = TO_OBJECTIVES.DISPLACEMENT
     elif to_problem == StructuralTOExamples.LBracketTopLoad:
         structural_problem = StructuralExamples.LBracket
         kwargs['topload'] = 1.5e4
@@ -221,7 +230,7 @@ def getStructuralTOProblem(to_problem: StructuralTOExamples,nDOFDesired = None, 
     to_params.ElemsToKeep  = None # default value
 
     if (to_params.KeepFixedElems):
-        to_params.ElemsToKeep = find_elements_with_fixedDOF(mesh, bc)
+        to_params.ElemsToKeep = find_elements_with_fixedDOF(mesh, bc,nDOFPerNode=3)
 
     if to_problem == StructuralTOExamples.BliskWithBlade:
         centerPt = [0,0,0]

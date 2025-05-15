@@ -79,7 +79,8 @@ class HexStructuralFEA:
   #################################################################
   def solve(self,
             x: np.ndarray = None,
-            material_model: MaterialModel = None) -> np.ndarray:
+            material_model: MaterialModel = None,
+            externalSprings = None) -> np.ndarray:
     """Solve the structural finite element problem.
 
     Args:
@@ -128,6 +129,21 @@ class HexStructuralFEA:
       node_forces[1::3] = self.mesh.elem_to_node_field_mapping* elem_force[1::3] 
       node_forces[2::3] = self.mesh.elem_to_node_field_mapping* elem_force[2::3] 
       self.total_force += node_forces
+
+    
+    if hasattr(self.mesh, 'externalSprings') and self.mesh.externalSprings is not None:
+      # Add spring stiffnesses to diagonal terms
+      # external_springs = [
+      # (1000.0, 42),  # Add spring with stiffness 1000 at DOF 42
+      #  (2000.0, 156), # Add spring with stiffness 2000 at DOF 156
+      #  (500.0, 789)   # Add spring with stiffness 500 at DOF 789
+      #]
+      # Convert to CSR format for modification
+      stiff_mtrx = stiff_mtrx.tocsr()
+      for KSpring, dof in self.mesh.externalSprings:
+          stiff_mtrx[dof,dof] += KSpring
+
+
     sol =  linear_solvers.solve(stiff_mtrx,
                       self.total_force,
                       self.solver,
@@ -138,6 +154,8 @@ class HexStructuralFEA:
     self.deformation = np.sqrt(sol[0::3]**2 + sol[1::3]**2 + sol[2::3]**2)
     self.max_deformation = np.max(self.deformation)
     return sol
+  
+
 #################################################################
   def postprocess(self):
       """Computes the stresses at the center of each element.
@@ -638,10 +656,10 @@ class HexStructuralFEA:
 if __name__ == "__main__":    
   from hex_structural_examples import StructuralExamples,getStructuralProblem
 
-  problem = StructuralExamples.LBracket
+  problem = StructuralExamples.Inverter
   nDOFDesired = 15000
   mesh, mat_prop, bc,elem_body_force = getStructuralProblem(problem,nDOFDesired = nDOFDesired)
-  solver = linear_solvers.Solvers.DPCG # typically DPCG or PARDISO
+  solver = linear_solvers.Solvers.PARDISO # typically DPCG or PARDISO
 
   dsolver = deflation.DeflationSolver()
   startTime = time.time()

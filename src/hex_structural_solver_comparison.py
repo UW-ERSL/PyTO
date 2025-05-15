@@ -45,12 +45,19 @@ linearSolvers = ['spsolve','pyamg','pycg','pypardiso','pydpcg']
 # Set the DOF for the problems to run through
 dofs = [1000,5000,10000,25000,50000,100000,250000,500000,1e6,1.5e6,2e6,3e6]
 # Set the time limit for each solver
-dofs = [1000,5000,10000]
+dofs = [10000,25000,50000,100000,]
 timeLimit = 20 # seconds
 dofList = []
+
+residualTolerance = 1e-8 # relative residual tolerance for iterative solvers
+
 solverTime = dict(zip(linearSolvers, [None]*len(linearSolvers)))
 for linearSolver in linearSolvers:
 	solverTime[linearSolver] = []
+
+complianceList = dict(zip(linearSolvers, [None]*len(linearSolvers)))
+for linearSolver in linearSolvers:
+	complianceList[linearSolver] = []
 
 continueMeshing = True # set to false to skip to solving the FEA problems
 dsolver = deflation.DeflationSolver()
@@ -88,22 +95,23 @@ for dofDesired in dofs:
 		elif (linearSolver == 'pycg'):
 			solver = lin_solv.Solvers.CG
 
-		fe_solver = fea.StructFEA(mesh = mesh,
+		fe_solver = fea.HexStructuralFEA(mesh = mesh,
 								mat_prop = mat_prop,
 								bc = bc,
 								solver = solver,
 								dsolver = dsolver,
-								rtol = 1e-8,
+								rtol = residualTolerance,
 								verbose = False)
 		nDOF = 3*fe_solver.mesh.num_nodes
-		u = np.asarray(fe_solver.solve())
+		u = fe_solver.solve()
 		totalTime = time.time() - startTime
 		delta = np.sqrt(u[0::3]**2 +  u[1::3]**2 +  u[2::3]**2)
-		deltaMax = np.max(delta)
-		nDOF = 3*fe_solver.mesh.num_nodes
 		
+		nDOF = 3*fe_solver.mesh.num_nodes
+		compliance = bc.force.dot(u)
 		print('Solver: ', linearSolver, ' time: {:.2f}'.format(totalTime))
 		solverTime[linearSolver].append(totalTime)
+		complianceList[linearSolver].append(compliance)
 
 
 marker = itertools.cycle(('dk', '+b','xm', '*g', 'or')) 
@@ -124,4 +132,21 @@ plt.ylabel('Time (secs)')
 plt.grid(True)
 plt.show()
 
+# Use PARDISO deltaMax as reference
+pardisoCompliances = complianceList['pypardiso']
+marker = itertools.cycle(('dk', '+b','xm', '*g', 'or'))
+colors = itertools.cycle(('k', 'b','m', 'g', 'r'))
+
+plt.figure()
+for linearSolver in linearSolvers:
+	compliances = complianceList[linearSolver]
+	relativeCompliance = [d/pardisoCompliances[i] for i, d in enumerate(compliances)]
+	plt.plot(dofList[0:len(compliances)], relativeCompliance, next(marker))
+
+plt.legend([s for s in linearSolvers], loc='upper left')
+plt.title(f"{problem.name} - Relative Compliance wrt PARDISO")
+plt.xlabel('DOF')
+plt.ylabel('Relative Compliance')
+plt.grid(True)
+plt.show()
 

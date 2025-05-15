@@ -67,7 +67,7 @@ def runTOMethodOnThermalBenchmarks(optimizationMethod):
 			os.makedirs(output_dir)
 
 		image_path = f"{output_dir}/{to_problem.name}.png"
-		title = f"{optimizationMethod.name}: nDOF: {3*fe_solver.mesh.num_nodes}, vol: {history['volume'][-1]:0.2f}, J: {history['compliance'][-1]:.3g}, time: {timeTaken:.0f} s"
+		title = f"{optimizationMethod.name}: nDOF: {3*fe_solver.mesh.num_nodes}, vol: {history['volume'][-1]:0.2f}, J: {history['objective'][-1]:.3g}, time: {timeTaken:.0f} s"
 	
 		fe_solver.plot_mesh(save_path=image_path, plot_bc = None, title=title)
 		
@@ -76,7 +76,7 @@ def runTOMethodOnThermalBenchmarks(optimizationMethod):
 			'comment': to_params.Comment,  
 			'ndof': 3*fe_solver.mesh.num_nodes,
 			'volume': history['volume'][-1],
-			'compliance': history['compliance'][-1],
+			'objective': history['objective'][-1],
 			'#FEAs': nFEAs,
 			'time (s)': timeTaken,
 			'success': success,
@@ -117,7 +117,7 @@ def runTOMethodOnThermalBenchmarks(optimizationMethod):
 
 	# Format
 	results_df['volume'] = results_df['volume'].map(lambda x: f"{x:.2g}")
-	results_df['compliance'] = results_df['compliance'].map(lambda x: f"{x:.3g}")
+	results_df['objective'] = results_df['objective'].map(lambda x: f"{x:.3g}")
 	results_df['time (s)'] = results_df['time (s)'].map(lambda x: f"{x:.3g}")
 
 	# Plot the results as a table
@@ -161,7 +161,7 @@ def combine_results():
 			if os.path.exists(csv_path):
 				df = pd.read_csv(csv_path)
 				# Convert compliance and time strings to float
-				df['compliance'] = df['compliance'].astype(float)
+				df['objective'] = df['objective'].astype(float)
 				df['time (s)'] = df['time (s)'].astype(float)
 				dataframes[method.name] = df
 
@@ -177,7 +177,7 @@ def combine_results():
 		# Get reference values from DENSITYMMA
 		reference_compliance = dict(zip(
 			dataframes['DENSITYMMA']['name'],
-			dataframes['DENSITYMMA']['compliance']
+			dataframes['DENSITYMMA']['objective']
 		))
 		reference_time = dict(zip(
 			dataframes['DENSITYMMA']['name'],
@@ -187,7 +187,7 @@ def combine_results():
 		# Calculate normalized compliance, time and get #FEAs for each method
 		for method, df in dataframes.items():
 			compliance_data[method] = [
-				row['compliance'] / reference_compliance[row['name']]
+				row['objective'] / reference_compliance[row['name']]
 				for _, row in df.iterrows()
 			]
 			time_data[method] = [
@@ -275,7 +275,7 @@ def combine_results():
 
 if __name__ == "__main__":    
 	
-	optimizationMethods = [TO_METHODS.DENSITYMMA, TO_METHODS.DENSITYOC, TO_METHODS.PARETO, TO_METHODS.LEVELSET]
+	optimizationMethods = [TO_METHODS.DENSITYMMA, TO_METHODS.DENSITYOC, TO_METHODS.PARETO]
 	for optimizationMethod in optimizationMethods:
 		runTOMethodOnThermalBenchmarks(optimizationMethod)
 		print(f"Finished {optimizationMethod.name} tests.")

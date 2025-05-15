@@ -1,18 +1,17 @@
 """Optimization routines for topology optimization."""
 import enum
 import numpy as np
-import hex_element_stiffness
-
 from topopt_filters import *
 import matplotlib.pyplot as plt
 import linear_solvers as lin_solv
 import hex_mesher
 import hex_structural_fea 
+import hex_element_stiffness
 from topopt_material_model import *
 import hex_thermal_fea 
 import deflation
 
-DIRECT_SOLVER_DOF_CUTOFF = 150000 #  dof limit for direct solver, for greater number of dof, iterative solver is used
+DIRECT_SOLVER_DOF_CUTOFF = 100000 #  dof limit for direct solver, for greater number of dof, iterative solver is used
 
 class TO_METHODS(enum.Enum):
 	DENSITYMMA = enum.auto()
@@ -20,25 +19,32 @@ class TO_METHODS(enum.Enum):
 	PARETO = enum.auto()
 	LEVELSET = enum.auto()
 
+class TO_OBJECTIVES(enum.Enum): # What to minimize? Not implemented yet
+	COMPLIANCE = enum.auto()
+	VOLUME = enum.auto()
+	DISPLACEMENT = enum.auto()
+	PNORM_STRESS = enum.auto()
+
 class TOParams: # These are the default parameters
     Comment = "" # Comment for the topology optimization problem
     nDOFDesired = 20000 # Desired number of degrees of freedom in the finite element problem
     DesiredVolFraction = 0.5
     ExactVolumeFraction = False # If True, the volume fraction is exactly met
     RelativeFilterRadius = 1.5 #relative to the element size
-    XSymmetry = False
+    XSymmetry = False # Desired symmetry in YZ plane
     YSymmetry = False
     ZSymmetry = False
-    XAxisAngularSymmetry = 0
+    XAxisAngularSymmetry = 0 # Desired symmetry sectors about X axis
     YAxisAngularSymmetry = 0
     ZAxisAngularSymmetry = 0
-    ExtrudeX = False
+    ExtrudeX = False # Should the design be extrudable in X direction
     ExtrudeY = False
     ExtrudeZ = False
-    KeepFixedElems = False
-    RemoveHangingElems = False
+    KeepFixedElems = False # Should the elements with Dirichlet dof be retained?
+    RemoveHangingElems = False # Should the hanging elements be removed?
     AMBuildConstraint = False
-    ElemsToKeep = None
+    ElemsToKeep = None # List of additional elements to retain in the design
+    Objective = TO_OBJECTIVES.COMPLIANCE
 
 def find_elements_with_forces(mesh: hex_mesher.HexMesher, force,nDOFPerNode) -> np.ndarray:
 	"""Find all elements that have nodes on which force has been applied.
@@ -61,6 +67,27 @@ def find_elements_with_forces(mesh: hex_mesher.HexMesher, force,nDOFPerNode) -> 
 
 	return np.array(elements_with_forces)
 
+    
+def find_elements_with_fixedDOF(mesh, bc,nDOFPerNode ) -> np.ndarray:
+	"""Find all elements that have nodes with fixed degrees of freedom.
+	
+	Args:
+		mesh: The mesh object.
+		bc: The boundary conditions object.
+	
+	Returns:
+		Array of element indices that have nodes with fixed degrees of freedom.
+	"""
+	fixed_dofs = bc.fixed_dofs
+	fixed_nodes = set(fixed_dofs // nDOFPerNode)  # Convert DOFs to node indices
+	elements_with_fixed_dofs = []
+
+	for elem in range(mesh.num_elems):
+		nodes =mesh.elemArray[elem]
+		if any(node in fixed_nodes for node in nodes):
+			elements_with_fixed_dofs.append(elem)
+
+	return np.array(elements_with_fixed_dofs)
 
 def volume_fraction_upperlimit(density: np.ndarray,
 											 volfracUpper: float,
@@ -92,7 +119,7 @@ def volume_fraction_lowerlimit(density: np.ndarray,
 	"""
 	return 1- (np.mean(density)/volfracLower)
 
-def compliance(sol: np.ndarray, x: np.ndarray,
+def compute_compliance_and_gradient(sol: np.ndarray, x: np.ndarray,
 				fe_solver, KE,
 				material_model = None,
 													) -> np.ndarray:
@@ -125,27 +152,17 @@ def compliance(sol: np.ndarray, x: np.ndarray,
 	return compliance, compliance_grad
 
 
-    
-def find_elements_with_fixedDOF(mesh, bc) -> np.ndarray:
-	"""Find all elements that have nodes with fixed degrees of freedom.
-	
-	Args:
-		mesh: The mesh object.
-		bc: The boundary conditions object.
-	
-	Returns:
-		Array of element indices that have nodes with fixed degrees of freedom.
-	"""
-	fixed_dofs = bc.fixed_dofs
-	fixed_nodes = set(fixed_dofs // 3)  # Convert DOFs to node indices
-	elements_with_fixed_dofs = []
+def compute_objective_and_gradient(to_params, sol: np.ndarray, x: np.ndarray,	fe_solver, KE,
+				material_model = None) -> tuple:
+							
 
-	for elem in range(mesh.num_elems):
-		nodes =mesh.elemArray[elem]
-		if any(node in fixed_nodes for node in nodes):
-			elements_with_fixed_dofs.append(elem)
-
-	return np.array(elements_with_fixed_dofs)
+	if (to_params.Objective == TO_OBJECTIVES.COMPLIANCE):
+		compliance, compliance_grad = compute_compliance_and_gradient(sol, x, fe_solver, KE, material_model)
+		return compliance, compliance_grad
+	elif (to_params.Objective == TO_OBJECTIVES.VOLUME):
+		# Volume is not implemented yet
+		raise NotImplementedError("Volume objective is not implemented yet.")
+	
 
 def createFilters(fe_solver: hex_structural_fea.HexStructuralFEA,to_params):
 	# Create  filters

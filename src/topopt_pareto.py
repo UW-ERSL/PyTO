@@ -31,10 +31,7 @@ def topopt_pareto(fe_solver,
 	Returns: A tuple containing the displacement field of the optimized structure
 		and a dictionary containing the optimization history.
 	"""
-	if isinstance(fe_solver, hex_structural_fea.HexStructuralFEA):
-		nDOFPerNode = 3
-	else:
-		nDOFPerNode = 1
+	nDOFPerNode = 3 if isinstance(fe_solver, hex_structural_fea.HexStructuralFEA) else 1
 	tStart = time.time()
 	
 	removeHangingElems = to_params.RemoveHangingElems
@@ -47,7 +44,7 @@ def topopt_pareto(fe_solver,
 	x = np.ones((fe_solver.mesh.num_elems))
 	volfrac = 1.0
 	
-	history = {'compliance': [], 'volume': []}
+	history = {'objective': [], 'volume': []}
 	if (print_progress):
 		print("Computing Filters ...")
 	[H,Hs] = createFilters(fe_solver, to_params)
@@ -84,8 +81,10 @@ def topopt_pareto(fe_solver,
 	sol = fe_solver.solve(x)
 	nFEAs = 1
 	# Store initial compliance
-	obj, _ = compliance(sol,x, fe_solver,KE)
-	history['compliance'].append( obj)
+	obj, _ = compute_objective_and_gradient(to_params,sol,x, fe_solver,KE)
+
+
+	history['objective'].append( obj)
 	history['volume'].append(volfrac)
 	fe_solver.postprocess() # compute stresses and strains for the initial design
 	# Compute initial topological sensitivity
@@ -111,7 +110,7 @@ def topopt_pareto(fe_solver,
 	T /= np.max(np.abs(T))  # Normalize sensitivity
 
 	if (print_progress):
-		print(f"vf={history['volume'][-1]:.3f}, J={history['compliance'][-1]:.3g}, #FEA={totalIter:2d}")
+		print(f"vf={history['volume'][-1]:.3f}, J={history['objective'][-1]:.3g}, #FEA={totalIter:2d}")
 	vol_decr = vol_decr_max
 	
 	success = True
@@ -130,7 +129,7 @@ def topopt_pareto(fe_solver,
 			print(f"Attempting v={volfrac:.3f}")
 		# Initialize local iteration variables
 		localIter = 0
-		JTemp = history['compliance'][-1]  # Store previous value
+		JTemp = history['objective'][-1]  # Store previous value
 		JPrev = JTemp  # Initialize JPrev
 		JPrevPrev = JTemp # Initialize JPrevPrev
 		TPrev = T.copy()  # Store previous sensitivity
@@ -145,7 +144,7 @@ def topopt_pareto(fe_solver,
 					vol_frac_success = volfrac
 					innerLoopSuccess = True
 					break
-			if (localIter >= max_local_iters) or abs(JTemp) > 10 * history['compliance'][-1]:  # large change in compliance	
+			if (localIter >= max_local_iters) or abs(JTemp) > 10 * history['objective'][-1]:  # large change in compliance	
 				innerLoopSuccess = False
 				x = xPrev.copy()
 				T = TPrev.copy()
@@ -184,7 +183,7 @@ def topopt_pareto(fe_solver,
 
 			sol = fe_solver.solve(x)
 			nFEAs += 1
-			JTemp, _ = compliance(sol,x, fe_solver,KE)
+			JTemp, _ = compute_objective_and_gradient(to_params,sol,x, fe_solver,KE)
 
 
 			# Update sensitivity
@@ -225,16 +224,19 @@ def topopt_pareto(fe_solver,
 				print("2. Increase mesh size")
 			break
 		if innerLoopSuccess:
-			history['compliance'].append(JTemp)
+			history['objective'].append(JTemp)
 			history['volume'].append(volfrac)
-			scale = history['compliance'][-1] / history['compliance'][0]
+			scale = history['objective'][-1] / history['objective'][0]
 			vol_decr = max(vol_decr_min,min(vol_decr,vol_decr_max/scale)) # Reduce volume increment for steep increase in compliance
 			if (print_progress):
-				print(f"vf={history['volume'][-1]:.3f}, J={history['compliance'][-1]:.3g}, #FEA={nFEAs:2d}")
+				print(f"vf={history['volume'][-1]:.3f}, J={history['objective'][-1]:.3g}, #FEA={nFEAs:2d}")
 			fe_solver.mesh.setPseudoDensity(x.flatten())
+
+
+
 	totalTime = time.time() - tStart
 
-	print(f"Final vf: {history['volume'][-1]:.3f},  objective: {history['compliance'][-1]:.4g}")
+	print(f"Final vf: {history['volume'][-1]:.3f},  objective: {history['objective'][-1]:.4g}")
 	print(f"Total Time: {totalTime:.2f} s")
 	return sol, history, success,errorMsg,nFEAs
 
@@ -244,8 +246,8 @@ if __name__ == "__main__":
 	from topopt_thermal_benchmarks import *
 	
 	print("-" * 50)
-	to_problem = StructuralTOExamples.Mitchell_1 # Choose the TO problem
-	to_problem = ThermalTOExamples.BridgeThermal # Choose the TO problem
+	to_problem = StructuralTOExamples.EdgeCantilever # Choose the TO problem
+	#to_problem = ThermalTOExamples.BridgeThermal # Choose the TO problem
 
 	if (to_problem in StructuralTOExamples):
 		mesh, mat_prop, bc,elem_body_force, to_params = getStructuralTOProblem(to_problem)
@@ -257,17 +259,15 @@ if __name__ == "__main__":
 	
 	debug = False
 
-
+	solver = lin_solv.Solvers.PARDISO
 	dsolver = deflation.DeflationSolver()
-	if (to_params.nDOFDesired <= DIRECT_SOLVER_DOF_CUTOFF):#  # Choose solver. Typically PARDISO, but DPCG for large DOF problems
-		solver = lin_solv.Solvers.PARDISO
-	else:
-		print("Solver: DPCG")
+	if (to_params.nDOFDesired > DIRECT_SOLVER_DOF_CUTOFF):#  # Choose solver. Typically PARDISO, but DPCG for large DOF problems
 		solver = lin_solv.Solvers.DPCG
 		# DPCG solver is used for large DOF problems
 		# Create deflation solver object
 		nGroups =  min(dsolver.maxGroups,max(dsolver.minGroups,round(3*mesh.num_nodes/dsolver.dofPerGroup)))
 		dsolver.create_deflation_groups(mesh, nGroups)
+		#dsolver.plot_deflation_groups(mesh)
 		dsolver.create_deflation_matrix(mesh)
 		dsolver.W = dsolver.W[bc.free_dofs, :]
 	 
@@ -278,7 +278,6 @@ if __name__ == "__main__":
 					bc = bc,
 					solver = solver,
 					dsolver = dsolver,
-					rtol = 1e-8,
 					elem_body_force = elem_body_force)
 	elif (to_problem in ThermalTOExamples):
 		fe_solver = hex_thermal_fea.HexThermalFEA(mesh = mesh,
@@ -286,9 +285,9 @@ if __name__ == "__main__":
 					bc = bc,
 					solver = solver,
 					dsolver = dsolver,
-					rtol = 1e-8,
 					elem_body_force = elem_body_force)
 
+	
 	print('Solver: ', fe_solver.solver.name)
 	print("nDof: ", 3*fe_solver.mesh.num_nodes)
 	print("nElem: ", fe_solver.mesh.num_elems)	
@@ -309,15 +308,15 @@ if __name__ == "__main__":
 	if not success:
 		print(f"Error: {errorMsg}")
 
-	title = f"Pareto: nDOF: {3*fe_solver.mesh.num_nodes}, vol: {history['volume'][-1]:0.2f}, J: {history['compliance'][-1]:.3g}, time: {timeTaken:.0f} s"
+	title = f"Pareto: nDOF: {3*fe_solver.mesh.num_nodes}, vol: {history['volume'][-1]:0.2f}, J: {history['objective'][-1]:.3g}, time: {timeTaken:.0f} s"
 	fe_solver.plot_mesh(title = title, save_path = None)
 
 		
 	# Plot volume vs compliance history
 	plt.figure()
-	plt.plot(history['volume'], history['compliance'], marker='o')
+	plt.plot(history['volume'], history['objective'], marker='o')
 	plt.xlabel('Volume Fraction')
-	plt.ylabel('Compliance')
+	plt.ylabel('objective')
 	plt.title('Pareto: Volume vs Compliance History')
 	plt.grid(True)
 	plt.show(block=False)

@@ -20,9 +20,10 @@ class Preconditioners(enum.Enum):
   JACOBI = enum.auto()
   ILU = enum.auto()
 
+DEFAULT_TOL = 1.e-6 # Default tolerance for iterative solvers
 
 def _jacobi_preconditioner(A: spy_sprs.coo_matrix,
-                          eps_tol: float = 1.e-18,
+                          eps_tol: float = 1.e-12,
                           ) -> spy_sprs.coo_matrix:
   """Compute the Jacobi preconditioner for a sparse matrix A.
 
@@ -78,7 +79,7 @@ def get_preconditioner(A: spy_sprs.coo_matrix,
 
 class Solvers(enum.Enum):
 	SPSOLVE = enum.auto()
-	CG = enum.auto()
+	PCG = enum.auto()
 	PYAMG = enum.auto()
 	DPCG = enum.auto()
 	PARDISO = enum.auto()
@@ -101,36 +102,37 @@ def solve(A: spy_sprs.coo_matrix,
 
   Returns: The solution x of the system of shape (n,).
   """
-  def mv(u):
-    return A @ u
 
   def solver_wrapper(A0, b0):
  
     A, b = bound_cond.impose_dirichlet_bc(A0.tocsr(), b0, bc)
 
-
+ 
     if solver == Solvers.SPSOLVE:
       x = spy_linalg.spsolve(A, b) # very slow for large problems
 
-    elif solver == Solvers.CG:
+    elif solver == Solvers.PCG:
+      rtol = kwargs.get('rtol', DEFAULT_TOL) # for iterative solvers
       M = _jacobi_preconditioner(A)
       #M = _ilu_preconditioner(A) # ILU preconditioner takes too long
-      x, _ = spy_linalg.cg(A, b, M = M, rtol = kwargs['rtol'])
+      x, _ = spy_linalg.cg(A, b, M = M, rtol = rtol)
 
     elif solver == Solvers.PYAMG:
       # Smoothed Aggregation solver gives the wrong result
       #ml = pyamg.smoothed_aggregation_solver(A, B=b, smooth='energy')
       #x = ml.solve(b, tol=kwargs['rtol'])
-      x = pyamg.solve(A, b,tol= kwargs['rtol'], verb = False)
+      rtol = kwargs.get('rtol', DEFAULT_TOL) # for iterative solvers
+      x = pyamg.solve(A, b,tol= rtol, verb = False)
 
     elif solver == Solvers.DPCG:
       dsolver = kwargs['dsolver']
+      rtol = kwargs.get('rtol', DEFAULT_TOL) # for iterative solvers
       M = _jacobi_preconditioner(A)
       x = dsolver.deflatedPCG(A,
                               b,
                               W = dsolver.W,
                               M = M,
-                              rtol = kwargs['rtol'])
+                              rtol = rtol)
 
     elif solver == Solvers.PARDISO:
       x = pypardiso.spsolve(A, np.array(b))

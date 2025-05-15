@@ -19,6 +19,7 @@ class StructuralExamples(enum.Enum):
 	CantileverTipLoad = enum.auto()
 	CantileverMidLoad = enum.auto()
 	TwoBar = enum.auto()
+	Inverter = enum.auto()
 	ThreeHoleBracket = enum.auto()
 	MBBB = enum.auto()
 	DistributedLoad = enum.auto()
@@ -84,6 +85,8 @@ def getStructuralProblem(problem: StructuralExamples, **kwargs):
     return createTwoBarProblem(**kwargs)
   elif problem == StructuralExamples.DistributedLoad:
     return createDistributedLoadProblem(**kwargs)
+  elif problem == StructuralExamples.Inverter:
+    return createInverterProblem(**kwargs)
   elif problem == StructuralExamples.ThreeHoleBracket:
     return createThreeHoleBracketProblem(**kwargs)
   elif problem == StructuralExamples.Multiload:
@@ -468,8 +471,7 @@ def createShearBlockProblem(nDOFDesired: int = 10000, L: float = [1, 1, 1],shear
 
 
 
-def createMitchellProblem(nDOFDesired: int = 10000, youngs_modulus = 2e11, 
-                            poissons_ratio = 0.26,load1 = 5.6e4, load2 = 0):
+def createMitchellProblem(nDOFDesired: int = 10000, load1 = 5.6e4, load2 = 0):
   """
   See: Topology Optimization Benchmarks in 2D: Results for Minimum Compliance and Minimum Volume in Planar Stress Problems
 S. Ivvan Valdez, et al. Arch Computat Methods Eng (2017) 24:803–839, DOI 10.1007/s11831-016-9190-3
@@ -539,6 +541,75 @@ S. Ivvan Valdez, et al. Arch Computat Methods Eng (2017) 24:803–839, DOI 10.10
 
   return mesh, mat_prop, bc, elem_body_force
 
+
+  # ----------------------------------------
+
+
+
+def createInverterProblem(nDOFDesired: int = 10000):
+  """
+  See:Huang, X., Li, Y., Zhou, S.W. and Xie, Y.M., 2014. 
+  Topology optimization of compliant mechanisms with desired structural stiffness. 
+  Engineering Structures, 79, pp.13-21.
+  Parameters:
+  ----------
+  
+  Returns:
+  -------
+  tuple
+    (mesh, mat_prop, bc) containing:
+    - mesh: Mesher object with grid discretization
+    - mat_prop: Material properties object
+    - bc: Boundary conditions with fixed left face and load on right face
+  """
+  stl_file = os.path.join(script_dir, '../Models/Inverter/Inverter.STL')
+  nElemsDesired = nDOFDesired/3    # estimate
+  mesh = hex_mesher.HexMesher()
+  mesh.createMeshFromSTLFile(stl_file, nElemsDesired=nElemsDesired)
+  mesh.createEdofMatStructural()
+
+  node_pts = mesh.node_xyz
+  top_nodes = np.where((abs(node_pts[:, 0] - np.min(node_pts[:, 0])) < mesh.elem_size[0]/2) & (abs(node_pts[:, 1] - np.max(node_pts[:, 1])) < mesh.elem_size[1]/2))[0]
+  top_dofs = np.array([3 * top_nodes]).flatten().astype(int) # fixed in x direction
+
+  bottom_nodes = np.where((abs(node_pts[:, 0] - np.min(node_pts[:, 0])) < mesh.elem_size[0]/2) & (abs(node_pts[:, 1] - np.min(node_pts[:, 1])) < mesh.elem_size[1]/2))[0]
+  bottom_dofs = np.array([3 * bottom_nodes]).flatten().astype(int) # fixed in x direction
+
+  
+  fixed_dofs = np.union1d(top_dofs,bottom_dofs)
+  dirichlet_values = 0*np.ones_like(fixed_dofs, dtype = float)
+
+  mesh.node_indices[top_nodes, 3] = 1
+  mesh.node_indices[bottom_nodes, 3] = 1
+
+  node_pts = mesh.node_xyz
+  xMax = np.max(node_pts[:,0]) 
+  yMid = (np.max(node_pts[:,1]) + np.min(node_pts[:,1]))/2
+  outputNode = mesh.get_nodes_from_locations([[xMax, yMid, 0]])
+
+  ## Add spring to output node
+  mesh.externalSprings = [(0.01e-6,3*outputNode)]
+  
+  load_nodes = np.where((abs(node_pts[:, 0] - np.min(node_pts[:, 0])) < mesh.elem_size[0]/2) & (abs(node_pts[:, 1] - np.mean(node_pts[:,1])) < mesh.elem_size[1]))[0]
+  load_dof = 3*load_nodes # x direction
+
+  # Apply forces according to node type
+  force = np.zeros(3*mesh.num_nodes)
+
+  load = 1e-6
+  force[load_dof] = load/len(load_nodes)
+ 
+  mesh.node_indices[load_nodes, 3] = 2
+
+  bc = bound_cond.BC(force = force,
+            fixed_dofs = fixed_dofs,
+            dirichlet_values = dirichlet_values) 
+
+  mat_prop = mat_lib.create_material_with_defaults("dummyMaterial",youngs_modulus = 1e6, poissons_ratio = 0.3)
+  
+  elem_body_force = None
+
+  return mesh, mat_prop, bc, elem_body_force
 
   # ----------------------------------------
 
