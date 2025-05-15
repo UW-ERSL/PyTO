@@ -10,6 +10,7 @@ import hex_element_stiffness
 from topopt_material_model import *
 import hex_thermal_fea 
 import deflation
+import linear_solvers
 
 DIRECT_SOLVER_DOF_CUTOFF = 100000 #  dof limit for direct solver, for greater number of dof, iterative solver is used
 
@@ -21,11 +22,13 @@ class TO_METHODS(enum.Enum):
 
 class TO_OBJECTIVES(enum.Enum): # What to minimize?
 	COMPLIANCE = enum.auto()
-	SOLUTION_DOTPRODUCT = enum.auto() # g'* u
 	PNORM_STRESS = enum.auto()
+	GENERIC = enum.auto() # g'* u, or g(u)
 
 class TOParams: # These are the default parameters
     Comment = "" # Comment for the topology optimization problem
+    Objective = TO_OBJECTIVES.COMPLIANCE
+    ObjectiveFunction = None # Function g, or array g to compute the objective for non-compliance problems
     nDOFDesired = 20000 # Desired number of degrees of freedom in the finite element problem
     DesiredVolFraction = 0.5
     ExactVolumeFraction = False # If True, the volume fraction is exactly met
@@ -43,7 +46,7 @@ class TOParams: # These are the default parameters
     RemoveHangingElems = False # Should the hanging elements be removed?
     AMBuildConstraint = False
     ElemsToKeep = None # List of additional elements to retain in the design
-    Objective = TO_OBJECTIVES.COMPLIANCE
+
 
 def find_elements_with_forces(mesh: hex_mesher.HexMesher, force,nDOFPerNode) -> np.ndarray:
 	"""Find all elements that have nodes on which force has been applied.
@@ -139,10 +142,9 @@ def compute_compliance_and_gradient(sol: np.ndarray, x: np.ndarray,
 	return compliance, compliance_grad
 
 
-def compute_displacement_and_gradient(sol: np.ndarray, x: np.ndarray,
-				fe_solver, KE,
-				material_model = None) -> np.ndarray:
-	"""Compute the  compliance objective.
+def compute_solution_dotproduct_and_gradient(sol: np.ndarray, x,fe_solver,KE,material_model,g: np.ndarray,
+				) -> np.ndarray:
+	"""Compute the objective g'* sol, and its gradient.
 
 	Args:
 		density: Array of (num_elems,) containing the element densities.
@@ -151,26 +153,27 @@ def compute_displacement_and_gradient(sol: np.ndarray, x: np.ndarray,
 
 	Returns: The compliance objective value.
 	"""
-	print("Not implemented yet")
-	return 0, 0
+	obj = np.dot(sol, g)
+	
+
+	adjointSol =  -linear_solvers.solve(fe_solver.stiff_mtrx,
+                      g,
+                      fe_solver.solver,
+                      fe_solver.bc,
+                      dsolver = fe_solver.dsolver,
+                      **fe_solver.kwargs)
+	
 	dofMat = fe_solver.mesh.edofMat
 	num_elems = fe_solver.mesh.num_elems
 	nRows = KE.shape[0]
-	ce = (np.dot(sol[dofMat].reshape(num_elems, nRows), KE) * sol[dofMat].reshape(num_elems, nRows)).sum(1)
-	
+	ce = (np.dot(adjointSol[dofMat].reshape(num_elems, nRows), KE) * sol[dofMat].reshape(num_elems, nRows)).sum(1)
+
 	if (nRows == 24): # structural hex
-		materialScaling = get_structural_material_model_scaling(x, material_model)
-		compliance_grad = -get_structural_material_model_sensitivity(x,material_model) * ce
+		compliance_grad = get_structural_material_model_sensitivity(x,material_model) * ce
 	
 	elif (nRows == 8): # thermal hex
-		materialScaling = get_thermal_material_model_scaling(x, material_model)
-		compliance_grad = -get_thermal_material_model_sensitivity(x,material_model) * ce
-	else:
-		raise ValueError("Invalid number of rows in element stiffness matrix.")
-	
-	
-	compliance = np.sum(materialScaling * ce)
-	return compliance, compliance_grad
+		compliance_grad = get_thermal_material_model_sensitivity(x,material_model) * ce
+	return obj, compliance_grad
 
 def compute_objective_and_gradient(to_params, sol: np.ndarray, x: np.ndarray,	fe_solver, KE,
 				material_model = None) -> tuple:
@@ -178,12 +181,18 @@ def compute_objective_and_gradient(to_params, sol: np.ndarray, x: np.ndarray,	fe
 	if (to_params.Objective == TO_OBJECTIVES.COMPLIANCE):
 		compliance, compliance_grad = compute_compliance_and_gradient(sol, x, fe_solver, KE, material_model)
 		return compliance, compliance_grad
-	elif (to_params.Objective == TO_OBJECTIVES.SOLUTION_DOTPRODUCT):
-		compliance, compliance_grad = compute_displacement_and_gradient(sol, x, fe_solver, KE, material_model)
+	elif (to_params.Objective == TO_OBJECTIVES.GENERIC):
+		objFunction = to_params.ObjectiveFunction
+		if objFunction is None:
+			raise ValueError("Objective function is not defined.")
+		elif isinstance(objFunction, np.ndarray):
+			g = objFunction
+		elif callable(objFunction):
+			compliance = objFunction(sol, x, fe_solver, KE, material_model)
+		compliance, compliance_grad = compute_solution_dotproduct_and_gradient(sol, x, fe_solver, KE,material_model,g)
 		return compliance, compliance_grad
-	elif (to_params.Objective == TO_OBJECTIVES.VOLUME):
-		# Volume is not implemented yet
-		raise NotImplementedError("Volume objective is not implemented yet.")
+	else:
+		raise NotImplementedError(" objective is not implemented yet.")
 	
 
 def createFilters(fe_solver: hex_structural_fea.HexStructuralFEA,to_params):

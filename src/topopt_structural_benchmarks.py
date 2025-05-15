@@ -10,6 +10,7 @@ class StructuralTOExamples(enum.Enum):
 	ShortCantileverMidLoad = enum.auto()
 	CantileverTipLoad = enum.auto()
 	CantileverMidLoad = enum.auto()
+	CantileverTipLoadDisplacementObjective = enum.auto()
 	MBBB = enum.auto()
 	Inverter = enum.auto()
 	LBracketTopLoad = enum.auto()
@@ -91,6 +92,14 @@ def getStructuralTOProblem(to_problem: StructuralTOExamples,nDOFDesired = None, 
         to_params.ExtrudeZ = True
         to_params.nDOFDesired = 25000 if nDOFDesired is None else nDOFDesired
         to_params.DesiredVolFraction = 0.5
+    elif to_problem == StructuralTOExamples.CantileverTipLoadDisplacementObjective:
+        structural_problem = StructuralExamples.CantileverTipLoad
+        to_params.Comment  = "Benchmark 2.5D"
+        to_params.ExtrudeZ = True
+        to_params.nDOFDesired = 25000 if nDOFDesired is None else nDOFDesired
+        to_params.DesiredVolFraction = 0.5
+        to_params.Objective = TO_OBJECTIVES.GENERIC
+        # Also see below for the objective function
     elif to_problem == StructuralTOExamples.MBBB:
         structural_problem = StructuralExamples.MBBB
         to_params.Comment  = "Benchmark 2.5D"
@@ -106,11 +115,12 @@ def getStructuralTOProblem(to_problem: StructuralTOExamples,nDOFDesired = None, 
     elif to_problem == StructuralTOExamples.Inverter:
         structural_problem = StructuralExamples.Inverter
         to_params.Comment  = "Compliant Mechanism"
-        to_params.XSymmetry = True 
+        to_params.YSymmetry = True 
         to_params.ExtrudeZ = True
-        to_params.nDOFDesired = 50000 if nDOFDesired is None else nDOFDesired
-        to_params.DesiredVolFraction = 0.5
-        to_params.Objective = TO_OBJECTIVES.DISPLACEMENT
+        to_params.nDOFDesired = 10000 if nDOFDesired is None else nDOFDesired
+        to_params.DesiredVolFraction = 0.25
+        to_params.Objective = TO_OBJECTIVES.GENERIC
+        # Also see below for the objective function
     elif to_problem == StructuralTOExamples.LBracketTopLoad:
         structural_problem = StructuralExamples.LBracket
         kwargs['topload'] = 1.5e4
@@ -227,6 +237,8 @@ def getStructuralTOProblem(to_problem: StructuralTOExamples,nDOFDesired = None, 
     # Add  elements to keep
     to_params.ElemsToKeep  = None # default value
 
+
+    # Here we add additional parameters specific to the optimization problem
     if (to_params.KeepFixedElems):
         to_params.ElemsToKeep = find_elements_with_fixedDOF(mesh, bc,nDOFPerNode=3)
 
@@ -241,4 +253,39 @@ def getStructuralTOProblem(to_problem: StructuralTOExamples,nDOFDesired = None, 
     if to_problem == StructuralTOExamples.KnuckleAssembly:
          to_params.ElemsToKeep = np.where(mesh.elemComponentId == 2)[0]
          #print("Elems to keep", to_params.ElemsToKeep.shape)
+
+    if to_problem == StructuralTOExamples.CantileverTipLoadDisplacementObjective:
+        pt1 = [2, 0.0, 0.05] # tip node where force is applied
+        node1 = mesh.get_nodes_from_locations(pt1)
+        dof1 = 3*node1+1 # y dof
+
+        pt2 = [1, 0.5, 0.05] # point of interest
+        node2 = mesh.get_nodes_from_locations(pt2) 
+        dof2 = 3*node2+1 # y dof
+        g = np.zeros(3*mesh.num_nodes)
+        g[dof1] = -1
+        g[dof2] = -0.1
+
+        #to_params.ElemsToKeep, _ = mesh.get_element_containing_point(pt2)
+        to_params.ObjectiveFunction = g
+
+    if to_problem == StructuralTOExamples.Inverter:
+        node_pts = mesh.node_xyz
+        xMin = np.min(node_pts[:,0]) 
+        xMax = np.max(node_pts[:,0]) 
+        yMid = (np.max(node_pts[:,1]) + np.min(node_pts[:,1]))/2
+
+        inputNode = mesh.get_nodes_from_locations([[xMin, yMid, 0]])
+        outputNode = mesh.get_nodes_from_locations([[xMax, yMid, 0]])
+
+        dofinputNode= 3*inputNode # x dof
+        dofoutputNode= 3*outputNode # x dof
+
+        
+        g = np.zeros(3*mesh.num_nodes)
+        g[dofinputNode] = 1
+        g[dofoutputNode] = 0.5
+
+        #to_params.ElemsToKeep, _ = mesh.get_element_containing_point(pt2)
+        to_params.ObjectiveFunction = g
     return mesh, mat_prop, bc, elem_body_force, to_params

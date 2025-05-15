@@ -89,7 +89,7 @@ def topopt_optimality_criteria(
 		obj, grad_obj = compute_objective_and_gradient(to_params,sol,x, fe_solver,KE, material_model)
 
 		if (len(history['objective']) == 0):
-			objScaling = 0.1*obj
+			objScaling = abs(0.1*obj)
 		obj = obj/objScaling # Scale the objective function to avoid numerical issues
 		grad_obj /= objScaling
 	
@@ -161,7 +161,7 @@ def topopt_optimality_criteria(
 		fraction_grey = (grey_elements / num_elems) 
 
 		if (print_progress):
-			print(f"it.: {iter+1:d}, obj.: {(obj*objScaling):.3f}, "
+			print(f"it.: {iter+1:d}, obj.: {(obj*objScaling):.3g}, "
 				  	f"vol.: {np.mean(xPhys):.3g}, grey: {fraction_grey:.3f}")
 		if np.isnan(obj):
 			print("Objective function became NaN. Exiting optimization.")
@@ -215,7 +215,7 @@ if __name__ == "__main__":
 	from topopt_thermal_benchmarks import *
 
 	print("-" * 50)
-	to_problem = StructuralTOExamples.LBracketMidLoad # Choose the TO problem
+	to_problem = StructuralTOExamples.CantileverTipLoadDisplacementObjective # Choose the TO problem
 	#to_problem = ThermalTOExamples.FourCornersThermal # Choose the TO problem
 
 	if (to_problem in StructuralTOExamples):

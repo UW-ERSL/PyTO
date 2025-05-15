@@ -109,7 +109,7 @@ def topopt_mma(fe_solver, #hex_structural_fea.HexStructuralFEA or hex_thermal_fe
 		obj, grad_obj = compute_objective_and_gradient(to_params,sol,x, fe_solver,KE, material_model)
 		
 		if (len(history['objective']) == 0):
-			objScaling = 0.1*obj   # Scale the objective function to be in the range of 10
+			objScaling = abs(0.1*obj)   # Scale the objective function to be in the range of 10
 		obj = obj/objScaling
 		grad_obj /=objScaling
 
@@ -124,9 +124,8 @@ def topopt_mma(fe_solver, #hex_structural_fea.HexStructuralFEA or hex_thermal_fe
 		if (to_params.ElemsToKeep is not None):
 			grad_obj[to_params.ElemsToKeep] = min(grad_obj) # also retain elements that are in the keep list
 
-		vf = np.mean(x)
 		
-		
+
 		volConstraint, volConstraint_gradient = compute_volume_constraint_and_gradient(x, to_params.DesiredVolFraction)
 
 		timeMMAStart = time.time()
@@ -148,13 +147,13 @@ def topopt_mma(fe_solver, #hex_structural_fea.HexStructuralFEA or hex_thermal_fe
 		fraction_grey = (grey_elements / num_elems) 
 
 		if (print_progress):
-			print(f"it.: {mma_state.epoch}, obj.: {obj*objScaling:.4g}, vf: {vf:.3f}, change: {change: 0.3f}, grey: {fraction_grey:.3f}")
+			print(f"it.: {mma_state.epoch}, obj.: {obj*objScaling:.4g}, vf: {np.mean(x):.3f}, change: {change: 0.3f}, grey: {fraction_grey:.3f}")
 		history['objective'].append(obj*objScaling)
 		history['volume'].append(np.mean(x))
 		history['change'].append(change)
 		
 		if (len(history['objective'])) >= minMMAIterations:
-			dJ1 = abs((history['objective'][-1] - history['objective'][-2]) / history['objective'][-2])
+			dJ1 = abs((history['objective'][-1] - history['objective'][-2]) / abs(history['objective'][-2]))
 			# we need multiple checks else it will terminate too early 
 			if dJ1 < rel_conv_tol and (abs(volConstraint) < rel_conv_tol) and (change < 0.2) and (fraction_grey < 0.2): # success
 				print("MMA optimization converged.")
@@ -206,7 +205,7 @@ if __name__ == "__main__":
 	from topopt_thermal_benchmarks import *
  
 	print("-" * 50)
-	to_problem = StructuralTOExamples.LBracketMidLoad # Choose the TO problem
+	to_problem = StructuralTOExamples.Inverter # Choose the TO problem
 	#to_problem = ThermalTOExamples.FourCornersThermal # Choose the TO problem
 
 	if (to_problem in StructuralTOExamples):

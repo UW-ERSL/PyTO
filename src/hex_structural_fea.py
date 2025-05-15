@@ -79,8 +79,7 @@ class HexStructuralFEA:
   #################################################################
   def solve(self,
             x: np.ndarray = None,
-            material_model: MaterialModel = None,
-            externalSprings = None) -> np.ndarray:
+            material_model: MaterialModel = None) -> np.ndarray:
     """Solve the structural finite element problem.
 
     Args:
@@ -111,7 +110,7 @@ class HexStructuralFEA:
                     np.eye(self.elem_stiff.shape[0])[self.mesh.elemComponentId]).flatten(order = 'C')
 
     
-    stiff_mtrx = sp.coo_matrix((elem_stiff_mtrx, (self.node_idx[:, 0], self.node_idx[:, 1])),
+    self.stiff_mtrx = sp.coo_matrix((elem_stiff_mtrx, (self.node_idx[:, 0], self.node_idx[:, 1])),
                    shape=(self.bc.num_dofs, self.bc.num_dofs))
     self.total_force = self.bc.force.copy()
     if self.elem_body_force is not None:
@@ -139,12 +138,11 @@ class HexStructuralFEA:
       #  (500.0, 789)   # Add spring with stiffness 500 at DOF 789
       #]
       # Convert to CSR format for modification
-      stiff_mtrx = stiff_mtrx.tocsr()
+      self.stiff_mtrx  = self.stiff_mtrx.tocsr()
       for KSpring, dof in self.mesh.externalSprings:
-          stiff_mtrx[dof,dof] += KSpring
+          self.stiff_mtrx [dof,dof] += KSpring
 
-
-    sol =  linear_solvers.solve(stiff_mtrx,
+    sol =  linear_solvers.solve(self.stiff_mtrx,
                       self.total_force,
                       self.solver,
                       self.bc,
