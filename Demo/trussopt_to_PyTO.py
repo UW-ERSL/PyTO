@@ -1,15 +1,19 @@
 import numpy as np
 import pandas as pd
-
-def get_2d_rho(fe_solver):
+import hex_structural_fea
+# run the trussopt.py script to generate the truss_output.csv file
+# ToDo: integrate the trussopt.py directly in the TO. Eliminate the CSV file. The current code is being tested for the CantileverMidLoad example.
+def get_2d_rho(fe_solver: hex_structural_fea.HexStructuralFEA)-> np.ndarray: 
+    """
+    Rasterize the truss members to a 2D density grid.
+    """
     # Load the truss data
     data = pd.read_csv("truss_output.csv")  # header should be: x1,y1,x2,y2,area
 
     nx, ny, nz = fe_solver.mesh.grid
-    total_elems = fe_solver.mesh.num_elems
 
     # Initialize 2D density grid
-    rho2D = np.zeros((ny, nx))  # shape: (39, 57)
+    rho2D = np.zeros((ny, nx))  
     dx, dy, dz = fe_solver.mesh.elem_size
 
 
@@ -32,16 +36,17 @@ def get_2d_rho(fe_solver):
     rho2D /= np.max(rho2D) + 1e-8  # scale to [0, 1]
     return rho2D
 
-def get_3D_rho_from_2D(fe_solver):
+def get_3D_rho_from_2D(fe_solver: hex_structural_fea.HexStructuralFEA)-> np.ndarray:
     # Load the 2D density grid
     rho2D = get_2d_rho(fe_solver)
+
     # Extrude to 3D
     nz = fe_solver.mesh.grid[2]  # number of layers in z direction
-    rho3D = np.repeat(rho2D[:, :, np.newaxis], nz, axis=2)  # shape: (39, 57, 3) (remove hard coded value for nz)
+    rho3D = np.repeat(rho2D[:, :, np.newaxis], nz, axis=2)  # shape: (39, 57, 3) 
 
     rho_flat = rho3D.flatten(order='F')  # shape: (6633,)
-    assert rho_flat.shape[0] == fe_solver.mesh.num_elems # check the number of elements. (remove hard coded value)
+    assert rho_flat.shape[0] == fe_solver.mesh.num_elems  
 
-    # Assign to your optimizer
-    x = rho_flat.copy()  # or wherever you initialize
+    # Final rho for 3D problems to initialize TO
+    x = rho_flat.copy()
     return x
