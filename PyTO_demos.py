@@ -20,32 +20,42 @@ from deflation import DeflationSolver
 from hex_structural_fea import HexStructuralFEA
 from hex_modal_fea import ModalFEA
 from hex_thermal_fea import HexThermalFEA
-from hex_structural_examples import StructuralExamples, getStructuralProblem
-from hex_thermal_examples import HexThermalExamples, getThermalProblem
-from topopt_structural_benchmarks import StructuralTOExamples, getStructuralTOProblem
 from topopt_density_mma import topopt_mma
 from topopt_pareto import topopt_pareto
 from topopt_density_oc import topopt_optimality_criteria
 from tet_mesher import TetMesher
-from tet_thermal_examples import  createAnnularPlateThermalProblemTet
+from hex_structural_examples import *
+from hex_thermal_examples import *
+
+from topopt_structural_benchmarks import *
+from topopt_thermal_benchmarks import *
+from tet_thermal_examples import  *
 from tet_thermal_fea import TetThermalFEA
-from tet_structural_examples import TetStructuralExamples, getTetStructuralProblem
+from tet_structural_examples import *
 from tet_structural_fea import TetStructuralFEA
 
 
 class pyTODemos(enum.Enum):
 	Load_STL = enum.auto() # Load an STL file and compute mass properties
 
-    # The following demos use a non-conforming hex mesh
+    # The following demos are non-conforming voxel mesh FEA
 	HexCreateMesh = enum.auto() # Create a hex mesh from an STL file  
 	HexThermalFEA_Pardiso = enum.auto() # Create and solve a predefined structural FEA problem using the Pardiso solver
 	HexStructuralFEA_Pardiso = enum.auto() # Create and solve a predefined structural FEA problem using the Pardiso solver
 	HexStructuralFEA_DPCG = enum.auto() # Create and solve a predefined structural FEA problem using the DPCG solver
 	HexModalFEA_Pardiso = enum.auto() # Create and solve a predefined structural FEA problem using the Pardiso solver    
+	
+     # The following demos are non-conforming voxel mesh Structural topology optimization
 	HexStructuralTO_DensityMMA = enum.auto() # Create and solve a structural topology optimization problem using Density-method and MMA solver
 	HexStructuralTO_DensityOC = enum.auto() # Create and solve a structural topology optimization problem using Density-method and OC solver
 	HexStructuralTO_Pareto = enum.auto() # Create and solve a structural topology optimization problem using Pareto method
     
+    # The following demos are non-conforming voxel mesh thermal topology optimization
+	HexThermalTO_DensityMMA = enum.auto() # Create and solve a thermal topology optimization problem using Density-method and MMA solver
+	HexThermalTO_DensityOC = enum.auto() # Create and solve a thermal topology optimization problem using Density-method and OC solver
+	HexThermalTO_Pareto = enum.auto() # Create and solve a thermal topology optimization problem using Pareto method
+    
+
     # The following demos use a conforming tet mesh
 	TetCreateMesh = enum.auto() # Create a tet mesh from an STL file 
 	TetThermalFEA_Pardiso = enum.auto() # Create and solve a thermal FEA problem using the PARDISO solver 
@@ -121,8 +131,8 @@ while True:
         
     elif demo == pyTODemos.HexStructuralFEA_DPCG:# DPCG solver for large scale problems
         # This example uses the Knuckle assembly problem from the StructuralExamples module.
-        problem = StructuralExamples.CompliantMechanism 
-        nDOFDesired = 500000 
+        problem = StructuralExamples.ThreeHoleBracket 
+        nDOFDesired = 150000 
         mesh, mat_prop, bc,elem_body_force = getStructuralProblem(problem,nDOFDesired = nDOFDesired)
         solver = Solvers.DPCG
         dsolver = DeflationSolver()
@@ -186,7 +196,7 @@ while True:
         timeTaken = time.time() - startTime
 
         print(f"Time taken: {timeTaken:.0f} s")
-        title = f"MMA: nDOF: {3*fe_solver.mesh.num_nodes}, vol: {history['volume'][-1]:0.2f}, J: {history['compliance'][-1]:.3g}, time: {timeTaken:.0f} s"
+        title = f"MMA: nDOF: {3*fe_solver.mesh.num_nodes}, vol: {history['volume'][-1]:0.2f}, J: {history['objective'][-1]:.3g}, time: {timeTaken:.0f} s"
     
         if not success:
             print(f"Error: {errorMsg}")
@@ -196,8 +206,8 @@ while True:
 
         # Plot compliance on left y-axis
         ax1.set_xlabel('Iterations')
-        ax1.set_ylabel('Compliance', color='tab:blue')
-        ax1.plot(history['compliance'], color='tab:blue', label='Compliance')
+        ax1.set_ylabel('objective', color='tab:blue')
+        ax1.plot(history['objective'], color='tab:blue', label='objective')
         ax1.tick_params(axis='y', labelcolor='tab:blue')
 
         # Plot volume fraction on right y-axis with dotted line
@@ -234,14 +244,14 @@ while True:
         u, history, success,errorMsg,nFEAs = topopt_optimality_criteria(fe_solver = fe_solver,plot_progress=True,
                                                 to_params = to_params)
         timeTaken = time.time() - startTime
-        title = f"OC: nDOF: {3*fe_solver.mesh.num_nodes}, vol: {history['volume'][-1]:0.2f}, J: {history['compliance'][-1]:.3g}, time: {timeTaken:.0f} s"
+        title = f"OC: nDOF: {3*fe_solver.mesh.num_nodes}, vol: {history['volume'][-1]:0.2f}, J: {history['objective'][-1]:.3g}, time: {timeTaken:.0f} s"
 
         fig, ax1 = plt.subplots()
 
         # Plot compliance on left y-axis
         ax1.set_xlabel('Iterations')
-        ax1.set_ylabel('Compliance', color='tab:blue')
-        ax1.plot(history['compliance'], color='tab:blue', label='Compliance')
+        ax1.set_ylabel('objective', color='tab:blue')
+        ax1.plot(history['objective'], color='tab:blue', label='objective')
         ax1.tick_params(axis='y', labelcolor='tab:blue')
 
         # Plot volume fraction on right y-axis with dotted line
@@ -273,9 +283,123 @@ while True:
         fe_solver = HexStructuralFEA(mesh=mesh, mat_prop=mat_prop, solver= Solvers.PARDISO, bc=bc)
         u, history, success,errorMsg,nFEAs = topopt_pareto(fe_solver=fe_solver,to_params=to_params,plot_progress=True)
         plt.figure()
-        plt.plot(history['volume'], history['compliance'], marker='o')
+        plt.plot(history['volume'], history['objective'], marker='o')
         plt.xlabel('Volume Fraction')
-        plt.ylabel('Compliance')
+        plt.ylabel('objective')
+        plt.title('Pareto: Volume vs Compliance History')
+        plt.grid(True)
+        plt.show()
+        if not success:
+            print(f"Error: {errorMsg}")
+        fe_solver.plot_mesh(title = title)
+    elif demo == pyTODemos.HexThermalTO_DensityMMA:
+        to_problem = ThermalTOExamples.FourCornersThermal # Choose the TO problem
+        solver = Solvers.PARDISO # # Choose solver. Typically PARDISO, but DPCG for DOF > 200,000
+  
+        mesh, mat_prop, bc,elem_body_force, to_params = getThermalTOProblem(to_problem)
+        fe_solver = HexThermalFEA(mesh = mesh,
+                    mat_prop = mat_prop,
+                    bc = bc,
+                    solver = solver,
+                    elem_body_force = elem_body_force)
+   
+        title = f'nDOF: {fe_solver.mesh.num_nodes}, nElem: {fe_solver.mesh.num_elems}'
+        startTime = time.time()
+        u, history,success,errorMsg,nFEAs = topopt_mma(fe_solver = fe_solver,plot_progress=True,
+                                    to_params = to_params)
+        timeTaken = time.time() - startTime
+
+        print(f"Time taken: {timeTaken:.0f} s")
+        title = f"MMA: nDOF: {fe_solver.mesh.num_nodes}, vol: {history['volume'][-1]:0.2f}, J: {history['objective'][-1]:.3g}, time: {timeTaken:.0f} s"
+    
+        if not success:
+            print(f"Error: {errorMsg}")
+        fe_solver.plot_mesh(title = title,plot_bc= False)
+
+        fig, ax1 = plt.subplots()
+
+        # Plot compliance on left y-axis
+        ax1.set_xlabel('Iterations')
+        ax1.set_ylabel('objective', color='tab:blue')
+        ax1.plot(history['objective'], color='tab:blue', label='objective')
+        ax1.tick_params(axis='y', labelcolor='tab:blue')
+
+        # Plot volume fraction on right y-axis with dotted line
+        ax2 = ax1.twinx()
+        ax2.set_ylabel('Volume Fraction', color='tab:orange')
+        ax2.plot(history['volume'], color='tab:orange', linestyle=':', label='Volume Fraction')
+        ax2.tick_params(axis='y', labelcolor='tab:orange')
+        ax2.yaxis.set_major_formatter(plt.FormatStrFormatter('%.2f'))
+
+        plt.title('MMA: Volume and Compliance vs. Iterations')
+
+        # Add legend
+        lines1, labels1 = ax1.get_legend_handles_labels()
+        lines2, labels2 = ax2.get_legend_handles_labels()
+        ax1.legend(lines1 + lines2, labels1 + labels2)
+
+        plt.grid(True)
+        plt.show()
+
+        # Save the mesh and results
+    elif demo == pyTODemos.HexThermalTO_DensityOC:
+        to_problem = ThermalTOExamples.FourCornersThermal # Choose the TO problem
+        solver = Solvers.PARDISO #
+        # Get the structural problem
+        mesh, mat_prop, bc,elem_body_force, to_params = getThermalTOProblem(to_problem,nDOFDesired = 50000)
+        fe_solver = HexThermalFEA(mesh = mesh,
+                    mat_prop = mat_prop,
+                    bc = bc,
+                    solver = solver,
+                    elem_body_force = elem_body_force)
+        
+        title = f'nDOF: {fe_solver.mesh.num_nodes}, nElem: {fe_solver.mesh.num_elems}'
+        startTime = time.time()
+        u, history, success,errorMsg,nFEAs = topopt_optimality_criteria(fe_solver = fe_solver,plot_progress=True,
+                                                to_params = to_params)
+        timeTaken = time.time() - startTime
+        title = f"OC: nDOF: {fe_solver.mesh.num_nodes}, vol: {history['volume'][-1]:0.2f}, J: {history['objective'][-1]:.3g}, time: {timeTaken:.0f} s"
+
+        fig, ax1 = plt.subplots()
+
+        # Plot compliance on left y-axis
+        ax1.set_xlabel('Iterations')
+        ax1.set_ylabel('objective', color='tab:blue')
+        ax1.plot(history['objective'], color='tab:blue', label='objective')
+        ax1.tick_params(axis='y', labelcolor='tab:blue')
+
+        # Plot volume fraction on right y-axis with dotted line
+        ax2 = ax1.twinx()
+        ax2.set_ylabel('Volume Fraction', color='tab:orange')
+        ax2.plot(history['volume'], color='tab:orange', linestyle=':', label='Volume Fraction')
+        ax2.tick_params(axis='y', labelcolor='tab:orange')
+        ax2.yaxis.set_major_formatter(plt.FormatStrFormatter('%.2f'))
+
+        plt.title('OC: Volume and Compliance vs. Iterations')
+
+        # Add legend
+        lines1, labels1 = ax1.get_legend_handles_labels()
+        lines2, labels2 = ax2.get_legend_handles_labels()
+        ax1.legend(lines1 + lines2, labels1 + labels2)
+
+        plt.grid(True)
+        plt.show(block=False)
+
+        print(f"Time taken: {timeTaken:.0f} s")
+        if not success:
+            print(f"Error: {errorMsg}")
+        fe_solver.plot_mesh(title = title)
+
+    elif demo == pyTODemos.HexThermalTO_Pareto:
+        to_problem = ThermalTOExamples.FourCornersThermal
+        mesh, mat_prop, bc,elem_body_force, to_params = getThermalTOProblem(to_problem)
+        
+        fe_solver = HexThermalFEA(mesh=mesh, mat_prop=mat_prop, solver= Solvers.PARDISO, bc=bc)
+        u, history, success,errorMsg,nFEAs = topopt_pareto(fe_solver=fe_solver,to_params=to_params,plot_progress=True)
+        plt.figure()
+        plt.plot(history['volume'], history['objective'], marker='o')
+        plt.xlabel('Volume Fraction')
+        plt.ylabel('objective')
         plt.title('Pareto: Volume vs Compliance History')
         plt.grid(True)
         plt.show()
