@@ -32,6 +32,8 @@ class TOParams: # These are the default parameters
     nDOFDesired = 20000 # Desired number of degrees of freedom in the finite element problem
     DesiredVolFraction = 0.5
     ExactVolumeFraction = False # If True, the volume fraction is exactly met
+    APPLY_FILTER_TO_SENSITIVITY = True # Apply filter to density
+    APPLY_FILTER_TO_DENSITY = False # Apply filter to density
     RelativeFilterRadius = 1.5 #relative to the element size
     XSymmetry = False # Desired symmetry in YZ plane
     YSymmetry = False

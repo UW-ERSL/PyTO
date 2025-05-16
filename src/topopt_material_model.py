@@ -3,9 +3,9 @@ import enum
 import numpy as np
 
 SIMP_PENALTY_MIN = 1 # Min Penalization factor for SIMP method
-SIMP_PENALTY_MAX = 6.0 # Max Penalization factor for SIMP method
+SIMP_PENALTY_MAX = 3.0 # Max Penalization factor for SIMP method
 
-SIMP_PENALTY = 3.0  # Default penalization factor for SIMP method
+SIMP_PENALTY = 3  # Default penalization factor for SIMP method
 # For large DOF problems, we encounters numerical issues for smaller values of EVOID_RELATIVE
 
 EVOID_RELATIVE = 1e-8  # Minimum Young's modulus for void elements

@@ -95,7 +95,12 @@ def topopt_mma(fe_solver, #hex_structural_fea.HexStructuralFEA or hex_thermal_fe
 	nFEAs = 0
 
 	while True:
+		
 		x = mma_state.x.reshape(-1)
+		if (to_params.APPLY_FILTER_TO_DENSITY):
+			x = H*x/Hs
+			mma_state.x = x.reshape(-1, 1)
+
 		if (plot_progress):
 			fe_solver.mesh.setPseudoDensity(x)
 			fe_solver.plot_pseudo_density(auto_close = False, title = f"Iteration {mma_state.epoch+1}")
@@ -116,14 +121,13 @@ def topopt_mma(fe_solver, #hex_structural_fea.HexStructuralFEA or hex_thermal_fe
 			ce_body_force = (sol[fe_solver.mesh.edofMat].reshape(num_elems, 24) * nodal_body_force[fe_solver.mesh.edofMat].reshape(num_elems, 24)).sum(1)
 			grad_obj +=  2*ce_body_force*get_material_model_rho_sensitivity(x,material_model)
 
-		grad_obj = (H * grad_obj)/Hs # apply filter
+		if (to_params.APPLY_FILTER_TO_SENSITIVITY):
+			grad_obj = (H * grad_obj)/Hs # apply filter
 		if (elemsWithForces.size > 0):
 			grad_obj[elemsWithForces] = min(grad_obj) # retain elements that have nodes with external forces
 
 		if (to_params.ElemsToKeep is not None):
 			grad_obj[to_params.ElemsToKeep] = min(grad_obj) # also retain elements that are in the keep list
-
-		
 
 		volConstraint, volConstraint_gradient = compute_volume_constraint_and_gradient(x, to_params.DesiredVolFraction)
 
@@ -138,9 +142,9 @@ def topopt_mma(fe_solver, #hex_structural_fea.HexStructuralFEA or hex_thermal_fe
 			
 
 		timeMMA += time.time() - timeMMAStart
-
+		
 		change = np.max(np.abs(x - x_old))
-		x_old = x
+		x_old = x.copy()
 		# Estimate the percentage of grey elements
 		grey_elements = np.sum((x > 0.05) & (x < 0.95))
 		fraction_grey = (grey_elements / num_elems) 
@@ -169,6 +173,7 @@ def topopt_mma(fe_solver, #hex_structural_fea.HexStructuralFEA or hex_thermal_fe
 			errorMsg = "Maximum iterations reached."
 			print("MMA optimization terminated due to maximum iterations.")
 			break
+
 
 	# Find threshold that preserves volume fraction
 	x_sorted = np.sort(x)
@@ -262,7 +267,7 @@ if __name__ == "__main__":
 	if not success:
 		print(f"Error: {errorMsg}")
 
-	title = f"MMA: nDOF: {3*fe_solver.mesh.num_nodes}, vol: {history['volume'][-1]:0.2f}, J: {history['objective'][-1]:.3g}, time: {timeTaken:.0f} s"
+	title = f"MMA: vol: {history['volume'][-1]:0.2f}, J: {history['objective'][-1]:.3g}, nFEA: {len(history['objective']):3d}, time: {timeTaken:.0f} s"
 	fe_solver.plot_mesh(title = title, plot_bc = False, save_path = None)
 	
 

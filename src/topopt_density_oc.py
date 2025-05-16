@@ -77,7 +77,7 @@ def topopt_optimality_criteria(
 	
 	success = True
 	errorMsg = ""
-	initialize_SIMP_PENALTY() 
+	initialize_SIMP_PENALTY(1.1) 
 	for iter in range(maxIterations):
 		x = np.array(x)
 		if (plot_progress):
@@ -97,7 +97,8 @@ def topopt_optimality_criteria(
 			ce_body_force = (sol[fe_solver.mesh.edofMat].reshape(num_elems, 24) * nodal_body_force[fe_solver.mesh.edofMat].reshape(num_elems, 24)).sum(1)
 			grad_obj +=  2*ce_body_force
 			
-		grad_obj = (H * grad_obj)/Hs # apply filter
+		if (to_params.APPLY_FILTER_TO_SENSITIVITY):
+			grad_obj = (H * grad_obj)/Hs # apply filter
 
 		if (elemsWithForces.size > 0):
 			grad_obj[elemsWithForces] = min(grad_obj) # retain elements that have nodes with external forces
@@ -148,6 +149,8 @@ def topopt_optimality_criteria(
 			x = xnew
 			xPhys = xnew.copy()
 
+		if (to_params.APPLY_FILTER_TO_DENSITY):
+			x = H *x/Hs # apply filter
 		# Calculate change and update densities
 		change = np.max(np.abs(x - xold))
 
@@ -174,7 +177,7 @@ def topopt_optimality_criteria(
 			dJ = abs((history['objective'][-1] - history['objective'][-2]) / history['objective'][-2])
 			if (abs(dJ) < rel_conv_tol) and (volConstraint < rel_conv_tol) and (fraction_grey < 0.1): # success
 				break
-		
+		increment_SIMP_PENALTY(0.1) # increase penalty for SIMP
 	if iter == maxIterations - 1:
 		errorMsg = "Maximum iterations reached"
 		print(errorMsg)
@@ -214,7 +217,7 @@ if __name__ == "__main__":
 	from topopt_thermal_benchmarks import *
 
 	print("-" * 50)
-	to_problem = StructuralTOExamples.CantileverTipLoadDisplacementObjective # Choose the TO problem
+	to_problem = StructuralTOExamples.LBracketTopLoad # Choose the TO problem
 	#to_problem = ThermalTOExamples.FourCornersThermal # Choose the TO problem
 
 	if (to_problem in StructuralTOExamples):
@@ -273,7 +276,7 @@ if __name__ == "__main__":
 	if not success:
 		print(f"Error: {errorMsg}")
 
-	title = f"OC: nDOF: {3*fe_solver.mesh.num_nodes}, vol: {history['volume'][-1]:0.2f}, J: {history['objective'][-1]:.3g}, time: {timeTaken:.0f} s"
+	title = f"OC: vol: {history['volume'][-1]:0.2f}, J: {history['objective'][-1]:.3g}, nFEA: {len(history['objective']):3d}, time: {timeTaken:.0f} s"
 
 	
 	# plot the optimized mesh

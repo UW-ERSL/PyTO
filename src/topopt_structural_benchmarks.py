@@ -205,8 +205,10 @@ def getStructuralTOProblem(to_problem: StructuralTOExamples,nDOFDesired = None, 
         to_params.Comment  = "Body Force"
         to_params.XSymmetry = True
         to_params.nDOFDesired = 25000 if nDOFDesired is None else nDOFDesired
-        to_params.RelativeFilterRadius = 1.5
-        to_params.DesiredVolFraction = 0.25
+        to_params.RelativeFilterRadius = 2.0
+        to_params.DesiredVolFraction = 0.1
+        to_params.APPLY_FILTER_TO_SENSITIVITY = False # Apply filter to density
+        to_params.APPLY_FILTER_TO_DENSITY = True # Apply filter to density
     elif to_problem == StructuralTOExamples.CentrifugalPlate:
         structural_problem = StructuralExamples.CentrifugalPlate
         to_params.Comment  = "Body Force"

@@ -67,7 +67,7 @@ def runTOMethodOnThermalBenchmarks(optimizationMethod):
 			os.makedirs(output_dir)
 
 		image_path = f"{output_dir}/{to_problem.name}.png"
-		title = f"{optimizationMethod.name}: nDOF: {3*fe_solver.mesh.num_nodes}, vol: {history['volume'][-1]:0.2f}, J: {history['objective'][-1]:.3g}, time: {timeTaken:.0f} s"
+		title = f"{optimizationMethod.name}:  vol: {history['volume'][-1]:0.2f}, J: {history['objective'][-1]:.3g}, nFEA: {len(history['objective']):3d}, time: {timeTaken:.0f} s"
 	
 		fe_solver.plot_mesh(save_path=image_path, plot_bc = None, title=title)
 		

@@ -234,7 +234,7 @@ if __name__ == "__main__":
 	from topopt_thermal_benchmarks import *
 	
 	print("-" * 50)
-	to_problem = StructuralTOExamples.CantileverTipLoad # Choose the TO problem
+	to_problem = StructuralTOExamples.Mitchell_1 # Choose the TO problem
 	#to_problem = ThermalTOExamples.BridgeThermal # Choose the TO problem
 
 	if (to_problem in StructuralTOExamples):
@@ -296,7 +296,7 @@ if __name__ == "__main__":
 	if not success:
 		print(f"Error: {errorMsg}")
 
-	title = f"Pareto: nDOF: {3*fe_solver.mesh.num_nodes}, vol: {history['volume'][-1]:0.2f}, J: {history['objective'][-1]:.3g}, time: {timeTaken:.0f} s"
+	title = f"Pareto: vol: {history['volume'][-1]:0.2f}, J: {history['objective'][-1]:.3g}, nFEA: {len(history['objective']):3d}, time: {timeTaken:.0f} s"
 	fe_solver.plot_mesh(title = title, save_path = None)
 
 		
