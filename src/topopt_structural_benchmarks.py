@@ -117,8 +117,8 @@ def getStructuralTOProblem(to_problem: StructuralTOExamples,nDOFDesired = None, 
         to_params.Comment  = "Compliant Mechanism"
         to_params.YSymmetry = True 
         to_params.ExtrudeZ = True
-        to_params.nDOFDesired = 10000 if nDOFDesired is None else nDOFDesired
-        to_params.DesiredVolFraction = 0.25
+        to_params.nDOFDesired = 20000 if nDOFDesired is None else nDOFDesired
+        to_params.DesiredVolFraction = 0.3
         to_params.Objective = TO_OBJECTIVES.GENERIC
         # Also see below for the objective function
     elif to_problem == StructuralTOExamples.LBracketTopLoad:
@@ -275,16 +275,18 @@ def getStructuralTOProblem(to_problem: StructuralTOExamples,nDOFDesired = None, 
         xMax = np.max(node_pts[:,0]) 
         yMid = (np.max(node_pts[:,1]) + np.min(node_pts[:,1]))/2
 
-        inputNode = mesh.get_nodes_from_locations([[xMin, yMid, 0]])
-        outputNode = mesh.get_nodes_from_locations([[xMax, yMid, 0]])
+        outputNodes = np.where((abs(node_pts[:, 0] - xMax) < mesh.elem_size[0]/2) & (abs(node_pts[:, 1] - yMid) < mesh.elem_size[1]/2))[0]
 
-        dofinputNode= 3*inputNode # x dof
-        dofoutputNode= 3*outputNode # x dof
+        load_nodes = np.where((abs(node_pts[:, 0] - np.min(node_pts[:, 0])) < mesh.elem_size[0]/2) & (abs(node_pts[:, 1] - np.mean(node_pts[:,1])) < mesh.elem_size[1]))[0]
+
+
+        dof_input = 3*load_nodes # x dof
+        dof_output= 3*outputNodes # x dof
 
         
         g = np.zeros(3*mesh.num_nodes)
-        g[dofinputNode] = 1
-        g[dofoutputNode] = 0.5
+        g[dof_input] = 0.6
+        g[dof_output] = 1
 
         #to_params.ElemsToKeep, _ = mesh.get_element_containing_point(pt2)
         to_params.ObjectiveFunction = g

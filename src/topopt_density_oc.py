@@ -106,7 +106,7 @@ def topopt_optimality_criteria(
 			grad_obj[to_params.ElemsToKeep] = min(grad_obj) # also retain elements that are in the keep list
 
 	
-		volConstraint, volConstraint_gradient = compute_volume_constraint_and_gradient(x, to_params.DesiredVolFraction)
+		volConstraint, _ = compute_volume_constraint_and_gradient(x, to_params.DesiredVolFraction)
 
 		# Optimality criteria update
 		xold = x.copy()
@@ -172,7 +172,7 @@ def topopt_optimality_criteria(
 			break
 		if (len(history['objective'])) >= 2:
 			dJ = abs((history['objective'][-1] - history['objective'][-2]) / history['objective'][-2])
-			if (abs(dJ) < rel_conv_tol and abs(volConstraint) < rel_conv_tol) and (fraction_grey < 0.1): # success
+			if (abs(dJ) < rel_conv_tol) and (volConstraint < rel_conv_tol) and (fraction_grey < 0.1): # success
 				break
 		
 	if iter == maxIterations - 1:
@@ -181,9 +181,8 @@ def topopt_optimality_criteria(
 		success = False
 	totalTime = time.time() - tStart
 	# extract binary topology while preserving volume fraction
-	target_vf = to_params.DesiredVolFraction
 	x_sorted = np.sort(x)
-	threshold = x_sorted[int((1-target_vf)*len(x))]
+	threshold = x_sorted[int((1-np.mean(x))*len(x))]
 	x = np.where(x < threshold, 0.0, 1.0)
 	volfrac = np.mean(x)
 	fe_solver.mesh.setPseudoDensity(x)

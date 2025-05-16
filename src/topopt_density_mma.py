@@ -93,8 +93,7 @@ def topopt_mma(fe_solver, #hex_structural_fea.HexStructuralFEA or hex_thermal_fe
 	success = True
 	errorMsg = ""
 	nFEAs = 0
-	initialize_SIMP_PENALTY()  # Initialize the SIMP penalty for the first iteration
-	
+
 	while True:
 		x = mma_state.x.reshape(-1)
 		if (plot_progress):
@@ -154,8 +153,10 @@ def topopt_mma(fe_solver, #hex_structural_fea.HexStructuralFEA or hex_thermal_fe
 		
 		if (len(history['objective'])) >= minMMAIterations:
 			dJ1 = abs((history['objective'][-1] - history['objective'][-2]) / abs(history['objective'][-2]))
+			if (debug):
+				print(f"relative Change in Objective: {dJ1:.4g}")	
 			# we need multiple checks else it will terminate too early 
-			if dJ1 < rel_conv_tol and (abs(volConstraint) < rel_conv_tol) and (change < 0.2) and (fraction_grey < 0.2): # success
+			if (dJ1 < rel_conv_tol) and (volConstraint < rel_conv_tol) and (change < 0.2) and (fraction_grey < 0.2): # success
 				print("MMA optimization converged.")
 				break
 		if time.time() - tStart > timeLimit:
@@ -168,11 +169,10 @@ def topopt_mma(fe_solver, #hex_structural_fea.HexStructuralFEA or hex_thermal_fe
 			errorMsg = "Maximum iterations reached."
 			print("MMA optimization terminated due to maximum iterations.")
 			break
-	
+
 	# Find threshold that preserves volume fraction
-	target_vf = to_params.DesiredVolFraction
 	x_sorted = np.sort(x)
-	threshold = x_sorted[int((1-target_vf)*len(x))]
+	threshold = x_sorted[int((1-np.mean(x))*len(x))]
 	x = np.where(x < threshold, 0.0, 1.0)
 	volfrac = np.mean(x)
 	fe_solver.mesh.setPseudoDensity(x)
@@ -205,7 +205,7 @@ if __name__ == "__main__":
 	from topopt_thermal_benchmarks import *
  
 	print("-" * 50)
-	to_problem = StructuralTOExamples.Inverter # Choose the TO problem
+	to_problem = StructuralTOExamples.LBracketMidLoad # Choose the TO problem
 	#to_problem = ThermalTOExamples.FourCornersThermal # Choose the TO problem
 
 	if (to_problem in StructuralTOExamples):

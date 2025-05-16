@@ -585,10 +585,11 @@ def createInverterProblem(nDOFDesired: int = 10000):
   node_pts = mesh.node_xyz
   xMax = np.max(node_pts[:,0]) 
   yMid = (np.max(node_pts[:,1]) + np.min(node_pts[:,1]))/2
-  outputNode = mesh.get_nodes_from_locations([[xMax, yMid, 0]])
-
+  outputNodes = np.where((abs(node_pts[:, 0] - xMax) < mesh.elem_size[0]/2) & (abs(node_pts[:, 1] - yMid) < mesh.elem_size[1]/2))[0]
+  if len(outputNodes) == 0:
+    raise ValueError("No output nodes found. Check the mesh and node coordinates.")
   ## Add spring to output node
-  mesh.externalSprings = [(0.01e-6,3*outputNode)]
+  mesh.externalSprings = [(0.01e-6,3*node) for node in outputNodes]
   
   load_nodes = np.where((abs(node_pts[:, 0] - np.min(node_pts[:, 0])) < mesh.elem_size[0]/2) & (abs(node_pts[:, 1] - np.mean(node_pts[:,1])) < mesh.elem_size[1]))[0]
   load_dof = 3*load_nodes # x direction
