@@ -232,6 +232,31 @@ def createFilters(fe_solver: hex_structural_fea.HexStructuralFEA,to_params):
 
 	return H, Hs
 
+def computeTopologicalSensitivity(to_params,fe_solver,x):
+	fe_solver.postprocess()
+	if (to_params.Objective == TO_OBJECTIVES.COMPLIANCE):
+		if isinstance(fe_solver, hex_structural_fea.HexStructuralFEA):
+			T = computeStructuralTopologicalSensitivity(fe_solver.mat_prop.poissons_ratio,fe_solver.strainComponents,fe_solver.stressComponents,x)
+		else:
+			T = computeThermalTopologicalSensitivity(fe_solver.mat_prop.thermal_conductivity,fe_solver.strain,x)
+	elif (to_params.Objective == TO_OBJECTIVES.GENERIC):
+		objFunction = to_params.ObjectiveFunction
+		if isinstance(objFunction, np.ndarray):
+			g = objFunction
+		else:
+			raise ValueError("Objective function is not defined.")
+		
+		obj = np.dot(fe_solver.sol, g)
+	
+
+		adjointSol =  -linear_solvers.solve(fe_solver.stiff_mtrx,
+                      g,
+                      fe_solver.solver,
+                      fe_solver.bc,
+                      dsolver = fe_solver.dsolver,
+                      **fe_solver.kwargs)
+	return T
+	
 
 def computeStructuralTopologicalSensitivity(poissons_ratio,strains,stresses,x):
 	stress_tensor = x[:, None, None] * np.array([

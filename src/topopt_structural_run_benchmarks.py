@@ -32,7 +32,6 @@ def runTOMethodOnStructuralBenchmarks(optimizationMethod):
 						StructuralTOExamples.LBracketThickMidLoad,
 						StructuralTOExamples.Table]
 		
-	
 	benchmarks_bodyforce_problems = [StructuralTOExamples.GravityPlate,
 						StructuralTOExamples.CentrifugalPlate]
 	
@@ -46,9 +45,7 @@ def runTOMethodOnStructuralBenchmarks(optimizationMethod):
 			subFolder = "BodyForce"
 		else:
 			subFolder = "Other"
-		print("-" * 50)
-		print(f"Running {to_problem.name} using {optimizationMethod.name} method")
-		print("-" * 50)
+		
 		print_progress = False
 		mesh, mat_prop, bc,elem_body_force, to_params = getStructuralTOProblem(to_problem)
 		dsolver = deflation.DeflationSolver()
@@ -62,7 +59,9 @@ def runTOMethodOnStructuralBenchmarks(optimizationMethod):
 			dsolver.W = dsolver.W[bc.free_dofs, :]
 
 		startTime = time.time()
-		
+		print("-" * 50)
+		print(f"Running {to_problem.name} problem using {optimizationMethod.name} method and {solver.name} solver")
+		print("-" * 50)
 		fe_solver = hex_structural_fea.HexStructuralFEA(mesh = mesh,
 					mat_prop = mat_prop,
 					bc = bc,

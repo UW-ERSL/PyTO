@@ -149,8 +149,8 @@ def getStructuralTOProblem(to_problem: StructuralTOExamples,nDOFDesired = None, 
         to_params.Comment  = "Benchmark 2.5D"
         to_params.ZAxisAngularSymmetry = 6
         to_params.ExtrudeZ = True
-        to_params.nDOFDesired = 25000 if nDOFDesired is None else nDOFDesired
-        to_params.DesiredVolFraction = 0.75
+        to_params.nDOFDesired = 50000 if nDOFDesired is None else nDOFDesired
+        to_params.DesiredVolFraction = 0.5
     elif to_problem == StructuralTOExamples.EdgeCantilever:
         structural_problem = StructuralExamples.EdgeCantilever
         to_params.Comment = "Benchmark 3D"

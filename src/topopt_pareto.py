@@ -86,13 +86,7 @@ def topopt_pareto(fe_solver,
 
 	history['objective'].append( obj)
 	history['volume'].append(volfrac)
-	fe_solver.postprocess() # compute stresses and strains for the initial design
-	# Compute initial topological sensitivity
-	if isinstance(fe_solver, hex_structural_fea.HexStructuralFEA):
-		T = computeStructuralTopologicalSensitivity(fe_solver.mat_prop.poissons_ratio,fe_solver.strainComponents,fe_solver.stressComponents,x)
-	else:
-		T = computeThermalTopologicalSensitivity(fe_solver.mat_prop.thermal_conductivity,fe_solver.strain,x)
-			
+	T = computeTopologicalSensitivity(to_params, fe_solver,x)
 	# Add contribution from body force to topological sensitivity if present
 	if (nodal_body_force is not None):
 		T_body = np.zeros(fe_solver.mesh.num_elems)
@@ -185,14 +179,8 @@ def topopt_pareto(fe_solver,
 			nFEAs += 1
 			JTemp, _ = compute_objective_and_gradient(to_params,sol,x, fe_solver,KE)
 
-
-			# Update sensitivity
-			fe_solver.postprocess()
-			if isinstance(fe_solver, hex_structural_fea.HexStructuralFEA):
-				T = computeStructuralTopologicalSensitivity(fe_solver.mat_prop.poissons_ratio,fe_solver.strainComponents,fe_solver.stressComponents,x)
-			else:
-				T = computeThermalTopologicalSensitivity(fe_solver.mat_prop.thermal_conductivity,fe_solver.strain,x)
-			
+			T = computeTopologicalSensitivity(to_params, fe_solver,x)
+	
 			# Add contribution from body force to topological sensitivity if present
 			if (nodal_body_force is not None):
 				T_body = np.zeros(fe_solver.mesh.num_elems)
