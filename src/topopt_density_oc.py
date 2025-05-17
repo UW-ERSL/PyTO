@@ -8,7 +8,7 @@ def topopt_optimality_criteria(
 							to_params,
 			  				maxIterations: int = 250,
 							move: float = 0.2,
-							move_tol: float = 0.025,
+							move_tol: float = 0.05,
 							rel_conv_tol: float = 1.e-3,
 							directLagrangeMethod: bool = False,
 							print_progress: bool = True,
@@ -77,7 +77,7 @@ def topopt_optimality_criteria(
 	
 	success = True
 	errorMsg = ""
-	initialize_SIMP_PENALTY(1.1) 
+
 	for iter in range(maxIterations):
 		x = np.array(x)
 		if (plot_progress):
@@ -171,13 +171,19 @@ def topopt_optimality_criteria(
 			errorMsg = "Objective is diverging"
 			success = False
 			break
-		if (change < move_tol):# success
-			break
+		
 		if (len(history['objective'])) >= 2:
 			dJ = abs((history['objective'][-1] - history['objective'][-2]) / history['objective'][-2])
-			if (abs(dJ) < rel_conv_tol) and (volConstraint < rel_conv_tol) and (fraction_grey < 0.1): # success
+			# we need multiple checks else it will terminate too early 
+			if (dJ < rel_conv_tol) and (volConstraint < rel_conv_tol) and (change < 0.2) and (fraction_grey < 0.1): # success
+				print("MMA optimization converged.")
 				break
-		increment_SIMP_PENALTY(0.1) # increase penalty for SIMP
+
+			# Also this check for stalling
+			if (dJ < rel_conv_tol) and (volConstraint < rel_conv_tol) and (change < move_tol): # success
+				print("MMA optimization converged.")
+				break
+
 	if iter == maxIterations - 1:
 		errorMsg = "Maximum iterations reached"
 		print(errorMsg)
@@ -217,7 +223,7 @@ if __name__ == "__main__":
 	from topopt_thermal_benchmarks import *
 
 	print("-" * 50)
-	to_problem = StructuralTOExamples.LBracketTopLoad # Choose the TO problem
+	to_problem = StructuralTOExamples.GravityPlate # Choose the TO problem
 	#to_problem = ThermalTOExamples.FourCornersThermal # Choose the TO problem
 
 	if (to_problem in StructuralTOExamples):

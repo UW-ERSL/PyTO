@@ -234,7 +234,7 @@ if __name__ == "__main__":
 	from topopt_thermal_benchmarks import *
 	
 	print("-" * 50)
-	to_problem = StructuralTOExamples.Mitchell_1 # Choose the TO problem
+	to_problem = StructuralTOExamples.GravityPlate # Choose the TO problem
 	#to_problem = ThermalTOExamples.BridgeThermal # Choose the TO problem
 
 	if (to_problem in StructuralTOExamples):
@@ -277,10 +277,10 @@ if __name__ == "__main__":
 
 	
 	print('Solver: ', fe_solver.solver.name)
-	print("nDof: ", 3*fe_solver.mesh.num_nodes)
+	print("nNodes: ", fe_solver.mesh.num_nodes)
 	print("nElem: ", fe_solver.mesh.num_elems)	
 	#print("Close the plot to continue...")
-	title = f'nDOF: {3*fe_solver.mesh.num_nodes}, nElem: {fe_solver.mesh.num_elems}'
+	title = f'nNodes: {fe_solver.mesh.num_nodes}, nElem: {fe_solver.mesh.num_elems}'
 	#fe_solver.plot_mesh(title = title, save_path = None)
 	
 	startTime = time.time()
@@ -307,6 +307,6 @@ if __name__ == "__main__":
 	plt.ylabel('objective')
 	plt.title('Pareto: Volume vs Compliance History')
 	plt.grid(True)
-	plt.show(block=False)
+	plt.show()
 	
 	

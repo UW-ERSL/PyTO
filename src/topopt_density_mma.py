@@ -10,7 +10,7 @@ def topopt_mma(fe_solver, #hex_structural_fea.HexStructuralFEA or hex_thermal_fe
 							timeLimit: float =3600, #1 hour
 							 move_limit: float = 0.2,
 							 kkt_tol: float = 1.e-6,
-							 move_tol: float = 0.025,
+							 move_tol: float = 0.05,
 							 rel_conv_tol: float = 1.e-3,
 							 print_progress: bool = True,
 							plot_progress: bool = False,
@@ -154,15 +154,23 @@ def topopt_mma(fe_solver, #hex_structural_fea.HexStructuralFEA or hex_thermal_fe
 		history['objective'].append(obj*objScaling)
 		history['volume'].append(np.mean(x))
 		history['change'].append(change)
-		
+
 		if (len(history['objective'])) >= minMMAIterations:
-			dJ1 = abs((history['objective'][-1] - history['objective'][-2]) / abs(history['objective'][-2]))
+			dJ = abs((history['objective'][-1] - history['objective'][-2]) / abs(history['objective'][-2]))
 			if (debug):
-				print(f"relative Change in Objective: {dJ1:.4g}")	
-			# we need multiple checks else it will terminate too early 
-			if (dJ1 < rel_conv_tol) and (volConstraint < rel_conv_tol) and (change < 0.2) and (fraction_grey < 0.2): # success
+				print(f"relative Change in Objective: {dJ:.4g}")	
+
+			# From experiments,  multiple checks were needed to ensure convergence
+			if (dJ < rel_conv_tol) and (volConstraint < rel_conv_tol) and (change < 0.2) and (fraction_grey < 0.1): # success
 				print("MMA optimization converged.")
 				break
+
+			# Also this check for stalling
+			if (dJ < rel_conv_tol) and (volConstraint < rel_conv_tol) and (change < move_tol): # success
+				print("MMA optimization converged.")
+				break
+
+			
 		if time.time() - tStart > timeLimit:
 			success = False
 			errorMsg = "Time limit exceeded."
@@ -210,7 +218,7 @@ if __name__ == "__main__":
 	from topopt_thermal_benchmarks import *
  
 	print("-" * 50)
-	to_problem = StructuralTOExamples.LBracketMidLoad # Choose the TO problem
+	to_problem = StructuralTOExamples.GravityPlate # Choose the TO problem
 	#to_problem = ThermalTOExamples.FourCornersThermal # Choose the TO problem
 
 	if (to_problem in StructuralTOExamples):
@@ -250,10 +258,10 @@ if __name__ == "__main__":
 					elem_body_force = elem_body_force)
 	
 	print('Solver: ', fe_solver.solver.name)
-	print("nDof: ", 3*fe_solver.mesh.num_nodes)
+	print("nNodes: ", fe_solver.mesh.num_nodes)
 	print("nElem: ", fe_solver.mesh.num_elems)	
 	
-	title = f'nDOF: {3*fe_solver.mesh.num_nodes}, nElem: {fe_solver.mesh.num_elems}'
+	title = f'nNodes: {fe_solver.mesh.num_nodes}, nElem: {fe_solver.mesh.num_elems}'
 	#fe_solver.plot_mesh(title = title, save_path = None)
 	
 	startTime = time.time()

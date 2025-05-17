@@ -216,6 +216,9 @@ def getStructuralTOProblem(to_problem: StructuralTOExamples,nDOFDesired = None, 
         to_params.ZAxisAngularSymmetry = 4
         to_params.nDOFDesired = 25000 if nDOFDesired is None else nDOFDesired
         to_params.DesiredVolFraction = 0.5
+        to_params.RelativeFilterRadius = 1.5
+        to_params.APPLY_FILTER_TO_SENSITIVITY = False # Apply filter to density
+        to_params.APPLY_FILTER_TO_DENSITY = True # Apply filter to density
         to_params.KeepFixedElems = True  # Keep elements that are fixed in the centrifugal plate example
     elif to_problem == StructuralTOExamples.BliskWithBlade:
         structural_problem = StructuralExamples.BliskWithBlade
