@@ -9,38 +9,6 @@ from trussopt import *
 import hex_structural_fea
 # run the trussopt.py script to generate the truss_output.csv file
 # ToDo: integrate the trussopt.py directly in the TO. Eliminate the CSV file. The current code is being tested for the CantileverMidLoad example.
-def get_2d_rho(mesh: hex_structural_fea.HexStructuralFEA)-> np.ndarray: 
-    """
-    Rasterize the truss members to a 2D density grid.
-    """
-    # Load the truss data
-    data = pd.read_csv("truss_output.csv")  # header should be: x1,y1,x2,y2,area
-    plot_truss_from_csv(data)
-    nx, ny, nz = mesh.grid
-
-    # Initialize 2D density grid
-    rho2D = np.zeros((ny, nx))  
-    dx, dy, dz = mesh.elem_size
-
-
-    # Rasterize each member to the 2D grid
-    for i in range(len(data)):
-        x1, y1, x2, y2, A = data.iloc[i]
-
-        length = np.hypot(x2 - x1, y2 - y1)
-        N = max(10, int(5 * length))  # number of sample points
-        xs = np.linspace(x1, x2, N)
-        ys = np.linspace(y1, y2, N)
-
-        for x, y in zip(xs, ys):
-            ix = int(np.clip(np.floor(x / dx), 0, nx - 1))
-            iy = int(np.clip(np.floor(y / dy), 0, ny - 1))
-
-            rho2D[iy, ix] = max(rho2D[iy, ix], A)
-
-    # Normalize density
-    rho2D /= np.max(rho2D) + 1e-8  # scale to [0, 1]
-    return rho2D
 
 def get_2d_rho_from_structural_output(Nd, Cn, a, mesh: hex_mesher.HexMesher, threshold=1e-4):
     """
@@ -50,7 +18,7 @@ def get_2d_rho_from_structural_output(Nd, Cn, a, mesh: hex_mesher.HexMesher, thr
     - Nd: (n_nodes, 2) array of node coordinates
     - Cn: (n_members, 2 or 4) array of member connections and lengths
     - a:  (n_members,) array of cross-sectional areas
-    - mesh: hex_structural_fea.HexStructuralFEA object
+    - mesh: hex_mesher.HexMesher object
     - threshold: minimum area to include a bar in the rasterization
 
     Returns:
@@ -61,11 +29,11 @@ def get_2d_rho_from_structural_output(Nd, Cn, a, mesh: hex_mesher.HexMesher, thr
     nx, ny, nz = mesh.grid
     dx, dy, dz = mesh.elem_size
 
-    # Initialize 2D density grid
-    rho2D = np.zeros((ny, nx))
-
     scale_x = (nx * dx) / 20.0
     scale_y = (ny * dy) / 10.0
+
+    # Initialize 2D density grid
+    rho2D = np.zeros((ny, nx))
 
     for i in range(len(Cn)):
         if a[i] < threshold:
@@ -95,19 +63,15 @@ def get_2d_rho_from_structural_output(Nd, Cn, a, mesh: hex_mesher.HexMesher, thr
     rho2D /= np.max(rho2D) + 1e-8  # normalize to [0, 1]
     return rho2D
 
-def get_3D_rho_from_2D(mesh: hex_mesher.HexMesher)-> np.ndarray:
+def get_3D_rho_from_2D(mesh: hex_mesher.HexMesher, b_plot: bool = False)-> np.ndarray:
     # Load the 2D density grid
     #rho2D = get_2d_rho(mesh)
     Nd, Cn, a, q = trussopt(width = 20, height = 10, st = 1, sc =1, jc = 1) #much larger jc value if you want only a handful of members in the final design.
-    plotTruss(Nd, Cn, a, q, max(a) * 1e-3, "Finished", False)
-    
     rho2D = get_2d_rho_from_structural_output(Nd, Cn, a, mesh)
-    plot_rho2D(rho2D, mesh)
+    if b_plot:
+        plotTruss(Nd, Cn, a, q, max(a) * 1e-3, "Finished", False)
+        plot_rho2D(rho2D, mesh)
     nx, ny, nz = mesh.grid
-
-    # Extrude to 3D
-    # nz = mesh.grid[2]  # number of layers in z direction
-    # rho3D = np.repeat(rho2D[:, :, np.newaxis], nz, axis=2)  # shape: (39, 57, 3) 
 
     rho3D = np.zeros((nx, ny, nz))  # shape = (nx, ny, nz)
     for k in range(nz):
@@ -120,20 +84,14 @@ def get_3D_rho_from_2D(mesh: hex_mesher.HexMesher)-> np.ndarray:
     # plt.imshow(rho3D[:, :, 0], cmap='viridis', origin='lower')
     # plt.title("rho3D[:, :, 0] — first Z slice")
     # plt.show()
-    #  # Compare first layer
+    #  # Compare second layer
     # plt.imshow(rho3D[:, :, 1], cmap='viridis', origin='lower')
     # plt.title("rho3D[:, :, 0] — second Z slice")
     # plt.show()
-    #  # Compare first layer
+    #  # Compare second layer
     # plt.imshow(rho3D[:, :, 2], cmap='viridis', origin='lower')
     # plt.title("rho3D[:, :, 0] — third Z slice")
     # plt.show()
-
-    # Compare flattened back to 2D
-    reconstructed = rho_flat.reshape((ny, nx, nz), order='F')
-    plt.imshow(reconstructed[:, :, 0], cmap='viridis', origin='lower')
-    plt.title("Reconstructed rho_flat[0-layer]")
-    plt.show()
 
     # Final rho for 3D problems to initialize TO
     x = rho_flat.copy()

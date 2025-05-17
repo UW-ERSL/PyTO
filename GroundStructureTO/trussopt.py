@@ -81,6 +81,15 @@ def plotTruss(Nd, Cn, a, q, threshold, str, update = True):
     plt.pause(0.01) if update else plt.show()
 #Main function 
 def trussopt(width, height, st, sc, jc):
+    """
+    Truss optimization function.
+    Returns:
+        Nd: Node coordinates - list of nodes (each row = [x,y])
+        Cn: Connectivity matrix - 
+            [ start_node_index, end_node_index, length, is_active (0 or 1) ]
+        a: Member areas - optimal area for each row in Cn.
+        q: Member forces - optimal force for each row in Cn. q>0 means tension, q<0 means compression.
+    """
     poly = Polygon([(0, 0), (width, 0), (width, height), (0, height)])
     if (False): # set to True to create a hole in the middle of the domain
             poly = poly.difference(Polygon([
@@ -108,26 +117,20 @@ def trussopt(width, height, st, sc, jc):
     PML, dof = np.array(PML), np.array(dof).flatten()
     f = [f[i:i+len(Nd)*2] for i in range(0, len(f), len(Nd)*2)]
     print('Nodes: %d Members: %d' % (len(Nd), len(PML)))
-    for pm in [p for p in PML if p[2] <= 1.42]: 
+    for pm in [p for p in PML if p[2] <= 1.42]: #1.42 is length of the member (hard coded, change if needed)
         pm[3] = True
     #Start the 'member adding' loop
     for itr in range(1, 100):
         Cn = PML[PML[:,3] == True]
         vol, a, q, u = solveLP(Nd, Cn, f, dof, st, sc, jc)
         print("Itr: %d, vol: %f, mems: %d" % (itr, vol, len(Cn)))
-        plotTruss(Nd, Cn, a, q, max(a) * 1e-3, "Itr:" + str(itr))
+        #plotTruss(Nd, Cn, a, q, max(a) * 1e-3, "Itr:" + str(itr))
         if stopViolation(Nd, PML, dof, st, sc, u, jc): break
     print("Volume: %f" % (vol)) 
-    #export_truss_opt_to_csv(Nd, Cn, a)
     #plotTruss(Nd, Cn, a, q, max(a) * 1e-3, "Finished", False)
     return Nd, Cn, a, q
 
 def export_truss_opt_to_csv(Nd, Cn, a):
-    # Export the truss data to a CSV file
-    # Nd: Node coordinates
-    # Cn: Connectivity matrix
-    # a: Member areas
-
     # Trim to active members
     Cn_trim = Cn[:, :3]  # Remove the last column (status)
 
