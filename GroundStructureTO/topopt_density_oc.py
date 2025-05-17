@@ -45,6 +45,13 @@ def topopt_optimality_criteria(
 
 	# Initialize design variables
 	x = to_params.DesiredVolFraction * np.ones(num_elems, dtype = float)
+	#fe_solver.plot_pseudo_density(auto_close = False, title = f"Initial Density")
+
+	rho_flat = get_3D_rho_from_2D(fe_solver.mesh)  
+	x = rho_flat
+	fe_solver.mesh.setPseudoDensity(x)
+	fe_solver.plot_pseudo_density(auto_close = False, title = f"Initial Density")
+
 	xPhys = x.copy()
 
 	if (fe_solver.elem_body_force is not None):
@@ -237,12 +244,8 @@ if __name__ == "__main__":
 	#fe_solver.plot_mesh(title = title, save_path = None)
 	
 	startTime = time.time()		
-	fe_solver.mesh.plot()
-	print("OptimizationMethod: OC")
-	rho_flat = get_3D_rho_from_2D(fe_solver)  
-	x = rho_flat
-	fe_solver.mesh.setPseudoDensity(x)
-	fe_solver.plot_pseudo_density(auto_close = False, title = f"Initial Density")
+	#fe_solver.mesh.plot()
+	print("OptimizationMethod: OC")	
 	u, history, success,errorMsg,nFEAs = topopt_optimality_criteria(fe_solver = fe_solver,
 											to_params = to_params,
 											plot_progress = True,

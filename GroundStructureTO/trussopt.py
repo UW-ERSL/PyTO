@@ -118,8 +118,9 @@ def trussopt(width, height, st, sc, jc):
         plotTruss(Nd, Cn, a, q, max(a) * 1e-3, "Itr:" + str(itr))
         if stopViolation(Nd, PML, dof, st, sc, u, jc): break
     print("Volume: %f" % (vol)) 
-    export_truss_opt_to_csv(Nd, Cn, a)
-    plotTruss(Nd, Cn, a, q, max(a) * 1e-3, "Finished", False)
+    #export_truss_opt_to_csv(Nd, Cn, a)
+    #plotTruss(Nd, Cn, a, q, max(a) * 1e-3, "Finished", False)
+    return Nd, Cn, a, q
 
 def export_truss_opt_to_csv(Nd, Cn, a):
     # Export the truss data to a CSV file
