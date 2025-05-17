@@ -20,18 +20,19 @@ class TO_METHODS(enum.Enum):
 	PARETO = enum.auto()
 	LEVELSET = enum.auto()
 
-class TO_OBJECTIVES(enum.Enum): # What to minimize?
-	COMPLIANCE = enum.auto()
+class TO_QOI(enum.Enum): # Topology optimization; Various Quantity of Interest
+	VOLUME_FRACTION = enum.auto() # Volume fraction
+	MASS_FRACTION = enum.auto() # Mass fraction
+	COMPLIANCE = enum.auto() # With respect to the initial compliance
 	PNORM_STRESS = enum.auto()
-	GENERIC = enum.auto() # g'* u, or g(u)
+	GVECTOR = enum.auto() # g'* u
+	GFUNCTION = enum.auto() # g(u)
 
 class TOParams: # These are the default parameters
     Comment = "" # Comment for the topology optimization problem
-    Objective = TO_OBJECTIVES.COMPLIANCE
-    ObjectiveFunction = None # Function g, or array g to compute the objective for non-compliance problems
-    nDOFDesired = 20000 # Desired number of degrees of freedom in the finite element problem
-    DesiredVolFraction = 0.5
-    ExactVolumeFraction = False # If True, the volume fraction is exactly met
+    Objective = (TO_QOI.COMPLIANCE,None) # Tuple of objective type and auxiliary function/vector	
+    Constraints = [(TO_QOI.VOLUME_FRACTION, None, 0.5)] # Collection of tuples of constraint type, auxiliary function/vector, and upper bound
+    nDOFDesired = 50000 # Desired number of degrees of freedom in the finite element problem
     APPLY_FILTER_TO_SENSITIVITY = True # Apply filter to density
     APPLY_FILTER_TO_DENSITY = False # Apply filter to density
     RelativeFilterRadius = 1.5 #relative to the element size
@@ -180,17 +181,12 @@ def compute_solution_dotproduct_and_gradient(sol: np.ndarray, x,fe_solver,KE,mat
 def compute_objective_and_gradient(to_params, sol: np.ndarray, x: np.ndarray,	fe_solver, KE,
 				material_model = None) -> tuple:
 							
-	if (to_params.Objective == TO_OBJECTIVES.COMPLIANCE):
+	objectiveType  = to_params.Objective[0]	# first entry is the type of objective			
+	if (objectiveType == TO_QOI.COMPLIANCE): 
 		compliance, compliance_grad = compute_compliance_and_gradient(sol, x, fe_solver, KE, material_model)
 		return compliance, compliance_grad
-	elif (to_params.Objective == TO_OBJECTIVES.GENERIC):
-		objFunction = to_params.ObjectiveFunction
-		if objFunction is None:
-			raise ValueError("Objective function is not defined.")
-		elif isinstance(objFunction, np.ndarray):
-			g = objFunction
-		elif callable(objFunction):
-			compliance = objFunction(sol, x, fe_solver, KE, material_model)
+	elif (objectiveType == TO_QOI.GVECTOR):
+		g = to_params.Objective[1]
 		compliance, compliance_grad = compute_solution_dotproduct_and_gradient(sol, x, fe_solver, KE,material_model,g)
 		return compliance, compliance_grad
 	else:
@@ -236,21 +232,17 @@ def createFilters(fe_solver: hex_structural_fea.HexStructuralFEA,to_params):
 
 def computeTopologicalSensitivity(to_params,fe_solver,x):
 	fe_solver.postprocess()
-	if (to_params.Objective == TO_OBJECTIVES.COMPLIANCE):
+	objectiveType  = to_params.Objective[0]	# first entry is the type of objective			
+	if (objectiveType == TO_QOI.COMPLIANCE): 
 		if isinstance(fe_solver, hex_structural_fea.HexStructuralFEA):
 			T = computeStructuralTopologicalSensitivity(fe_solver.mat_prop.poissons_ratio,fe_solver.strainComponents,fe_solver.stressComponents,x)
 		else:
 			T = computeThermalTopologicalSensitivity(fe_solver.mat_prop.thermal_conductivity,fe_solver.strain,x)
-	elif (to_params.Objective == TO_OBJECTIVES.GENERIC):
-		objFunction = to_params.ObjectiveFunction
-		if isinstance(objFunction, np.ndarray):
-			g = objFunction
-		else:
-			raise ValueError("Objective function is not defined.")
-		
+	elif (objectiveType == TO_QOI.GVECTOR):
+		g = to_params.Objective[1]
 		obj = np.dot(fe_solver.sol, g)
 	
-
+		print("Not implemented yet")
 		adjointSol =  -linear_solvers.solve(fe_solver.stiff_mtrx,
                       g,
                       fe_solver.solver,

@@ -74,7 +74,7 @@ def runTOMethodOnThermalBenchmarks(optimizationMethod):
 		results_list.append({
 			'name': to_problem.name,
 			'comment': to_params.Comment,  
-			'ndof': 3*fe_solver.mesh.num_nodes,
+			'ndof': fe_solver.mesh.num_nodes,
 			'volume': history['volume'][-1],
 			'objective': history['objective'][-1],
 			'#FEAs': nFEAs,

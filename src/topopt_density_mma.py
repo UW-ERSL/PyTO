@@ -73,7 +73,13 @@ def topopt_mma(fe_solver, #hex_structural_fea.HexStructuralFEA or hex_thermal_fe
 			KE = hex_element_stiffness.hex8_stiffness_matrix_thermal( fe_solver.mat_prop,fe_solver.mesh.elem_size)
 	
 	
-	x0 = to_params.DesiredVolFraction * np.ones(num_elems, dtype = float)
+	constraintType = to_params.Constraints[0][0] # assume this is the first constraint
+	if (constraintType == TO_QOI.VOLUME_FRACTION):
+		volFractionConstraint = to_params.Constraints[0][2]
+	else:
+		raise ValueError(f"Unknown constraint type: {constraintType}")
+	
+	x0 = volFractionConstraint* np.ones(num_elems, dtype = float)
 	x0 = x0.reshape(-1, 1)
 	mma_state = mma.init_mma(x0, mma_params)
 	
@@ -129,7 +135,7 @@ def topopt_mma(fe_solver, #hex_structural_fea.HexStructuralFEA or hex_thermal_fe
 		if (to_params.ElemsToKeep is not None):
 			grad_obj[to_params.ElemsToKeep] = min(grad_obj) # also retain elements that are in the keep list
 
-		volConstraint, volConstraint_gradient = compute_volume_constraint_and_gradient(x, to_params.DesiredVolFraction)
+		volConstraint, volConstraint_gradient = compute_volume_constraint_and_gradient(x, volFractionConstraint)
 
 		timeMMAStart = time.time()
 		mma_state = mma.update_mma(mma_state,
@@ -182,7 +188,6 @@ def topopt_mma(fe_solver, #hex_structural_fea.HexStructuralFEA or hex_thermal_fe
 			print("MMA optimization terminated due to maximum iterations.")
 			break
 
-
 	# Find threshold that preserves volume fraction
 	x_sorted = np.sort(x)
 	threshold = x_sorted[int((1-np.mean(x))*len(x))]
@@ -201,8 +206,8 @@ def topopt_mma(fe_solver, #hex_structural_fea.HexStructuralFEA or hex_thermal_fe
 	if (obj > 2*history['objective'][-2]):
 		errorMsg = "Disconnected topology"
 		success = False
-	if (volfrac > 1.1*to_params.DesiredVolFraction):
-		errorMsg = f"vf {to_params.DesiredVolFraction:0.3f} not reached"
+	if (volfrac > 1.1*volFractionConstraint):
+		errorMsg = f"vf {volFractionConstraint:0.3f} not reached"
 		success = False 
 	grey_elements = np.sum((x > 0.1) & (x < 0.9))
 	fraction_grey = (grey_elements / num_elems) 
@@ -218,7 +223,7 @@ if __name__ == "__main__":
 	from topopt_thermal_benchmarks import *
  
 	print("-" * 50)
-	to_problem = StructuralTOExamples.GravityPlate # Choose the TO problem
+	to_problem = StructuralTOExamples.Mitchell_1 # Choose the TO problem
 	#to_problem = ThermalTOExamples.FourCornersThermal # Choose the TO problem
 
 	if (to_problem in StructuralTOExamples):

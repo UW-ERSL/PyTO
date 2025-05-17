@@ -41,7 +41,13 @@ def topopt_optimality_criteria(
 	elemsWithForces = find_elements_with_forces(fe_solver.mesh, fe_solver.bc.force,nDOFPerNode)
 
 	# Initialize design variables
-	x = to_params.DesiredVolFraction * np.ones(num_elems, dtype = float)
+	constraintType = to_params.Constraints[0][0] # assume this is the first constraint
+	if (constraintType == TO_QOI.VOLUME_FRACTION):
+		volFractionConstraint = to_params.Constraints[0][2]
+	else:
+		raise ValueError(f"Unknown constraint type: {constraintType}")
+	
+	x = volFractionConstraint * np.ones(num_elems, dtype = float)
 	xPhys = x.copy()
 
 	if (fe_solver.elem_body_force is not None):
@@ -107,7 +113,7 @@ def topopt_optimality_criteria(
 			grad_obj[to_params.ElemsToKeep] = min(grad_obj) # also retain elements that are in the keep list
 
 	
-		volConstraint, _ = compute_volume_constraint_and_gradient(x, to_params.DesiredVolFraction)
+		volConstraint, _ = compute_volume_constraint_and_gradient(x, volFractionConstraint)
 
 		# Optimality criteria update
 		xold = x.copy()
@@ -123,7 +129,7 @@ def topopt_optimality_criteria(
 				b = np.maximum(b, 0.00) # avoid sqrt of negative numbers	
 				# OC update with damping and bounds
 				xnew = np.maximum(xmin,np.maximum(x - move,np.minimum(xmax, np.minimum(x + move, x * np.sqrt(b)))))
-				if np.sum(xnew) - to_params.DesiredVolFraction * num_elems > 0:
+				if np.sum(xnew) - volFractionConstraint * num_elems > 0:
 					l1 = lmid
 				else:
 					l2 = lmid	
@@ -136,11 +142,11 @@ def topopt_optimality_criteria(
 			varIn = np.ones(num_elems, dtype = bool)
 			xMaxVec = np.minimum(x+move, xmax)
 			xMinVec = np.maximum(x-move,xmin)
-			volToDistribute = to_params.DesiredVolFraction*num_elems
+			volToDistribute = volFractionConstraint*num_elems
 			varTimesGrad = x*(abs(grad_obj))**eta
 			while setChange:
 				xnew = varTimesGrad/((np.sum(varTimesGrad[varIn])+1e-9) /(volToDistribute+1e-9)) 
-				volToDistribute = to_params.DesiredVolFraction*num_elems -np.sum(xMaxVec[xnew>=xMaxVec]) -np.sum(xMinVec[xnew<=xMinVec])
+				volToDistribute = volFractionConstraint*num_elems -np.sum(xMaxVec[xnew>=xMaxVec]) -np.sum(xMinVec[xnew<=xMinVec])
 				setChange = not np.array_equal((xnew<xMaxVec) & (xnew>xMinVec), varIn)
 				varIn = (xnew < xMaxVec) & (xnew > xMinVec)
 			
@@ -176,12 +182,12 @@ def topopt_optimality_criteria(
 			dJ = abs((history['objective'][-1] - history['objective'][-2]) / history['objective'][-2])
 			# we need multiple checks else it will terminate too early 
 			if (dJ < rel_conv_tol) and (volConstraint < rel_conv_tol) and (change < 0.2) and (fraction_grey < 0.1): # success
-				print("MMA optimization converged.")
+				print("OC optimization converged.")
 				break
 
 			# Also this check for stalling
 			if (dJ < rel_conv_tol) and (volConstraint < rel_conv_tol) and (change < move_tol): # success
-				print("MMA optimization converged.")
+				print("OC optimization converged.")
 				break
 
 	if iter == maxIterations - 1:
@@ -208,8 +214,8 @@ def topopt_optimality_criteria(
 	if (obj > 2*history['objective'][-2]):
 		errorMsg = "Disconnected topology"
 		success = False
-	if (volfrac > 1.1*to_params.DesiredVolFraction):
-		errorMsg =  f"vf {to_params.DesiredVolFraction:0.3f} not reached"
+	if (volfrac > 1.1*volFractionConstraint):
+		errorMsg =  f"vf {volFractionConstraint:0.3f} not reached"
 		success = False
 
 	nFEAs = iter + 1
@@ -223,7 +229,7 @@ if __name__ == "__main__":
 	from topopt_thermal_benchmarks import *
 
 	print("-" * 50)
-	to_problem = StructuralTOExamples.GravityPlate # Choose the TO problem
+	to_problem = StructuralTOExamples.Mitchell_2 # Choose the TO problem
 	#to_problem = ThermalTOExamples.FourCornersThermal # Choose the TO problem
 
 	if (to_problem in StructuralTOExamples):

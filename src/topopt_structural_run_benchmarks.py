@@ -163,7 +163,7 @@ def runTOMethodOnStructuralBenchmarks(optimizationMethod):
 
 def combine_results():
 	# Get the latest results directory
-	for subFolder in ["2.5D", "3D"]:
+	for subFolder in ["2.5D", "3D", "BodyForce"]:
 		# Get the latest results directory for the given subfolder
 		# Use glob to find all matching directories and sort them
 		# Use time.strftime to get the current date in the format YYYY-MM-DD

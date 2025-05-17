@@ -1531,13 +1531,8 @@ def createCentrifugalPlateProblem(nDOFDesired: int = 10000,
   vertical_load_dofs = 3 * vertical_load_nodes + 2  # z direction
   boundaryForce[vertical_load_dofs] = -verticalLoad / len(vertical_load_nodes)
 
-  centrifugal_force_norm = np.linalg.norm(elem_body_force[::3])
-  print("Centrifugal force norm:", centrifugal_force_norm)
-
-  
   bc = bound_cond.BC(force = boundaryForce,fixed_dofs = fixed_dofs,dirichlet_values = dirichlet_values) 
 
-  
   
   return mesh, mat_prop, bc, elem_body_force
 # ----------------------------------------

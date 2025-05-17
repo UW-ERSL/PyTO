@@ -113,11 +113,19 @@ def topopt_pareto(fe_solver,
 	# Observation: Damping using the previous sensitivity values avoids getting trapped in local minima
 	wtDamping = 0.5 # 0 means full wt to current T values, else previous T values are damped in
 
-	while volfrac > to_params.DesiredVolFraction:
+	
+		
+	constraintType = to_params.Constraints[0][0] # assume this is the first constraint
+	if (constraintType == TO_QOI.VOLUME_FRACTION):
+		volFractionConstraint = to_params.Constraints[0][2]
+	else:
+		raise ValueError(f"Unknown constraint type: {constraintType}")
+	
+	while volfrac > volFractionConstraint:
 		if (plot_progress):
 			fe_solver.plot_mesh(plot_bc = False,auto_close = False, title = f'Volfrac: {volfrac:0.3f}')
 		# Move to next volume fraction
-		volfrac = max(to_params.DesiredVolFraction, volfrac - vol_decr)
+		volfrac = max(volFractionConstraint, volfrac - vol_decr)
 		if (debug):
 			print("-" * 50)
 			print(f"Attempting v={volfrac:.3f}")

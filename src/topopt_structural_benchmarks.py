@@ -49,7 +49,6 @@ def getStructuralTOProblem(to_problem: StructuralTOExamples,nDOFDesired = None, 
         to_params.Comment = "Benchmark 2.5D"
         to_params.ExtrudeZ = True
         to_params.nDOFDesired = 25000 if nDOFDesired is None else nDOFDesired
-        to_params.DesiredVolFraction = 0.5
     elif to_problem == StructuralTOExamples.Mitchell_2:
         structural_problem = StructuralExamples.Mitchell
         kwargs['load1'] = 2.8e4
@@ -57,7 +56,6 @@ def getStructuralTOProblem(to_problem: StructuralTOExamples,nDOFDesired = None, 
         to_params.Comment = "Benchmark 2.5D"
         to_params.ExtrudeZ = True
         to_params.nDOFDesired = 25000 if nDOFDesired is None else nDOFDesired
-        to_params.DesiredVolFraction = 0.5
     elif to_problem == StructuralTOExamples.Mitchell_3:
         structural_problem = StructuralExamples.Mitchell
         kwargs['load1'] = 3.72e4
@@ -65,62 +63,54 @@ def getStructuralTOProblem(to_problem: StructuralTOExamples,nDOFDesired = None, 
         to_params.Comment = "Benchmark 2.5D"
         to_params.ExtrudeZ = True
         to_params.nDOFDesired = 25000 if nDOFDesired is None else nDOFDesired
-        to_params.DesiredVolFraction = 0.5
     elif to_problem == StructuralTOExamples.ShortCantileverTipLoad:
         structural_problem = StructuralExamples.ShortCantileverTipLoad
         to_params.Comment  = "Benchmark 2.5D"
         to_params.ExtrudeZ = True
         to_params.nDOFDesired = 25000 if nDOFDesired is None else nDOFDesired
-        to_params.DesiredVolFraction = 0.5
     elif to_problem == StructuralTOExamples.ShortCantileverMidLoad:
         structural_problem = StructuralExamples.ShortCantileverMidLoad
         to_params.Comment  = "Benchmark 2.5D"
         to_params.YSymmetry = True  # Symmetry about the Y-axis
         to_params.ExtrudeZ = True
         to_params.nDOFDesired = 25000 if nDOFDesired is None else nDOFDesired
-        to_params.DesiredVolFraction = 0.5
     elif to_problem == StructuralTOExamples.CantileverTipLoad:
         structural_problem = StructuralExamples.CantileverTipLoad
         to_params.Comment  = "Benchmark 2.5D"
         to_params.ExtrudeZ = True
         to_params.nDOFDesired = 25000 if nDOFDesired is None else nDOFDesired
-        to_params.DesiredVolFraction = 0.5
     elif to_problem == StructuralTOExamples.CantileverMidLoad:
         structural_problem = StructuralExamples.CantileverMidLoad
         to_params.Comment  = "Benchmark 2.5D"
         to_params.YSymmetry = True  # Symmetry about the Y-axis
         to_params.ExtrudeZ = True
         to_params.nDOFDesired = 25000 if nDOFDesired is None else nDOFDesired
-        to_params.DesiredVolFraction = 0.5
     elif to_problem == StructuralTOExamples.CantileverTipLoadDisplacementObjective:
         structural_problem = StructuralExamples.CantileverTipLoad
         to_params.Comment  = "Benchmark 2.5D"
+        to_params.Objective = [(TO_QOI.GVECTOR, None)] # see below for setting the GVECTOR after mesh is created
         to_params.ExtrudeZ = True
         to_params.nDOFDesired = 25000 if nDOFDesired is None else nDOFDesired
-        to_params.DesiredVolFraction = 0.5
-        to_params.Objective = TO_OBJECTIVES.GENERIC
-        # Also see below for the objective function
+        to_params.Constraints = [(TO_QOI.VOLUME_FRACTION, None, 0.5), (TO_QOI.RELATIVE_COMPLIANCE, None, 3)] 
     elif to_problem == StructuralTOExamples.MBBB:
         structural_problem = StructuralExamples.MBBB
         to_params.Comment  = "Benchmark 2.5D"
         to_params.nDOFDesired = 60000 if nDOFDesired is None else nDOFDesired
-        to_params.DesiredVolFraction = 0.25
+        to_params.Constraints = [(TO_QOI.VOLUME_FRACTION, None, 0.25)] 
     elif to_problem == StructuralTOExamples.DistributedLoad:
         structural_problem = StructuralExamples.DistributedLoad
         to_params.Comment  = "Benchmark 2.5D"
         to_params.XSymmetry = True 
         to_params.ExtrudeZ = True
         to_params.nDOFDesired = 50000 if nDOFDesired is None else nDOFDesired
-        to_params.DesiredVolFraction = 0.5
     elif to_problem == StructuralTOExamples.Inverter:
         structural_problem = StructuralExamples.Inverter
         to_params.Comment  = "Compliant Mechanism"
-        to_params.YSymmetry = True 
+        to_params.Objective = [(TO_QOI.GVECTOR, None)] # see below for setting the GVECTOR after mesh is created
+        to_params.YSymmetry = True
         to_params.ExtrudeZ = True
         to_params.nDOFDesired = 20000 if nDOFDesired is None else nDOFDesired
-        to_params.DesiredVolFraction = 0.3
-        to_params.Objective = TO_OBJECTIVES.GENERIC
-        # Also see below for the objective function
+        to_params.Constraints = [(TO_QOI.VOLUME_FRACTION, None, 0.3), (TO_QOI.RELATIVE_COMPLIANCE, None, 3)] 
     elif to_problem == StructuralTOExamples.LBracketTopLoad:
         structural_problem = StructuralExamples.LBracket
         kwargs['topload'] = 1.5e4
@@ -128,7 +118,6 @@ def getStructuralTOProblem(to_problem: StructuralTOExamples,nDOFDesired = None, 
         to_params.Comment  = "Benchmark 2.5D"
         to_params.ExtrudeZ = True
         to_params.nDOFDesired = 25000 if nDOFDesired is None else nDOFDesired
-        to_params.DesiredVolFraction = 0.5
     elif to_problem == StructuralTOExamples.LBracketMidLoad:
         structural_problem = StructuralExamples.LBracket
         kwargs['topload'] = 0
@@ -136,40 +125,38 @@ def getStructuralTOProblem(to_problem: StructuralTOExamples,nDOFDesired = None, 
         to_params.Comment  = "Benchmark 2.5D"
         to_params.ExtrudeZ = True
         to_params.nDOFDesired = 25000 if nDOFDesired is None else nDOFDesired
-        to_params.DesiredVolFraction = 0.5
     elif to_problem == StructuralTOExamples.TwoBar:
         structural_problem = StructuralExamples.TwoBar
         to_params.Comment  = "Benchmark 2.5D"
         to_params.ExtrudeZ = True
         to_params.YSymmetry = True  # Symmetry about the Y-axis
         to_params.nDOFDesired = 25000 if nDOFDesired is None else nDOFDesired
-        to_params.DesiredVolFraction = 0.25
+        to_params.Constraints = [(TO_QOI.VOLUME_FRACTION, None, 0.25)] 
     elif to_problem == StructuralTOExamples.TorquePlate:
         structural_problem = StructuralExamples.TorquePlate
         to_params.Comment  = "Benchmark 2.5D"
         to_params.ZAxisAngularSymmetry = 6
         to_params.ExtrudeZ = True
         to_params.nDOFDesired = 50000 if nDOFDesired is None else nDOFDesired
-        to_params.DesiredVolFraction = 0.5
     elif to_problem == StructuralTOExamples.EdgeCantilever:
         structural_problem = StructuralExamples.EdgeCantilever
         to_params.Comment = "Benchmark 3D"
         to_params.YSymmetry = True
         to_params.nDOFDesired = 75000 if nDOFDesired is None else nDOFDesired
-        to_params.DesiredVolFraction = 0.25
+        to_params.Constraints = [(TO_QOI.VOLUME_FRACTION, None, 0.25)] 
     elif to_problem == StructuralTOExamples.ThreeHoleBracket:
         structural_problem = StructuralExamples.ThreeHoleBracket
         to_params.Comment  = "Retaining Material"
         to_params.ZSymmetry = True
         to_params.KeepFixedElems = True
         to_params.nDOFDesired = 75000 if nDOFDesired is None else nDOFDesired
-        to_params.DesiredVolFraction = 0.25
+        to_params.Constraints = [(TO_QOI.VOLUME_FRACTION, None, 0.25)] 
     elif to_problem == StructuralTOExamples.Multiload:
         structural_problem = StructuralExamples.Multiload
         to_params.Comment  = "Multiple Loading"
         to_params.ZSymmetry = True
         to_params.nDOFDesired = 75000
-        to_params.DesiredVolFraction = 0.25
+        to_params.Constraints = [(TO_QOI.VOLUME_FRACTION, None, 0.25)] 
     elif to_problem == StructuralTOExamples.LBracketThickTopLoad:
         structural_problem = StructuralExamples.LBracketThick
         to_params.Comment  = "3D"
@@ -177,7 +164,7 @@ def getStructuralTOProblem(to_problem: StructuralTOExamples,nDOFDesired = None, 
         kwargs['topload'] = 1.5e4
         kwargs['midload'] = 0
         to_params.nDOFDesired = 75000 if nDOFDesired is None else nDOFDesired
-        to_params.DesiredVolFraction = 0.25
+        to_params.Constraints = [(TO_QOI.VOLUME_FRACTION, None, 0.25)] 
     elif to_problem == StructuralTOExamples.LBracketThickMidLoad:
         structural_problem = StructuralExamples.LBracketThick
         to_params.Comment  = "3D"
@@ -185,28 +172,28 @@ def getStructuralTOProblem(to_problem: StructuralTOExamples,nDOFDesired = None, 
         kwargs['topload'] = 0
         kwargs['midload'] = 1.5e4
         to_params.nDOFDesired = 75000 if nDOFDesired is None else nDOFDesired
-        to_params.DesiredVolFraction = 0.25
+        to_params.Constraints = [(TO_QOI.VOLUME_FRACTION, None, 0.25)] 
     elif to_problem == StructuralTOExamples.KnuckleAssembly:
         structural_problem = StructuralExamples.KnuckleAssembly
         to_params.Comment = "Retaining Components"
         to_params.XSymmetry = True
         to_params.ZSymmetry = True
         to_params.nDOFDesired = 75000 if nDOFDesired is None else nDOFDesired
-        to_params.DesiredVolFraction = 0.25
+        to_params.Constraints = [(TO_QOI.VOLUME_FRACTION, None, 0.25)] 
     elif to_problem == StructuralTOExamples.Table:
         structural_problem = StructuralExamples.Table
         to_params.Comment = "Thin Structure"
         to_params.XSymmetry = True
         to_params.ZSymmetry = True
         to_params.nDOFDesired = 75000 if nDOFDesired is None else nDOFDesired
-        to_params.DesiredVolFraction = 0.1
+        to_params.Constraints = [(TO_QOI.VOLUME_FRACTION, None, 0.1)] 
     elif to_problem == StructuralTOExamples.GravityPlate:
         structural_problem = StructuralExamples.GravityPlate
         to_params.Comment  = "Body Force"
         to_params.XSymmetry = True
         to_params.nDOFDesired = 25000 if nDOFDesired is None else nDOFDesired
         to_params.RelativeFilterRadius = 2.0
-        to_params.DesiredVolFraction = 0.1
+        to_params.Constraints = [(TO_QOI.VOLUME_FRACTION, None, 0.1)] 
         to_params.APPLY_FILTER_TO_SENSITIVITY = False # Apply filter to density
         to_params.APPLY_FILTER_TO_DENSITY = True # Apply filter to density
     elif to_problem == StructuralTOExamples.CentrifugalPlate:
@@ -215,7 +202,6 @@ def getStructuralTOProblem(to_problem: StructuralTOExamples,nDOFDesired = None, 
         to_params.ExtrudeZ = True
         to_params.ZAxisAngularSymmetry = 4
         to_params.nDOFDesired = 25000 if nDOFDesired is None else nDOFDesired
-        to_params.DesiredVolFraction = 0.5
         to_params.RelativeFilterRadius = 1.5
         to_params.APPLY_FILTER_TO_SENSITIVITY = False # Apply filter to density
         to_params.APPLY_FILTER_TO_DENSITY = True # Apply filter to density
@@ -226,14 +212,6 @@ def getStructuralTOProblem(to_problem: StructuralTOExamples,nDOFDesired = None, 
         to_params.KeepFixedElems = True
         to_params.RemoveHangingElems = False
         to_params.nDOFDesired = 100000 if nDOFDesired is None else nDOFDesired
-        to_params.DesiredVolFraction = 0.5
-    elif to_problem == StructuralTOExamples.NoseCone:
-        structural_problem = StructuralExamples.NoseCone
-        to_params.Comment  = "Large DOF"
-        to_params.KeepFixedElems = True
-        to_params.RemoveHangingElems = False
-        to_params.nDOFDesired = 100000 if nDOFDesired is None else nDOFDesired
-        to_params.DesiredVolFraction = 0.95
     else:
         raise ValueError(f"Unknown problem: {to_problem}")
     
@@ -260,20 +238,13 @@ def getStructuralTOProblem(to_problem: StructuralTOExamples,nDOFDesired = None, 
          #print("Elems to keep", to_params.ElemsToKeep.shape)
 
     if to_problem == StructuralTOExamples.CantileverTipLoadDisplacementObjective:
-        pt1 = [2, 0.0, 0.05] # tip node where force is applied
-        node1 = mesh.get_nodes_from_locations(pt1)
-        dof1 = 3*node1+1 # y dof
-
-        pt2 = [1, 0.5, 0.05] # point of interest
-        node2 = mesh.get_nodes_from_locations(pt2) 
-        dof2 = 3*node2+1 # y dof
+        pt = [1, 0.5, 0.05] # point of interest
+        node = mesh.get_nodes_from_locations(pt) 
+        dof = 3*node+1 # y dof
         g = np.zeros(3*mesh.num_nodes)
-        g[dof1] = -1
-        g[dof2] = -0.1
-
+        g[dof] = -1
         #to_params.ElemsToKeep, _ = mesh.get_element_containing_point(pt2)
-        to_params.ObjectiveFunction = g
-
+        to_params.Objective = [(TO_QOI.GVECTOR, g)] 
     if to_problem == StructuralTOExamples.Inverter:
         node_pts = mesh.node_xyz
         xMin = np.min(node_pts[:,0]) 
@@ -288,11 +259,10 @@ def getStructuralTOProblem(to_problem: StructuralTOExamples,nDOFDesired = None, 
         dof_input = 3*load_nodes # x dof
         dof_output= 3*outputNodes # x dof
 
-        
         g = np.zeros(3*mesh.num_nodes)
-        g[dof_input] = 0.6
+
         g[dof_output] = 1
 
         #to_params.ElemsToKeep, _ = mesh.get_element_containing_point(pt2)
-        to_params.ObjectiveFunction = g
+        to_params.Objective = [(TO_QOI.GVECTOR, g)] 
     return mesh, mat_prop, bc, elem_body_force, to_params

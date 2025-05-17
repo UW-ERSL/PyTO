@@ -1,6 +1,6 @@
 import enum
 from hex_thermal_examples import *
-from topopt_common import TOParams, find_elements_with_fixedDOF
+from topopt_common import *
 
 class ThermalTOExamples(enum.Enum):
 	HeatPlate = enum.auto()
@@ -18,19 +18,17 @@ def getThermalTOProblem(to_problem: ThermalTOExamples,nDOFDesired = None, **kwar
         to_params.Comment = "Benchmark 2.5D"
         to_params.ExtrudeZ = True
         to_params.nDOFDesired = 25000 if nDOFDesired is None else nDOFDesired
-        to_params.DesiredVolFraction = 0.5
     elif to_problem == ThermalTOExamples.FourCornersThermal:
         thermal_problem = HexThermalExamples.FourCornersThermal
         to_params.Comment = "Benchmark 2.5D"
         to_params.ExtrudeZ = True
         to_params.nDOFDesired = 25000 if nDOFDesired is None else nDOFDesired
-        to_params.DesiredVolFraction = 0.75
+        to_params.Constraints = [(TO_QOI.VOLUME_FRACTION, None, 0.75)]
     elif to_problem == ThermalTOExamples.BridgeThermal:
         thermal_problem = HexThermalExamples.BridgeThermal
         to_params.Comment = "Benchmark 2.5D"
         to_params.ExtrudeZ = True
         to_params.nDOFDesired = 25000 if nDOFDesired is None else nDOFDesired
-        to_params.DesiredVolFraction = 0.5
     else:
         raise ValueError(f"Unknown problem: {to_problem}")
     
