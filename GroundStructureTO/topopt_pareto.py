@@ -1,7 +1,11 @@
+import sys
+sys.path.append('../PyTO-1/src') #assuming the PyTO is in the parent directory
 from topopt_common import *
 from topopt_filters import imposeZCastFilter
 import time
 import numpy as np
+from trussopt_to_PyTO import *
+
 def topopt_pareto(fe_solver: hex_structural_fea.HexStructuralFEA,
 				  to_params,
 							rel_err: float = 0.02,
@@ -12,7 +16,8 @@ def topopt_pareto(fe_solver: hex_structural_fea.HexStructuralFEA,
 							xVoid: float = 0,
 							print_progress: bool = True,
 							plot_progress: bool = False,
-							debug: bool = False
+							debug: bool = False,
+							b_trussOpt_initialization: bool = False
 							)-> tuple[np.ndarray, dict]:
 	"""Pareto method for Topology Optimization.
 
@@ -43,6 +48,12 @@ def topopt_pareto(fe_solver: hex_structural_fea.HexStructuralFEA,
 	# Initialize design field
 	x = np.ones((fe_solver.mesh.num_elems))
 	volfrac = 1.0
+
+	if (b_trussOpt_initialization):
+		print("Truss opt initialization: Pareto")	
+		x = get_3D_rho_from_2D(fe_solver.mesh, use_binary_fill = True, b_plot = False) 
+		volfrac = np.mean(x)  
+	
 	
 	history = {'compliance': [], 'volume': []}
 	if (print_progress):
@@ -218,7 +229,7 @@ if __name__ == "__main__":
 	import plots
 	
 	print("-" * 50)
-	to_problem = StructuralTOExamples.DistributedLoad # Choose the TO problem
+	to_problem = StructuralTOExamples.CantileverMidLoad # Choose the TO problem
 	print(f"Running {to_problem.name}...") 
 	print("-" * 50)
 	
@@ -264,7 +275,8 @@ if __name__ == "__main__":
 	u, history, success,errorMsg,nFEAs = topopt_pareto(fe_solver = fe_solver,
 									to_params = to_params,
 									plot_progress= False,
-									debug = debug)
+									debug = debug,
+									b_trussOpt_initialization = True)
 	
 	timeTaken = time.time() - startTime
 	print(f"Time taken: {timeTaken:.0f} s")
@@ -273,9 +285,9 @@ if __name__ == "__main__":
 
 	title = f"Pareto: nDOF: {3*fe_solver.mesh.num_nodes}, vol: {history['volume'][-1]:0.2f}, J: {history['compliance'][-1]:.3g}, time: {timeTaken:.0f} s"
 	fe_solver.plot_mesh(title = title, save_path = None, plot_bc = False)
-	plots.plotIsocontour(fe_solver.mesh)
+	#plots.plotIsocontour(fe_solver.mesh)
 
-	plots_demo.export_vtu_mesh(fe_solver.mesh, title = title)
+	#plots_demo.export_vtu_mesh(fe_solver.mesh, title = title)
 
 		
 	# plot other quantities over the optimized mesh
@@ -289,6 +301,6 @@ if __name__ == "__main__":
 	plt.ylabel('Compliance')
 	plt.title('Pareto: Volume vs Compliance History')
 	plt.grid(True)
-	plt.show(block=False)
+	plt.show()
 	
 	

@@ -130,22 +130,6 @@ def trussopt(width, height, st, sc, jc):
     #plotTruss(Nd, Cn, a, q, max(a) * 1e-3, "Finished", False)
     return Nd, Cn, a, q
 
-def export_truss_opt_to_csv(Nd, Cn, a):
-    # Trim to active members
-    Cn_trim = Cn[:, :3]  # Remove the last column (status)
-
-    # Stack everything: [x1, y1, x2, y2, area]
-    bar_data = []
-    for i in range(len(Cn_trim)):
-        n1, n2, _ = Cn_trim[i].astype(int)
-        x1, y1 = Nd[n1]
-        x2, y2 = Nd[n2]
-        bar_data.append([x1, y1, x2, y2, a[i]])
-
-    bar_data = np.array(bar_data)
-    np.savetxt("truss_output.csv", bar_data, delimiter=",",
-            header="x1,y1,x2,y2,area", comments='')
-
 #Execution function when called directly by Python
 if __name__ =='__main__': 
     trussopt(width = 20, height = 10, st = 1, sc =1, jc = 1) #much larger jc value if you want only a handful of members in the final design.

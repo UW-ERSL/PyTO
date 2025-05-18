@@ -72,7 +72,7 @@ def topopt_mma(fe_solver: hex_structural_fea.HexStructuralFEA,
 	x0 = to_params.DesiredVolFraction * np.ones(num_elems, dtype = float)
 	if (b_trussOpt_initialization):
 		print("Truss opt initialization: MMA")	
-		x0 = get_3D_rho_from_2D(fe_solver.mesh, b_plot = True)  
+		x0 = get_3D_rho_from_2D(fe_solver.mesh, use_binary_fill = True, b_plot = False)  
 		fe_solver.mesh.setPseudoDensity(x0)
 		fe_solver.plot_pseudo_density(title = f"Initial Density")
 	x0 = x0.reshape(-1, 1)

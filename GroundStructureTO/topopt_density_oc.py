@@ -47,7 +47,7 @@ def topopt_optimality_criteria(
 	x = to_params.DesiredVolFraction * np.ones(num_elems, dtype = float)
 	if (b_trussOpt_initialization):
 		print("Truss opt initialization: OC")	
-		x = get_3D_rho_from_2D(fe_solver.mesh, b_plot = True)  
+		x = get_3D_rho_from_2D(fe_solver.mesh, use_binary_fill = True, b_plot = False)  
 	
 	fe_solver.mesh.setPseudoDensity(x)
 	fe_solver.plot_pseudo_density(title = f"Initial Density")
@@ -249,7 +249,7 @@ if __name__ == "__main__":
 											to_params = to_params,
 											plot_progress = False,
 											debug = debug, 
-											b_trussOpt_initialization = True)
+											b_trussOpt_initialization = False)
 	timeTaken = time.time() - startTime
 	print(f"Time taken: {timeTaken:.0f} s")
 	if not success:
