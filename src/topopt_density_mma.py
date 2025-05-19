@@ -43,7 +43,7 @@ def topopt_mma(fe_solver, #hex_structural_fea.HexStructuralFEA or hex_thermal_fe
 	[H,Hs] = createFilters(fe_solver, to_params)
 
 	elemsWithForces = find_elements_with_forces(fe_solver.mesh, fe_solver.bc.force,nDOFPerNode)
-	nConstraints = 1
+	nConstraints = len(to_params.Constraints)
 
 	xmin = 0 # Minimum density
 	mma_params = mma.MMAParams(max_iter=maxMMAIterations,
@@ -135,15 +135,15 @@ def topopt_mma(fe_solver, #hex_structural_fea.HexStructuralFEA or hex_thermal_fe
 		if (to_params.ElemsToKeep is not None):
 			grad_obj[to_params.ElemsToKeep] = min(grad_obj) # also retain elements that are in the keep list
 
-		volConstraint, volConstraint_gradient = compute_volume_constraint_and_gradient(x, volFractionConstraint)
+		c, dcdx = compute_constraint_and_gradient(to_params,sol,x, fe_solver,KE, material_model)
 
 		timeMMAStart = time.time()
 		mma_state = mma.update_mma(mma_state,
 										mma_params,
 										np.array([obj]),
 										np.array([grad_obj]).reshape((num_elems, 1)),
-										np.array([volConstraint]).reshape((1, 1)),
-										volConstraint_gradient.reshape((1, num_elems))
+										c,
+										dcdx
 										)
 			
 
@@ -167,12 +167,12 @@ def topopt_mma(fe_solver, #hex_structural_fea.HexStructuralFEA or hex_thermal_fe
 				print(f"relative Change in Objective: {dJ:.4g}")	
 
 			# From experiments,  multiple checks were needed to ensure convergence
-			if (dJ < rel_conv_tol) and (volConstraint < rel_conv_tol) and (change < 0.2) and (fraction_grey < 0.1): # success
+			if (dJ < rel_conv_tol) and (c[0] < rel_conv_tol) and (change < 0.2) and (fraction_grey < 0.1): # success
 				print("MMA optimization converged.")
 				break
 
 			# Also this check for stalling
-			if (dJ < rel_conv_tol) and (volConstraint < rel_conv_tol) and (change < move_tol): # success
+			if (dJ < rel_conv_tol) and (c[0] < rel_conv_tol) and (change < move_tol): # success
 				print("MMA optimization converged.")
 				break
 
@@ -223,8 +223,9 @@ if __name__ == "__main__":
 	from topopt_thermal_benchmarks import *
  
 	print("-" * 50)
-	to_problem = StructuralTOExamples.CantileverMidLoad # Choose the TO problem
+	# to_problem = StructuralTOExamples.CantileverMidLoad # Choose the TO problem
 	#to_problem = ThermalTOExamples.FourCornersThermal # Choose the TO problem
+	to_problem = StructuralTOExamples.Inverter
 
 	if (to_problem in StructuralTOExamples):
 		mesh, mat_prop, bc,elem_body_force, to_params = getStructuralTOProblem(to_problem)
@@ -238,6 +239,7 @@ if __name__ == "__main__":
 	debug = False
 
 	dsolver = deflation.DeflationSolver()
+	print(to_params)
 	if (to_params.nDOFDesired > DIRECT_SOLVER_DOF_CUTOFF):# Typically PARDISO, but DPCG for large DOF problems
 		solver = lin_solv.Solvers.DPCG
 		nGroups =  min(dsolver.maxGroups,max(dsolver.minGroups,round(3*mesh.num_nodes/dsolver.dofPerGroup)))
