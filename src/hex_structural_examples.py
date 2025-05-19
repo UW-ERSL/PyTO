@@ -1807,7 +1807,7 @@ def createKnuckleAssemblyProblem(nDOFDesired: int = 10000, youngs_modulus = [2e1
   return mesh, mat_prop, bc, elem_body_force
 
 
-def createTableProblem(nDOFDesired: int = 10000, totalLoad =  1000):
+def createTableProblem(nDOFDesired: int = 10000, totalLoad =  100000):
  
   # Read the STL model, create a mesh of desired size, and a structural problem is posed on it.
   stl_file = os.path.join(script_dir, '../Models/Table/Table.STL')

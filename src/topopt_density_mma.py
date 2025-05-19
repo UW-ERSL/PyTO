@@ -97,7 +97,7 @@ def topopt_mma(fe_solver, #hex_structural_fea.HexStructuralFEA or hex_thermal_fe
 		nodal_body_force = None
 
 	success = True
-	errorMsg = ""
+	errorMsg = "None"
 	nFEAs = 0
 
 	while True:
@@ -223,7 +223,7 @@ if __name__ == "__main__":
 	from topopt_thermal_benchmarks import *
  
 	print("-" * 50)
-	to_problem = StructuralTOExamples.Mitchell_1 # Choose the TO problem
+	to_problem = StructuralTOExamples.CantileverMidLoad # Choose the TO problem
 	#to_problem = ThermalTOExamples.FourCornersThermal # Choose the TO problem
 
 	if (to_problem in StructuralTOExamples):

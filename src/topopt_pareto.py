@@ -109,7 +109,7 @@ def topopt_pareto(fe_solver,
 	
 	success = True
 	terminatePareto = False
-	errorMsg = ""
+	errorMsg = "None"
 	# Observation: Damping using the previous sensitivity values avoids getting trapped in local minima
 	wtDamping = 0.5 # 0 means full wt to current T values, else previous T values are damped in
 
@@ -211,7 +211,7 @@ def topopt_pareto(fe_solver,
 			totalIter += 1
 			
 		if terminatePareto:
-			if (volfrac > 1.1*to_params.DesiredVolFraction):
+			if (volfrac > 1.1*volFractionConstraint):
 				success = False
 				errorMsg =  f"vf {to_params.DesiredVolFraction:0.3f} not reached"
 				print("-" * 50)
@@ -229,7 +229,6 @@ def topopt_pareto(fe_solver,
 			fe_solver.mesh.setPseudoDensity(x.flatten())
 
 
-
 	totalTime = time.time() - tStart
 
 	print(f"Final vf: {history['volume'][-1]:.3f},  objective: {history['objective'][-1]:.4g}")
@@ -242,11 +241,11 @@ if __name__ == "__main__":
 	from topopt_thermal_benchmarks import *
 	
 	print("-" * 50)
-	to_problem = StructuralTOExamples.GravityPlate # Choose the TO problem
+	to_problem = StructuralTOExamples.CantileverMidLoad # Choose the TO problem
 	#to_problem = ThermalTOExamples.BridgeThermal # Choose the TO problem
 
 	if (to_problem in StructuralTOExamples):
-		mesh, mat_prop, bc,elem_body_force, to_params = getStructuralTOProblem(to_problem)
+		mesh, mat_prop, bc,elem_body_force, to_params = getStructuralTOProblem(to_problem,nDOFDesired=50000)
 	elif (to_problem in ThermalTOExamples):
 		mesh, mat_prop, bc,elem_body_force, to_params = getThermalTOProblem(to_problem)
 

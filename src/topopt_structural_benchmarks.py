@@ -110,7 +110,7 @@ def getStructuralTOProblem(to_problem: StructuralTOExamples,nDOFDesired = None, 
         to_params.YSymmetry = True
         to_params.ExtrudeZ = True
         to_params.nDOFDesired = 20000 if nDOFDesired is None else nDOFDesired
-        to_params.Constraints = [(TO_QOI.VOLUME_FRACTION, None, 0.3), (TO_QOI.RELATIVE_COMPLIANCE, None, 3)] 
+        to_params.Constraints = [(TO_QOI.VOLUME_FRACTION, None, 0.3), (TO_QOI.COMPLIANCE, None, 3)] 
     elif to_problem == StructuralTOExamples.LBracketTopLoad:
         structural_problem = StructuralExamples.LBracket
         kwargs['topload'] = 1.5e4
@@ -186,7 +186,7 @@ def getStructuralTOProblem(to_problem: StructuralTOExamples,nDOFDesired = None, 
         to_params.XSymmetry = True
         to_params.ZSymmetry = True
         to_params.nDOFDesired = 75000 if nDOFDesired is None else nDOFDesired
-        to_params.Constraints = [(TO_QOI.VOLUME_FRACTION, None, 0.1)] 
+        to_params.Constraints = [(TO_QOI.VOLUME_FRACTION, None, 0.15)] 
     elif to_problem == StructuralTOExamples.GravityPlate:
         structural_problem = StructuralExamples.GravityPlate
         to_params.Comment  = "Body Force"
