@@ -177,7 +177,27 @@ def compute_solution_dotproduct_and_gradient(sol: np.ndarray, x,fe_solver,KE,mat
 	elif (nRows == 8): # thermal hex
 		compliance_grad = get_thermal_material_model_sensitivity(x,material_model) * ce
 	return obj, compliance_grad
-
+	
+def compute_constraint_and_gradient(to_params, sol: np.ndarray, x: np.ndarray,	fe_solver, KE,
+				material_model = None,) -> tuple:
+	
+	nConstraints = len(to_params.Constraints)
+	c = np.zeros((nConstraints,1))	
+	dc = np.zeros((nConstraints,x.size))
+	
+	for m in range(nConstraints):
+		constraintType  = to_params.Constraints[m][0]	# first entry is the type of constraint			
+		if (constraintType == TO_QOI.COMPLIANCE): 
+			compliance, compliance_grad = compute_compliance_and_gradient(sol, x, fe_solver, KE, material_model)
+			complianceConstraint =  (compliance/to_params.Constraints[m][2] - 1.0)
+			complianceConstraint_gradient =  (compliance_grad/to_params.Constraints[m][2])
+			c[m,0],dc[m,:] = complianceConstraint, complianceConstraint_gradient[np.newaxis]
+		elif (constraintType == TO_QOI.VOLUME_FRACTION):
+			volConstraint, volConstraint_gradient = compute_volume_constraint_and_gradient(x,to_params.Constraints[m][2])
+			c[m,0], dc[m,:] = volConstraint, volConstraint_gradient[np.newaxis]
+		else:
+			raise NotImplementedError(" objective is not implemented yet.")
+		
 def compute_objective_and_gradient(to_params, sol: np.ndarray, x: np.ndarray,	fe_solver, KE,
 				material_model = None) -> tuple:
 							
