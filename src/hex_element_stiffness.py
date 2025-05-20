@@ -3,9 +3,9 @@
 import numpy as np
 import scipy.special as spy_spl
 import mat_lib
+from numba import njit
 
-
-
+@njit(cache=True)
 def get_gauss_integ_points_weights(order: int,
                                    dimension: int,
                                    )->tuple[np.ndarray, np.ndarray]:
@@ -29,7 +29,12 @@ def get_gauss_integ_points_weights(order: int,
   """
   # Get 1D Gauss points and weights
   # Hard-coded for order = 6
-  if (order == 6):
+
+  # For order = 2
+  if (order == 2):
+    x = np.array([-0.5773502691896257, 0.5773502691896257])
+    w = np.array([1.0, 1.0])
+  elif (order == 6):
     x = np.array([-0.9324695142031521, -0.6612093864662645, -0.2386191860831969,
                 0.2386191860831969, 0.6612093864662645, 0.9324695142031521])
     w = np.array([0.1713244923791704, 0.3607615730481386, 0.4679139345726910,
@@ -82,7 +87,7 @@ def edge_connectivity()->tuple[np.ndarray, np.ndarray]:
             np.array([1, 2, 3, 0, 5, 6, 7, 4, 4, 5, 6, 7]).astype(int))
 
 
-
+@njit(cache=True)
 def shape_functions(gauss_pts: np.ndarray,
                       )->np.ndarray:
     """Compute the shape functions at the given xi, eta, zeta.
@@ -104,7 +109,7 @@ def shape_functions(gauss_pts: np.ndarray,
     return N
 
 
-
+@njit(cache=True)
 def shape_function_gradients_isoparametric(
                               gauss_pts: np.ndarray,
                               )->np.ndarray:
@@ -135,7 +140,7 @@ def shape_function_gradients_isoparametric(
     return np.stack((dN_dxi, dN_deta, dN_dzeta), axis=2)
 
 
-
+@njit(cache=True)
 def compute_jacobian_and_determinant(gauss_pts: np.ndarray,
                                     xyz_nodes: np.ndarray,
                                     )-> tuple[np.ndarray, np.ndarray]:
@@ -153,12 +158,32 @@ def compute_jacobian_and_determinant(gauss_pts: np.ndarray,
     """
     gradN_isoparam = shape_function_gradients_isoparametric(gauss_pts)
     # (g)auss points, num_(n)odes, (d)[i]m
-    jac = np.einsum('gnd, ni -> gdi', gradN_isoparam, xyz_nodes)
+    # Initialize Jacobian matrix
+    num_gauss_pts = gauss_pts.shape[0]
+    jac = np.zeros((num_gauss_pts, 3, 3))
+    
+    # Calculate Jacobian for each gauss point without using einsum
+    # Use matrix multiplication to compute the Jacobian efficiently
+    for g in range(num_gauss_pts):
+      # Extract the shape function gradients for this Gauss point
+      dN_dxi = gradN_isoparam[g, :, 0]    # derivatives w.r.t xi
+      dN_deta = gradN_isoparam[g, :, 1]   # derivatives w.r.t eta
+      dN_dzeta = gradN_isoparam[g, :, 2]  # derivatives w.r.t zeta
+      
+      # Compute Jacobian using matrix multiplication
+      jac[g, :, 0] = dN_dxi @ xyz_nodes   # dx/dxi, dy/dxi, dz/dxi
+      jac[g, :, 1] = dN_deta @ xyz_nodes  # dx/deta, dy/deta, dz/deta
+      jac[g, :, 2] = dN_dzeta @ xyz_nodes # dx/dzeta, dy/dzeta, dz/dzeta
 
-    det_jac  = np.linalg.det(jac)
+    
+    # Calculate determinant of each Jacobian matrix
+    num_gauss_pts = gauss_pts.shape[0]
+    det_jac = np.zeros(num_gauss_pts)
+    for g in range(num_gauss_pts):
+      det_jac[g] = np.linalg.det(jac[g])
     return jac, det_jac
 
-
+@njit(cache=True)
 def get_gradient_shape_function_physical(gauss_pts: np.ndarray,
                                           xyz_nodes: np.ndarray,
                                           )->np.ndarray:
@@ -177,10 +202,21 @@ def get_gradient_shape_function_physical(gauss_pts: np.ndarray,
     # (g)auss points, num_(n)odes, (d)[i]m
     gradN_isoparam = shape_function_gradients_isoparametric(gauss_pts) # {gnd}
     jac, _ = compute_jacobian_and_determinant(gauss_pts, xyz_nodes)
-    return np.einsum('gdi, gnd->gni', np.linalg.inv(jac), gradN_isoparam)
+    # Initialize the gradient array with the same shape as gradN_isoparam
+    num_gauss_pts = gauss_pts.shape[0]
+    num_nodes = 8  # Number of nodes in hex element
+    grad = np.zeros((num_gauss_pts, num_nodes, 3))
+    
+    # For each gauss point, compute the physical gradient by multiplying
+    # the inverse of the Jacobian with the isoparametric gradients
+    for g in range(num_gauss_pts):
+      jac_inv = np.linalg.inv(jac[g])
+      for n in range(num_nodes):
+        grad[g, n] = jac_inv @ gradN_isoparam[g, n]
+    return grad
 
-
-def _isotropic_constitutive_matrix ( E, nu): 
+@njit(cache=True)
+def isotropic_constitutive_matrix ( E, nu): 
         return   (E/((1. + nu) * (1. - 2. * nu))) * np.array([[1. - nu, nu, nu, 0., 0., 0.],
                                         [nu, 1. - nu, nu, 0., 0., 0.],
                                         [nu, nu, 1. - nu, 0., 0., 0.],
@@ -190,10 +226,10 @@ def _isotropic_constitutive_matrix ( E, nu):
                                         ])
                                   
 
-
+@njit(cache=True)
 def hex8_stiffness_matrix_structural(E,nu,
               elem_size: tuple[float, float, float],
-              gauss_order: int = 6,
+              gauss_order: int = 2,
             ) -> np.ndarray:
   """Computes the element stiffness matrix of a hexahedral element in 3D.
     The stiffness matrix for linear structural elasticity is derived as:
@@ -217,14 +253,13 @@ def hex8_stiffness_matrix_structural(E,nu,
   nodes = np.array([[0, dx, dx, 0, 0, dx, dx, 0],
                     [0, 0, dy, dy, 0, 0, dy, dy],
                     [0, 0, 0, 0, dz, dz, dz, dz]]).T
-  c = _isotropic_constitutive_matrix(E,nu)
+  c = isotropic_constitutive_matrix(E,nu)
 
   # Initialize the element stiffness matrix.
   ke = np.zeros((24, 24))
 
  
-  gauss_pts, gauss_wts = get_gauss_integ_points_weights(gauss_order,
-														                            3)
+  gauss_pts, gauss_wts = get_gauss_integ_points_weights(gauss_order,3)
 
   jacobians, _ = compute_jacobian_and_determinant(gauss_pts, nodes)
   dN_dxyz = get_gradient_shape_function_physical(gauss_pts, nodes)
@@ -248,9 +283,10 @@ def hex8_stiffness_matrix_structural(E,nu,
     ke += b.T @ c @ b * np.linalg.det(jac) *gauss_wts[ctr]
   return ke
 
+@njit(cache=True)
 def hex8_mass_matrix_structural(mass_density, 
         elem_size: tuple[float, float, float],
-        gauss_order: int = 6,
+        gauss_order: int = 2,
       ) -> np.ndarray:
   """Computes the element mass matrix of a hexahedral element in 3D.
   The mass matrix for structural dynamics is derived as:
@@ -298,6 +334,7 @@ def hex8_mass_matrix_structural(mass_density,
 
   return me
 
+@njit(cache=True)
 def hex8_stiffness_matrix_thermal(thermal_conductivity,
               elem_size: tuple[float, float, float],
               gauss_order: int = 6,
@@ -348,6 +385,7 @@ def hex8_stiffness_matrix_thermal(thermal_conductivity,
     ke += K * b.T  @ b * np.linalg.det(jac) *gauss_wts[ctr]
   return ke
 
+@njit(cache=True)
 def hex8_specific_heat_matrix(mass_density, specific_heat,
         elem_size: tuple[float, float, float],
         gauss_order: int = 6,
@@ -379,8 +417,7 @@ def hex8_specific_heat_matrix(mass_density, specific_heat,
   ce = np.zeros((8, 8))
 
 
-  gauss_pts, gauss_wts = get_gauss_integ_points_weights(gauss_order, 
-                              3)
+  gauss_pts, gauss_wts = get_gauss_integ_points_weights(gauss_order, 3)
 
   jacobians, _ = compute_jacobian_and_determinant(gauss_pts, nodes)
   N = shape_functions(gauss_pts)
