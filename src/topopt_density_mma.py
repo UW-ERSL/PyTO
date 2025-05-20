@@ -211,11 +211,11 @@ def topopt_mma(fe_solver, #hex_structural_fea.HexStructuralFEA or hex_thermal_fe
 		success = False 
 	grey_elements = np.sum((x > 0.1) & (x < 0.9))
 	fraction_grey = (grey_elements / num_elems) 
-	if (errorMsg != ""):	
-		print(errorMsg)
+
 	print(f"Final objective: {obj:.4g}, vf: {np.mean(x):.3f}, grey: {fraction_grey:.3f}")
 	print(f"Time FEA: {timeFEA:.2f} s, Time MMA: {timeMMA:.2f} s")
 	print(f"Total Time: {timeFEA+timeMMA:.2f} s")
+	print("Error: ", errorMsg)
 	return np.asarray(sol), history,success,errorMsg,nFEAs
 	
 if __name__ == "__main__":    
@@ -225,7 +225,7 @@ if __name__ == "__main__":
 	print("-" * 50)
 	# to_problem = StructuralTOExamples.CantileverMidLoad # Choose the TO problem
 	#to_problem = ThermalTOExamples.FourCornersThermal # Choose the TO problem
-	to_problem = StructuralTOExamples.Inverter
+	to_problem = StructuralTOExamples.Mitchell_1
 
 	if (to_problem in StructuralTOExamples):
 		mesh, mat_prop, bc,elem_body_force, to_params = getStructuralTOProblem(to_problem)

@@ -221,6 +221,7 @@ def topopt_optimality_criteria(
 	nFEAs = iter + 1
 	print(f"Final objective: {obj:.4g}, vf: {np.mean(x):.3f}")
 	print(f"Total Time: {totalTime:.2f} s")
+	print("Error: ", errorMsg)
 	return sol, history, success, errorMsg, nFEAs
 
 	

@@ -31,8 +31,8 @@ class TO_QOI(enum.Enum): # Topology optimization; Various Quantity of Interest
 class TOParams: # These are the default parameters
     Comment = "" # Comment for the topology optimization problem
     Objective = (TO_QOI.COMPLIANCE,None) # Tuple of objective type and auxiliary function/vector	
-    Constraints = [(TO_QOI.VOLUME_FRACTION, None, 0.25)] # Collection of tuples of constraint type, auxiliary function/vector, and upper bound
-    nDOFDesired = 50000 # Desired number of degrees of freedom in the finite element problem
+    Constraints = [(TO_QOI.VOLUME_FRACTION, None, 0.5)] # Collection of tuples of constraint type, auxiliary function/vector, and upper bound
+    nDOFDesired = 25000 # Desired number of degrees of freedom in the finite element problem
     APPLY_FILTER_TO_SENSITIVITY = True # Apply filter to density
     APPLY_FILTER_TO_DENSITY = False # Apply filter to density
     RelativeFilterRadius = 1.5 #relative to the element size
@@ -197,7 +197,8 @@ def compute_constraint_and_gradient(to_params, sol: np.ndarray, x: np.ndarray,	f
 			c[m,0], dc[m,:] = volConstraint, volConstraint_gradient[np.newaxis]
 		else:
 			raise NotImplementedError(" objective is not implemented yet.")
-		
+	return c, dc
+
 def compute_objective_and_gradient(to_params, sol: np.ndarray, x: np.ndarray,	fe_solver, KE,
 				material_model = None) -> tuple:
 							

@@ -220,6 +220,15 @@ def topopt_pareto(fe_solver,
 				print("2. Increase mesh size")
 			break
 		if innerLoopSuccess:
+			meshComponents = fe_solver.mesh.find_connected_components()
+			if (len(meshComponents) > 1):
+				# Find the largest connected component and its size
+				largest_component = max(meshComponents, key=len)
+				# Set density to xVoid for all elements
+				x[:] = xVoid
+				# Set density to 1 for elements in largest component
+				x[list(largest_component)] = 1.0
+				fe_solver.mesh.setPseudoDensity(x.flatten())
 			history['objective'].append(JTemp)
 			history['volume'].append(volfrac)
 			scale = history['objective'][-1] / history['objective'][0]
@@ -233,6 +242,7 @@ def topopt_pareto(fe_solver,
 
 	print(f"Final vf: {history['volume'][-1]:.3f},  objective: {history['objective'][-1]:.4g}")
 	print(f"Total Time: {totalTime:.2f} s")
+	print("Error: ", errorMsg)
 	return sol, history, success,errorMsg,nFEAs
 
 

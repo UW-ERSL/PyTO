@@ -36,7 +36,7 @@ def runTOMethodOnStructuralBenchmarks(optimizationMethod):
 						StructuralTOExamples.CentrifugalPlate]
 	
 	
-	for to_problem in benchmarks_2_5D_problems + benchmarks_3D_problems:
+	for to_problem in benchmarks_2_5D_problems:
 		if to_problem in benchmarks_2_5D_problems:
 			subFolder = "2.5D"
 		elif to_problem in benchmarks_3D_problems:
@@ -92,7 +92,7 @@ def runTOMethodOnStructuralBenchmarks(optimizationMethod):
 		title = f"{optimizationMethod.name}: vol: {history['volume'][-1]:0.2f}, J: {history['objective'][-1]:.3g}, nFEA: {len(history['objective']):3d}, time: {timeTaken:.0f} s"
 	
 		fe_solver.plot_mesh(save_path=image_path, plot_bc = None, title=title)
-		print(errorMsg)
+	
 		results_list.append({
 			'name': to_problem.name,
 			'comment': to_params.Comment,  
