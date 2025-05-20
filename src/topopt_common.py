@@ -108,7 +108,7 @@ def compute_volume_constraint_and_gradient(x: np.ndarray,
 		value is negative.
 	"""
 
-	volConstraint = (np.mean(x)/volfracUpper) - 1.0
+	volConstraint = ((np.mean(x)/volfracUpper) - 1.0)
 	volConstraint_gradient = np.ones_like(x) / volfracUpper/ x.size
 	return volConstraint, volConstraint_gradient
 
@@ -183,7 +183,7 @@ def compute_constraint_and_gradient(to_params, sol: np.ndarray, x: np.ndarray,	f
 	
 	nConstraints = len(to_params.Constraints)
 	c = np.zeros((nConstraints,1))	
-	dc = np.zeros((nConstraints,x.size))
+	dcdx = np.zeros((nConstraints,x.size))
 	
 	for m in range(nConstraints):
 		constraintType  = to_params.Constraints[m][0]	# first entry is the type of constraint			
@@ -191,17 +191,18 @@ def compute_constraint_and_gradient(to_params, sol: np.ndarray, x: np.ndarray,	f
 			compliance, compliance_grad = compute_compliance_and_gradient(sol, x, fe_solver, KE, material_model)
 			complianceConstraint =  (compliance/to_params.Constraints[m][2] - 1.0)
 			complianceConstraint_gradient =  (compliance_grad/to_params.Constraints[m][2])
-			c[m,0],dc[m,:] = complianceConstraint, complianceConstraint_gradient[np.newaxis]
+			c[m,0],dcdx[m,:] = complianceConstraint, complianceConstraint_gradient[np.newaxis]
 		elif (constraintType == TO_QOI.VOLUME_FRACTION):
 			volConstraint, volConstraint_gradient = compute_volume_constraint_and_gradient(x,to_params.Constraints[m][2])
-			c[m,0], dc[m,:] = volConstraint, volConstraint_gradient[np.newaxis]
+			c[m,0], dcdx[m,:] = volConstraint, volConstraint_gradient[np.newaxis]
 		else:
 			raise NotImplementedError(" objective is not implemented yet.")
-		
+	return c, dcdx
+	
 def compute_objective_and_gradient(to_params, sol: np.ndarray, x: np.ndarray,	fe_solver, KE,
 				material_model = None) -> tuple:
 							
-	objectiveType  = to_params.Objective[0]	# first entry is the type of objective			
+	objectiveType  = to_params.Objective[0]	# first entry is the type of objective
 	if (objectiveType == TO_QOI.COMPLIANCE): 
 		compliance, compliance_grad = compute_compliance_and_gradient(sol, x, fe_solver, KE, material_model)
 		return compliance, compliance_grad
