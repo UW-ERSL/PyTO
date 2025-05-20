@@ -283,4 +283,4 @@ if __name__ == "__main__":
 		print("\n")
 	
 	# Combine results from all methods
-	combine_results() 
+	combine_results()   
