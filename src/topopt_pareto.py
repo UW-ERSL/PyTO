@@ -213,7 +213,7 @@ def topopt_pareto(fe_solver,
 		if terminatePareto:
 			if (volfrac > 1.1*volFractionConstraint):
 				success = False
-				errorMsg =  f"vf {to_params.DesiredVolFraction:0.3f} not reached"
+				errorMsg =  f"vf {volFractionConstraint:0.3f} not reached"
 				print("-" * 50)
 				print("Pareto: Failed to reach volume fraction.")
 				print("1. Check for incorrect symmetry constraints")
