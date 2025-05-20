@@ -88,7 +88,7 @@ def getStructuralTOProblem(to_problem: StructuralTOExamples,nDOFDesired = None, 
     elif to_problem == StructuralTOExamples.CantileverTipLoadDisplacementObjective:
         structural_problem = StructuralExamples.CantileverTipLoad
         to_params.Comment  = "Benchmark 2.5D"
-        to_params.Objective = [(TO_QOI.GVECTOR, None)] # see below for setting the GVECTOR after mesh is created
+        to_params.Objective = (TO_QOI.GVECTOR, None) # see below for setting the GVECTOR after mesh is created
         to_params.ExtrudeZ = True
         to_params.nDOFDesired = 25000 if nDOFDesired is None else nDOFDesired
         to_params.Constraints = [(TO_QOI.VOLUME_FRACTION, None, 0.5), (TO_QOI.RELATIVE_COMPLIANCE, None, 3)] 
@@ -106,11 +106,11 @@ def getStructuralTOProblem(to_problem: StructuralTOExamples,nDOFDesired = None, 
     elif to_problem == StructuralTOExamples.Inverter:
         structural_problem = StructuralExamples.Inverter
         to_params.Comment  = "Compliant Mechanism"
-        to_params.Objective = [(TO_QOI.GVECTOR, None)] # see below for setting the GVECTOR after mesh is created
+        to_params.Objective = (TO_QOI.GVECTOR, None) # see below for setting the GVECTOR after mesh is created
         to_params.YSymmetry = True
         to_params.ExtrudeZ = True
         to_params.nDOFDesired = 20000 if nDOFDesired is None else nDOFDesired
-        to_params.Constraints = [(TO_QOI.VOLUME_FRACTION, None, 0.3), (TO_QOI.COMPLIANCE, None, 3)] 
+        to_params.Constraints = [(TO_QOI.VOLUME_FRACTION, None, 0.3), (TO_QOI.COMPLIANCE, None, 5*7.76e-13)] 
     elif to_problem == StructuralTOExamples.LBracketTopLoad:
         structural_problem = StructuralExamples.LBracket
         kwargs['topload'] = 1.5e4
@@ -244,7 +244,7 @@ def getStructuralTOProblem(to_problem: StructuralTOExamples,nDOFDesired = None, 
         g = np.zeros(3*mesh.num_nodes)
         g[dof] = -1
         #to_params.ElemsToKeep, _ = mesh.get_element_containing_point(pt2)
-        to_params.Objective = [(TO_QOI.GVECTOR, g)] 
+        to_params.Objective = (TO_QOI.GVECTOR, g)
     if to_problem == StructuralTOExamples.Inverter:
         node_pts = mesh.node_xyz
         xMin = np.min(node_pts[:,0]) 
@@ -264,5 +264,5 @@ def getStructuralTOProblem(to_problem: StructuralTOExamples,nDOFDesired = None, 
         g[dof_output] = 1
 
         #to_params.ElemsToKeep, _ = mesh.get_element_containing_point(pt2)
-        to_params.Objective = [(TO_QOI.GVECTOR, g)] 
+        to_params.Objective = (TO_QOI.GVECTOR, g) 
     return mesh, mat_prop, bc, elem_body_force, to_params
