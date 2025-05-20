@@ -34,12 +34,12 @@ class HexStructuralFEA:
     # Handle single material or list of materials
     if isinstance(mat_prop, list):
     # Create element stiffness matrix for each material
-      elem_stiff_list = [hex_element_stiffness.hex8_stiffness_matrix_structural(mp, mesh.elem_size) 
+      elem_stiff_list = [hex_element_stiffness.hex8_stiffness_matrix_structural(mp.youngs_modulus, mp.poissons_ratio, mesh.elem_size) 
                 for mp in mat_prop]
       self.elem_stiff = np.stack(elem_stiff_list)
     else:
       self.elem_stiff = np.expand_dims(
-          hex_element_stiffness.hex8_stiffness_matrix_structural(mat_prop, mesh.elem_size), axis=0)
+          hex_element_stiffness.hex8_stiffness_matrix_structural(mat_prop.youngs_modulus,mat_prop.poissons_ratio, mesh.elem_size), axis=0)
 
    
     self.node_idx = np.stack((
@@ -654,7 +654,7 @@ class HexStructuralFEA:
 if __name__ == "__main__":    
   from hex_structural_examples import StructuralExamples,getStructuralProblem
 
-  problem = StructuralExamples.Inverter
+  problem = StructuralExamples.CantileverMidLoad
   nDOFDesired = 15000
   mesh, mat_prop, bc,elem_body_force = getStructuralProblem(problem,nDOFDesired = nDOFDesired)
   solver = linear_solvers.Solvers.PARDISO # typically DPCG or PARDISO

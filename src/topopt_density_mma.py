@@ -58,19 +58,21 @@ def topopt_mma(fe_solver, #hex_structural_fea.HexStructuralFEA or hex_thermal_fe
 	
 	if isinstance(fe_solver.mat_prop, list): # multiple materials
 		if isinstance(fe_solver, hex_structural_fea.HexStructuralFEA):
-			KE_list = [hex_element_stiffness.hex8_stiffness_matrix_structural( mp,fe_solver.mesh.elem_size)
+			KE_list = [hex_element_stiffness.hex8_stiffness_matrix_structural( mp.youngs_modulus,mp.poissons_ratio,fe_solver.mesh.elem_size)
 				for mp in fe_solver.mat_prop]
 			KE = KE_list[0]
 		elif isinstance(fe_solver, hex_thermal_fea.HexThermalFEA):
-			KE_list = [hex_element_stiffness.hex8_stiffness_matrix_thermal( mp,fe_solver.mesh.elem_size)
+			KE_list = [hex_element_stiffness.hex8_stiffness_matrix_thermal( mp.thermal_conductivity,fe_solver.mesh.elem_size)
 				for mp in fe_solver.mat_prop]
 			KE = KE_list[0]	
 		print("Assuming all elements have the same material properties")
 	else: # single material
 		if isinstance(fe_solver, hex_structural_fea.HexStructuralFEA):
-			KE = hex_element_stiffness.hex8_stiffness_matrix_structural( fe_solver.mat_prop,fe_solver.mesh.elem_size)
+			KE = hex_element_stiffness.hex8_stiffness_matrix_structural( fe_solver.mat_prop.youngs_modulus,
+															    fe_solver.mat_prop.poissons_ratio,
+																fe_solver.mesh.elem_size)
 		elif isinstance(fe_solver, hex_thermal_fea.HexThermalFEA):
-			KE = hex_element_stiffness.hex8_stiffness_matrix_thermal( fe_solver.mat_prop,fe_solver.mesh.elem_size)
+			KE = hex_element_stiffness.hex8_stiffness_matrix_thermal( fe_solver.mat_prop.thermal_conductivity,fe_solver.mesh.elem_size)
 	
 	
 	constraintType = to_params.Constraints[0][0] # assume this is the first constraint
@@ -239,7 +241,6 @@ if __name__ == "__main__":
 	debug = False
 
 	dsolver = deflation.DeflationSolver()
-	print(to_params)
 	if (to_params.nDOFDesired > DIRECT_SOLVER_DOF_CUTOFF):# Typically PARDISO, but DPCG for large DOF problems
 		solver = lin_solv.Solvers.DPCG
 		nGroups =  min(dsolver.maxGroups,max(dsolver.minGroups,round(3*mesh.num_nodes/dsolver.dofPerGroup)))
