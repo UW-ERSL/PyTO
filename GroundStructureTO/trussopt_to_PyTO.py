@@ -163,11 +163,16 @@ def get_3D_rho_from_2D(to_problem: StructuralTOExamples, mesh: hex_mesher.HexMes
         #plot_rho2D(rho2D, mesh)
     nx, ny, nz = mesh.grid
 
-    rho3D = np.zeros((nx, ny, nz))  # shape = (nx, ny, nz)
-    for k in range(nz):
-        rho3D[:, :, k] = rho2D.T  # transpose to match (nx, ny) from (ny, nx)
+    rho_flat = np.zeros(mesh.num_elems)
 
-    rho_flat = rho3D.flatten(order='F')  # shape: (6633,)
+    for i in range(mesh.num_elems):
+        elem_center = mesh.elem_centers[i]
+        x, y = elem_center[0], elem_center[1]
+        # scale x, y to index in rho2D
+        ix = int(np.clip(np.floor((x - mesh.bbox.x.min) / mesh.elem_size[0]), 0, rho2D.shape[1]-1))
+        iy = int(np.clip(np.floor((y - mesh.bbox.y.min) / mesh.elem_size[1]), 0, rho2D.shape[0]-1))
+        rho_flat[i] = rho2D[iy, ix]
+    # shape: (6633,)
     assert rho_flat.shape[0] == mesh.num_elems  
 
     # Compare first layer
@@ -213,6 +218,20 @@ def get_trussopt_problem(to_problem: StructuralTOExamples):
         trussopt_problem = TrussOptExamples.CantileverTipLoad
     elif to_problem == StructuralTOExamples.Mitchell_1:
         trussopt_problem = TrussOptExamples.Mitchell_1
+    elif to_problem == StructuralTOExamples.ShortCantileverTipLoad:
+        trussopt_problem = TrussOptExamples.ShortCantileverTipLoad
+    elif to_problem == StructuralTOExamples.ShortCantileverMidLoad:
+        trussopt_problem = TrussOptExamples.ShortCantileverMidLoad
+    elif to_problem == StructuralTOExamples.TwoBar:
+        trussopt_problem = TrussOptExamples.TwoBar
+    elif to_problem == StructuralTOExamples.MBBB:
+        trussopt_problem = TrussOptExamples.MBBB
+    elif to_problem == StructuralTOExamples.DistributedLoad:
+        trussopt_problem = TrussOptExamples.DistributedLoad
+    elif to_problem == StructuralTOExamples.Multiload:
+        trussopt_problem = TrussOptExamples.Multiload
+    elif to_problem == StructuralTOExamples.LBracketMidLoad:
+        trussopt_problem = TrussOptExamples.LBracketMidLoad
     else:
         raise ValueError(f"Unknown example: {to_problem}")
     return trussopt_problem
