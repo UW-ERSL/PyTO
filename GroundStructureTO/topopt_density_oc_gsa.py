@@ -7,7 +7,7 @@ import time
 from trussopt_to_PyTO import *
 
 
-def topopt_optimality_criteria(
+def topopt_optimality_criteria_gsa(
 							fe_solver: hex_structural_fea.HexStructuralFEA,
 							to_params,
 			  				maxIterations: int = 250,
@@ -15,7 +15,7 @@ def topopt_optimality_criteria(
 							move_tol: float = 0.025,
 							rel_conv_tol: float = 1.e-3,
 							directLagrangeMethod: bool = True,
-							print_progress: bool = True,
+							print_progress: bool = False,
 							plot_progress: bool = False,
 							debug: bool = False,
 							x0: np.ndarray = None) -> tuple[np.ndarray, dict]:
@@ -53,7 +53,8 @@ def topopt_optimality_criteria(
 
 	
 	fe_solver.mesh.setPseudoDensity(x)
-	fe_solver.plot_pseudo_density(title = f"Initial Density")
+	if (plot_progress):
+		fe_solver.plot_pseudo_density(title = f"Initial Density")
 	xPhys = x.copy()
 
 	if (fe_solver.elem_body_force is not None):
@@ -210,7 +211,7 @@ if __name__ == "__main__":
 	from topopt_benchmarks import *
 
 	print("-" * 50)
-	to_problem = StructuralTOExamples.Mitchell_1 # Choose the TO problem
+	to_problem = StructuralTOExamples.CantileverTipLoad # Choose the TO problem
 	print(f"Running {to_problem.name}...") 
 	print("-" * 50)
 	solver = lin_solv.Solvers.PARDISO # # Choose solver. Typically PARDISO, but DPCG for DOF > 200,000
@@ -249,7 +250,7 @@ if __name__ == "__main__":
 	startTime = time.time()		
 	print("OptimizationMethod: OC")	
 	x0 = get_3D_rho_from_2D(to_problem, fe_solver.mesh, to_params.DesiredVolFraction, use_binary_fill = True, b_plot = False)  
-	u, history, success,errorMsg,nFEAs = topopt_optimality_criteria(fe_solver = fe_solver,
+	u, history, success,errorMsg,nFEAs = topopt_optimality_criteria_gsa(fe_solver = fe_solver,
 											to_params = to_params,
 											plot_progress = False,
 											debug = debug, 

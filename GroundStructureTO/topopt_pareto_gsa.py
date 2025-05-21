@@ -6,7 +6,7 @@ import time
 import numpy as np
 from trussopt_to_PyTO import *
 
-def topopt_pareto(fe_solver: hex_structural_fea.HexStructuralFEA,
+def topopt_pareto_gsa(fe_solver: hex_structural_fea.HexStructuralFEA,
 				  to_params,
 							rel_err: float = 0.02,
 							vol_decr_max: float = 0.05,
@@ -105,11 +105,30 @@ def topopt_pareto(fe_solver: hex_structural_fea.HexStructuralFEA,
 	# Observation: Damping using the previous sensitivity values avoids getting trapped in local minima
 	wtDamping = 0.5 # 0 means full wt to current T values, else previous T values are damped in
 
-	while volfrac > to_params.DesiredVolFraction:
-		if (plot_progress):
-			fe_solver.plot_mesh(plot_bc = False,auto_close = False, title = f'Volfrac: {volfrac:0.3f}')
-		# Move to next volume fraction
-		volfrac = max(to_params.DesiredVolFraction, volfrac - vol_decr)
+	tolerance = 1e-4  # acceptable error in volume fraction
+	max_iter = 1000   # avoid infinite loop
+
+	# Converge to the target volume fraction (either increase or decrease)
+	while True:
+		# Skip updating if we're already at target volfrac
+		if abs(volfrac - to_params.DesiredVolFraction) < tolerance:
+			break
+
+		# Move volfrac towards target
+		direction = np.sign(to_params.DesiredVolFraction - volfrac)
+		volfrac += direction * vol_decr
+
+		# Clamp to target if we overshot
+		if (direction > 0 and volfrac > to_params.DesiredVolFraction) or \
+		(direction < 0 and volfrac < to_params.DesiredVolFraction):
+			volfrac = to_params.DesiredVolFraction
+
+		if debug:
+			print("-" * 50)
+			print(f"Moving towards target volume: vf = {volfrac:.4f}")
+		
+		# Run inner optimization loop at this volume
+		# (everything after this point remains unchanged)
 		if (debug):
 			print("-" * 50)
 			print(f"Attempting v={volfrac:.3f}")
@@ -272,7 +291,7 @@ if __name__ == "__main__":
 
 	print("OptimizationMethod: Pareto")
 	x0 = get_3D_rho_from_2D(to_problem, fe_solver.mesh, to_params.DesiredVolFraction, use_binary_fill = True, b_plot = False)  
-	u, history, success,errorMsg,nFEAs = topopt_pareto(fe_solver = fe_solver,
+	u, history, success,errorMsg,nFEAs = topopt_pareto_gsa(fe_solver = fe_solver,
 									to_params = to_params,
 									plot_progress= False,
 									debug = debug,

@@ -37,10 +37,6 @@ def get_2d_rho_from_truss_output(Nd, Cn, a, mesh: hex_mesher.HexMesher, truss_wi
     scale_x = mesh_width / truss_width
     scale_y = mesh_height / truss_height
 
-    print("Mesh domain size:", mesh.bbox.x, mesh.bbox.y)
-    print(f"Truss width: {truss_width}, Mesh width: {mesh_width}, scale_x: {scale_x}")
-    print(f"Truss height: {truss_height}, Mesh height: {mesh_height}, scale_y: {scale_y}")
-
     scale_area = scale_x * scale_y
 
     A_max = np.max(a)
@@ -55,7 +51,10 @@ def get_2d_rho_from_truss_output(Nd, Cn, a, mesh: hex_mesher.HexMesher, truss_wi
     bar_total_scaled = bar_total * scale_x * scale_y
     tk = A_target / (bar_total_scaled + 1e-8)
 
-    print(f"Target area: {A_target:.2f}, Truss bar area scaled: {bar_total_scaled:.2f}, tk = {tk:.4f}")
+    # print("Mesh domain size:", mesh.bbox.x, mesh.bbox.y)
+    # print(f"Truss width: {truss_width}, Mesh width: {mesh_width}, scale_x: {scale_x}")
+    # print(f"Truss height: {truss_height}, Mesh height: {mesh_height}, scale_y: {scale_y}")
+    # print(f"Target area: {A_target:.2f}, Truss bar area scaled: {bar_total_scaled:.2f}, tk = {tk:.4f}")
 
     # Initialize 2D density grid
     rho2D = np.zeros((ny, nx))
@@ -153,10 +152,9 @@ def normalize_rho_to_exact_volfrac(rho3D: np.ndarray, target_volfrac: float, max
 
 def get_3D_rho_from_2D(to_problem: StructuralTOExamples, mesh: hex_mesher.HexMesher, target_volfrac, use_binary_fill: bool = False, b_plot: bool = False)-> np.ndarray:
     print("Truss opt initialization")
-
     trussopt_problem = get_trussopt_problem(to_problem)
     truss_width, truss_height = get_truss_width_height(mesh)
-    Nd, Cn, a, q = trussopt(trussopt_problem, truss_width, truss_height, b_plot=True) #much larger jc value if you want only a handful of members in the final design.
+    Nd, Cn, a, q = trussopt(trussopt_problem, truss_width, truss_height, b_plot=b_plot) #much larger jc value if you want only a handful of members in the final design.
     rho2D = get_2d_rho_from_truss_output(Nd, Cn, a, mesh, truss_width, truss_height, target_volfrac = target_volfrac, use_binary_fill = use_binary_fill, threshold = max(a) * 1e-3)
     if b_plot:
         plotTruss(Nd, Cn, a, q, max(a) * 1e-3, "Finished", False)
