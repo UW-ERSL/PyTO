@@ -18,7 +18,7 @@ def topopt_mma(fe_solver: hex_structural_fea.HexStructuralFEA,
 							 print_progress: bool = True,
 							 plot_progress: bool = False,
 							 debug: bool = False,
-							 b_trussOpt_initialization: bool = False) -> tuple[np.ndarray, dict]:
+							 x0: np.ndarray = None) -> tuple[np.ndarray, dict]:
 	"""MMA based topology optimization for minimum compliance.
 
 	Args:
@@ -69,12 +69,14 @@ def topopt_mma(fe_solver: hex_structural_fea.HexStructuralFEA,
 		print("Density-MMA: Assuming all elements have the same material properties")
 	else:
 		KE = hex_element_stiffness.hex8_stiffness_matrix_structural( fe_solver.mat_prop,fe_solver.mesh.elem_size)
-	x0 = to_params.DesiredVolFraction * np.ones(num_elems, dtype = float)
-	if (b_trussOpt_initialization):
-		print("Truss opt initialization: MMA")	
-		x0 = get_3D_rho_from_2D(fe_solver.mesh, use_binary_fill = True, b_plot = False)  
-		fe_solver.mesh.setPseudoDensity(x0)
-		fe_solver.plot_pseudo_density(title = f"Initial Density")
+
+	# Initialize design variables
+	if (x0 is None):
+		x0 = to_params.DesiredVolFraction * np.ones(num_elems, dtype = float)
+	
+	volfrac = np.mean(x0)  
+	print("Initialized: volfrac: ", volfrac)	
+
 	x0 = x0.reshape(-1, 1)
 	mma_state = mma.init_mma(x0, mma_params)
 	
@@ -223,7 +225,7 @@ if __name__ == "__main__":
 	from topopt_benchmarks import *
 	
 	print("-" * 50)
-	to_problem = StructuralTOExamples.CantileverMidLoad # Choose the TO problem
+	to_problem = StructuralTOExamples.CantileverTipLoad # Choose the TO problem
 	print(f"Running {to_problem.name}...") 
 	print("-" * 50)
 	solver = lin_solv.Solvers.PARDISO # # Choose solver. Typically PARDISO, but DPCG for DOF > 200,000
@@ -259,11 +261,14 @@ if __name__ == "__main__":
 	
 	startTime = time.time()
 	print("OptimizationMethod: MMA")
+	x0 = get_3D_rho_from_2D(to_problem, fe_solver.mesh, to_params.DesiredVolFraction, use_binary_fill = True, b_plot = False)  
+	fe_solver.mesh.setPseudoDensity(x0)
+	fe_solver.plot_pseudo_density(title = f"Initial Density")
 	u, history,success,errorMsg,nFEAs = topopt_mma(fe_solver = fe_solver,
 								to_params = to_params,
 								plot_progress = False,
 								debug = debug,
-								b_trussOpt_initialization = True)
+								x0 = x0)
 	timeTaken = time.time() - startTime
 	print(f"Time taken: {timeTaken:.0f} s")
 	if not success:

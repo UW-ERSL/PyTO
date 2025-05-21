@@ -9,7 +9,7 @@ from trussopt import *
 # run the trussopt.py script to generate the truss_output.csv file
 # ToDo: integrate the trussopt.py directly in the TO. Eliminate the CSV file. The current code is being tested for the CantileverMidLoad example.
 # May 17, 2025 Removed dependency on CSV file. The trussopt.py is now integrated with PyTO.
-def get_2d_rho_from_truss_output(Nd, Cn, a, mesh: hex_mesher.HexMesher, truss_width, truss_height, vol_frac_scaling: float, use_binary_fill: bool = True, threshold=1e-4):
+def get_2d_rho_from_truss_output(Nd, Cn, a, mesh: hex_mesher.HexMesher, truss_width, truss_height, target_volfrac: float, use_binary_fill: bool = True, threshold=1e-4):
     """
     Rasterize the optimized truss members (with given Nd, Cn, a) to a 2D density grid.
     
@@ -47,7 +47,6 @@ def get_2d_rho_from_truss_output(Nd, Cn, a, mesh: hex_mesher.HexMesher, truss_wi
     bar_area_max = A_max * scale_area
     
     # Total area in mesh
-    target_volfrac = 0.5
     V_total = nx * ny * nz * dx * dy * dz
     V_target = target_volfrac * V_total
     A_target = (V_target / nz) / dz  # effective target area for one 2D slice
@@ -152,13 +151,13 @@ def normalize_rho_to_exact_volfrac(rho3D: np.ndarray, target_volfrac: float, max
     return rho3D
 
 
-def get_3D_rho_from_2D(to_problem: StructuralTOExamples, mesh: hex_mesher.HexMesher, use_binary_fill: bool = False, b_plot: bool = False)-> np.ndarray:
+def get_3D_rho_from_2D(to_problem: StructuralTOExamples, mesh: hex_mesher.HexMesher, target_volfrac, use_binary_fill: bool = False, b_plot: bool = False)-> np.ndarray:
     print("Truss opt initialization")
 
     trussopt_problem = get_trussopt_problem(to_problem)
     truss_width, truss_height = get_truss_width_height(mesh)
-    Nd, Cn, a, q, vol_frac_scaling = trussopt(trussopt_problem, truss_width, truss_height, b_plot=True) #much larger jc value if you want only a handful of members in the final design.
-    rho2D = get_2d_rho_from_truss_output(Nd, Cn, a, mesh, truss_width, truss_height, vol_frac_scaling = vol_frac_scaling, use_binary_fill = use_binary_fill, threshold = max(a) * 1e-3)
+    Nd, Cn, a, q = trussopt(trussopt_problem, truss_width, truss_height, b_plot=True) #much larger jc value if you want only a handful of members in the final design.
+    rho2D = get_2d_rho_from_truss_output(Nd, Cn, a, mesh, truss_width, truss_height, target_volfrac = target_volfrac, use_binary_fill = use_binary_fill, threshold = max(a) * 1e-3)
     if b_plot:
         plotTruss(Nd, Cn, a, q, max(a) * 1e-3, "Finished", False)
         #plot_rho2D(rho2D, mesh)
@@ -177,7 +176,7 @@ def get_3D_rho_from_2D(to_problem: StructuralTOExamples, mesh: hex_mesher.HexMes
     # plt.show()
     
     # Final rho for 3D problems to initialize TO
-    rho_flat = normalize_rho_to_exact_volfrac(rho_flat, target_volfrac=0.5)
+    rho_flat = normalize_rho_to_exact_volfrac(rho_flat, target_volfrac=target_volfrac)
     x = rho_flat.copy()
 
     print("Actual volume fraction 3D:", np.mean(x))

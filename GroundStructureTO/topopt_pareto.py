@@ -17,7 +17,7 @@ def topopt_pareto(fe_solver: hex_structural_fea.HexStructuralFEA,
 							print_progress: bool = True,
 							plot_progress: bool = False,
 							debug: bool = False,
-							b_trussOpt_initialization: bool = False
+							x0: np.ndarray = None
 							)-> tuple[np.ndarray, dict]:
 	"""Pareto method for Topology Optimization.
 
@@ -46,14 +46,13 @@ def topopt_pareto(fe_solver: hex_structural_fea.HexStructuralFEA,
 	totalIter = 1
 
 	# Initialize design field
-	x = np.ones((fe_solver.mesh.num_elems))
-	volfrac = 1.0
+	if (x0 is None):
+		x0 = np.ones((fe_solver.mesh.num_elems))
+		volfrac = 1.0
 
-	if (b_trussOpt_initialization):
-		print("Truss opt initialization: Pareto")	
-		x = get_3D_rho_from_2D(fe_solver.mesh, use_binary_fill = True, b_plot = False) 
-		volfrac = np.mean(x)  
-	
+	x = x0
+	volfrac = np.mean(x)  
+	print("Initialized: volfrac: ", volfrac)	
 	
 	history = {'compliance': [], 'volume': []}
 	if (print_progress):
@@ -229,7 +228,7 @@ if __name__ == "__main__":
 	import plots
 	
 	print("-" * 50)
-	to_problem = StructuralTOExamples.CantileverMidLoad # Choose the TO problem
+	to_problem = StructuralTOExamples.CantileverTipLoad # Choose the TO problem
 	print(f"Running {to_problem.name}...") 
 	print("-" * 50)
 	
@@ -272,11 +271,12 @@ if __name__ == "__main__":
 	startTime = time.time()
 
 	print("OptimizationMethod: Pareto")
+	x0 = get_3D_rho_from_2D(to_problem, fe_solver.mesh, to_params.DesiredVolFraction, use_binary_fill = True, b_plot = False)  
 	u, history, success,errorMsg,nFEAs = topopt_pareto(fe_solver = fe_solver,
 									to_params = to_params,
 									plot_progress= False,
 									debug = debug,
-									b_trussOpt_initialization = True)
+									x0 = x0)
 	
 	timeTaken = time.time() - startTime
 	print(f"Time taken: {timeTaken:.0f} s")

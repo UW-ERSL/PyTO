@@ -226,7 +226,7 @@ def trussopt(trussopt_problem, truss_width, truss_height, st = 1, sc = 1, jc = 1
     # for i, nd in enumerate(Nd):
     #     if nd[0] == 0: dof[i,:] = [0, 0] 
     #     f += [0, -1] if (nd == [width, height/2]).all() else [0, 0]
-    poly, Nd, dof, f, PML, convex, vol_frac_scaling = get_trussopt_example(trussopt_problem, truss_width, truss_height)
+    poly, Nd, dof, f, PML, convex = get_trussopt_example(trussopt_problem, truss_width, truss_height)
     if b_plot:
         plot_shapely_domain(poly, Nd, dof, f)
     
@@ -253,7 +253,7 @@ def trussopt(trussopt_problem, truss_width, truss_height, st = 1, sc = 1, jc = 1
     if b_plot: 
         plotTruss(Nd, Cn, a, q, max(a) * 1e-3, "Finished", False)
         plot_truss_with_domain_and_bcs(poly, Nd, dof, f, Cn, a, q, threshold=1e-4, title="Truss and Domain")
-    return Nd, Cn, a, q, vol_frac_scaling
+    return Nd, Cn, a, q
 
 #Execution function when called directly by Python
 if __name__ =='__main__': 

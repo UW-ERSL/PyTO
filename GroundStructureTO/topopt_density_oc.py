@@ -248,7 +248,7 @@ if __name__ == "__main__":
 	#fe_solver.mesh.plot()
 	startTime = time.time()		
 	print("OptimizationMethod: OC")	
-	x0 = get_3D_rho_from_2D(to_problem, fe_solver.mesh, use_binary_fill = True, b_plot = False)  
+	x0 = get_3D_rho_from_2D(to_problem, fe_solver.mesh, to_params.DesiredVolFraction, use_binary_fill = True, b_plot = False)  
 	u, history, success,errorMsg,nFEAs = topopt_optimality_criteria(fe_solver = fe_solver,
 											to_params = to_params,
 											plot_progress = False,
