@@ -4,43 +4,64 @@ import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 import hex_mesher
-
+from topopt_benchmarks import StructuralTOExamples
 from trussopt import *
 # run the trussopt.py script to generate the truss_output.csv file
 # ToDo: integrate the trussopt.py directly in the TO. Eliminate the CSV file. The current code is being tested for the CantileverMidLoad example.
 # May 17, 2025 Removed dependency on CSV file. The trussopt.py is now integrated with PyTO.
-def get_2d_rho_from_structural_output(Nd, Cn, a, mesh: hex_mesher.HexMesher, use_binary_fill: bool, threshold=1e-4):
+def get_2d_rho_from_truss_output(Nd, Cn, a, mesh: hex_mesher.HexMesher, truss_width, truss_height, vol_frac_scaling: float, use_binary_fill: bool = True, threshold=1e-4):
     """
     Rasterize the optimized truss members (with given Nd, Cn, a) to a 2D density grid.
     
     Parameters:
-    - Nd: (n_nodes, 2) array of node coordinates
-    - Cn: (n_members, 2 or 4) array of member connections and lengths
-    - a:  (n_members,) array of cross-sectional areas
+    - Nd: Node coordinates - list of nodes (each row = [x,y])
+    - Cn: Connectivity matrix - 
+            [ start_node_index, end_node_index, length, is_active (0 or 1) ]
+    - a: Member areas - optimal area for each row in Cn.
+    - q: Member forces - optimal force for each row in Cn. q>0 means tension, q<0 means compression.
     - mesh: hex_mesher.HexMesher object
     - threshold: minimum area to include a bar in the rasterization
 
     Returns:
     - rho2D: (ny, nx) NumPy array representing rasterized density grid
     """
-    import numpy as np
 
     nx, ny, nz = mesh.grid
     dx, dy, dz = mesh.elem_size
     elem_area = dx * dy
-    
-    scale_x = (nx * dx) / 20.0 # harde coded to 20.0 which is the domain of the truss, change needed
-    scale_y = (ny * dy) / 10.0
+    # Determine physical size of mesh
+    mesh_width = mesh.bbox.x.max - mesh.bbox.x.min
+    mesh_height = mesh.bbox.y.max - mesh.bbox.y.min
+
+    # Compute scaling factor to map truss domain into mesh domain
+    scale_x = mesh_width / truss_width
+    scale_y = mesh_height / truss_height
+
+    print("Mesh domain size:", mesh.bbox.x, mesh.bbox.y)
+    print(f"Truss width: {truss_width}, Mesh width: {mesh_width}, scale_x: {scale_x}")
+    print(f"Truss height: {truss_height}, Mesh height: {mesh_height}, scale_y: {scale_y}")
+
     scale_area = scale_x * scale_y
 
     A_max = np.max(a)
     bar_area_max = A_max * scale_area
     
-    N_max = bar_area_max / elem_area # Compute how many elements it should cover
-    tk = N_max*1 / (A_max + 1e-8)
+    # Total area in mesh
+    target_volfrac = 0.5
+    V_total = nx * ny * nz * dx * dy * dz
+    V_target = target_volfrac * V_total
+    A_target = (V_target / nz) / dz  # effective target area for one 2D slice
+
+    bar_total = np.sum([a[i] * Cn[i, 2] for i in range(len(a)) if a[i] >= threshold])
+    bar_total_scaled = bar_total * scale_x * scale_y
+    tk = A_target / (bar_total_scaled + 1e-8)
+
+    print(f"Target area: {A_target:.2f}, Truss bar area scaled: {bar_total_scaled:.2f}, tk = {tk:.4f}")
+
     # Initialize 2D density grid
     rho2D = np.zeros((ny, nx))
 
+    
     for i in range(len(Cn)):
         if a[i] < threshold:
             continue  # skip insignificant members
@@ -61,8 +82,9 @@ def get_2d_rho_from_structural_output(Nd, Cn, a, mesh: hex_mesher.HexMesher, use
         xs = np.linspace(x1, x2, N)
         ys = np.linspace(y1, y2, N)
 
-        n_cells = a[i] * tk # how many elements this bar should fill
+        n_cells = a[i] * Cn[i, 2] * tk  # area × length × tk
         radius = int(round(np.sqrt(n_cells / np.pi)))
+
         
         for x, y in zip(xs, ys):
             ix = int(np.clip(np.floor(x / dx), 0, nx - 1))
@@ -88,15 +110,58 @@ def get_2d_rho_from_structural_output(Nd, Cn, a, mesh: hex_mesher.HexMesher, use
 
 
     rho2D /= np.max(rho2D) + 1e-8  # normalize to [0, 1]
+    #plt.plot([x1, x2], [y1, y2], color='r')  # Bar segment
+    #plt.imshow(rho2D, origin='lower', cmap='gray')
     return rho2D
 
-def get_3D_rho_from_2D(mesh: hex_mesher.HexMesher, use_binary_fill: bool = False, b_plot: bool = False)-> np.ndarray:
-    
-    Nd, Cn, a, q = trussopt(width = 20, height = 10, st = 1, sc =1, jc = 1) #much larger jc value if you want only a handful of members in the final design.
-    rho2D = get_2d_rho_from_structural_output(Nd, Cn, a, mesh, use_binary_fill = use_binary_fill, threshold = max(a) * 1e-3)
+def normalize_rho_to_exact_volfrac(rho3D: np.ndarray, target_volfrac: float, max_iter=3) -> np.ndarray:
+    """
+    Normalize rho3D to match an exact target volume fraction within [0, 1].
+    If clipping prevents exact match, apply a fallback mass spreading.
+    """
+    total_elems = rho3D.size
+    target_mass = target_volfrac * total_elems
+
+    for _ in range(max_iter):
+        rho3D *= target_volfrac / (np.mean(rho3D) + 1e-8)
+        rho3D = np.clip(rho3D, 0.0, 1.0)
+
+        current_mass = np.sum(rho3D)
+        excess = current_mass - target_mass
+
+        if abs(excess) < 1e-4:
+            break
+
+        unclipped = (rho3D < 1.0)
+        num_unclipped = np.sum(unclipped)
+
+        if num_unclipped > 0:
+            adjustment = excess / (num_unclipped + 1e-8)
+            rho3D[unclipped] -= adjustment
+            rho3D = np.clip(rho3D, 0.0, 1.0)
+
+    # Final check — if still off, spread residual uniformly
+    mass_error = np.sum(rho3D) - target_mass
+    if abs(mass_error) > 1e-4:
+        rho3D += (target_mass - np.sum(rho3D)) / total_elems
+        rho3D = np.clip(rho3D, 0.0, 1.0)
+
+    assert abs(np.mean(rho3D) - target_volfrac) < 1e-4, \
+        f"Final volume fraction off: got {np.mean(rho3D)}, expected {target_volfrac}"
+
+    return rho3D
+
+
+def get_3D_rho_from_2D(to_problem: StructuralTOExamples, mesh: hex_mesher.HexMesher, use_binary_fill: bool = False, b_plot: bool = False)-> np.ndarray:
+    print("Truss opt initialization")
+
+    trussopt_problem = get_trussopt_problem(to_problem)
+    truss_width, truss_height = get_truss_width_height(mesh)
+    Nd, Cn, a, q, vol_frac_scaling = trussopt(trussopt_problem, truss_width, truss_height, b_plot=True) #much larger jc value if you want only a handful of members in the final design.
+    rho2D = get_2d_rho_from_truss_output(Nd, Cn, a, mesh, truss_width, truss_height, vol_frac_scaling = vol_frac_scaling, use_binary_fill = use_binary_fill, threshold = max(a) * 1e-3)
     if b_plot:
         plotTruss(Nd, Cn, a, q, max(a) * 1e-3, "Finished", False)
-        plot_rho2D(rho2D, mesh)
+        #plot_rho2D(rho2D, mesh)
     nx, ny, nz = mesh.grid
 
     rho3D = np.zeros((nx, ny, nz))  # shape = (nx, ny, nz)
@@ -110,43 +175,48 @@ def get_3D_rho_from_2D(mesh: hex_mesher.HexMesher, use_binary_fill: bool = False
     # plt.imshow(rho3D[:, :, 0], cmap='viridis', origin='lower')
     # plt.title("rho3D[:, :, 0] — first Z slice")
     # plt.show()
-    #  # Compare second layer
-    # plt.imshow(rho3D[:, :, 1], cmap='viridis', origin='lower')
-    # plt.title("rho3D[:, :, 0] — second Z slice")
-    # plt.show()
-    #  # Compare second layer
-    # plt.imshow(rho3D[:, :, 2], cmap='viridis', origin='lower')
-    # plt.title("rho3D[:, :, 0] — third Z slice")
-    # plt.show()
-
+    
     # Final rho for 3D problems to initialize TO
+    rho_flat = normalize_rho_to_exact_volfrac(rho_flat, target_volfrac=0.5)
     x = rho_flat.copy()
+
+    print("Actual volume fraction 3D:", np.mean(x))
     return x
 
-def plot_truss_from_csv(data, dx=1.0, dy=1.0):
+def get_truss_width_height(mesh: hex_mesher.HexMesher):
     """
-    Plot the truss members from CSV data on the same 2D domain as the density grid.
+    Get the width and height of the truss from the mesh.
     
     Parameters:
-    - data: DataFrame containing columns [x1, y1, x2, y2, area]
-    - dx, dy: element sizes for scaling (optional)
+    - mesh: hex_mesher.HexMesher object
+    
+    Returns:
+    minimum value of 10 for the smallest dimension so that the truss grid can have unit spacing.
+    - truss_width: width of the truss
+    - truss_height: height of the truss
     """
-    plt.figure(figsize=(8, 6))
-    ax = plt.gca()
-    
-    # Plot each member as a line
-    for _, row in data.iterrows():
-        x1, y1, x2, y2, A = row
-        lw = 0.5 + 3 * A / data['area'].max()  # line width scaled by area
-        ax.plot([x1, x2], [y1, y2], color='red', linewidth=lw)
-    
-    ax.set_aspect('equal')
-    plt.title("Truss Layout from Ground Structure Optimization")
-    plt.xlabel("X (physical units)")
-    plt.ylabel("Y (physical units)")
-    plt.grid(True)
-    plt.tight_layout()
-    plt.show()
+    # Determine physical size of mesh
+    mesh_width = mesh.bbox.x.max - mesh.bbox.x.min
+    mesh_height = mesh.bbox.y.max - mesh.bbox.y.min
+
+    # Determine scale factor so that smallest dimension becomes 10
+    scale_factor = 10.0 / min(mesh_width, mesh_height)
+
+    # Compute desired truss domain size
+    truss_width = int(np.ceil(mesh_width * scale_factor))
+    truss_height = int(np.ceil(mesh_height * scale_factor))
+    return truss_width, truss_height
+
+def get_trussopt_problem(to_problem: StructuralTOExamples):
+    if to_problem == StructuralTOExamples.CantileverMidLoad:
+        trussopt_problem = TrussOptExamples.CantileverMidLoad
+    elif to_problem == StructuralTOExamples.CantileverTipLoad:
+        trussopt_problem = TrussOptExamples.CantileverTipLoad
+    elif to_problem == StructuralTOExamples.Mitchell_1:
+        trussopt_problem = TrussOptExamples.Mitchell_1
+    else:
+        raise ValueError(f"Unknown example: {to_problem}")
+    return trussopt_problem
 
 def plot_rho2D(rho2D, mesh: hex_mesher.HexMesher):
     """

@@ -18,7 +18,7 @@ def topopt_optimality_criteria(
 							print_progress: bool = True,
 							plot_progress: bool = False,
 							debug: bool = False,
-							b_trussOpt_initialization: bool = False) -> tuple[np.ndarray, dict]:
+							x0: np.ndarray = None) -> tuple[np.ndarray, dict]:
 	"""Optimality Criteria based topology optimization for minimum compliance.
 
 	Args:
@@ -44,10 +44,13 @@ def topopt_optimality_criteria(
 	elemsWithForces = find_elements_with_forces(fe_solver.mesh, fe_solver.bc.force)
 
 	# Initialize design variables
-	x = to_params.DesiredVolFraction * np.ones(num_elems, dtype = float)
-	if (b_trussOpt_initialization):
-		print("Truss opt initialization: OC")	
-		x = get_3D_rho_from_2D(fe_solver.mesh, use_binary_fill = True, b_plot = False)  
+	if (x0 is None):
+		x0 = to_params.DesiredVolFraction * np.ones(num_elems, dtype = float)
+	
+	x = x0
+	volfrac = np.mean(x)  
+	print("Initialized: volfrac: ", volfrac)	
+
 	
 	fe_solver.mesh.setPseudoDensity(x)
 	fe_solver.plot_pseudo_density(title = f"Initial Density")
@@ -162,8 +165,8 @@ def topopt_optimality_criteria(
 			errorMsg = "Objective is diverging"
 			success = False
 			break
-		if (change < move_tol):# success
-			break
+		#if (change < move_tol):# success
+			#break
 		if (len(history['compliance'])) >= 2:
 			dJ = abs((history['compliance'][-1] - history['compliance'][-2]) / history['compliance'][-2])
 			update_SIMP_PENALTY(fraction_grey)
@@ -207,7 +210,7 @@ if __name__ == "__main__":
 	from topopt_benchmarks import *
 
 	print("-" * 50)
-	to_problem = StructuralTOExamples.CantileverMidLoad # Choose the TO problem
+	to_problem = StructuralTOExamples.Mitchell_1 # Choose the TO problem
 	print(f"Running {to_problem.name}...") 
 	print("-" * 50)
 	solver = lin_solv.Solvers.PARDISO # # Choose solver. Typically PARDISO, but DPCG for DOF > 200,000
@@ -240,16 +243,17 @@ if __name__ == "__main__":
 	print("nElem: ", fe_solver.mesh.num_elems)	
 	#print("Close the plot to continue...")
 	title = f'nDOF: {3*fe_solver.mesh.num_nodes}, nElem: {fe_solver.mesh.num_elems}'
-	#fe_solver.plot_mesh(title = title, save_path = None)
+	fe_solver.plot_mesh(title = title, save_path = None)
 	
-	startTime = time.time()		
 	#fe_solver.mesh.plot()
+	startTime = time.time()		
 	print("OptimizationMethod: OC")	
+	x0 = get_3D_rho_from_2D(to_problem, fe_solver.mesh, use_binary_fill = True, b_plot = False)  
 	u, history, success,errorMsg,nFEAs = topopt_optimality_criteria(fe_solver = fe_solver,
 											to_params = to_params,
 											plot_progress = False,
 											debug = debug, 
-											b_trussOpt_initialization = False)
+											x0 = x0)
 	timeTaken = time.time() - startTime
 	print(f"Time taken: {timeTaken:.0f} s")
 	if not success:
