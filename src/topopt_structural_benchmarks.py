@@ -3,6 +3,7 @@ from hex_structural_examples import *
 from topopt_common import *
 
 class StructuralTOExamples(enum.Enum):
+    # 2.5D Examples
 	Mitchell_1 = enum.auto()
 	Mitchell_2 = enum.auto()
 	Mitchell_3 = enum.auto()       
@@ -12,21 +13,30 @@ class StructuralTOExamples(enum.Enum):
 	CantileverMidLoad = enum.auto()
 	CantileverTipLoadDisplacementObjective = enum.auto()
 	MBBB = enum.auto()
-	Inverter = enum.auto()
 	LBracketTopLoad = enum.auto()
 	LBracketMidLoad = enum.auto()
 	TwoBar = enum.auto()
 	TorquePlate = enum.auto()
 	DistributedLoad = enum.auto()
+
+    # 3D Examples
 	EdgeCantilever = enum.auto()
 	Multiload = enum.auto()
 	ThreeHoleBracket = enum.auto()
 	LBracketThickTopLoad = enum.auto()
 	LBracketThickMidLoad = enum.auto()
+	Table = enum.auto()
+
+    # Constraint Examples
+	CantileverMidLoadComplianceConstraint = enum.auto()
+	Inverter = enum.auto()
+
+    # Body Force Examples
 	CentrifugalPlate = enum.auto()
 	GravityPlate = enum.auto()
+
+    # Other Examples
 	KnuckleAssembly = enum.auto()
-	Table = enum.auto()
 	BliskWithBlade = enum.auto()
 	NoseCone = enum.auto()
 
@@ -103,14 +113,6 @@ def getStructuralTOProblem(to_problem: StructuralTOExamples,nDOFDesired = None, 
         to_params.XSymmetry = True 
         to_params.ExtrudeZ = True
         to_params.nDOFDesired = 50000 if nDOFDesired is None else nDOFDesired
-    elif to_problem == StructuralTOExamples.Inverter:
-        structural_problem = StructuralExamples.Inverter
-        to_params.Comment  = "Compliant Mechanism"
-        to_params.Objective = (TO_QOI.GVECTOR, None) # see below for setting the GVECTOR after mesh is created
-        to_params.YSymmetry = True
-        to_params.ExtrudeZ = True
-        to_params.nDOFDesired = 20000 if nDOFDesired is None else nDOFDesired
-        to_params.Constraints = [(TO_QOI.VOLUME_FRACTION, None, 0.3), (TO_QOI.COMPLIANCE, None, 3)] 
     elif to_problem == StructuralTOExamples.LBracketTopLoad:
         structural_problem = StructuralExamples.LBracket
         kwargs['topload'] = 1.5e4
@@ -138,6 +140,8 @@ def getStructuralTOProblem(to_problem: StructuralTOExamples,nDOFDesired = None, 
         to_params.ZAxisAngularSymmetry = 6
         to_params.ExtrudeZ = True
         to_params.nDOFDesired = 50000 if nDOFDesired is None else nDOFDesired
+
+    # 3D Examples
     elif to_problem == StructuralTOExamples.EdgeCantilever:
         structural_problem = StructuralExamples.EdgeCantilever
         to_params.Comment = "Benchmark 3D"
@@ -173,20 +177,16 @@ def getStructuralTOProblem(to_problem: StructuralTOExamples,nDOFDesired = None, 
         kwargs['midload'] = 1.5e4
         to_params.nDOFDesired = 75000 if nDOFDesired is None else nDOFDesired
         to_params.Constraints = [(TO_QOI.VOLUME_FRACTION, None, 0.25)] 
-    elif to_problem == StructuralTOExamples.KnuckleAssembly:
-        structural_problem = StructuralExamples.KnuckleAssembly
-        to_params.Comment = "Retaining Components"
-        to_params.XSymmetry = True
-        to_params.ZSymmetry = True
-        to_params.nDOFDesired = 75000 if nDOFDesired is None else nDOFDesired
-        to_params.Constraints = [(TO_QOI.VOLUME_FRACTION, None, 0.25)] 
     elif to_problem == StructuralTOExamples.Table:
         structural_problem = StructuralExamples.Table
-        to_params.Comment = "Thin Structure"
+        to_params.Comment = "3D"
         to_params.XSymmetry = True
         to_params.ZSymmetry = True
         to_params.nDOFDesired = 75000 if nDOFDesired is None else nDOFDesired
         to_params.Constraints = [(TO_QOI.VOLUME_FRACTION, None, 0.15)] 
+
+
+    # Body Force Examples
     elif to_problem == StructuralTOExamples.GravityPlate:
         structural_problem = StructuralExamples.GravityPlate
         to_params.Comment  = "Body Force"
@@ -206,6 +206,33 @@ def getStructuralTOProblem(to_problem: StructuralTOExamples,nDOFDesired = None, 
         to_params.APPLY_FILTER_TO_SENSITIVITY = False # Apply filter to density
         to_params.APPLY_FILTER_TO_DENSITY = True # Apply filter to density
         to_params.KeepFixedElems = True  # Keep elements that are fixed in the centrifugal plate example
+
+
+    elif to_problem == StructuralTOExamples.CantileverMidLoadComplianceConstraint:
+        structural_problem = StructuralExamples.CantileverMidLoad
+        to_params.Comment = "Compliance Constraint"
+        to_params.Objective = (TO_QOI.VOLUME_FRACTION, None) # see below for setting the GVECTOR after mesh is created
+        to_params.YSymmetry = True  # Symmetry about the Y-axis
+        to_params.ExtrudeZ = True
+        to_params.nDOFDesired = 25000 if nDOFDesired is None else nDOFDesired
+        to_params.Constraints = [(TO_QOI.COMPLIANCE, None, 1.5)] 
+
+    elif to_problem == StructuralTOExamples.Inverter:
+        structural_problem = StructuralExamples.Inverter
+        to_params.Comment  = "Compliant Mechanism"
+        to_params.Objective = (TO_QOI.GVECTOR, None) # see below for setting the GVECTOR after mesh is created
+        to_params.YSymmetry = True
+        to_params.ExtrudeZ = True
+        to_params.nDOFDesired = 20000 if nDOFDesired is None else nDOFDesired
+        to_params.Constraints = [(TO_QOI.VOLUME_FRACTION, None, 0.3), (TO_QOI.COMPLIANCE, None, 3)] 
+
+    elif to_problem == StructuralTOExamples.KnuckleAssembly:
+        structural_problem = StructuralExamples.KnuckleAssembly
+        to_params.Comment = "Retaining Components"
+        to_params.XSymmetry = True
+        to_params.ZSymmetry = True
+        to_params.nDOFDesired = 75000 if nDOFDesired is None else nDOFDesired
+        to_params.Constraints = [(TO_QOI.VOLUME_FRACTION, None, 0.25)] 
     elif to_problem == StructuralTOExamples.BliskWithBlade:
         structural_problem = StructuralExamples.BliskWithBlade
         to_params.Comment  = "Large DOF"

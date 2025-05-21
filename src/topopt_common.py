@@ -186,17 +186,18 @@ def compute_constraint_and_gradient(to_params, sol: np.ndarray, x: np.ndarray,	f
 	dc = np.zeros((nConstraints,x.size))
 	
 	for m in range(nConstraints):
-		constraintType  = to_params.Constraints[m][0]	# first entry is the type of constraint			
+		constraintType  = to_params.Constraints[m][0]	# first entry is the type of constraint		
+		constraintUpperLimit = to_params.Constraints[m][2] # third entry is the constraint value	
 		if (constraintType == TO_QOI.COMPLIANCE): 
 			compliance, compliance_grad = compute_compliance_and_gradient(sol, x, fe_solver, KE, material_model)
-			complianceConstraint =  (compliance/to_params.Constraints[m][2] - 1.0)
-			complianceConstraint_gradient =  (compliance_grad/to_params.Constraints[m][2])
+			complianceConstraint =  (compliance/constraintUpperLimit - 1.0)
+			complianceConstraint_gradient =  (compliance_grad/constraintUpperLimit)
 			c[m,0],dc[m,:] = complianceConstraint, complianceConstraint_gradient[np.newaxis]
 		elif (constraintType == TO_QOI.VOLUME_FRACTION):
 			volConstraint, volConstraint_gradient = compute_volume_constraint_and_gradient(x,to_params.Constraints[m][2])
 			c[m,0], dc[m,:] = volConstraint, volConstraint_gradient[np.newaxis]
 		else:
-			raise NotImplementedError(" objective is not implemented yet.")
+			raise NotImplementedError(" constraint is not implemented yet.")
 	return c, dc
 
 def compute_objective_and_gradient(to_params, sol: np.ndarray, x: np.ndarray,	fe_solver, KE,
@@ -206,12 +207,16 @@ def compute_objective_and_gradient(to_params, sol: np.ndarray, x: np.ndarray,	fe
 	if (objectiveType == TO_QOI.COMPLIANCE): 
 		compliance, compliance_grad = compute_compliance_and_gradient(sol, x, fe_solver, KE, material_model)
 		return compliance, compliance_grad
+	elif (objectiveType == TO_QOI.VOLUME_FRACTION):
+		volfracObj = np.mean(x)
+		volFrac_gradient = np.ones_like(x) / x.size
+		return volfracObj, volFrac_gradient
 	elif (objectiveType == TO_QOI.GVECTOR):
 		g = to_params.Objective[1]
 		compliance, compliance_grad = compute_solution_dotproduct_and_gradient(sol, x, fe_solver, KE,material_model,g)
 		return compliance, compliance_grad
 	else:
-		raise NotImplementedError(" objective is not implemented yet.")
+		raise NotImplementedError(f"Objective {objectiveType} is not implemented yet.")
 	
 
 def createFilters(fe_solver: hex_structural_fea.HexStructuralFEA,to_params):
