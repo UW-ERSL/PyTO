@@ -36,7 +36,7 @@ def runTOMethodOnStructuralBenchmarks(optimizationMethod):
 						StructuralTOExamples.CentrifugalPlate]
 	
 	
-	for to_problem in benchmarks_2_5D_problems:
+	for to_problem in benchmarks_3D_problems:
 		if to_problem in benchmarks_2_5D_problems:
 			subFolder = "2.5D"
 		elif to_problem in benchmarks_3D_problems:
@@ -297,7 +297,7 @@ def combine_results():
 
 if __name__ == "__main__":    
 	
-	optimizationMethods = [TO_METHODS.DENSITYMMA, TO_METHODS.DENSITYOC, TO_METHODS.PARETO]
+	optimizationMethods = [TO_METHODS.PARETO]
 	for optimizationMethod in optimizationMethods:
 		runTOMethodOnStructuralBenchmarks(optimizationMethod)
 		print(f"Finished {optimizationMethod.name} tests.")

@@ -38,8 +38,7 @@ class StructuralExamples(enum.Enum):
 	LBracketThick = enum.auto()
 	BliskQuarter = enum.auto()
 	BliskWithBlade =  enum.auto()
-	NoseCone = enum.auto()
-	
+
 
 
 def getStructuralProblem(problem: StructuralExamples, **kwargs):
@@ -117,8 +116,6 @@ def getStructuralProblem(problem: StructuralExamples, **kwargs):
     return createTableProblem(**kwargs)
   elif problem == StructuralExamples.ArrowHead:
     return createArrowHeadProblem(**kwargs)
-  elif problem == StructuralExamples.NoseCone:
-    return createNoseconeProblem(**kwargs)
   else:
     raise ValueError("Invalid structural example name.")
   
@@ -1903,43 +1900,6 @@ def createLBracketThickProblem(nDOFDesired: int = 80000,topload = 1000,midload =
   mat_prop = mat_lib.get_material("Steel")
   elem_body_force = None
 
-  return mesh, mat_prop, bc, elem_body_force
-
-  # ----------------------------------------
-def createNoseconeProblem(nDOFDesired: int = 10000,  totalLoad =  1000):
- 
-  # Read the STL model, create a mesh of desired size, and a structural problem is posed on it.
-  stl_file = os.path.join(script_dir, '../Models/Nosecone/HollowNoseCone.STL')
-
-  nElemsDesired = nDOFDesired/3    # estimate
-  mesh = hex_mesher.HexMesher()
-  
-  mesh.createMeshFromSTLFile(stl_file, nElemsDesired=nElemsDesired)
-  mesh.createEdofMatStructural()
-
-  node_pts = mesh.node_xyz
-  fixed_nodes = np.where(node_pts[:, 1] == np.min(node_pts[:, 1]))[0]
-
-  fixed_dofs = np.array([3 * fixed_nodes,
-              3 * fixed_nodes + 1,
-              3 * fixed_nodes + 2]).flatten().astype(int)
-  dirichlet_values = 0*np.ones_like(fixed_dofs, dtype = float)
-
-  mesh.node_indices[fixed_nodes, 3] = 1 # for plotting
-  
-  load_nodes = np.where(node_pts[:, 1] > 0.03)[0]       
-  
-  mesh.node_indices[load_nodes, 3] = 2 # for plotting
-  load_dofs = 3 * load_nodes + 1  # y direction
-
-  load_per_dof = -totalLoad/len(load_nodes)
-  force = np.zeros(3*mesh.num_nodes)
-  force[load_dofs] = load_per_dof
-  bc = bound_cond.BC(force = force,fixed_dofs = fixed_dofs,dirichlet_values = dirichlet_values) 
-
-  mat_prop = mat_lib.get_material("Steel")
-  
-  elem_body_force = None
   return mesh, mat_prop, bc, elem_body_force
 
 
