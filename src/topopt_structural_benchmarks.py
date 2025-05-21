@@ -38,6 +38,7 @@ class StructuralTOExamples(enum.Enum):
     # Other Examples
 	KnuckleAssembly = enum.auto()
 	BliskWithBlade = enum.auto()
+	BliskWithBladeMass = enum.auto()
 	NoseCone = enum.auto()
 
 def getStructuralTOProblem(to_problem: StructuralTOExamples,nDOFDesired = None, **kwargs):
@@ -215,7 +216,7 @@ def getStructuralTOProblem(to_problem: StructuralTOExamples,nDOFDesired = None, 
         to_params.YSymmetry = True  # Symmetry about the Y-axis
         to_params.ExtrudeZ = True
         to_params.nDOFDesired = 25000 if nDOFDesired is None else nDOFDesired
-        to_params.Constraints = [(TO_QOI.COMPLIANCE, None, 1.5)] 
+        to_params.Constraints = [(TO_QOI.COMPLIANCE, None, 40)] 
 
     elif to_problem == StructuralTOExamples.Inverter:
         structural_problem = StructuralExamples.Inverter
@@ -239,6 +240,12 @@ def getStructuralTOProblem(to_problem: StructuralTOExamples,nDOFDesired = None, 
         to_params.KeepFixedElems = True
         to_params.RemoveHangingElems = False
         to_params.nDOFDesired = 100000 if nDOFDesired is None else nDOFDesired
+    elif to_problem == StructuralTOExamples.BliskWithBladeMass:
+        structural_problem = StructuralExamples.BliskWithBlade
+        to_params.Comment  = "Large DOF"
+        to_params.KeepFixedElems = True
+        to_params.RemoveHangingElems = False
+        to_params.nDOFDesired = 100000 if nDOFDesired is None else nDOFDesired
     else:
         raise ValueError(f"Unknown problem: {to_problem}")
     
@@ -253,6 +260,14 @@ def getStructuralTOProblem(to_problem: StructuralTOExamples,nDOFDesired = None, 
         to_params.ElemsToKeep = find_elements_with_fixedDOF(mesh, bc,nDOFPerNode=3)
 
     if to_problem == StructuralTOExamples.BliskWithBlade:
+        centerPt = [0,0,0]
+        axis = [0,0,1]
+        outerRadius1 = 0.0558
+        outerRadius2 = 0.1
+        bladeElements = mesh.get_elems_within_annular_region(centerPt,axis,outerRadius1,outerRadius2)
+        to_params.ElemsToKeep = np.union1d(to_params.ElemsToKeep, bladeElements)
+
+    if to_problem == StructuralTOExamples.BliskWithBladeMass:
         centerPt = [0,0,0]
         axis = [0,0,1]
         outerRadius1 = 0.0558

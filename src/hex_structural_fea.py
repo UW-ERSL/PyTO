@@ -69,12 +69,12 @@ class HexStructuralFEA:
     
     if isinstance(mat_prop, list):
     # Create element stiffness matrix for each material
-      elem_stiff_list = [hex_element_stiffness.hex8_stiffness_matrix_structural(mp, mesh.elem_size) 
+      elem_stiff_list = [hex_element_stiffness.hex8_stiffness_matrix_structural(mp.youngs_modulus,mp.poissons_ratio, self.mesh.elem_size) 
                 for mp in mat_prop]
       self.elem_stiff = np.stack(elem_stiff_list)
     else:
       self.elem_stiff = np.expand_dims(
-          hex_element_stiffness.hex8_stiffness_matrix_structural(mat_prop, mesh.elem_size), axis=0)
+          hex_element_stiffness.hex8_stiffness_matrix_structural(mat_prop.youngs_modulus,mat_prop.poissons_ratio, self.mesh.elem_size), axis=0)
 
   #################################################################
   def solve(self,
@@ -101,13 +101,23 @@ class HexStructuralFEA:
                     elem_material_scaling).flatten(order = 'C')
     else:
       # Multiple materials case (M,N,N)
-      # Assuming elem_mat_id contains material ID (0 to M-1) for each element
-      # Randomly assign material IDs (0 or 1) to each element
+      print(f"elem_stiff shape: {self.elem_stiff.shape}")
+    
+      nElems = self.mesh.num_elems
+      # Use material indices from mesh, create default if not available
+      if hasattr(self.mesh, 'element_material_indices'):
+          elem_mat_indices = self.mesh.element_material_indices
+      else:
+          # Default: assign all elements to 
+          elem_mat_indices = range(self.mesh.num_elems)
+      
+      eye_mat = np.eye(self.elem_stiff.shape[0])
+      material_selector = eye_mat[elem_mat_indices]  # Shape: (nElems, nMaterials)
       
       elem_stiff_mtrx = np.einsum('mij, e, em -> eij',
                     self.elem_stiff,
                     elem_material_scaling,
-                    np.eye(self.elem_stiff.shape[0])[self.mesh.elemComponentId]).flatten(order = 'C')
+                    material_selector).flatten(order = 'C')
 
     
     self.stiff_mtrx = sp.coo_matrix((elem_stiff_mtrx, (self.node_idx[:, 0], self.node_idx[:, 1])),

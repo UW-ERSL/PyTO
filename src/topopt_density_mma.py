@@ -79,7 +79,7 @@ def topopt_mma(fe_solver, #hex_structural_fea.HexStructuralFEA or hex_thermal_fe
 	if (constraintType == TO_QOI.VOLUME_FRACTION):
 		volFractionConstraint = to_params.Constraints[0][2]
 	else:
-		volFractionConstraint =0.5 # default value
+		volFractionConstraint =1 # default value
 	
 	x0 = volFractionConstraint* np.ones(num_elems, dtype = float)
 	x0 = x0.reshape(-1, 1)
@@ -226,7 +226,7 @@ if __name__ == "__main__":
 	print("-" * 50)
 	# to_problem = StructuralTOExamples.CantileverMidLoad # Choose the TO problem
 	#to_problem = ThermalTOExamples.FourCornersThermal # Choose the TO problem
-	to_problem = StructuralTOExamples.CantileverMidLoadComplianceConstraint
+	to_problem = StructuralTOExamples.CantileverMidLoad # Choose the TO problem
 
 	if (to_problem in StructuralTOExamples):
 		mesh, mat_prop, bc,elem_body_force, to_params = getStructuralTOProblem(to_problem)

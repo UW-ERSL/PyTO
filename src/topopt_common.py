@@ -142,6 +142,7 @@ def compute_compliance_and_gradient(sol: np.ndarray, x: np.ndarray,
 	
 	
 	compliance = np.sum(materialScaling * ce)
+	print("Compliance: ", compliance)
 	return compliance, compliance_grad
 
 
@@ -149,7 +150,7 @@ def compute_solution_dotproduct_and_gradient(sol: np.ndarray, x,fe_solver,KE,mat
 				) -> np.ndarray:
 	"""Compute the objective g'* sol, and its gradient.
 
-	Args:
+	Args:	
 		density: Array of (num_elems,) containing the element densities.
 		fe_solver: The structural FEA solver object.
 		penal: The penalization factor for the SIMP method.
