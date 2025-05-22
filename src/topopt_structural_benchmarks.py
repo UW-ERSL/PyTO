@@ -241,11 +241,12 @@ def getStructuralTOProblem(to_problem: StructuralTOExamples,nDOFDesired = None, 
         to_params.RemoveHangingElems = False
         to_params.nDOFDesired = 100000 if nDOFDesired is None else nDOFDesired
     elif to_problem == StructuralTOExamples.BliskWithBladeMass:
-        structural_problem = StructuralExamples.BliskWithBlade
+        structural_problem = StructuralExamples.BliskWithBladeMass
         to_params.Comment  = "Large DOF"
         to_params.KeepFixedElems = True
-        to_params.RemoveHangingElems = False
-        to_params.nDOFDesired = 100000 if nDOFDesired is None else nDOFDesired
+        to_params.RemoveHangingElems = True
+        to_params.nDOFDesired = 100000
+        to_params.TargetMass = 0.6 # kg 
     else:
         raise ValueError(f"Unknown problem: {to_problem}")
     
@@ -268,12 +269,14 @@ def getStructuralTOProblem(to_problem: StructuralTOExamples,nDOFDesired = None, 
         to_params.ElemsToKeep = np.union1d(to_params.ElemsToKeep, bladeElements)
 
     if to_problem == StructuralTOExamples.BliskWithBladeMass:
+        # Get the elements to keep for the blade
         centerPt = [0,0,0]
         axis = [0,0,1]
-        outerRadius1 = 0.0558
-        outerRadius2 = 0.1
+        outerRadius1 = 0.22
+        outerRadius2 = 0.3
         bladeElements = mesh.get_elems_within_annular_region(centerPt,axis,outerRadius1,outerRadius2)
         to_params.ElemsToKeep = np.union1d(to_params.ElemsToKeep, bladeElements)
+
 
     if to_problem == StructuralTOExamples.KnuckleAssembly:
          to_params.ElemsToKeep = np.where(mesh.elemComponentId == 2)[0]

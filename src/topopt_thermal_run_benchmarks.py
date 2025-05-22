@@ -13,7 +13,7 @@ def runTOMethodOnThermalBenchmarks(optimizationMethod):
 
 	results_list = []
 	dsolver = deflation.DeflationSolver()
-
+ 
 
 	benchmarks_2_5D_problems = [ThermalTOExamples.HeatPlate, ThermalTOExamples.FourCornersThermal,
 							 ThermalTOExamples.BridgeThermal]	

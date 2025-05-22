@@ -101,23 +101,9 @@ class HexStructuralFEA:
                     elem_material_scaling).flatten(order = 'C')
     else:
       # Multiple materials case (M,N,N)
-      print(f"elem_stiff shape: {self.elem_stiff.shape}")
-    
-      nElems = self.mesh.num_elems
-      # Use material indices from mesh, create default if not available
-      if hasattr(self.mesh, 'element_material_indices'):
-          elem_mat_indices = self.mesh.element_material_indices
-      else:
-          # Default: assign all elements to 
-          elem_mat_indices = range(self.mesh.num_elems)
-      
-      eye_mat = np.eye(self.elem_stiff.shape[0])
-      material_selector = eye_mat[elem_mat_indices]  # Shape: (nElems, nMaterials)
-      
-      elem_stiff_mtrx = np.einsum('mij, e, em -> eij',
+      elem_stiff_mtrx = np.einsum('mij, m -> mij',
                     self.elem_stiff,
-                    elem_material_scaling,
-                    material_selector).flatten(order = 'C')
+                    elem_material_scaling).flatten(order = 'C')
 
     
     self.stiff_mtrx = sp.coo_matrix((elem_stiff_mtrx, (self.node_idx[:, 0], self.node_idx[:, 1])),
