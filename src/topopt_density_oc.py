@@ -105,7 +105,7 @@ def topopt_optimality_criteria(
 			ce_body_force = (sol[fe_solver.mesh.edofMat].reshape(num_elems, 24) * nodal_body_force[fe_solver.mesh.edofMat].reshape(num_elems, 24)).sum(1)
 			grad_obj +=  2*ce_body_force
 			
-		if (to_params.APPLY_FILTER_TO_SENSITIVITY):
+		if (to_params.APPLY_FILTER_TO_SENSITIVITY)  and (to_params.Objective is not TO_QOI.VOLUME_FRACTION):
 			grad_obj = (H * grad_obj)/Hs # apply filter
 
 		if (elemsWithForces.size > 0):
@@ -205,8 +205,15 @@ def topopt_optimality_criteria(
 	fe_solver.mesh.setPseudoDensity(x)
 	meshComponents = fe_solver.mesh.find_connected_components()
 	if (len(meshComponents) > 1):
-		errorMsg = "Hanging elements"
-		success = False
+		if (print_progress):
+			print("Disconnected topology detected. Removing hanging elements.")
+		# Find the largest connected component and its size
+		largest_component = max(meshComponents, key=len)
+		# Set density to 1 for elements in largest component
+		x[:] = 0.0
+		x[list(largest_component)] = 1.0
+		fe_solver.mesh.setPseudoDensity(x.flatten())
+		volfrac = np.mean(x)
 	sol = fe_solver.solve(x, material_model)
 	obj, grad_obj = compute_objective_and_gradient(to_params,sol,x, fe_solver,KE, material_model)
 

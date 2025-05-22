@@ -104,7 +104,7 @@ def topopt_mma(fe_solver, #hex_structural_fea.HexStructuralFEA or hex_thermal_fe
 
 	while True:
 		x = mma_state.x.reshape(-1)
-		if (to_params.APPLY_FILTER_TO_DENSITY) and (to_params.Objective is not TO_QOI.VOLUME_FRACTION):
+		if (to_params.APPLY_FILTER_TO_DENSITY):
 			x = H*x/Hs
 			mma_state.x = x.reshape(-1, 1)
 
@@ -128,7 +128,7 @@ def topopt_mma(fe_solver, #hex_structural_fea.HexStructuralFEA or hex_thermal_fe
 			ce_body_force = (sol[fe_solver.mesh.edofMat].reshape(num_elems, 24) * nodal_body_force[fe_solver.mesh.edofMat].reshape(num_elems, 24)).sum(1)
 			grad_obj +=  2*ce_body_force*get_material_model_rho_sensitivity(x,material_model)
 
-		if (to_params.APPLY_FILTER_TO_SENSITIVITY):
+		if (to_params.APPLY_FILTER_TO_SENSITIVITY) and (to_params.Objective is not TO_QOI.VOLUME_FRACTION):
 			grad_obj = (H * grad_obj)/Hs # apply filter
 		if (elemsWithForces.size > 0):
 			grad_obj[elemsWithForces] = min(grad_obj) # retain elements that have nodes with external forces
@@ -202,9 +202,17 @@ def topopt_mma(fe_solver, #hex_structural_fea.HexStructuralFEA or hex_thermal_fe
 	volfrac = np.mean(x)
 	fe_solver.mesh.setPseudoDensity(x)
 	meshComponents = fe_solver.mesh.find_connected_components()
+	
 	if (len(meshComponents) > 1):
-		errorMsg = "Hanging elements"
-		success = False
+		if (print_progress):
+			print("Disconnected topology detected. Removing hanging elements.")
+		# Find the largest connected component and its size
+		largest_component = max(meshComponents, key=len)
+		# Set density to 1 for elements in largest component
+		x[:] = 0.0
+		x[list(largest_component)] = 1.0
+		fe_solver.mesh.setPseudoDensity(x.flatten())
+		volfrac = np.mean(x)
 	sol = fe_solver.solve(x, material_model)
 	obj, grad_obj = compute_objective_and_gradient(to_params,sol,x, fe_solver,KE, material_model)
 	history['objective'].append(obj)
@@ -231,7 +239,7 @@ if __name__ == "__main__":
  
 	print("-" * 50)
 
-	to_problem = StructuralTOExamples.CantileverMidLoadComplianceConstraint # Choose the TO problem
+	to_problem = StructuralTOExamples.Mitchell_1 # Choose the TO problem
 
 	if (to_problem in StructuralTOExamples):
 		mesh, mat_prop, bc,elem_body_force, to_params = getStructuralTOProblem(to_problem)
@@ -283,9 +291,7 @@ if __name__ == "__main__":
 								plot_progress = True,
 								debug = debug)
 	timeTaken = time.time() - startTime
-	print(f"Time taken: {timeTaken:.0f} s")
-	if not success:
-		print(f"Error: {errorMsg}")
+
 
 	title = f"MMA: vol: {history['volume'][-1]:0.2f}, J: {history['objective'][-1]:.3g}, nFEA: {len(history['objective']):3d}, time: {timeTaken:.0f} s"
 	fe_solver.plot_mesh(title = title, plot_bc = False, save_path = None)

@@ -231,6 +231,7 @@ def topopt_pareto(fe_solver,
 				# Set density to 1 for elements in largest component
 				x[list(largest_component)] = 1.0
 				fe_solver.mesh.setPseudoDensity(x.flatten())
+				volfrac = np.mean(x)
 			history['objective'].append(JTemp)
 			history['volume'].append(volfrac)
 			scale = history['objective'][-1] / history['objective'][0]

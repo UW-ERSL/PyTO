@@ -83,6 +83,7 @@ def runTOMethodOnStructuralBenchmarks(optimizationMethod):
 			u, history, success,errorMsg,nFEAs = topopt_levelset(fe_solver = fe_solver,
 													to_params = to_params)
 		timeTaken = time.time() - startTime
+
 		# Create the directory if it does not exist
 		output_dir = f"./Results/Results_{time.strftime('%Y-%m-%d')}/Structural/{subFolder}/{optimizationMethod.name}"
 		if not os.path.exists(output_dir):
@@ -102,7 +103,7 @@ def runTOMethodOnStructuralBenchmarks(optimizationMethod):
 			'#FEAs': nFEAs,
 			'time (s)': timeTaken,
 			'success': success,
-			'error': errorMsg
+			'errorMsg': errorMsg
 		})
 		# Check if a previous CSV result exists for this method and problem
 		result_csv_file = f"{output_dir}/{optimizationMethod.name}_summary.csv"
