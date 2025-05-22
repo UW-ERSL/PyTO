@@ -216,7 +216,7 @@ def getStructuralTOProblem(to_problem: StructuralTOExamples,nDOFDesired = None, 
         to_params.YSymmetry = True  # Symmetry about the Y-axis
         to_params.ExtrudeZ = True
         to_params.nDOFDesired = 25000 if nDOFDesired is None else nDOFDesired
-        to_params.Constraints = [(TO_QOI.COMPLIANCE, None, 40)] 
+        to_params.Constraints = [(TO_QOI.COMPLIANCE, None, 25)] # Assuming initial compliance is around 15
 
     elif to_problem == StructuralTOExamples.Inverter:
         structural_problem = StructuralExamples.Inverter

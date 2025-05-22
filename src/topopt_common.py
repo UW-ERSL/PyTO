@@ -142,7 +142,7 @@ def compute_compliance_and_gradient(sol: np.ndarray, x: np.ndarray,
 	
 	
 	compliance = np.sum(materialScaling * ce)
-	print("Compliance: ", compliance)
+
 	return compliance, compliance_grad
 
 

@@ -104,7 +104,7 @@ def topopt_mma(fe_solver, #hex_structural_fea.HexStructuralFEA or hex_thermal_fe
 
 	while True:
 		x = mma_state.x.reshape(-1)
-		if (to_params.APPLY_FILTER_TO_DENSITY):
+		if (to_params.APPLY_FILTER_TO_DENSITY) and (to_params.Objective is not TO_QOI.VOLUME_FRACTION):
 			x = H*x/Hs
 			mma_state.x = x.reshape(-1, 1)
 
@@ -137,6 +137,12 @@ def topopt_mma(fe_solver, #hex_structural_fea.HexStructuralFEA or hex_thermal_fe
 			grad_obj[to_params.ElemsToKeep] = min(grad_obj) # also retain elements that are in the keep list
 
 		c, dcdx = compute_constraint_and_gradient(to_params,sol,x, fe_solver,KE, material_model)
+		if (to_params.APPLY_FILTER_TO_SENSITIVITY):
+			for m in range(len(to_params.Constraints)):
+				if (to_params.Constraints[m][0] is not TO_QOI.VOLUME_FRACTION):
+					dcdx[m] = ((H @ dcdx[m])/Hs) # apply filter
+	
+
 
 		timeMMAStart = time.time()
 		mma_state = mma.update_mma(mma_state,
@@ -224,9 +230,8 @@ if __name__ == "__main__":
 	from topopt_thermal_benchmarks import *
  
 	print("-" * 50)
-	# to_problem = StructuralTOExamples.CantileverMidLoad # Choose the TO problem
-	#to_problem = ThermalTOExamples.FourCornersThermal # Choose the TO problem
-	to_problem = StructuralTOExamples.CantileverMidLoad # Choose the TO problem
+
+	to_problem = StructuralTOExamples.CantileverMidLoadComplianceConstraint # Choose the TO problem
 
 	if (to_problem in StructuralTOExamples):
 		mesh, mat_prop, bc,elem_body_force, to_params = getStructuralTOProblem(to_problem)
