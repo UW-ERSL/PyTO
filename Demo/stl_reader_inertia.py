@@ -341,6 +341,13 @@ class STLGeom:
         }
         return triangle_data
     
+    def get_pyvista_mesh(self)->pv.PolyData:
+        vertices = self.mesh.vectors.reshape(-1, 3)
+        faces = np.arange(len(vertices)).reshape(-1, 3)
+        faces = np.column_stack((np.full(len(faces), 3), faces))
+        mesh = pv.PolyData(vertices, faces)
+        return mesh
+    
     def plotGeometry(self, show_edges=False, show_axes=True, show_bounding_box=True):
          # Create a PyVista mesh from the STL data
         vertices = self.mesh.vectors.reshape(-1, 3)
@@ -728,6 +735,8 @@ if __name__ == "__main__":
     stl_file = os.path.join(script_dir, '../Models/ThickPlate/ThickPlate.STL')
     stl_file = os.path.join(script_dir, 'C:/Users/pthombre/Downloads/RocketPy_PyTO/Models/Rocket/SolidNoseConeForZAngularSymmetry.STL')
     stl_file = os.path.join(script_dir, 'C:/Users/pthombre/Downloads/RocketPy_PyTO/Models/Rocket/PayloadBase_meters.STL')
+    stl_file = os.path.join(script_dir, 'C:/Users/pthombre/Downloads/RocketPy_PyTO/Models/KnuckleAssembly/KnuckleAssembly.STL')
+    stl_file = os.path.join(script_dir, 'C:/Users/pthombre/Downloads/RocketPy_PyTO/Models/Rocket/PayLoadBaseAssemblyWHoleinZ.STL')
 
   
     stl_geom = STLGeom(stl_file)
@@ -748,7 +757,7 @@ if __name__ == "__main__":
     I_origin = inertia_tensor * density  # current output
     I_com = shift_inertia_to_com(I_origin, center_of_mass, mass)
     print("Moments of inertia: ( kilograms * square meters (if the stl is in meters) )/" \
-    "Taken at the center of mass and aligned with the output coordinate system")
+    "Taken at the center of mass and aligned with the output coordinate system.")
     print(f"Inertia for RocketPy: \n {I_com}")
 
 
