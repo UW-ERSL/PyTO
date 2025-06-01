@@ -18,6 +18,7 @@ class StructuralExamples(enum.Enum):
 	ShortCantileverMidLoad = enum.auto()
 	CantileverTipLoad = enum.auto()
 	CantileverMidLoad = enum.auto()
+	TensilePlate = enum.auto()
 	TwoBar = enum.auto()
 	Inverter = enum.auto()
 	ThreeHoleBracket = enum.auto()
@@ -81,6 +82,8 @@ def getStructuralProblem(problem: StructuralExamples, **kwargs):
     return createMBBBProblem(**kwargs)
   elif problem == StructuralExamples.LBracket:
     return createLBracketProblem(**kwargs)
+  elif problem == StructuralExamples.TensilePlate:
+    return createTensilePlateProblem(**kwargs)
   elif problem == StructuralExamples.TwoBar:
     return createTwoBarProblem(**kwargs)
   elif problem == StructuralExamples.DistributedLoad:
@@ -1233,6 +1236,44 @@ def createGravityBarProblem(nDOFDesired: int = 10000, material_density = 7700):
 
   # ----------------------------------------
   
+def createTensilePlateProblem(nDOFDesired: int = 10000, L: float = [1.0, 0.01, 1.0]):
+  nVoxelsDesired = nDOFDesired/3    
+  # Let the number of voxels be proportional to the length in each direction
+  alpha = (nVoxelsDesired/(L[0]*L[1]*L[2]))**(1/3)
+  nelx = round(alpha*L[0])
+  nely = round(alpha*L[1])
+  nelz = round(alpha*L[2])
+  mesh = hex_mesher.HexMesher()
+  mesh.grid_mesh(num_elems = (nelx, nely, nelz),
+                  elem_size = (L[0]/nelx, L[1]/nely, L[2]/nelz))
+  mesh.createEdofMatStructural()
+
+
+  fixed_nodes =np.intersect1d(mesh.getNodesOnBoundingBoxPlane(0,True), mesh.getNodesOnBoundingBoxPlane(2,False))
+
+  fixed_dofs = np.array([3 * fixed_nodes,
+              3 * fixed_nodes + 1,
+              3 * fixed_nodes + 2]).flatten().astype(int)
+  dirichlet_values = 0*np.ones_like(fixed_dofs, dtype = float)
+
+  mesh.node_indices[fixed_nodes, 3] = 1
+  force_nodes =np.intersect1d(mesh.getNodesOnBoundingBoxPlane(0,False), mesh.getNodesOnBoundingBoxPlane(2,False))
+  force_dofs = np.array([3 * force_nodes])
+  boundary_force = np.zeros(3*mesh.num_nodes)
+  boundary_force[force_dofs] = 10000/len(force_nodes)
+  elem_body_force = np.zeros(3*mesh.num_elems)
+  mat_prop = mat_lib.get_material("Steel") 
+ 
+  mesh.node_indices[force_nodes, 3] = 2 # for plotting
+  bc = bound_cond.BC(force = boundary_force,
+            fixed_dofs = fixed_dofs,
+            dirichlet_values = dirichlet_values) 
+  
+  return mesh, mat_prop, bc, elem_body_force
+
+  # ----------------------------------------
+
+  
 def createGravityPlateProblem(nDOFDesired: int = 10000, L: float = [1.0, 0.5, 0.01],
                                verticalForcePercent = 0):
   nVoxelsDesired = nDOFDesired/3    
@@ -1274,7 +1315,7 @@ def createGravityPlateProblem(nDOFDesired: int = 10000, L: float = [1.0, 0.5, 0.
   return mesh, mat_prop, bc, elem_body_force
 
   # ----------------------------------------
-  
+
 def createArrowHeadProblem(nDOFDesired: int = 10000, totalLoad = 1000):
   """Creates a structural problem setup for an arrowhead-shaped bracket.
 

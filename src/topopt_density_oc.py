@@ -233,13 +233,13 @@ def topopt_optimality_criteria(
 	print("Error: ", errorMsg)
 	return sol, history, success, errorMsg, nFEAs
 
-	
+	 
 if __name__ == "__main__":    
 	from topopt_structural_benchmarks import *
 	from topopt_thermal_benchmarks import *
 
 	print("-" * 50)
-	to_problem = StructuralTOExamples.Mitchell_2 # Choose the TO problem
+	to_problem = StructuralTOExamples.TensilePlate # Choose the TO problem
 	#to_problem = ThermalTOExamples.FourCornersThermal # Choose the TO problem
 
 	if (to_problem in StructuralTOExamples):
