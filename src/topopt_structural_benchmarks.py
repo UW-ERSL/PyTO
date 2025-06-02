@@ -125,10 +125,10 @@ def getStructuralTOProblem(to_problem: StructuralTOExamples,nDOFDesired = None, 
         to_params.Objective = (TO_QOI.GVECTOR, None) # see below for setting the GVECTOR after mesh is created
         to_params.YSymmetry = True
         to_params.ExtrudeZ = True
-        to_params.nDOFDesired = 60000 if nDOFDesired is None else nDOFDesired
-        to_params.Constraints = [(TO_QOI.VOLUME_FRACTION, None, 0.3), (TO_QOI.COMPLIANCE, None, 10.*7.76e-13)] #C0 = 7.76e-13 
-        to_params.RelativeFilterRadius = 3.0
-        to_params.APPLY_FILTER_TO_SENSITIVITY = False # Apply filter to sensitivity
+        to_params.nDOFDesired = 40000 if nDOFDesired is None else nDOFDesired
+        to_params.Constraints = [(TO_QOI.VOLUME_FRACTION, None, 0.35)]#, (TO_QOI.COMPLIANCE, None, 5.*4.82e-13)] #C0 = 7.76e-13 
+        to_params.RelativeFilterRadius = 1.5
+        to_params.APPLY_FILTER_TO_SENSITIVITY = True # Apply filter to sensitivity
         to_params.APPLY_FILTER_TO_DENSITY = True # Apply filter to density
     elif to_problem == StructuralTOExamples.LBracketTopLoad:
         structural_problem = StructuralExamples.LBracket
@@ -267,14 +267,14 @@ def getStructuralTOProblem(to_problem: StructuralTOExamples,nDOFDesired = None, 
         to_params.nDOFDesired = 25000 if nDOFDesired is None else nDOFDesired
         to_params.Constraints = [(TO_QOI.COMPLIANCE, None, 25)] # Assuming initial compliance is around 15
 
-    elif to_problem == StructuralTOExamples.Inverter:
-        structural_problem = StructuralExamples.Inverter
-        to_params.Comment  = "Compliant Mechanism"
-        to_params.Objective = (TO_QOI.GVECTOR, None) # see below for setting the GVECTOR after mesh is created
-        to_params.YSymmetry = True
-        to_params.ExtrudeZ = True
-        to_params.nDOFDesired = 20000 if nDOFDesired is None else nDOFDesired
-        to_params.Constraints = [(TO_QOI.VOLUME_FRACTION, None, 0.3), (TO_QOI.COMPLIANCE, None, 3)] 
+    # elif to_problem == StructuralTOExamples.Inverter:
+    #     structural_problem = StructuralExamples.Inverter
+    #     to_params.Comment  = "Compliant Mechanism"
+    #     to_params.Objective = (TO_QOI.GVECTOR, None) # see below for setting the GVECTOR after mesh is created
+    #     to_params.YSymmetry = True
+    #     to_params.ExtrudeZ = True
+    #     to_params.nDOFDesired = 20000 if nDOFDesired is None else nDOFDesired
+    #     to_params.Constraints = [(TO_QOI.VOLUME_FRACTION, None, 0.3), (TO_QOI.COMPLIANCE, None, 3)] 
 
     elif to_problem == StructuralTOExamples.KnuckleAssembly:
         structural_problem = StructuralExamples.KnuckleAssembly
