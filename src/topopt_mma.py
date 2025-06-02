@@ -114,9 +114,10 @@ def topopt_mma(fe_solver, #hex_structural_fea.HexStructuralFEA or hex_thermal_fe
 		timeFEAStart = time.time()
 
 		sol = fe_solver.solve(x, material_model)
+		fe_solver.postprocess()
 		nFEAs += 1
 		timeFEA += time.time() - timeFEAStart
-
+		
 		obj, grad_obj = compute_objective_and_gradient(to_params,sol,x, fe_solver,KE, material_model)
 		
 		if (len(history['objective']) == 0):
@@ -239,7 +240,7 @@ if __name__ == "__main__":
  
 	print("-" * 50)
  
-	to_problem = StructuralTOExamples.CantileverMidLoadVolumeObjective # Choose the TO problem
+	to_problem = StructuralTOExamples.LBracketMidLoadStressObjective # Choose the TO problem
 
 	if (to_problem in StructuralTOExamples):
 		mesh, mat_prop, bc,elem_body_force, to_params = getStructuralTOProblem(to_problem)

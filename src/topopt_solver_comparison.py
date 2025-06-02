@@ -6,8 +6,8 @@ import hex_structural_fea as fea
 import deflation
 import linear_solvers as lin_solv
 import os
-from topopt_density_mma import topopt_mma
-from topopt_density_oc import topopt_optimality_criteria	
+from topopt_mma import topopt_mma
+from topopt_oc import topopt_optimality_criteria	
 from topopt_pareto import topopt_pareto
 from hex_structural_examples import *
 from topopt_common import *

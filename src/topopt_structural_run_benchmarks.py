@@ -1,6 +1,6 @@
 from topopt_common import *
-from topopt_density_mma import topopt_mma
-from topopt_density_oc import topopt_optimality_criteria	
+from topopt_mma import topopt_mma
+from topopt_oc import topopt_optimality_criteria	
 from topopt_pareto import topopt_pareto
 from topopt_levelset import topopt_levelset	
 from topopt_structural_benchmarks import *
@@ -41,7 +41,7 @@ def runTOMethodOnStructuralBenchmarks(optimizationMethod):
 						StructuralTOExamples.CentrifugalPlate]
 	
 	
-	for to_problem in benchmarks_3D_problems:
+	for to_problem in benchmarks_2_5D_problems:
 		if to_problem in benchmarks_2_5D_problems:
 			subFolder = "Compliance2.5D"
 		elif to_problem in benchmarks_3D_problems:

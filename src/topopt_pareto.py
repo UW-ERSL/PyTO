@@ -1,5 +1,4 @@
 from topopt_common import *
-from topopt_filters import imposeZCastFilter
 import time
 import numpy as np
 def topopt_pareto(fe_solver,
@@ -81,14 +80,15 @@ def topopt_pareto(fe_solver,
 			KE = hex_element_stiffness.hex8_stiffness_matrix_thermal( fe_solver.mat_prop.thermal_conductivity,fe_solver.mesh.elem_size)
 	
 	sol = fe_solver.solve(x)
+	fe_solver.postprocess()
 	nFEAs = 1
 	# Store initial compliance
-	obj, _ = compute_objective_and_gradient(to_params,sol,x, fe_solver,KE)
-
+	obj, T = compute_objective_and_topological_sensitivity(to_params,sol,x, fe_solver,KE)
+	
 
 	history['objective'].append( obj)
 	history['volume'].append(volfrac)
-	T = computeTopologicalSensitivity(to_params, fe_solver,x)
+	
 	# Add contribution from body force to topological sensitivity if present
 	if (nodal_body_force is not None):
 		T_body = np.zeros(fe_solver.mesh.num_elems)
@@ -115,8 +115,6 @@ def topopt_pareto(fe_solver,
 	# Observation: Damping using the previous sensitivity values avoids getting trapped in local minima
 	wtDamping = 0.5 # 0 means full wt to current T values, else previous T values are damped in
 
-	
-		
 	constraintType = to_params.Constraints[0][0] # assume this is the first constraint
 	if (constraintType == TO_QOI.VOLUME_FRACTION):
 		volFractionConstraint = to_params.Constraints[0][2]
@@ -186,11 +184,10 @@ def topopt_pareto(fe_solver,
 			JPrev = JTemp  # Store previous value
 
 			sol = fe_solver.solve(x)
+			fe_solver.postprocess()
 			nFEAs += 1
-			JTemp, _ = compute_objective_and_gradient(to_params,sol,x, fe_solver,KE)
-
-			T = computeTopologicalSensitivity(to_params, fe_solver,x)
-	
+			JTemp, T = compute_objective_and_topological_sensitivity(to_params,sol,x, fe_solver,KE)
+			
 			# Add contribution from body force to topological sensitivity if present
 			if (nodal_body_force is not None):
 				T_body = np.zeros(fe_solver.mesh.num_elems)
@@ -215,7 +212,7 @@ def topopt_pareto(fe_solver,
 		if terminatePareto:
 			if (volfrac > 1.1*volFractionConstraint):
 				success = False
-				errorMsg =  f"vf {to_params.DesiredVolFraction:0.3f} not reached"
+				errorMsg =  f"vf {volFractionConstraint:0.3f} not reached"
 				print("-" * 50)
 				print("Pareto: Failed to reach volume fraction.")
 				print("1. Check for incorrect symmetry constraints")
@@ -254,7 +251,7 @@ if __name__ == "__main__":
 	from topopt_thermal_benchmarks import *
 	
 	print("-" * 50)
-	to_problem = StructuralTOExamples.CantileverMidLoadAM # Choose the TO problem
+	to_problem = StructuralTOExamples.LBracketMidLoad # Choose the TO problem
 	#to_problem = ThermalTOExamples.BridgeThermal # Choose the TO problem
 
 	if (to_problem in StructuralTOExamples):

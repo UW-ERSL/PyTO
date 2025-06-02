@@ -94,6 +94,42 @@ def find_elements_with_fixedDOF(mesh, bc,nDOFPerNode ) -> np.ndarray:
 
 	return np.array(elements_with_fixed_dofs)
 
+
+def createFilters(fe_solver: hex_structural_fea.HexStructuralFEA,to_params):
+	# Create  filters
+	H, Hs = createSmoothingFilter(fe_solver.mesh, rel_filter_radius=to_params.RelativeFilterRadius)
+	# Accumulate all other filters
+	if to_params.XSymmetry:
+		HX = createXSymmetryFilter(fe_solver.mesh)
+		H = H*HX
+	if to_params.YSymmetry:
+		HY = createYSymmetryFilter(fe_solver.mesh)
+		H = H*HY
+	if to_params.ZSymmetry:
+		HZ = createZSymmetryFilter(fe_solver.mesh)
+		H = H*HZ
+	if to_params.XAxisAngularSymmetry > 0:
+		HAAX = createXAngularSymmetryFilter(fe_solver.mesh, to_params.XAxisAngularSymmetry)
+		H = H*HAAX
+	if to_params.YAxisAngularSymmetry > 0:
+		HAAY = createYAngularSymmetryFilter(fe_solver.mesh, to_params.YAxisAngularSymmetry)
+		H = H*HAAY
+	if to_params.ZAxisAngularSymmetry >	0:
+		HAZ = createZAngularSymmetryFilter(fe_solver.mesh, to_params.ZAxisAngularSymmetry)
+		H = H*HAZ
+	if (to_params.ExtrudeY):
+		HEY = createYExtrudeFilter(fe_solver.mesh)
+		H = H*HEY
+	if (to_params.ExtrudeX):
+		HEX = createXExtrudeFilter(fe_solver.mesh)
+		H = H*HEX
+	if (to_params.ExtrudeZ):
+		HEZ = createZExtrudeFilter(fe_solver.mesh)
+		H = H*HEZ
+	Hs = np.array(H.sum(1)).squeeze()
+	return H, Hs
+
+
 def compute_volume_constraint_and_gradient(x: np.ndarray,
 											 volfracUpper: float,
 											 )-> np.ndarray:
@@ -159,7 +195,7 @@ def compute_pnorm_stress_and_sensitivity(sol: np.ndarray, x,
 	mesh = fe_solver.mesh
 	nelems = mesh.num_elems
 	q = 1 # STRESS_RELAXATION factor
-	fe_solver.postprocess()
+	
 	E = fe_solver.mat_prop.youngs_modulus 
 	nu = fe_solver.mat_prop.poissons_ratio
 	D = E / ((1 + nu) * (1 - 2*nu)) * np.array([
@@ -327,48 +363,27 @@ def compute_objective_and_gradient(to_params, sol: np.ndarray, x: np.ndarray,	fe
 		raise NotImplementedError(f"Objective {objectiveType} is not implemented yet.")
 	
 
-def createFilters(fe_solver: hex_structural_fea.HexStructuralFEA,to_params):
-	# Create  filters
-	H, Hs = createSmoothingFilter(fe_solver.mesh, rel_filter_radius=to_params.RelativeFilterRadius)
-	# Accumulate all other filters
-	if to_params.XSymmetry:
-		HX = createXSymmetryFilter(fe_solver.mesh)
-		H = H*HX
-	if to_params.YSymmetry:
-		HY = createYSymmetryFilter(fe_solver.mesh)
-		H = H*HY
-	if to_params.ZSymmetry:
-		HZ = createZSymmetryFilter(fe_solver.mesh)
-		H = H*HZ
-	if to_params.XAxisAngularSymmetry > 0:
-		HAAX = createXAngularSymmetryFilter(fe_solver.mesh, to_params.XAxisAngularSymmetry)
-		H = H*HAAX
-	if to_params.YAxisAngularSymmetry > 0:
-		HAAY = createYAngularSymmetryFilter(fe_solver.mesh, to_params.YAxisAngularSymmetry)
-		H = H*HAAY
-	if to_params.ZAxisAngularSymmetry >	0:
-		HAZ = createZAngularSymmetryFilter(fe_solver.mesh, to_params.ZAxisAngularSymmetry)
-		H = H*HAZ
-	if (to_params.ExtrudeY):
-		HEY = createYExtrudeFilter(fe_solver.mesh)
-		H = H*HEY
-	if (to_params.ExtrudeX):
-		HEX = createXExtrudeFilter(fe_solver.mesh)
-		H = H*HEX
-	if (to_params.ExtrudeZ):
-		HEZ = createZExtrudeFilter(fe_solver.mesh)
-		H = H*HEZ
-	Hs = np.array(H.sum(1)).squeeze()
-	return H, Hs
-
-def computeTopologicalSensitivity(to_params,fe_solver,x):
-	fe_solver.postprocess()
+def compute_objective_and_topological_sensitivity(to_params, sol: np.ndarray, x: np.ndarray,	fe_solver, KE,
+				material_model = None):
+	
 	objectiveType  = to_params.Objective[0]	# first entry is the type of objective			
 	if (objectiveType == TO_QOI.COMPLIANCE): 
-		if isinstance(fe_solver, hex_structural_fea.HexStructuralFEA):
+		dofMat = fe_solver.mesh.edofMat
+		num_elems = fe_solver.mesh.num_elems
+		nRows = KE.shape[0]
+		ce = (np.dot(sol[dofMat].reshape(num_elems, nRows), KE) * sol[dofMat].reshape(num_elems, nRows)).sum(1)
+		
+		if (nRows == 24): # structural hex
+			materialScaling = get_structural_material_model_scaling(x, material_model)
 			T = computeStructuralTopologicalSensitivity(fe_solver.mat_prop.poissons_ratio,fe_solver.strainComponents,fe_solver.stressComponents,x)
-		else:
+		elif (nRows == 8): # thermal hex
+			materialScaling = get_thermal_material_model_scaling(x, material_model)
 			T = computeThermalTopologicalSensitivity(fe_solver.mat_prop.thermal_conductivity,fe_solver.strain,x)
+		else:
+			raise ValueError("Invalid number of rows in element stiffness matrix.")
+	
+		compliance = np.sum(materialScaling * ce)
+		obj = compliance
 	elif (objectiveType == TO_QOI.GVECTOR):
 		g = to_params.Objective[1]
 		obj = np.dot(fe_solver.sol, g)
@@ -380,7 +395,7 @@ def computeTopologicalSensitivity(to_params,fe_solver,x):
                       fe_solver.bc,
                       dsolver = fe_solver.dsolver,
                       **fe_solver.kwargs)
-	return T
+	return obj,T
 	
 
 def computeStructuralTopologicalSensitivity(poissons_ratio,strains,stresses,x):

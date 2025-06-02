@@ -94,6 +94,7 @@ def topopt_optimality_criteria(
 		
 		
 		sol = fe_solver.solve(x, material_model)
+		fe_solver.postprocess()
 		obj, grad_obj = compute_objective_and_gradient(to_params,sol,x, fe_solver,KE, material_model)
 
 		if (len(history['objective']) == 0):
@@ -239,7 +240,7 @@ if __name__ == "__main__":
 	from topopt_thermal_benchmarks import *
 
 	print("-" * 50)
-	to_problem = StructuralTOExamples.CantileverMidLoadAM # Choose the TO problem
+	to_problem = StructuralTOExamples.CantileverMidLoad # Choose the TO problem
 	#to_problem = ThermalTOExamples.FourCornersThermal # Choose the TO problem
 
 	if (to_problem in StructuralTOExamples):
