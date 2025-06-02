@@ -358,18 +358,6 @@ def createFilters(fe_solver: hex_structural_fea.HexStructuralFEA,to_params):
 	if (to_params.ExtrudeZ):
 		HEZ = createZExtrudeFilter(fe_solver.mesh)
 		H = H*HEZ
-	if (to_params.AMBuildDir == 'X'):
-		# AM build constraint is applied in the direction of the build
-		HXAM = createXDirAMBuildFilter(fe_solver.mesh)
-		H = H*HXAM
-	if (to_params.AMBuildDir == 'Y'):
-		# AM build constraint is applied in the direction of the build
-		HYAM = createYDirAMBuildFilter(fe_solver.mesh)
-		H = HYAM*H
-	if (to_params.AMBuildDir == 'Z'):
-		# AM build constraint is applied in the direction of the build
-		HZAM = createZDirAMBuildFilter(fe_solver.mesh)
-		H = H*HZAM
 	Hs = np.array(H.sum(1)).squeeze()
 	return H, Hs
 

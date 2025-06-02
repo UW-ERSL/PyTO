@@ -36,9 +36,6 @@ class StructuralTOExamples(enum.Enum):
 	LBracketThickMidLoadStressObjective = enum.auto()
 	Inverter = enum.auto()
 
-    # AM Examples
-	CantileverMidLoadAM = enum.auto()
-
     # Body Force Examples
 	CentrifugalPlate = enum.auto()
 	GravityPlate = enum.auto()
@@ -200,14 +197,6 @@ def getStructuralTOProblem(to_problem: StructuralTOExamples,nDOFDesired = None, 
         to_params.nDOFDesired = 75000 if nDOFDesired is None else nDOFDesired
         to_params.Constraints = [(TO_QOI.VOLUME_FRACTION, None, 0.15)] 
 
-    # AM Building Examples
-    elif to_problem == StructuralTOExamples.CantileverMidLoadAM:
-        structural_problem = StructuralExamples.CantileverMidLoad
-        to_params.Comment  = "Benchmark 2.5D"
-        to_params.AMBuildDir = 'Y'  
-        to_params.ExtrudeZ = True
-        to_params.Constraints = [(TO_QOI.VOLUME_FRACTION, None, 0.25)] # Volume fraction constraint
-        to_params.nDOFDesired = 25000 if nDOFDesired is None else nDOFDesired
 
     # Body Force Examples
     elif to_problem == StructuralTOExamples.GravityPlate:
