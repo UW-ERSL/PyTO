@@ -43,7 +43,7 @@ def topopt_pareto(fe_solver,
 	x = np.ones((fe_solver.mesh.num_elems))
 	volfrac = 1.0
 	
-	history = {'objective': [], 'volume': []}
+	history = {'objective': [],'compliance':[], 'volume': []}
 	if (print_progress):
 		print("Computing Filters ...")
 	[H,Hs] = createFilters(fe_solver, to_params)
@@ -82,11 +82,12 @@ def topopt_pareto(fe_solver,
 	sol = fe_solver.solve(x)
 	fe_solver.postprocess()
 	nFEAs = 1
-	# Store initial compliance
-	obj, T = compute_objective_and_topological_sensitivity(to_params,sol,x, fe_solver,KE)
+
+	obj, T,compliance = compute_objective_and_topological_sensitivity(to_params,sol,x, fe_solver,KE)
 	
 
-	history['objective'].append( obj)
+	history['objective'].append( obj)# may be the same as compliance
+	history['compliance'].append( compliance) 
 	history['volume'].append(volfrac)
 	
 	# Add contribution from body force to topological sensitivity if present
@@ -131,7 +132,7 @@ def topopt_pareto(fe_solver,
 			print(f"Attempting v={volfrac:.3f}")
 		# Initialize local iteration variables
 		localIter = 0
-		JTemp = history['objective'][-1]  # Store previous value
+		JTemp = history['compliance'][-1]  # Store previous value
 		JPrev = JTemp  # Initialize JPrev
 		JPrevPrev = JTemp # Initialize JPrevPrev
 		TPrev = T.copy()  # Store previous sensitivity
@@ -186,8 +187,13 @@ def topopt_pareto(fe_solver,
 			sol = fe_solver.solve(x)
 			fe_solver.postprocess()
 			nFEAs += 1
-			JTemp, T = compute_objective_and_topological_sensitivity(to_params,sol,x, fe_solver,KE)
+			obj, TTemp,JTemp = compute_objective_and_topological_sensitivity(to_params,sol,x, fe_solver,KE)
 			
+			if (to_params.Objective[0] == TO_QOI.COMPLIANCE):
+				T = TTemp.copy()  # Use current sensitivity for compliance objective
+			else:
+				# If x = 0, use previous sensitivity, else use current sensitivity
+				T = np.where(x == 0, TPrev, TTemp)
 			# Add contribution from body force to topological sensitivity if present
 			if (nodal_body_force is not None):
 				T_body = np.zeros(fe_solver.mesh.num_elems)
@@ -229,7 +235,8 @@ def topopt_pareto(fe_solver,
 				x[list(largest_component)] = 1.0
 				fe_solver.mesh.setPseudoDensity(x.flatten())
 				volfrac = np.mean(x)
-			history['objective'].append(JTemp)
+			history['objective'].append(obj)
+			history['compliance'].append(compliance)
 			history['volume'].append(volfrac)
 			scale = history['objective'][-1] / history['objective'][0]
 			vol_decr = max(vol_decr_min,min(vol_decr,vol_decr_max/scale)) # Reduce volume increment for steep increase in compliance

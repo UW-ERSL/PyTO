@@ -291,7 +291,7 @@ while True:
         plt.show()
         if not success:
             print(f"Error: {errorMsg}")
-        fe_solver.plot_mesh(title = title)
+        fe_solver.plot_mesh()
     elif demo == pyTODemos.HexThermalTO_DensityMMA:
         to_problem = ThermalTOExamples.FourCornersThermal # Choose the TO problem
         solver = Solvers.PARDISO # # Choose solver. Typically PARDISO, but DPCG for DOF > 200,000

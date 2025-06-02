@@ -366,24 +366,31 @@ def compute_objective_and_gradient(to_params, sol: np.ndarray, x: np.ndarray,	fe
 def compute_objective_and_topological_sensitivity(to_params, sol: np.ndarray, x: np.ndarray,	fe_solver, KE,
 				material_model = None):
 	
-	objectiveType  = to_params.Objective[0]	# first entry is the type of objective			
+	objectiveType  = to_params.Objective[0]	# first entry is the type of objective	
+	dofMat = fe_solver.mesh.edofMat
+	num_elems = fe_solver.mesh.num_elems
+	nRows = KE.shape[0]
+	ce = (np.dot(sol[dofMat].reshape(num_elems, nRows), KE) * sol[dofMat].reshape(num_elems, nRows)).sum(1)
+	if (nRows == 24): # structural hex
+		materialScaling = get_structural_material_model_scaling(x, material_model)
+	elif (nRows == 8): # thermal hex
+		materialScaling = get_thermal_material_model_scaling(x, material_model)
+	else:
+		raise ValueError("Invalid number of rows in element stiffness matrix.")
+	compliance = np.sum(materialScaling * ce)		
 	if (objectiveType == TO_QOI.COMPLIANCE): 
-		dofMat = fe_solver.mesh.edofMat
-		num_elems = fe_solver.mesh.num_elems
-		nRows = KE.shape[0]
-		ce = (np.dot(sol[dofMat].reshape(num_elems, nRows), KE) * sol[dofMat].reshape(num_elems, nRows)).sum(1)
-		
 		if (nRows == 24): # structural hex
-			materialScaling = get_structural_material_model_scaling(x, material_model)
 			T = computeStructuralTopologicalSensitivity(fe_solver.mat_prop.poissons_ratio,fe_solver.strainComponents,fe_solver.stressComponents,x)
 		elif (nRows == 8): # thermal hex
-			materialScaling = get_thermal_material_model_scaling(x, material_model)
 			T = computeThermalTopologicalSensitivity(fe_solver.mat_prop.thermal_conductivity,fe_solver.strain,x)
 		else:
 			raise ValueError("Invalid number of rows in element stiffness matrix.")
-	
-		compliance = np.sum(materialScaling * ce)
 		obj = compliance
+		return obj,T,compliance
+	elif (objectiveType == TO_QOI.PNORM_STRESS):
+		pNormValue = to_params.Objective[1] or 6
+		[stressObj, stress_gradient] = compute_pnorm_stress_and_sensitivity(sol, x, fe_solver,KE,material_model,pNormValue)
+		return stressObj, -stress_gradient, compliance
 	elif (objectiveType == TO_QOI.GVECTOR):
 		g = to_params.Objective[1]
 		obj = np.dot(fe_solver.sol, g)
@@ -395,7 +402,7 @@ def compute_objective_and_topological_sensitivity(to_params, sol: np.ndarray, x:
                       fe_solver.bc,
                       dsolver = fe_solver.dsolver,
                       **fe_solver.kwargs)
-	return obj,T
+		return obj,T, compliance
 	
 
 def computeStructuralTopologicalSensitivity(poissons_ratio,strains,stresses,x):
