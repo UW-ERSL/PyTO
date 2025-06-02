@@ -628,8 +628,93 @@ def createZExtrudeFilter(mesh: hex_mesher.HexMesher):
 	HZE = coo_matrix((data, (rows, cols)), shape=(num_elems, num_elems)).tocsc()
 	return HZE	
 
+def createXDirAMBuildFilter(mesh: hex_mesher.HexMesher):
+	"""Create a filter matrix to enforce x-direction build constraints for additive manufacturing.
 
-def createAMBuildFilter(mesh: hex_mesher.HexMesher):
+	Args:
+		mesh: The mesh object.
+
+	Returns:
+		tuple containing:
+			HXAM: Sparse matrix that enforces material must be supported from behind in X
+			HXAMs: Array of row sums of HXAM matrix
+	"""
+	num_elems = mesh.num_elems
+
+	rows = []
+	cols = []
+	data = []
+
+	for i in range(num_elems):
+		elemCenter = mesh.elem_centers[i, :]
+
+		# Find all elements "behind" current element in X (i.e., with lower x)
+		mask = (mesh.elem_centers[:, 1] == elemCenter[1]) & \
+				(mesh.elem_centers[:, 2] == elemCenter[2]) & \
+				(mesh.elem_centers[:, 0] < elemCenter[0])
+
+		if np.any(mask):
+			# Connect to all elements behind
+			behind_elems = np.where(mask)[0]
+			weight = 1.0 / (len(behind_elems) + 1)
+
+			rows.extend([i] * (len(behind_elems) + 1))
+			cols.extend(list(behind_elems) + [i])
+			data.extend([weight] * (len(behind_elems) + 1))
+		else:
+			# Element is at back or has no support
+			rows.append(i)
+			cols.append(i)
+			data.append(1.0)
+
+	HXAM = coo_matrix((data, (rows, cols)), shape=(num_elems, num_elems)).tocsc()
+
+	return HXAM
+
+def createYDirAMBuildFilter(mesh: hex_mesher.HexMesher):
+	"""Create a filter matrix to enforce y-direction build constraints for additive manufacturing.
+
+	Args:
+		mesh: The mesh object.
+
+	Returns:
+		tuple containing:
+			HYAM: Sparse matrix that enforces material must be supported from behind in Y
+			HYAMs: Array of row sums of HYAM matrix
+	"""
+	num_elems = mesh.num_elems
+
+	rows = []
+	cols = []
+	data = []
+
+	for i in range(num_elems):
+		elemCenter = mesh.elem_centers[i, :]
+
+		# Find all elements "behind" current element in Y (i.e., with lower y)
+		mask = (mesh.elem_centers[:, 0] == elemCenter[0]) & \
+				(mesh.elem_centers[:, 2] == elemCenter[2]) & \
+				(mesh.elem_centers[:, 1] < elemCenter[1])
+
+		if np.any(mask):
+			# Connect to all elements behind
+			behind_elems = np.where(mask)[0]
+			weight = 1.0 / (len(behind_elems) + 1)
+
+			rows.extend([i] * (len(behind_elems) + 1))
+			cols.extend(list(behind_elems) + [i])
+			data.extend([weight] * (len(behind_elems) + 1))
+		else:
+			# Element is at back or has no support
+			rows.append(i)
+			cols.append(i)
+			data.append(1.0)
+
+	HYAM = coo_matrix((data, (rows, cols)), shape=(num_elems, num_elems)).tocsc()
+
+	return HYAM
+	
+def createZDirAMBuildFilter(mesh: hex_mesher.HexMesher):
 	"""Create a filter matrix to enforce z-direction build constraints for additive manufacturing.
 	
 	Args:

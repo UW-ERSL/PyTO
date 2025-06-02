@@ -30,8 +30,8 @@ class TO_QOI(enum.Enum): # Topology optimization; Various Quantity of Interest
 
 class TOParams: # These are the default parameters
     Comment = "" # Comment for the topology optimization problem
-    Objective = (TO_QOI.COMPLIANCE,None) # Tuple of objective type and auxiliary function/vector	
-    Constraints = [(TO_QOI.VOLUME_FRACTION, None, 0.5)] # Collection of tuples of constraint type, auxiliary function/vector, and upper bound
+    Objective = (TO_QOI.COMPLIANCE,None) # Tuple of objective type and auxiliary scalar/vector/function	
+    Constraints = [(TO_QOI.VOLUME_FRACTION, None, 0.5)] # Collection of tuples of constraint type, auxiliary scalar/vector/function, and upper bound
     nDOFDesired = 25000 # Desired number of degrees of freedom in the finite element problem
     APPLY_FILTER_TO_SENSITIVITY = True # Apply filter to density
     APPLY_FILTER_TO_DENSITY = False # Apply filter to density
@@ -47,7 +47,7 @@ class TOParams: # These are the default parameters
     ExtrudeZ = False
     KeepFixedElems = False # Should the elements with Dirichlet dof be retained?
     RemoveHangingElems = False # Should the hanging elements be removed?
-    AMBuildConstraint = False
+    AMBuildDir = '' # Direction of AM build, '','X','Y','Z'
     ElemsToKeep = None # List of additional elements to retain in the design
 
 
@@ -144,6 +144,108 @@ def compute_compliance_and_gradient(sol: np.ndarray, x: np.ndarray,
 	compliance = np.sum(materialScaling * ce)
 
 	return compliance, compliance_grad
+	
+def compute_pnorm_stress_and_sensitivity(sol: np.ndarray, x,
+										  fe_solver,KE,material_model, p=6):
+	"""
+    Compute von Mises stress and sensitivity 
+    """
+	# "An efficient 146-line 3D sensitivity analysis code of 
+	# stress based topology optimization written in MATLAB"
+	# Optimization and Engineering (2022) 23:1733–1757
+	# The sensitivity of pnorm von mises stress with respect to x has 2 terms: T1 and T2
+	# T1 arises due to the stress relaxation: x**STRESS_RELAXATION
+	# T2 arises indirectly via the solution sensitivity via the adjoint
+	mesh = fe_solver.mesh
+	nelems = mesh.num_elems
+	q = 1 # STRESS_RELAXATION factor
+	fe_solver.postprocess()
+	E = fe_solver.mat_prop.youngs_modulus 
+	nu = fe_solver.mat_prop.poissons_ratio
+	D = E / ((1 + nu) * (1 - 2*nu)) * np.array([
+		[1-nu, nu, nu, 0, 0, 0],
+		[nu, 1-nu, nu, 0, 0, 0],
+		[nu, nu, 1-nu, 0, 0, 0],
+		[0, 0, 0, (1-2*nu)/2, 0, 0],
+		[0, 0, 0, 0, (1-2*nu)/2, 0],
+		[0, 0, 0, 0, 0, (1-2*nu)/2]
+	])
+	gradN = (1 / 8) * np.array([
+		[-1, 1, 1, -1, -1, 1, 1, -1],
+		[-1, -1, 1, 1, -1, -1, 1, 1],
+		[-1, -1, -1, -1, 1, 1, 1, 1]
+	])
+	# Define the B matrix (strain-displacement matrix) for a hexahedral element at the center (xi=0, eta=0, zeta=0)
+	B = np.zeros((6, 24))
+	# Vectorized construction of B matrix for all 8 nodes at once
+	Bi = np.zeros((6, 3, 8))
+	Bi[0, 0, :] = gradN[0, :]
+	Bi[1, 1, :] = gradN[1, :]
+	Bi[2, 2, :] = gradN[2, :]
+	Bi[3, 0, :] = gradN[1, :]
+	Bi[3, 1, :] = gradN[0, :]
+	Bi[4, 0, :] = gradN[2, :]
+	Bi[4, 2, :] = gradN[0, :]
+	Bi[5, 1, :] = gradN[2, :]
+	Bi[5, 2, :] = gradN[1, :]
+	# Vectorized assignment to B
+	idx = np.arange(8)
+	B[:, (3 * idx)[:, None] + np.arange(3)] = Bi.transpose(0, 2, 1)
+	F = D @ B  # shape (6, 24)
+	g_elem = np.zeros((nelems, 24))
+	vm_elems = np.zeros(nelems)
+	T1 = np.zeros(nelems)
+	T2 = np.zeros(nelems)
+
+	for e in range(nelems):
+		# First compute the stress without relaxation for sensitivity term T1
+		stress_elem = fe_solver.stressComponents[e]
+		sigma11, sigma22, sigma33, sigma12, sigma13, sigma23 = stress_elem
+		vm = np.sqrt(0.5*((sigma11 - sigma22)**2 +(sigma22-sigma33)**2 + (sigma33-sigma11)**2) +
+                3*(sigma12**2 + sigma13**2 + sigma23**2))
+
+		T1[e] = p*q*(x[e]**(p*q-1)) * vm
+
+		# Now compute the stress with relaxation for sensitivity term T2 and pnorm stress
+		stress_elem = (x[e]**q)* fe_solver.stressComponents[e]
+		sigma11, sigma22, sigma33, sigma12, sigma13, sigma23 = stress_elem
+		vm_elems[e] = np.sqrt(0.5*((sigma11 - sigma22)**2 +(sigma22-sigma33)**2 + (sigma33-sigma11)**2) +
+                3*(sigma12**2 + sigma13**2 + sigma23**2))
+
+		g_e = ((sigma11 - sigma22) * (F[0] - F[1]) +
+    	(sigma11 - sigma33) * (F[0] - F[2]) +
+    	(sigma22 - sigma33) * (F[1] - F[2]) +
+    	6 * sigma12 * F[3] + 6 * sigma13 * F[4] + 6 * sigma23 * F[5]) / np.sqrt(2)
+		g_elem[e] = p * vm_elems[e] ** (p - 2) * g_e
+	
+	# Note that we are using the relaxed von Mises below
+	vm_pnorm = np.sum(vm_elems**p)**(1/p)
+	T1 *= (1 / p) * (np.sum(vm_elems ** p) ** (1/p - 1) ) 
+
+	# Now compute the rhs of adjoint eqn 
+	g = np.zeros(fe_solver.bc.num_dofs)
+	for e in range(nelems): # assemble  g vector
+		edof = mesh.edofMat[e]
+		g[edof] += g_elem[e]
+	g *= -(1 / p) * (np.sum(vm_elems ** p) ** (1/p - 1) )
+
+    # Solve the adjoint	
+	adjointSol =  linear_solvers.solve(fe_solver.stiff_mtrx,
+                      g,
+                      fe_solver.solver,
+                      fe_solver.bc,
+                      dsolver = fe_solver.dsolver,
+                      **fe_solver.kwargs)
+	
+	dofMat = fe_solver.mesh.edofMat
+	num_elems = fe_solver.mesh.num_elems
+	nRows = KE.shape[0]
+	ce = (np.dot(adjointSol[dofMat].reshape(num_elems, nRows), KE) * sol[dofMat].reshape(num_elems, nRows)).sum(1)
+
+	T2 = get_structural_material_model_sensitivity(x,material_model) * ce
+	vm_pnorm_sensitivity =T1 + T2
+
+	return vm_pnorm,vm_pnorm_sensitivity
 
 
 def compute_solution_dotproduct_and_gradient(sol: np.ndarray, x,fe_solver,KE,material_model,g: np.ndarray,
@@ -201,6 +303,7 @@ def compute_constraint_and_gradient(to_params, sol: np.ndarray, x: np.ndarray,	f
 			raise NotImplementedError(" constraint is not implemented yet.")
 	return c, dc
 
+
 def compute_objective_and_gradient(to_params, sol: np.ndarray, x: np.ndarray,	fe_solver, KE,
 				material_model = None) -> tuple:
 							
@@ -212,6 +315,10 @@ def compute_objective_and_gradient(to_params, sol: np.ndarray, x: np.ndarray,	fe
 		volfracObj = np.mean(x)
 		volFrac_gradient = np.ones_like(x) / x.size
 		return volfracObj, volFrac_gradient
+	elif (objectiveType == TO_QOI.PNORM_STRESS):
+		pNormValue = to_params.Objective[1] or 6
+		[stressObj, stress_gradient] = compute_pnorm_stress_and_sensitivity(sol, x, fe_solver,KE,material_model,pNormValue)
+		return stressObj, stress_gradient
 	elif (objectiveType == TO_QOI.GVECTOR):
 		g = to_params.Objective[1]
 		compliance, compliance_grad = compute_solution_dotproduct_and_gradient(sol, x, fe_solver, KE,material_model,g)
@@ -251,10 +358,19 @@ def createFilters(fe_solver: hex_structural_fea.HexStructuralFEA,to_params):
 	if (to_params.ExtrudeZ):
 		HEZ = createZExtrudeFilter(fe_solver.mesh)
 		H = H*HEZ
-	if (to_params.AMBuildConstraint):
-		HZAM = createAMBuildFilter(fe_solver.mesh)
+	if (to_params.AMBuildDir == 'X'):
+		# AM build constraint is applied in the direction of the build
+		HXAM = createXDirAMBuildFilter(fe_solver.mesh)
+		H = H*HXAM
+	if (to_params.AMBuildDir == 'Y'):
+		# AM build constraint is applied in the direction of the build
+		HYAM = createYDirAMBuildFilter(fe_solver.mesh)
+		H = HYAM*H
+	if (to_params.AMBuildDir == 'Z'):
+		# AM build constraint is applied in the direction of the build
+		HZAM = createZDirAMBuildFilter(fe_solver.mesh)
 		H = H*HZAM
-
+	Hs = np.array(H.sum(1)).squeeze()
 	return H, Hs
 
 def computeTopologicalSensitivity(to_params,fe_solver,x):

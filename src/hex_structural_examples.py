@@ -1936,9 +1936,11 @@ def createLBracketThickProblem(nDOFDesired: int = 80000,topload = 1000,midload =
   force = np.zeros(3*mesh.num_nodes)
   node_pts = mesh.node_xyz
   if(abs(topload) > 0):
-    topload_nodes = np.intersect1d(mesh.getNodesOnBoundingBoxPlane(0,False) , np.where((node_pts[:, 1] >= 0.36))[0]) # hard coded  
+    topload_nodes = np.intersect1d(mesh.getNodesOnBoundingBoxPlane(0,False) , np.where((node_pts[:, 1] >= 0.35))[0]) # hard coded  
     topload_nodes = topload_nodes[(node_pts[topload_nodes, 2] >= 0.23) & (node_pts[topload_nodes, 2] <= 0.27)]
+    
     topload_dofs = 3 * topload_nodes + 1  
+   
     mesh.node_indices[topload_nodes, 3] = 2 # for plotting
     force[topload_dofs] = -topload/len(topload_nodes)
 

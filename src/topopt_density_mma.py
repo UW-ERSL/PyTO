@@ -238,8 +238,8 @@ if __name__ == "__main__":
 	from topopt_thermal_benchmarks import *
  
 	print("-" * 50)
-
-	to_problem = StructuralTOExamples.TensilePlate # Choose the TO problem
+ 
+	to_problem = StructuralTOExamples.CantileverMidLoadVolumeObjective # Choose the TO problem
 
 	if (to_problem in StructuralTOExamples):
 		mesh, mat_prop, bc,elem_body_force, to_params = getStructuralTOProblem(to_problem)
@@ -295,8 +295,8 @@ if __name__ == "__main__":
 
 	title = f"MMA: vol: {history['volume'][-1]:0.2f}, J: {history['objective'][-1]:.3g}, nFEA: {len(history['objective']):3d}, time: {timeTaken:.0f} s"
 	fe_solver.plot_mesh(title = title, plot_bc = False, save_path = None)
-	
-
+	fe_solver.postprocess()
+	fe_solver.plot_vonMisesStress()
 	fig, ax1 = plt.subplots()
 
 	# Plot compliance on left y-axis

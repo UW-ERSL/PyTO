@@ -11,7 +11,7 @@ SIMP_PENALTY = 3  # Default penalization factor for SIMP method
 EVOID_RELATIVE = 1e-8  # Minimum Young's modulus for void elements
 KVOID_RELATIVE = 1e-8  # Minimum Conductivity for void elements
 
-RAMP_PENALTY = 5
+RAMP_PENALTY = 5 
 
 MASS_PENALTY = 1  # Penalization factor for mass density
 MASS_LOW = 0  # Low density threshold for mass penalization

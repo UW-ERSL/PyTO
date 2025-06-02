@@ -4,7 +4,7 @@ import numpy as np
 import scipy.special as spy_spl
 import mat_lib
 from numba import njit
-
+ 
 @njit(cache=True)
 def get_gauss_integ_points_weights(order: int,
                                    dimension: int,
@@ -158,6 +158,8 @@ def compute_jacobian_and_determinant(gauss_pts: np.ndarray,
     """
     gradN_isoparam = shape_function_gradients_isoparametric(gauss_pts)
     # (g)auss points, num_(n)odes, (d)[i]m
+    # Ensure xyz_nodes is C-contiguous for efficient matrix multiplication
+    xyz_nodes_c = np.ascontiguousarray(xyz_nodes)
     # Initialize Jacobian matrix
     num_gauss_pts = gauss_pts.shape[0]
     jac = np.zeros((num_gauss_pts, 3, 3))
@@ -171,9 +173,9 @@ def compute_jacobian_and_determinant(gauss_pts: np.ndarray,
       dN_dzeta = gradN_isoparam[g, :, 2]  # derivatives w.r.t zeta
       
       # Compute Jacobian using matrix multiplication
-      jac[g, :, 0] = dN_dxi @ xyz_nodes   # dx/dxi, dy/dxi, dz/dxi
-      jac[g, :, 1] = dN_deta @ xyz_nodes  # dx/deta, dy/deta, dz/deta
-      jac[g, :, 2] = dN_dzeta @ xyz_nodes # dx/dzeta, dy/dzeta, dz/dzeta
+      jac[g, :, 0] = np.ascontiguousarray(dN_dxi) @ xyz_nodes_c   # dx/dxi, dy/dxi, dz/dxi
+      jac[g, :, 1] = np.ascontiguousarray(dN_deta) @ xyz_nodes_c  # dx/deta, dy/deta, dz/deta
+      jac[g, :, 2] = np.ascontiguousarray(dN_dzeta) @ xyz_nodes_c # dx/dzeta, dy/dzeta, dz/dzeta
 
     
     # Calculate determinant of each Jacobian matrix
@@ -440,7 +442,7 @@ if __name__ == "__main__":
   me = hex8_mass_matrix_structural(mat_prop.mass_density, elem_size)
   ke_thermal = hex8_stiffness_matrix_thermal(mat_prop.thermal_conductivity, elem_size)
   ce_thermal = hex8_specific_heat_matrix(mat_prop.mass_density, mat_prop.specific_heat, elem_size)
-  print(ke[0,0])
+  print(ke[0:3,0:3])
   print(me[0,0])
   print(ke_thermal[0,0])
   print(ce_thermal[0,0])
