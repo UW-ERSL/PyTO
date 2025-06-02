@@ -79,7 +79,7 @@ def topopt_mma(fe_solver, #hex_structural_fea.HexStructuralFEA or hex_thermal_fe
 	else:
 		raise ValueError(f"Unknown constraint type: {constraintType}")
 	
-	x0 = volFractionConstraint* np.ones(num_elems, dtype = float)
+	x0 = volFractionConstraint * np.ones(num_elems, dtype = float)
 	x0 = x0.reshape(-1, 1)
 	mma_state = mma.init_mma(x0, mma_params)
 	
@@ -107,7 +107,7 @@ def topopt_mma(fe_solver, #hex_structural_fea.HexStructuralFEA or hex_thermal_fe
 			x = H*x/Hs
 			mma_state.x = x.reshape(-1, 1)
 
-		if (plot_progress):
+		if (plot_progress) and ((mma_state.epoch+1) % 10 == 0):
 			fe_solver.mesh.setPseudoDensity(x)
 			fe_solver.plot_pseudo_density(auto_close = False, title = f"Iteration {mma_state.epoch+1}")
 		timeFEAStart = time.time()
@@ -119,7 +119,7 @@ def topopt_mma(fe_solver, #hex_structural_fea.HexStructuralFEA or hex_thermal_fe
 		obj, grad_obj = compute_objective_and_gradient(to_params,sol,x, fe_solver,KE, material_model)
 		
 		if (len(history['objective']) == 0):
-			objScaling = abs(0.1*obj)   # Scale the objective function to be in the range of 10
+			objScaling =   abs(1.0*obj)   #  1.72344e-6 #  Scale the objective function to be in the range of 10
 		obj = obj/objScaling
 		grad_obj /=objScaling
 
@@ -136,7 +136,14 @@ def topopt_mma(fe_solver, #hex_structural_fea.HexStructuralFEA or hex_thermal_fe
 			grad_obj[to_params.ElemsToKeep] = min(grad_obj) # also retain elements that are in the keep list
 
 		c, dcdx = compute_constraint_and_gradient(to_params,sol,x, fe_solver,KE, material_model)
-
+		
+		# if (to_params.APPLY_FILTER_TO_SENSITIVITY):
+		# 	for m in range(nConstraints):
+		# 		constraintType  = to_params.Constraints[m][0]	# first entry is the type of constraint			
+		# 		if (constraintType == TO_QOI.COMPLIANCE): 
+		# 			dcdx[m,:] = (H * dcdx[m,:])/Hs # apply filter
+			
+		
 		timeMMAStart = time.time()
 		mma_state = mma.update_mma(mma_state,
 										mma_params,
@@ -187,6 +194,9 @@ def topopt_mma(fe_solver, #hex_structural_fea.HexStructuralFEA or hex_thermal_fe
 			errorMsg = "Maximum iterations reached."
 			print("MMA optimization terminated due to maximum iterations.")
 			break
+	
+	fe_solver.mesh.setPseudoDensity(x)	
+	fe_solver.plot_pseudo_density(auto_close = False, title = f"Iteration {mma_state.epoch+1}")
 
 	# Find threshold that preserves volume fraction
 	x_sorted = np.sort(x)

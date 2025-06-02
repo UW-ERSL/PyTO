@@ -109,8 +109,11 @@ def getStructuralTOProblem(to_problem: StructuralTOExamples,nDOFDesired = None, 
         to_params.Objective = (TO_QOI.GVECTOR, None) # see below for setting the GVECTOR after mesh is created
         to_params.YSymmetry = True
         to_params.ExtrudeZ = True
-        to_params.nDOFDesired = 20000 if nDOFDesired is None else nDOFDesired
-        to_params.Constraints = [(TO_QOI.VOLUME_FRACTION, None, 0.3), (TO_QOI.COMPLIANCE, None, 5*7.76e-13)] 
+        to_params.nDOFDesired = 60000 if nDOFDesired is None else nDOFDesired
+        to_params.Constraints = [(TO_QOI.VOLUME_FRACTION, None, 0.3), (TO_QOI.COMPLIANCE, None, 10.*7.76e-13)] #C0 = 7.76e-13 
+        to_params.RelativeFilterRadius = 3.0
+        to_params.APPLY_FILTER_TO_SENSITIVITY = False # Apply filter to sensitivity
+        to_params.APPLY_FILTER_TO_DENSITY = True # Apply filter to density
     elif to_problem == StructuralTOExamples.LBracketTopLoad:
         structural_problem = StructuralExamples.LBracket
         kwargs['topload'] = 1.5e4
