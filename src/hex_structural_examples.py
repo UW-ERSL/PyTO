@@ -568,15 +568,17 @@ def createInverterProblem(nDOFDesired: int = 10000):
   mesh = hex_mesher.HexMesher()
   mesh.createMeshFromSTLFile(stl_file, nElemsDesired=nElemsDesired)
   mesh.createEdofMatStructural()
-
   node_pts = mesh.node_xyz
-  top_nodes = np.where((abs(node_pts[:, 0] - np.min(node_pts[:, 0])) < mesh.elem_size[0]/2) & (abs(node_pts[:, 1] - np.max(node_pts[:, 1])) < mesh.elem_size[1]/2))[0]
-  top_dofs = np.array([3 * top_nodes]).flatten().astype(int) # fixed in x direction
+  fix_ratio = 0.1 # ratio of the y height
+  # top_nodes = np.where((abs(node_pts[:, 0] - np.min(node_pts[:, 0])) < mesh.elem_size[0]/2) & (abs(node_pts[:, 1] - np.max(node_pts[:, 1])) < mesh.elem_size[1]/2))[0]
+  top_nodes = np.where((np.abs(node_pts[:, 0] - np.min(node_pts[:, 0])) < mesh.elem_size[0]/2) & (node_pts[:, 1] > ((1-fix_ratio) * np.max(node_pts[:, 1]))))[0]
+  # top_dofs = np.array([3 * top_nodes]).flatten().astype(int) # fixed in x direction
+  top_dofs = (3 * top_nodes[:, None] + np.arange(3)).flatten().astype(int) # fix all 3 directions
+  # bottom_nodes = np.where((abs(node_pts[:, 0] - np.min(node_pts[:, 0])) < mesh.elem_size[0]/2) & (abs(node_pts[:, 1] - np.min(node_pts[:, 1])) < mesh.elem_size[1]/2))[0]
+  bottom_nodes = np.where((np.abs(node_pts[:, 0] - np.min(node_pts[:, 0])) < mesh.elem_size[0]/2) & (node_pts[:, 1] < (fix_ratio * np.max(node_pts[:, 1]))))[0]
+  # bottom_dofs = np.array([3 * bottom_nodes]).flatten().astype(int) # fixed in x direction
+  bottom_dofs = (3 * bottom_nodes[:, None] + np.arange(3)).flatten().astype(int) # fix all 3 directions
 
-  bottom_nodes = np.where((abs(node_pts[:, 0] - np.min(node_pts[:, 0])) < mesh.elem_size[0]/2) & (abs(node_pts[:, 1] - np.min(node_pts[:, 1])) < mesh.elem_size[1]/2))[0]
-  bottom_dofs = np.array([3 * bottom_nodes]).flatten().astype(int) # fixed in x direction
-
-  
   fixed_dofs = np.union1d(top_dofs,bottom_dofs)
   dirichlet_values = 0*np.ones_like(fixed_dofs, dtype = float)
 
@@ -589,16 +591,17 @@ def createInverterProblem(nDOFDesired: int = 10000):
   outputNodes = np.where((abs(node_pts[:, 0] - xMax) < mesh.elem_size[0]/2) & (abs(node_pts[:, 1] - yMid) < mesh.elem_size[1]/2))[0]
   if len(outputNodes) == 0:
     raise ValueError("No output nodes found. Check the mesh and node coordinates.")
-  ## Add spring to output node
-  mesh.externalSprings = [(0.01,3*node) for node in outputNodes]
-  
+ 
   load_nodes = np.where((abs(node_pts[:, 0] - np.min(node_pts[:, 0])) < mesh.elem_size[0]/2) & (abs(node_pts[:, 1] - np.mean(node_pts[:,1])) < mesh.elem_size[1]))[0]
   load_dof = 3*load_nodes # x direction
 
-  # Apply forces according to node type
+  ## Add spring to output node and input nodes
+  mesh.externalSprings = [(0.1,3*node) for node in np.concatenate((outputNodes, load_nodes))]
+   
+   # Apply forces according to node type
   force = np.zeros(3*mesh.num_nodes)
-
-  load = 1e-6
+  
+  load = 1.0
   force[load_dof] = load/len(load_nodes)
  
   mesh.node_indices[load_nodes, 3] = 2
@@ -607,7 +610,7 @@ def createInverterProblem(nDOFDesired: int = 10000):
             fixed_dofs = fixed_dofs,
             dirichlet_values = dirichlet_values) 
 
-  mat_prop = mat_lib.create_material_with_defaults("dummyMaterial",youngs_modulus = 1e6, poissons_ratio = 0.3)
+  mat_prop = mat_lib.create_material_with_defaults("dummyMaterial",youngs_modulus = 1.0, poissons_ratio = 0.3)
   
   elem_body_force = None
 
