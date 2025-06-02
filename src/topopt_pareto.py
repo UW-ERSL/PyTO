@@ -1,5 +1,4 @@
 from topopt_common import *
-from topopt_filters import imposeZCastFilter
 import time
 import numpy as np
 def topopt_pareto(fe_solver,
@@ -44,7 +43,7 @@ def topopt_pareto(fe_solver,
 	x = np.ones((fe_solver.mesh.num_elems))
 	volfrac = 1.0
 	
-	history = {'objective': [], 'volume': []}
+	history = {'objective': [],'compliance':[], 'volume': []}
 	if (print_progress):
 		print("Computing Filters ...")
 	[H,Hs] = createFilters(fe_solver, to_params)
@@ -64,29 +63,33 @@ def topopt_pareto(fe_solver,
 	
 	if isinstance(fe_solver.mat_prop, list): # multiple materials
 		if isinstance(fe_solver, hex_structural_fea.HexStructuralFEA):
-			KE_list = [hex_element_stiffness.hex8_stiffness_matrix_structural( mp,fe_solver.mesh.elem_size)
+			KE_list = [hex_element_stiffness.hex8_stiffness_matrix_structural( mp.youngs_modulus,mp.poissons_ratio,fe_solver.mesh.elem_size)
 				for mp in fe_solver.mat_prop]
 			KE = KE_list[0]
 		elif isinstance(fe_solver, hex_thermal_fea.HexThermalFEA):
-			KE_list = [hex_element_stiffness.hex8_stiffness_matrix_thermal( mp,fe_solver.mesh.elem_size)
+			KE_list = [hex_element_stiffness.hex8_stiffness_matrix_thermal( mp.thermal_conductivity,fe_solver.mesh.elem_size)
 				for mp in fe_solver.mat_prop]
 			KE = KE_list[0]	
 		print("Assuming all elements have the same material properties")
-	else:
+	else: # single material
 		if isinstance(fe_solver, hex_structural_fea.HexStructuralFEA):
-			KE = hex_element_stiffness.hex8_stiffness_matrix_structural( fe_solver.mat_prop,fe_solver.mesh.elem_size)
+			KE = hex_element_stiffness.hex8_stiffness_matrix_structural( fe_solver.mat_prop.youngs_modulus,
+															    fe_solver.mat_prop.poissons_ratio,
+																fe_solver.mesh.elem_size)
 		elif isinstance(fe_solver, hex_thermal_fea.HexThermalFEA):
-			KE = hex_element_stiffness.hex8_stiffness_matrix_thermal( fe_solver.mat_prop,fe_solver.mesh.elem_size)
+			KE = hex_element_stiffness.hex8_stiffness_matrix_thermal( fe_solver.mat_prop.thermal_conductivity,fe_solver.mesh.elem_size)
 	
 	sol = fe_solver.solve(x)
+	fe_solver.postprocess()
 	nFEAs = 1
-	# Store initial compliance
-	obj, _ = compute_objective_and_gradient(to_params,sol,x, fe_solver,KE)
 
+	obj, T,compliance = compute_objective_and_topological_sensitivity(to_params,sol,x, fe_solver,KE)
+	
 
-	history['objective'].append( obj)
+	history['objective'].append( obj)# may be the same as compliance
+	history['compliance'].append( compliance) 
 	history['volume'].append(volfrac)
-	T = computeTopologicalSensitivity(to_params, fe_solver,x)
+	
 	# Add contribution from body force to topological sensitivity if present
 	if (nodal_body_force is not None):
 		T_body = np.zeros(fe_solver.mesh.num_elems)
@@ -113,8 +116,6 @@ def topopt_pareto(fe_solver,
 	# Observation: Damping using the previous sensitivity values avoids getting trapped in local minima
 	wtDamping = 0.5 # 0 means full wt to current T values, else previous T values are damped in
 
-	
-		
 	constraintType = to_params.Constraints[0][0] # assume this is the first constraint
 	if (constraintType == TO_QOI.VOLUME_FRACTION):
 		volFractionConstraint = to_params.Constraints[0][2]
@@ -131,7 +132,7 @@ def topopt_pareto(fe_solver,
 			print(f"Attempting v={volfrac:.3f}")
 		# Initialize local iteration variables
 		localIter = 0
-		JTemp = history['objective'][-1]  # Store previous value
+		JTemp = history['compliance'][-1]  # Store previous value
 		JPrev = JTemp  # Initialize JPrev
 		JPrevPrev = JTemp # Initialize JPrevPrev
 		TPrev = T.copy()  # Store previous sensitivity
@@ -184,11 +185,15 @@ def topopt_pareto(fe_solver,
 			JPrev = JTemp  # Store previous value
 
 			sol = fe_solver.solve(x)
+			fe_solver.postprocess()
 			nFEAs += 1
-			JTemp, _ = compute_objective_and_gradient(to_params,sol,x, fe_solver,KE)
-
-			T = computeTopologicalSensitivity(to_params, fe_solver,x)
-	
+			obj, TTemp,JTemp = compute_objective_and_topological_sensitivity(to_params,sol,x, fe_solver,KE)
+			
+			if (to_params.Objective[0] == TO_QOI.COMPLIANCE):
+				T = TTemp.copy()  # Use current sensitivity for compliance objective
+			else:
+				# If x = 0, use previous sensitivity, else use current sensitivity
+				T = np.where(x == 0, TPrev, TTemp)
 			# Add contribution from body force to topological sensitivity if present
 			if (nodal_body_force is not None):
 				T_body = np.zeros(fe_solver.mesh.num_elems)
@@ -220,7 +225,18 @@ def topopt_pareto(fe_solver,
 				print("2. Increase mesh size")
 			break
 		if innerLoopSuccess:
-			history['objective'].append(JTemp)
+			meshComponents = fe_solver.mesh.find_connected_components()
+			if (len(meshComponents) > 1):
+				# Find the largest connected component and its size
+				largest_component = max(meshComponents, key=len)
+				# Set density to xVoid for all elements
+				x[:] = xVoid
+				# Set density to 1 for elements in largest component
+				x[list(largest_component)] = 1.0
+				fe_solver.mesh.setPseudoDensity(x.flatten())
+				volfrac = np.mean(x)
+			history['objective'].append(obj)
+			history['compliance'].append(compliance)
 			history['volume'].append(volfrac)
 			scale = history['objective'][-1] / history['objective'][0]
 			vol_decr = max(vol_decr_min,min(vol_decr,vol_decr_max/scale)) # Reduce volume increment for steep increase in compliance
@@ -233,6 +249,7 @@ def topopt_pareto(fe_solver,
 
 	print(f"Final vf: {history['volume'][-1]:.3f},  objective: {history['objective'][-1]:.4g}")
 	print(f"Total Time: {totalTime:.2f} s")
+	print("Error: ", errorMsg)
 	return sol, history, success,errorMsg,nFEAs
 
 
@@ -241,7 +258,7 @@ if __name__ == "__main__":
 	from topopt_thermal_benchmarks import *
 	
 	print("-" * 50)
-	to_problem = StructuralTOExamples.CantileverMidLoad # Choose the TO problem
+	to_problem = StructuralTOExamples.LBracketMidLoad # Choose the TO problem
 	#to_problem = ThermalTOExamples.BridgeThermal # Choose the TO problem
 
 	if (to_problem in StructuralTOExamples):
@@ -303,7 +320,7 @@ if __name__ == "__main__":
 	if not success:
 		print(f"Error: {errorMsg}")
 
-	title = f"Pareto: vol: {history['volume'][-1]:0.2f}, J: {history['objective'][-1]:.3g}, nFEA: {len(history['objective']):3d}, time: {timeTaken:.0f} s"
+	title = f"Pareto: vol: {history['volume'][-1]:0.2f}, J: {history['objective'][-1]:.3g}, nFEA: {nFEAs:3d}, time: {timeTaken:.0f} s"
 	fe_solver.plot_mesh(title = title, save_path = None)
 
 		

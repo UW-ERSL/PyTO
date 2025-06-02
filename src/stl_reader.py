@@ -720,7 +720,7 @@ if __name__ == "__main__":
     stl_file = os.path.join(script_dir, '../Models/ThickPlate/ThickPlate.STL')
     stl_file = os.path.join(script_dir, '../Models/BliskModel/BliskSectionWithBlade.STL')
     stl_file = os.path.join(script_dir, '../Models/Inverter/Inverter.STL')
-    stl_file = os.path.join(script_dir, '../Models/Cantilever/Cantilever.STL')
+    stl_file = os.path.join(script_dir, '../Models/LBracketThick/LBracketThick.STL')
     stl_geom = STLGeom(stl_file)
 
     [area, volume, cg, inertia] = stl_geom.compute_mass_properties()

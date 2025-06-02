@@ -20,9 +20,9 @@ from deflation import DeflationSolver
 from hex_structural_fea import HexStructuralFEA
 from hex_modal_fea import ModalFEA
 from hex_thermal_fea import HexThermalFEA
-from topopt_density_mma import topopt_mma
+from topopt_mma import topopt_mma
 from topopt_pareto import topopt_pareto
-from topopt_density_oc import topopt_optimality_criteria
+from topopt_oc import topopt_optimality_criteria
 from tet_mesher import TetMesher
 from hex_structural_examples import *
 from hex_thermal_examples import *
@@ -291,7 +291,7 @@ while True:
         plt.show()
         if not success:
             print(f"Error: {errorMsg}")
-        fe_solver.plot_mesh(title = title)
+        fe_solver.plot_mesh()
     elif demo == pyTODemos.HexThermalTO_DensityMMA:
         to_problem = ThermalTOExamples.FourCornersThermal # Choose the TO problem
         solver = Solvers.PARDISO # # Choose solver. Typically PARDISO, but DPCG for DOF > 200,000

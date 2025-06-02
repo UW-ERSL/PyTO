@@ -25,8 +25,8 @@ import linear_solvers as lin_solv
 import jax
 import hex_thermal_fea
 import traceback
-from topopt_density_mma import topopt_mma
-from topopt_density_oc import topopt_optimality_criteria
+from topopt_mma import topopt_mma
+from topopt_oc import topopt_optimality_criteria
 from topopt_pareto import topopt_pareto
 from topopt_levelset import topopt_levelset
 from topopt_common import TOParams

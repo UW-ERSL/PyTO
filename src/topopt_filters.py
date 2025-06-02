@@ -27,7 +27,9 @@ def createSmoothingFilter(mesh: hex_mesher.HexMesher, rel_filter_radius: float =
 		elems_within_radius = mesh.get_elems_within_radius(elemCenter, r_min)
 		for i in elems_within_radius:
 			dist = np.linalg.norm(mesh.elem_centers[e, :] - mesh.elem_centers[i, :])
-			weight = np.exp(-1*dist**2)
+			weight = (r_min - dist)
+			if weight < 0:
+				continue
 			iH.append(e)
 			jH.append(i)
 			sH.append(weight)
@@ -625,80 +627,3 @@ def createZExtrudeFilter(mesh: hex_mesher.HexMesher):
 
 	HZE = coo_matrix((data, (rows, cols)), shape=(num_elems, num_elems)).tocsc()
 	return HZE	
-
-
-def createAMBuildFilter(mesh: hex_mesher.HexMesher):
-	"""Create a filter matrix to enforce z-direction build constraints for additive manufacturing.
-	
-	Args:
-		mesh: The mesh object.
-	
-	Returns:
-		tuple containing:
-			HZB: Sparse matrix that enforces material must be supported from below
-			HZBs: Array of row sums of HZB matrix
-	"""
-	num_elems = mesh.num_elems
-
-	rows = []
-	cols = []
-	data = []
-	
-	for i in range(num_elems):
-		elemCenter = mesh.elem_centers[i, :]
-
-		# Find all elements below current element
-		mask = (mesh.elem_centers[:, 0] == elemCenter[0]) & \
-				(mesh.elem_centers[:, 1] == elemCenter[1]) & \
-				(mesh.elem_centers[:, 2] < elemCenter[2])
-				
-		if np.any(mask):
-			# Connect to all elements below
-			below_elems = np.where(mask)[0]
-			weight = 1.0 / (len(below_elems) + 1)
-			
-			rows.extend([i] * (len(below_elems) + 1))
-			cols.extend(list(below_elems) + [i])
-			data.extend([weight] * (len(below_elems) + 1))
-		else:
-			# Element is at bottom or has no support
-			rows.append(i)
-			cols.append(i) 
-			data.append(1.0)
-
-	HZAM = coo_matrix((data, (rows, cols)), shape=(num_elems, num_elems)).tocsc()
-	
-	return HZAM
-
-def imposeZCastFilter(mesh: hex_mesher.HexMesher, sensitivity: np.ndarray) -> np.ndarray:
-	"""Apply Z-direction casting constraints about a midplane to a sensitivity field.
-	
-	Args:
-		mesh: The mesh object.
-		sensitivity: Array of sensitivities for each element.
-	
-	Returns:
-		Modified sensitivity array after applying Z casting constraints.
-	"""
-	num_elems = mesh.num_elems
-	z_mid = (mesh.elem_centers[:, 2].max() + mesh.elem_centers[:, 2].min()) / 2
-	modified_sensitivity = np.copy(sensitivity)
-
-	for e in range(num_elems):
-		elemCenter = mesh.elem_centers[e, :]
-		if elemCenter[2] > z_mid:
-			# For element e above the midplane
-			mask = (mesh.elem_centers[:, 0] == elemCenter[0]) & \
-					(mesh.elem_centers[:, 1] == elemCenter[1]) & \
-					(mesh.elem_centers[:, 2] <= elemCenter[2]) # find all elements below
-		else:
-			# For element e below the midplane
-			mask = (mesh.elem_centers[:, 0] == elemCenter[0]) & \
-					(mesh.elem_centers[:, 1] == elemCenter[1]) & \
-					(mesh.elem_centers[:, 2] >= elemCenter[2]) # find all elements above
-
-		matching_elems = np.where(mask)[0]
-		min_sensitivity = np.min(sensitivity[matching_elems])
-		modified_sensitivity[e] = min_sensitivity
-
-	return modified_sensitivity

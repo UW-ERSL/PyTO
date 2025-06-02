@@ -58,26 +58,28 @@ def topopt_mma(fe_solver, #hex_structural_fea.HexStructuralFEA or hex_thermal_fe
 	
 	if isinstance(fe_solver.mat_prop, list): # multiple materials
 		if isinstance(fe_solver, hex_structural_fea.HexStructuralFEA):
-			KE_list = [hex_element_stiffness.hex8_stiffness_matrix_structural( mp,fe_solver.mesh.elem_size)
+			KE_list = [hex_element_stiffness.hex8_stiffness_matrix_structural( mp.youngs_modulus,mp.poissons_ratio,fe_solver.mesh.elem_size)
 				for mp in fe_solver.mat_prop]
 			KE = KE_list[0]
 		elif isinstance(fe_solver, hex_thermal_fea.HexThermalFEA):
-			KE_list = [hex_element_stiffness.hex8_stiffness_matrix_thermal( mp,fe_solver.mesh.elem_size)
+			KE_list = [hex_element_stiffness.hex8_stiffness_matrix_thermal( mp.thermal_conductivity,fe_solver.mesh.elem_size)
 				for mp in fe_solver.mat_prop]
 			KE = KE_list[0]	
 		print("Assuming all elements have the same material properties")
 	else: # single material
 		if isinstance(fe_solver, hex_structural_fea.HexStructuralFEA):
-			KE = hex_element_stiffness.hex8_stiffness_matrix_structural( fe_solver.mat_prop,fe_solver.mesh.elem_size)
+			KE = hex_element_stiffness.hex8_stiffness_matrix_structural( fe_solver.mat_prop.youngs_modulus,
+															    fe_solver.mat_prop.poissons_ratio,
+																fe_solver.mesh.elem_size)
 		elif isinstance(fe_solver, hex_thermal_fea.HexThermalFEA):
-			KE = hex_element_stiffness.hex8_stiffness_matrix_thermal( fe_solver.mat_prop,fe_solver.mesh.elem_size)
+			KE = hex_element_stiffness.hex8_stiffness_matrix_thermal( fe_solver.mat_prop.thermal_conductivity,fe_solver.mesh.elem_size)
 	
 	
 	constraintType = to_params.Constraints[0][0] # assume this is the first constraint
 	if (constraintType == TO_QOI.VOLUME_FRACTION):
 		volFractionConstraint = to_params.Constraints[0][2]
 	else:
-		raise ValueError(f"Unknown constraint type: {constraintType}")
+		volFractionConstraint =1 # default value
 	
 	x0 = volFractionConstraint * np.ones(num_elems, dtype = float)
 	x0 = x0.reshape(-1, 1)
@@ -101,7 +103,6 @@ def topopt_mma(fe_solver, #hex_structural_fea.HexStructuralFEA or hex_thermal_fe
 	nFEAs = 0
 
 	while True:
-		
 		x = mma_state.x.reshape(-1)
 		if (to_params.APPLY_FILTER_TO_DENSITY):
 			x = H*x/Hs
@@ -113,9 +114,10 @@ def topopt_mma(fe_solver, #hex_structural_fea.HexStructuralFEA or hex_thermal_fe
 		timeFEAStart = time.time()
 
 		sol = fe_solver.solve(x, material_model)
+		fe_solver.postprocess()
 		nFEAs += 1
 		timeFEA += time.time() - timeFEAStart
-
+		
 		obj, grad_obj = compute_objective_and_gradient(to_params,sol,x, fe_solver,KE, material_model)
 		
 		if (len(history['objective']) == 0):
@@ -127,8 +129,8 @@ def topopt_mma(fe_solver, #hex_structural_fea.HexStructuralFEA or hex_thermal_fe
 			ce_body_force = (sol[fe_solver.mesh.edofMat].reshape(num_elems, 24) * nodal_body_force[fe_solver.mesh.edofMat].reshape(num_elems, 24)).sum(1)
 			grad_obj +=  2*ce_body_force*get_material_model_rho_sensitivity(x,material_model)
 
-		if (to_params.APPLY_FILTER_TO_SENSITIVITY):
-			grad_obj = (H * grad_obj)/Hs # apply filter
+		if (to_params.APPLY_FILTER_TO_SENSITIVITY) and (to_params.Objective is not TO_QOI.VOLUME_FRACTION):
+			grad_obj = (H @ grad_obj)/Hs # apply filter
 		if (elemsWithForces.size > 0):
 			grad_obj[elemsWithForces] = min(grad_obj) # retain elements that have nodes with external forces
 
@@ -136,14 +138,13 @@ def topopt_mma(fe_solver, #hex_structural_fea.HexStructuralFEA or hex_thermal_fe
 			grad_obj[to_params.ElemsToKeep] = min(grad_obj) # also retain elements that are in the keep list
 
 		c, dcdx = compute_constraint_and_gradient(to_params,sol,x, fe_solver,KE, material_model)
-		
-		# if (to_params.APPLY_FILTER_TO_SENSITIVITY):
-		# 	for m in range(nConstraints):
-		# 		constraintType  = to_params.Constraints[m][0]	# first entry is the type of constraint			
-		# 		if (constraintType == TO_QOI.COMPLIANCE): 
-		# 			dcdx[m,:] = (H * dcdx[m,:])/Hs # apply filter
-			
-		
+		if (to_params.APPLY_FILTER_TO_SENSITIVITY):
+			for m in range(len(to_params.Constraints)):
+				if (to_params.Constraints[m][0] is not TO_QOI.VOLUME_FRACTION):
+					dcdx[m] = ((H @ dcdx[m])/Hs) # apply filter
+	
+
+
 		timeMMAStart = time.time()
 		mma_state = mma.update_mma(mma_state,
 										mma_params,
@@ -205,9 +206,17 @@ def topopt_mma(fe_solver, #hex_structural_fea.HexStructuralFEA or hex_thermal_fe
 	volfrac = np.mean(x)
 	fe_solver.mesh.setPseudoDensity(x)
 	meshComponents = fe_solver.mesh.find_connected_components()
+	
 	if (len(meshComponents) > 1):
-		errorMsg = "Hanging elements"
-		success = False
+		if (print_progress):
+			print("Disconnected topology detected. Removing hanging elements.")
+		# Find the largest connected component and its size
+		largest_component = max(meshComponents, key=len)
+		# Set density to 1 for elements in largest component
+		x[:] = 0.0
+		x[list(largest_component)] = 1.0
+		fe_solver.mesh.setPseudoDensity(x.flatten())
+		volfrac = np.mean(x)
 	sol = fe_solver.solve(x, material_model)
 	obj, grad_obj = compute_objective_and_gradient(to_params,sol,x, fe_solver,KE, material_model)
 	history['objective'].append(obj)
@@ -221,11 +230,11 @@ def topopt_mma(fe_solver, #hex_structural_fea.HexStructuralFEA or hex_thermal_fe
 		success = False 
 	grey_elements = np.sum((x > 0.1) & (x < 0.9))
 	fraction_grey = (grey_elements / num_elems) 
-	if (errorMsg != ""):	
-		print(errorMsg)
+
 	print(f"Final objective: {obj:.4g}, vf: {np.mean(x):.3f}, grey: {fraction_grey:.3f}")
 	print(f"Time FEA: {timeFEA:.2f} s, Time MMA: {timeMMA:.2f} s")
 	print(f"Total Time: {timeFEA+timeMMA:.2f} s")
+	print("Error: ", errorMsg)
 	return np.asarray(sol), history,success,errorMsg,nFEAs
 	
 if __name__ == "__main__":    
@@ -233,9 +242,8 @@ if __name__ == "__main__":
 	from topopt_thermal_benchmarks import *
  
 	print("-" * 50)
-	# to_problem = StructuralTOExamples.CantileverMidLoad # Choose the TO problem
-	#to_problem = ThermalTOExamples.FourCornersThermal # Choose the TO problem
-	to_problem = StructuralTOExamples.Inverter
+ 
+	to_problem = StructuralTOExamples.LBracketMidLoad # Choose the TO problem
 
 	if (to_problem in StructuralTOExamples):
 		mesh, mat_prop, bc,elem_body_force, to_params = getStructuralTOProblem(to_problem)
@@ -249,7 +257,6 @@ if __name__ == "__main__":
 	debug = False
 
 	dsolver = deflation.DeflationSolver()
-	print(to_params)
 	if (to_params.nDOFDesired > DIRECT_SOLVER_DOF_CUTOFF):# Typically PARDISO, but DPCG for large DOF problems
 		solver = lin_solv.Solvers.DPCG
 		nGroups =  min(dsolver.maxGroups,max(dsolver.minGroups,round(3*mesh.num_nodes/dsolver.dofPerGroup)))
@@ -288,14 +295,12 @@ if __name__ == "__main__":
 								plot_progress = True,
 								debug = debug)
 	timeTaken = time.time() - startTime
-	print(f"Time taken: {timeTaken:.0f} s")
-	if not success:
-		print(f"Error: {errorMsg}")
+
 
 	title = f"MMA: vol: {history['volume'][-1]:0.2f}, J: {history['objective'][-1]:.3g}, nFEA: {len(history['objective']):3d}, time: {timeTaken:.0f} s"
 	fe_solver.plot_mesh(title = title, plot_bc = False, save_path = None)
-	
-
+	fe_solver.postprocess()
+	fe_solver.plot_vonMisesStress()
 	fig, ax1 = plt.subplots()
 
 	# Plot compliance on left y-axis

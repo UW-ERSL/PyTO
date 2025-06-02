@@ -1,6 +1,6 @@
 from topopt_common import *
-from topopt_density_mma import topopt_mma
-from topopt_density_oc import topopt_optimality_criteria	
+from topopt_mma import topopt_mma
+from topopt_oc import topopt_optimality_criteria	
 from topopt_pareto import topopt_pareto
 from topopt_levelset import topopt_levelset	
 from topopt_structural_benchmarks import *
@@ -31,16 +31,23 @@ def runTOMethodOnStructuralBenchmarks(optimizationMethod):
 						   StructuralTOExamples.LBracketThickTopLoad,
 						StructuralTOExamples.LBracketThickMidLoad,
 						StructuralTOExamples.Table]
+	
+	benchmarks_noncompliance_problems = [StructuralTOExamples.CantileverMidLoadVolumeObjective,
+						StructuralTOExamples.LBracketTopLoadStressObjective, 
+						StructuralTOExamples.LBracketMidLoadStressObjective,
+						StructuralTOExamples.LBracketMidLoadStressObjective]
 		
 	benchmarks_bodyforce_problems = [StructuralTOExamples.GravityPlate,
 						StructuralTOExamples.CentrifugalPlate]
 	
 	
-	for to_problem in benchmarks_2_5D_problems + benchmarks_3D_problems:
+	for to_problem in benchmarks_2_5D_problems:
 		if to_problem in benchmarks_2_5D_problems:
-			subFolder = "2.5D"
+			subFolder = "Compliance2.5D"
 		elif to_problem in benchmarks_3D_problems:
-			subFolder = "3D"
+			subFolder = "Compliance3D"
+		elif to_problem in benchmarks_noncompliance_problems:
+			subFolder = "NonCompliance"
 		elif to_problem in benchmarks_bodyforce_problems:
 			subFolder = "BodyForce"
 		else:
@@ -74,15 +81,22 @@ def runTOMethodOnStructuralBenchmarks(optimizationMethod):
 			u, history,success,errorMsg,nFEAs = topopt_mma(fe_solver = fe_solver,
 									to_params = to_params,print_progress = print_progress)
 		elif optimizationMethod == TO_METHODS.DENSITYOC:
+			if to_problem not in benchmarks_2_5D_problems and to_problem not in benchmarks_3D_problems:
+				continue
 			u, history, success,errorMsg,nFEAs = topopt_optimality_criteria(fe_solver = fe_solver,
 											to_params = to_params,print_progress = print_progress)
 		elif optimizationMethod == TO_METHODS.PARETO:
+			if to_problem not in benchmarks_2_5D_problems and to_problem not in benchmarks_3D_problems:
+				continue
 			u, history, success,errorMsg,nFEAs = topopt_pareto(fe_solver = fe_solver,
 													to_params = to_params,print_progress = print_progress)
 		elif optimizationMethod == TO_METHODS.LEVELSET:
+			if to_problem not in benchmarks_2_5D_problems and to_problem not in benchmarks_3D_problems:
+				continue
 			u, history, success,errorMsg,nFEAs = topopt_levelset(fe_solver = fe_solver,
 													to_params = to_params)
 		timeTaken = time.time() - startTime
+
 		# Create the directory if it does not exist
 		output_dir = f"./Results/Results_{time.strftime('%Y-%m-%d')}/Structural/{subFolder}/{optimizationMethod.name}"
 		if not os.path.exists(output_dir):
@@ -92,7 +106,7 @@ def runTOMethodOnStructuralBenchmarks(optimizationMethod):
 		title = f"{optimizationMethod.name}: vol: {history['volume'][-1]:0.2f}, J: {history['objective'][-1]:.3g}, nFEA: {len(history['objective']):3d}, time: {timeTaken:.0f} s"
 	
 		fe_solver.plot_mesh(save_path=image_path, plot_bc = None, title=title)
-		print(errorMsg)
+	
 		results_list.append({
 			'name': to_problem.name,
 			'comment': to_params.Comment,  
@@ -102,7 +116,7 @@ def runTOMethodOnStructuralBenchmarks(optimizationMethod):
 			'#FEAs': nFEAs,
 			'time (s)': timeTaken,
 			'success': success,
-			'error': errorMsg
+			'errorMsg': errorMsg
 		})
 		# Check if a previous CSV result exists for this method and problem
 		result_csv_file = f"{output_dir}/{optimizationMethod.name}_summary.csv"
@@ -163,7 +177,7 @@ def runTOMethodOnStructuralBenchmarks(optimizationMethod):
 
 def combine_results():
 	# Get the latest results directory
-	for subFolder in ["2.5D", "3D", "BodyForce"]:
+	for subFolder in ["Compliance2.5D", "Compliance3D","NonCompliance", "BodyForce"]:
 		# Get the latest results directory for the given subfolder
 		# Use glob to find all matching directories and sort them
 		# Use time.strftime to get the current date in the format YYYY-MM-DD
@@ -297,7 +311,7 @@ def combine_results():
 
 if __name__ == "__main__":    
 	
-	optimizationMethods = [TO_METHODS.DENSITYMMA, TO_METHODS.DENSITYOC, TO_METHODS.PARETO]
+	optimizationMethods = [TO_METHODS.DENSITYMMA,TO_METHODS.DENSITYOC,TO_METHODS.PARETO]
 	for optimizationMethod in optimizationMethods:
 		runTOMethodOnStructuralBenchmarks(optimizationMethod)
 		print(f"Finished {optimizationMethod.name} tests.")

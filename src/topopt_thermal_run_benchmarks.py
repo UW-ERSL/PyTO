@@ -1,6 +1,6 @@
 from topopt_common import *
-from topopt_density_mma import topopt_mma
-from topopt_density_oc import topopt_optimality_criteria	
+from topopt_mma import topopt_mma
+from topopt_oc import topopt_optimality_criteria	
 from topopt_pareto import topopt_pareto
 from topopt_levelset import topopt_levelset	
 from topopt_thermal_benchmarks import *
@@ -13,16 +13,16 @@ def runTOMethodOnThermalBenchmarks(optimizationMethod):
 
 	results_list = []
 	dsolver = deflation.DeflationSolver()
-
+ 
 
 	benchmarks_2_5D_problems = [ThermalTOExamples.HeatPlate, ThermalTOExamples.FourCornersThermal,
 							 ThermalTOExamples.BridgeThermal]	
 	
 	for to_problem in benchmarks_2_5D_problems:
 		if to_problem in benchmarks_2_5D_problems:
-			subFolder = "2.5D"
+			subFolder = "Compliance2.5D"
 		else:
-			subFolder = "Other"
+			subFolder = "Compliance3D"
 		print("-" * 50)
 		print(f"Running {to_problem.name} using {optimizationMethod.name} method")
 		print("-" * 50)
@@ -141,7 +141,7 @@ def runTOMethodOnThermalBenchmarks(optimizationMethod):
 
 def combine_results():
 	# Get the latest results directory
-	for subFolder in ["2.5D", "3D"]:
+	for subFolder in ["Compliance2.5D", "Compliance3D"]:
 		# Get the latest results directory for the given subfolder
 		# Use glob to find all matching directories and sort them
 		# Use time.strftime to get the current date in the format YYYY-MM-DD
@@ -276,11 +276,11 @@ def combine_results():
 if __name__ == "__main__":    
 	
 	optimizationMethods = [TO_METHODS.DENSITYMMA, TO_METHODS.DENSITYOC, TO_METHODS.PARETO]
-	for optimizationMethod in [TO_METHODS.DENSITYOC]:
+	for optimizationMethod in optimizationMethods:
 		runTOMethodOnThermalBenchmarks(optimizationMethod)
 		print(f"Finished {optimizationMethod.name} tests.")
 		print("-" * 50)
 		print("\n")
 	
 	# Combine results from all methods
-	combine_results() 
+	combine_results()   

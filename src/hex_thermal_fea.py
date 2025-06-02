@@ -29,7 +29,7 @@ class HexThermalFEA:
     self.mesh, self.mat_prop, self.bc = mesh, mat_prop, bc
     self.solver, self.kwargs = solver, kwargs
     self.elem_stiff = np.asarray(
-                    elem_stiff.hex8_stiffness_matrix_thermal(mat_prop, mesh.elem_size))
+                    elem_stiff.hex8_stiffness_matrix_thermal(mat_prop.thermal_conductivity, mesh.elem_size))
 
     self.node_idx = np.stack((
                       np.kron(self.mesh.edofMat, np.ones((8, 1))).flatten(),

@@ -18,6 +18,7 @@ class StructuralExamples(enum.Enum):
 	ShortCantileverMidLoad = enum.auto()
 	CantileverTipLoad = enum.auto()
 	CantileverMidLoad = enum.auto()
+	TensilePlate = enum.auto()
 	TwoBar = enum.auto()
 	Inverter = enum.auto()
 	ThreeHoleBracket = enum.auto()
@@ -38,8 +39,8 @@ class StructuralExamples(enum.Enum):
 	LBracketThick = enum.auto()
 	BliskQuarter = enum.auto()
 	BliskWithBlade =  enum.auto()
-	NoseCone = enum.auto()
-	
+	BliskWithBladeMass = enum.auto()
+
 
 
 def getStructuralProblem(problem: StructuralExamples, **kwargs):
@@ -81,6 +82,8 @@ def getStructuralProblem(problem: StructuralExamples, **kwargs):
     return createMBBBProblem(**kwargs)
   elif problem == StructuralExamples.LBracket:
     return createLBracketProblem(**kwargs)
+  elif problem == StructuralExamples.TensilePlate:
+    return createTensilePlateProblem(**kwargs)
   elif problem == StructuralExamples.TwoBar:
     return createTwoBarProblem(**kwargs)
   elif problem == StructuralExamples.DistributedLoad:
@@ -107,8 +110,6 @@ def getStructuralProblem(problem: StructuralExamples, **kwargs):
     return createTorquePlateProblem(**kwargs)
   elif problem == StructuralExamples.BliskQuarter:
     return createBliskQuarterProblem(**kwargs)
-  elif problem == StructuralExamples.BliskWithBlade:
-    return createBliskSectionWithBlade(**kwargs)
   elif problem == StructuralExamples.LBracketThick:
     return createLBracketThickProblem(**kwargs)
   elif problem == StructuralExamples.KnuckleAssembly:
@@ -117,8 +118,8 @@ def getStructuralProblem(problem: StructuralExamples, **kwargs):
     return createTableProblem(**kwargs)
   elif problem == StructuralExamples.ArrowHead:
     return createArrowHeadProblem(**kwargs)
-  elif problem == StructuralExamples.NoseCone:
-    return createNoseconeProblem(**kwargs)
+  elif problem == StructuralExamples.BliskWithBladeMass:
+    return createBliskSectionWithBlade(**kwargs)
   else:
     raise ValueError("Invalid structural example name.")
   
@@ -1235,6 +1236,44 @@ def createGravityBarProblem(nDOFDesired: int = 10000, material_density = 7700):
 
   # ----------------------------------------
   
+def createTensilePlateProblem(nDOFDesired: int = 10000, L: float = [1.0, 0.01, 1.0]):
+  nVoxelsDesired = nDOFDesired/3    
+  # Let the number of voxels be proportional to the length in each direction
+  alpha = (nVoxelsDesired/(L[0]*L[1]*L[2]))**(1/3)
+  nelx = round(alpha*L[0])
+  nely = round(alpha*L[1])
+  nelz = round(alpha*L[2])
+  mesh = hex_mesher.HexMesher()
+  mesh.grid_mesh(num_elems = (nelx, nely, nelz),
+                  elem_size = (L[0]/nelx, L[1]/nely, L[2]/nelz))
+  mesh.createEdofMatStructural()
+
+
+  fixed_nodes =np.intersect1d(mesh.getNodesOnBoundingBoxPlane(0,True), mesh.getNodesOnBoundingBoxPlane(2,False))
+
+  fixed_dofs = np.array([3 * fixed_nodes,
+              3 * fixed_nodes + 1,
+              3 * fixed_nodes + 2]).flatten().astype(int)
+  dirichlet_values = 0*np.ones_like(fixed_dofs, dtype = float)
+
+  mesh.node_indices[fixed_nodes, 3] = 1
+  force_nodes =np.intersect1d(mesh.getNodesOnBoundingBoxPlane(0,False), mesh.getNodesOnBoundingBoxPlane(2,False))
+  force_dofs = np.array([3 * force_nodes])
+  boundary_force = np.zeros(3*mesh.num_nodes)
+  boundary_force[force_dofs] = 10000/len(force_nodes)
+  elem_body_force = np.zeros(3*mesh.num_elems)
+  mat_prop = mat_lib.get_material("Steel") 
+ 
+  mesh.node_indices[force_nodes, 3] = 2 # for plotting
+  bc = bound_cond.BC(force = boundary_force,
+            fixed_dofs = fixed_dofs,
+            dirichlet_values = dirichlet_values) 
+  
+  return mesh, mat_prop, bc, elem_body_force
+
+  # ----------------------------------------
+
+  
 def createGravityPlateProblem(nDOFDesired: int = 10000, L: float = [1.0, 0.5, 0.01],
                                verticalForcePercent = 0):
   nVoxelsDesired = nDOFDesired/3    
@@ -1276,7 +1315,7 @@ def createGravityPlateProblem(nDOFDesired: int = 10000, L: float = [1.0, 0.5, 0.
   return mesh, mat_prop, bc, elem_body_force
 
   # ----------------------------------------
-  
+
 def createArrowHeadProblem(nDOFDesired: int = 10000, totalLoad = 1000):
   """Creates a structural problem setup for an arrowhead-shaped bracket.
 
@@ -1706,10 +1745,11 @@ def createBliskQuarterProblem(nDOFDesired: int = 10000,rpm = 10000,radialForce =
 
 # ----------------------------------------
 
-def createBliskSectionWithBlade(nDOFDesired: int = 10000, material_density = 7700,rpm = 10000,radialForce =0):
+def createBliskSectionWithBlade(nDOFDesired: int = 50000, youngs_modulus = 1, 
+                               poissons_ratio = 0.28, material_density = 1,rpm = 10000,radialForce =200000): #radial force zero
  
   # Read the STL model, create a mesh of desired size, and a structural problem is posed on it.
-  stl_file = os.path.join(script_dir, '../Models/BliskModel/BliskSectionWithBlade.STL')
+  stl_file = os.path.join(script_dir, '../Models/BliskModel/BliskSectionWithBlade2.STL')
 
 
   nElemsDesired = nDOFDesired/3    # estimate
@@ -1721,7 +1761,7 @@ def createBliskSectionWithBlade(nDOFDesired: int = 10000, material_density = 770
   # fix inner radius
   centerPt = [0,0,0]
   axis = [0,0,1]
-  innerRadius = 0.01085
+  innerRadius = 0.05
   fixed_nodes = mesh.get_nodes_within_annular_region(centerPt,axis,innerRadius-mesh.elem_size[0]*0.707,
                                                      innerRadius+mesh.elem_size[0]*0.707)  
   fixed_dofs = np.array([3 * fixed_nodes,
@@ -1729,6 +1769,12 @@ def createBliskSectionWithBlade(nDOFDesired: int = 10000, material_density = 770
               3 * fixed_nodes + 2]).flatten().astype(int)
   dirichlet_values = 0*np.ones_like(fixed_dofs, dtype = float)
   mesh.node_indices[fixed_nodes, 3] = 1 # for plotting
+
+  total_mesh_volume = np.prod(mesh.elem_size) * mesh.num_elems # * 0.0283168 # ft3 to m3
+  print("total mesh volume in m3",total_mesh_volume)
+
+  total_mass = material_density * total_mesh_volume
+  print("total mass in kg",total_mass)
 
 
   elem_body_force = np.zeros(3*mesh.num_elems)
@@ -1739,7 +1785,7 @@ def createBliskSectionWithBlade(nDOFDesired: int = 10000, material_density = 770
     elem_body_force[3*e:3*e+2] = (material_density*np.prod(mesh.elem_size)) * omega**2 *  center[:2]
 
   print("total body force ",np.linalg.norm(elem_body_force))
-  outerRadius = 0.0558
+  outerRadius = 0.22
   load_nodes = mesh.get_nodes_within_annular_region(centerPt,axis,outerRadius-mesh.elem_size[0]*0.707,
                                                     outerRadius+mesh.elem_size[0]*0.707)    
   
@@ -1759,10 +1805,17 @@ def createBliskSectionWithBlade(nDOFDesired: int = 10000, material_density = 770
   
   bc = bound_cond.BC(force = boundaryForce,fixed_dofs = fixed_dofs,dirichlet_values = dirichlet_values) 
 
-  mat_prop = mat_lib.get_material("Steel")
+  # mat_prop = mat_lib.StructuralMaterial(youngs_modulus=youngs_modulus,
+  #                     poissons_ratio=poissons_ratio)
+  mat_prop=mat_lib.create_material_with_defaults(name=f"Material_{1}", youngs_modulus=youngs_modulus,
+                      poissons_ratio=poissons_ratio)
    
-  return mesh, mat_prop, bc, elem_body_force
+  # elem_body_force = None
+  # print("Total body force ",elem_body_force)
+  # print("Num of elems ",mesh.num_elems)
+  # print("shape of elem_body_force ",elem_body_force.shape)
 
+  return mesh, mat_prop, bc, elem_body_force
 
   # ----------------------------------------
 
@@ -1883,9 +1936,11 @@ def createLBracketThickProblem(nDOFDesired: int = 80000,topload = 1000,midload =
   force = np.zeros(3*mesh.num_nodes)
   node_pts = mesh.node_xyz
   if(abs(topload) > 0):
-    topload_nodes = np.intersect1d(mesh.getNodesOnBoundingBoxPlane(0,False) , np.where((node_pts[:, 1] >= 0.36))[0]) # hard coded  
+    topload_nodes = np.intersect1d(mesh.getNodesOnBoundingBoxPlane(0,False) , np.where((node_pts[:, 1] >= 0.35))[0]) # hard coded  
     topload_nodes = topload_nodes[(node_pts[topload_nodes, 2] >= 0.23) & (node_pts[topload_nodes, 2] <= 0.27)]
+    
     topload_dofs = 3 * topload_nodes + 1  
+   
     mesh.node_indices[topload_nodes, 3] = 2 # for plotting
     force[topload_dofs] = -topload/len(topload_nodes)
 
@@ -1903,43 +1958,6 @@ def createLBracketThickProblem(nDOFDesired: int = 80000,topload = 1000,midload =
   mat_prop = mat_lib.get_material("Steel")
   elem_body_force = None
 
-  return mesh, mat_prop, bc, elem_body_force
-
-  # ----------------------------------------
-def createNoseconeProblem(nDOFDesired: int = 10000,  totalLoad =  1000):
- 
-  # Read the STL model, create a mesh of desired size, and a structural problem is posed on it.
-  stl_file = os.path.join(script_dir, '../Models/Nosecone/HollowNoseCone.STL')
-
-  nElemsDesired = nDOFDesired/3    # estimate
-  mesh = hex_mesher.HexMesher()
-  
-  mesh.createMeshFromSTLFile(stl_file, nElemsDesired=nElemsDesired)
-  mesh.createEdofMatStructural()
-
-  node_pts = mesh.node_xyz
-  fixed_nodes = np.where(node_pts[:, 1] == np.min(node_pts[:, 1]))[0]
-
-  fixed_dofs = np.array([3 * fixed_nodes,
-              3 * fixed_nodes + 1,
-              3 * fixed_nodes + 2]).flatten().astype(int)
-  dirichlet_values = 0*np.ones_like(fixed_dofs, dtype = float)
-
-  mesh.node_indices[fixed_nodes, 3] = 1 # for plotting
-  
-  load_nodes = np.where(node_pts[:, 1] > 0.03)[0]       
-  
-  mesh.node_indices[load_nodes, 3] = 2 # for plotting
-  load_dofs = 3 * load_nodes + 1  # y direction
-
-  load_per_dof = -totalLoad/len(load_nodes)
-  force = np.zeros(3*mesh.num_nodes)
-  force[load_dofs] = load_per_dof
-  bc = bound_cond.BC(force = force,fixed_dofs = fixed_dofs,dirichlet_values = dirichlet_values) 
-
-  mat_prop = mat_lib.get_material("Steel")
-  
-  elem_body_force = None
   return mesh, mat_prop, bc, elem_body_force
 
 

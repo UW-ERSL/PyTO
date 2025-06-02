@@ -67,19 +67,21 @@ def topopt_optimality_criteria(
 	
 	if isinstance(fe_solver.mat_prop, list): # multiple materials
 		if isinstance(fe_solver, hex_structural_fea.HexStructuralFEA):
-			KE_list = [hex_element_stiffness.hex8_stiffness_matrix_structural( mp,fe_solver.mesh.elem_size)
+			KE_list = [hex_element_stiffness.hex8_stiffness_matrix_structural( mp.youngs_modulus,mp.poissons_ratio,fe_solver.mesh.elem_size)
 				for mp in fe_solver.mat_prop]
 			KE = KE_list[0]
 		elif isinstance(fe_solver, hex_thermal_fea.HexThermalFEA):
-			KE_list = [hex_element_stiffness.hex8_stiffness_matrix_thermal( mp,fe_solver.mesh.elem_size)
+			KE_list = [hex_element_stiffness.hex8_stiffness_matrix_thermal( mp.thermal_conductivity,fe_solver.mesh.elem_size)
 				for mp in fe_solver.mat_prop]
 			KE = KE_list[0]	
 		print("Assuming all elements have the same material properties")
-	else:
+	else: # single material
 		if isinstance(fe_solver, hex_structural_fea.HexStructuralFEA):
-			KE = hex_element_stiffness.hex8_stiffness_matrix_structural( fe_solver.mat_prop,fe_solver.mesh.elem_size)
+			KE = hex_element_stiffness.hex8_stiffness_matrix_structural( fe_solver.mat_prop.youngs_modulus,
+															    fe_solver.mat_prop.poissons_ratio,
+																fe_solver.mesh.elem_size)
 		elif isinstance(fe_solver, hex_thermal_fea.HexThermalFEA):
-			KE = hex_element_stiffness.hex8_stiffness_matrix_thermal( fe_solver.mat_prop,fe_solver.mesh.elem_size)
+			KE = hex_element_stiffness.hex8_stiffness_matrix_thermal( fe_solver.mat_prop.thermal_conductivity,fe_solver.mesh.elem_size)
 	
 	success = True
 	errorMsg = "None"
@@ -92,6 +94,7 @@ def topopt_optimality_criteria(
 		
 		
 		sol = fe_solver.solve(x, material_model)
+		fe_solver.postprocess()
 		obj, grad_obj = compute_objective_and_gradient(to_params,sol,x, fe_solver,KE, material_model)
 
 		if (len(history['objective']) == 0):
@@ -103,7 +106,7 @@ def topopt_optimality_criteria(
 			ce_body_force = (sol[fe_solver.mesh.edofMat].reshape(num_elems, 24) * nodal_body_force[fe_solver.mesh.edofMat].reshape(num_elems, 24)).sum(1)
 			grad_obj +=  2*ce_body_force
 			
-		if (to_params.APPLY_FILTER_TO_SENSITIVITY):
+		if (to_params.APPLY_FILTER_TO_SENSITIVITY)  and (to_params.Objective is not TO_QOI.VOLUME_FRACTION):
 			grad_obj = (H * grad_obj)/Hs # apply filter
 
 		if (elemsWithForces.size > 0):
@@ -203,8 +206,15 @@ def topopt_optimality_criteria(
 	fe_solver.mesh.setPseudoDensity(x)
 	meshComponents = fe_solver.mesh.find_connected_components()
 	if (len(meshComponents) > 1):
-		errorMsg = "Hanging elements"
-		success = False
+		if (print_progress):
+			print("Disconnected topology detected. Removing hanging elements.")
+		# Find the largest connected component and its size
+		largest_component = max(meshComponents, key=len)
+		# Set density to 1 for elements in largest component
+		x[:] = 0.0
+		x[list(largest_component)] = 1.0
+		fe_solver.mesh.setPseudoDensity(x.flatten())
+		volfrac = np.mean(x)
 	sol = fe_solver.solve(x, material_model)
 	obj, grad_obj = compute_objective_and_gradient(to_params,sol,x, fe_solver,KE, material_model)
 
@@ -221,15 +231,16 @@ def topopt_optimality_criteria(
 	nFEAs = iter + 1
 	print(f"Final objective: {obj:.4g}, vf: {np.mean(x):.3f}")
 	print(f"Total Time: {totalTime:.2f} s")
+	print("Error: ", errorMsg)
 	return sol, history, success, errorMsg, nFEAs
 
-	
+	 
 if __name__ == "__main__":    
 	from topopt_structural_benchmarks import *
 	from topopt_thermal_benchmarks import *
 
 	print("-" * 50)
-	to_problem = StructuralTOExamples.Mitchell_2 # Choose the TO problem
+	to_problem = StructuralTOExamples.CantileverMidLoad # Choose the TO problem
 	#to_problem = ThermalTOExamples.FourCornersThermal # Choose the TO problem
 
 	if (to_problem in StructuralTOExamples):
