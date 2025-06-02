@@ -68,8 +68,8 @@ if __name__ =='__main__':
     point = (10, 5, 1e-3)
     segment_start = (0, 0, 1e-3)
     segment_end = (10, 10, 1e-3)
-
-    print("Point inside:", is_point_inside_domain(domain, point))
+    pv_point = pv.PolyData(np.array([[point[0], point[1], point[2]]], dtype=np.float32))
+    print("Point inside:", is_point_inside_domain(domain, pv_point))
     line_seg = pv.Line(np.array(segment_start), np.array(segment_end))
     print("Segment inside:", is_segment_inside_domain(domain, line_seg))
 
