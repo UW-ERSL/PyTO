@@ -144,7 +144,7 @@ def compute_volume_constraint_and_gradient(x: np.ndarray,
 		value is negative.
 	"""
 
-	volConstraint = (np.mean(x)/volfracUpper) - 1.0
+	volConstraint = ((np.mean(x)/volfracUpper) - 1.0)
 	volConstraint_gradient = np.ones_like(x) / volfracUpper/ x.size
 	return volConstraint, volConstraint_gradient
 
@@ -345,7 +345,7 @@ def compute_constraint_and_gradient(to_params, sol: np.ndarray, x: np.ndarray,	f
 def compute_objective_and_gradient(to_params, sol: np.ndarray, x: np.ndarray,	fe_solver, KE,
 				material_model = None) -> tuple:
 							
-	objectiveType  = to_params.Objective[0]	# first entry is the type of objective			
+	objectiveType  = to_params.Objective[0]	# first entry is the type of objective
 	if (objectiveType == TO_QOI.COMPLIANCE): 
 		compliance, compliance_grad = compute_compliance_and_gradient(sol, x, fe_solver, KE, material_model)
 		return compliance, compliance_grad
