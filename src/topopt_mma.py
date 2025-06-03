@@ -108,8 +108,8 @@ def topopt_mma(fe_solver, #hex_structural_fea.HexStructuralFEA or hex_thermal_fe
 			x = H*x/Hs
 			mma_state.x = x.reshape(-1, 1)
 
+		fe_solver.mesh.setPseudoDensity(x)
 		if (plot_progress) and ((mma_state.epoch+1) % 10 == 0):
-			fe_solver.mesh.setPseudoDensity(x)
 			fe_solver.plot_pseudo_density(auto_close = False, title = f"Iteration {mma_state.epoch+1}")
 		timeFEAStart = time.time()
 
@@ -121,7 +121,7 @@ def topopt_mma(fe_solver, #hex_structural_fea.HexStructuralFEA or hex_thermal_fe
 		obj, grad_obj = compute_objective_and_gradient(to_params,sol,x, fe_solver,KE, material_model)
 		
 		if (len(history['objective']) == 0):
-			objScaling =   abs(0.1*obj)   #  Scale the objective function to be in the range of 10
+			objScaling =   abs(obj)   #  Scale the objective function
 		obj = obj/objScaling
 		grad_obj /=objScaling
 
@@ -196,8 +196,7 @@ def topopt_mma(fe_solver, #hex_structural_fea.HexStructuralFEA or hex_thermal_fe
 			break
 	
 	fe_solver.mesh.setPseudoDensity(x)	
-	fe_solver.plot_pseudo_density(auto_close = False, title = f"Iteration {mma_state.epoch+1}")
-
+	
 	# Find threshold that preserves volume fraction
 	x_sorted = np.sort(x)
 	threshold = x_sorted[int((1-np.mean(x))*len(x))]
@@ -221,9 +220,7 @@ def topopt_mma(fe_solver, #hex_structural_fea.HexStructuralFEA or hex_thermal_fe
 	history['objective'].append(obj)
 	history['volume'].append(volfrac)
 	history['change'].append(change)
-	if (obj > 2*history['objective'][-2]):
-		errorMsg = "Disconnected topology"
-		success = False
+	
 	if (volfrac > 1.1*volFractionConstraint):
 		errorMsg = f"vf {volFractionConstraint:0.3f} not reached"
 		success = False 
@@ -243,8 +240,8 @@ if __name__ == "__main__":
 	print("-" * 50)
  
 	to_problem = StructuralTOExamples.LBracketMidLoadStressObjective # Choose the TO problem
-	# to_problem = StructuralTOExamples.LBracketMidLoad # Choose the TO problem
-	to_problem = StructuralTOExamples.Inverter # Choose the TO problem
+	to_problem = StructuralTOExamples.LBracketMidLoad # Choose the TO problem
+	#to_problem = StructuralTOExamples.Inverter # Choose the TO problem
 
 	if (to_problem in StructuralTOExamples):
 		mesh, mat_prop, bc,elem_body_force, to_params = getStructuralTOProblem(to_problem)

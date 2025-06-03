@@ -35,13 +35,14 @@ def runTOMethodOnStructuralBenchmarks(optimizationMethod):
 	benchmarks_noncompliance_problems = [StructuralTOExamples.CantileverMidLoadVolumeObjective,
 						StructuralTOExamples.LBracketTopLoadStressObjective, 
 						StructuralTOExamples.LBracketMidLoadStressObjective,
-						StructuralTOExamples.LBracketMidLoadStressObjective]
+						StructuralTOExamples.LBracketMidLoadStressObjective,
+						StructuralTOExamples.Inverter]
 		
 	benchmarks_bodyforce_problems = [StructuralTOExamples.GravityPlate,
 						StructuralTOExamples.CentrifugalPlate]
 	
 	
-	for to_problem in benchmarks_2_5D_problems:
+	for to_problem in benchmarks_3D_problems:
 		if to_problem in benchmarks_2_5D_problems:
 			subFolder = "Compliance2.5D"
 		elif to_problem in benchmarks_3D_problems:
@@ -81,17 +82,17 @@ def runTOMethodOnStructuralBenchmarks(optimizationMethod):
 			u, history,success,errorMsg,nFEAs = topopt_mma(fe_solver = fe_solver,
 									to_params = to_params,print_progress = print_progress)
 		elif optimizationMethod == TO_METHODS.DENSITYOC:
-			if to_problem not in benchmarks_2_5D_problems and to_problem not in benchmarks_3D_problems:
+			if to_problem in benchmarks_noncompliance_problems:
 				continue
 			u, history, success,errorMsg,nFEAs = topopt_optimality_criteria(fe_solver = fe_solver,
 											to_params = to_params,print_progress = print_progress)
 		elif optimizationMethod == TO_METHODS.PARETO:
-			if to_problem not in benchmarks_2_5D_problems and to_problem not in benchmarks_3D_problems:
+			if to_problem in benchmarks_noncompliance_problems:
 				continue
 			u, history, success,errorMsg,nFEAs = topopt_pareto(fe_solver = fe_solver,
 													to_params = to_params,print_progress = print_progress)
 		elif optimizationMethod == TO_METHODS.LEVELSET:
-			if to_problem not in benchmarks_2_5D_problems and to_problem not in benchmarks_3D_problems:
+			if to_problem in benchmarks_noncompliance_problems:
 				continue
 			u, history, success,errorMsg,nFEAs = topopt_levelset(fe_solver = fe_solver,
 													to_params = to_params)

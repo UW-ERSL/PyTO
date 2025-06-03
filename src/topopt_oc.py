@@ -98,7 +98,7 @@ def topopt_optimality_criteria(
 		obj, grad_obj = compute_objective_and_gradient(to_params,sol,x, fe_solver,KE, material_model)
 
 		if (len(history['objective']) == 0):
-			objScaling = abs(0.1*obj)
+			objScaling = abs(obj)
 		obj = obj/objScaling # Scale the objective function to avoid numerical issues
 		grad_obj /= objScaling
 	
@@ -221,9 +221,7 @@ def topopt_optimality_criteria(
 	history['objective'].append(obj)
 	history['volume'].append(volfrac)
 	history['change'].append(change)
-	if (obj > 2*history['objective'][-2]):
-		errorMsg = "Disconnected topology"
-		success = False
+
 	if (volfrac > 1.1*volFractionConstraint):
 		errorMsg =  f"vf {volFractionConstraint:0.3f} not reached"
 		success = False
