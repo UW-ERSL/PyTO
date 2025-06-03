@@ -237,7 +237,7 @@ def getStructuralTOProblem(to_problem: StructuralTOExamples,nDOFDesired = None, 
         to_params.Objective = (TO_QOI.PNORM_STRESS, 6.0) # pnorm value
         to_params.ExtrudeZ = True
         to_params.nDOFDesired = 50000 if nDOFDesired is None else nDOFDesired
-        to_params.Constraints = [(TO_QOI.VOLUME_FRACTION, None, 0.4)] 
+        to_params.Constraints = [(TO_QOI.VOLUME_FRACTION, None, 0.5)] 
     elif to_problem == StructuralTOExamples.LBracketThickMidLoadStressObjective:
         structural_problem = StructuralExamples.LBracketThick
         to_params.Comment  =  "Stress Minimization"

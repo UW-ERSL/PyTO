@@ -77,8 +77,7 @@ class HexStructuralFEA:
           hex_element_stiffness.hex8_stiffness_matrix_structural(mat_prop.youngs_modulus,mat_prop.poissons_ratio, self.mesh.elem_size), axis=0)
 
   #################################################################
-  def solve(self,
-            x: np.ndarray = None,
+  def solve(self,x: np.ndarray = None,
             material_model: MaterialModel = None) -> np.ndarray:
     """Solve the structural finite element problem.
 

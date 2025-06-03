@@ -240,7 +240,7 @@ if __name__ == "__main__":
  
 	print("-" * 50)
  
-	to_problem = StructuralTOExamples.LBracketMidLoad # Choose the TO problem
+	to_problem = StructuralTOExamples.LBracketMidLoadStressObjective # Choose the TO problem
 
 	if (to_problem in StructuralTOExamples):
 		mesh, mat_prop, bc,elem_body_force, to_params = getStructuralTOProblem(to_problem)
@@ -313,7 +313,8 @@ if __name__ == "__main__":
 	ax2.tick_params(axis='y', labelcolor='tab:orange')
 	ax2.yaxis.set_major_formatter(plt.FormatStrFormatter('%.2f'))
 
-	plt.title('MMA: Volume and Compliance vs. Iterations')
+	plt.title('MMA: Volume and Objective vs. Iterations')
+
 
 	# Add legend
 	lines1, labels1 = ax1.get_legend_handles_labels()

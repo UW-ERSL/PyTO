@@ -83,11 +83,11 @@ def topopt_pareto(fe_solver,
 	fe_solver.postprocess()
 	nFEAs = 1
 
-	obj, T,compliance = compute_objective_and_topological_sensitivity(to_params,sol,x, fe_solver,KE)
-	
+	obj, T,compliance = compute_objective_topological_sensitivity_compliance(to_params,sol,x, fe_solver,KE)
+	J = obj
 
 	history['objective'].append( obj)# may be the same as compliance
-	history['compliance'].append( compliance) 
+	history['compliance'].append(compliance) 
 	history['volume'].append(volfrac)
 	
 	# Add contribution from body force to topological sensitivity if present
@@ -107,7 +107,7 @@ def topopt_pareto(fe_solver,
 	T /= np.max(np.abs(T))  # Normalize sensitivity
 
 	if (print_progress):
-		print(f"vf={history['volume'][-1]:.3f}, J={history['objective'][-1]:.3g}, #FEA={totalIter:2d}")
+		print(f"vf={history['volume'][-1]:.3f}, obj={history['objective'][-1]:.3g}, compliance={history['compliance'][-1]:.3g}, #FEA={nFEAs:2d}")
 	vol_decr = vol_decr_max
 	
 	success = True
@@ -132,7 +132,7 @@ def topopt_pareto(fe_solver,
 			print(f"Attempting v={volfrac:.3f}")
 		# Initialize local iteration variables
 		localIter = 0
-		JTemp = history['compliance'][-1]  # Store previous value
+		JTemp = history['objective'][-1]  # Store previous value
 		JPrev = JTemp  # Initialize JPrev
 		JPrevPrev = JTemp # Initialize JPrevPrev
 		TPrev = T.copy()  # Store previous sensitivity
@@ -187,13 +187,13 @@ def topopt_pareto(fe_solver,
 			sol = fe_solver.solve(x)
 			fe_solver.postprocess()
 			nFEAs += 1
-			obj, TTemp,JTemp = compute_objective_and_topological_sensitivity(to_params,sol,x, fe_solver,KE)
-			
+			obj, TTemp,compliance = compute_objective_topological_sensitivity_compliance(to_params,sol,x, fe_solver,KE)
+			JTemp = obj  # Update current objective value
 			if (to_params.Objective[0] == TO_QOI.COMPLIANCE):
 				T = TTemp.copy()  # Use current sensitivity for compliance objective
 			else:
 				# If x = 0, use previous sensitivity, else use current sensitivity
-				T = np.where(x == 0, TPrev, TTemp)
+				T = np.where(x == 0, TPrev.copy(), TTemp.copy())
 			# Add contribution from body force to topological sensitivity if present
 			if (nodal_body_force is not None):
 				T_body = np.zeros(fe_solver.mesh.num_elems)
@@ -241,13 +241,13 @@ def topopt_pareto(fe_solver,
 			scale = history['objective'][-1] / history['objective'][0]
 			vol_decr = max(vol_decr_min,min(vol_decr,vol_decr_max/scale)) # Reduce volume increment for steep increase in compliance
 			if (print_progress):
-				print(f"vf={history['volume'][-1]:.3f}, J={history['objective'][-1]:.3g}, #FEA={nFEAs:2d}")
+				print(f"vf={history['volume'][-1]:.3f}, obj={history['objective'][-1]:.3g}, compliance={history['compliance'][-1]:.3g}, #FEA={nFEAs:2d}")
 			fe_solver.mesh.setPseudoDensity(x.flatten())
 
 
 	totalTime = time.time() - tStart
 
-	print(f"Final vf: {history['volume'][-1]:.3f},  objective: {history['objective'][-1]:.4g}")
+	print(f"Final: vf={history['volume'][-1]:.3f}, obj={history['objective'][-1]:.3g}, compliance={history['compliance'][-1]:.3g}, #FEA={nFEAs:2d}")
 	print(f"Total Time: {totalTime:.2f} s")
 	print("Error: ", errorMsg)
 	return sol, history, success,errorMsg,nFEAs
@@ -258,7 +258,7 @@ if __name__ == "__main__":
 	from topopt_thermal_benchmarks import *
 	
 	print("-" * 50)
-	to_problem = StructuralTOExamples.LBracketMidLoad # Choose the TO problem
+	to_problem = StructuralTOExamples.LBracketTopLoadStressObjective # Choose the TO problem
 	#to_problem = ThermalTOExamples.BridgeThermal # Choose the TO problem
 
 	if (to_problem in StructuralTOExamples):
