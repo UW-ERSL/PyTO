@@ -1,13 +1,13 @@
-conda install pip
-pip install numpy
-pip install scipy
-pip install matplotlib
-pip install scikit-learn
-pip install pypardiso
-pip install absl-py
-pip install pyvista
-pip install numpy-stl
-pip install tetgen
-pip install pandas
-pip install pyamg
-pip install numba
+# pyTOLib.txt
+numpy
+scipy
+matplotlib
+scikit-learn
+pypardiso
+absl-py
+pyvista
+numpy-stl
+tetgen
+pandas
+pyamg
+numba
