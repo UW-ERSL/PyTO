@@ -6,16 +6,50 @@ import cvxpy as cvx
 import matplotlib.pyplot as plt
 
 from truss_domain_using_pyvista import *
-from scipy.spatial import ConvexHull
 #Calculate equilibrium matrix B
 def calcB(Nd, Cn, dof):
-    m, n1, n2 = len(Cn), Cn[:,0].astype(int), Cn[:,1].astype(int)
-    l, X, Y = Cn[:,2], Nd[n2,0]-Nd[n1,0], Nd[n2,1]-Nd[n1,1]
-    d0, d1, d2, d3 = dof[n1*2], dof[n1*2+1], dof[n2*2], dof[n2*2+1]
-    s = np.concatenate((-X/l * d0, -Y/l * d1, X/l * d2, Y/l * d3))
-    r = np.concatenate((n1*2, n1*2+1, n2*2, n2*2+1))
-    c = np.concatenate((np.arange(m), np.arange(m), np.arange(m), np.arange(m)))
-    return sparse.coo_matrix((s, (r, c)), shape = (len(Nd)*2, m))
+    m = len(Cn)
+    n1 = Cn[:, 0].astype(int)
+    n2 = Cn[:, 1].astype(int)
+    dx = Nd[n2, 0] - Nd[n1, 0]
+    dy = Nd[n2, 1] - Nd[n1, 1]
+    dz = Nd[n2, 2] - Nd[n1, 2]
+    l = Cn[:, 2]  # member length
+
+    # Get the directional components
+    ux = dx / l
+    uy = dy / l
+    uz = dz / l
+
+    # Indices into the flattened DOF vector
+    d0 = dof[n1 * 3]
+    d1 = dof[n1 * 3 + 1]
+    d2 = dof[n1 * 3 + 2]
+    d3 = dof[n2 * 3]
+    d4 = dof[n2 * 3 + 1]
+    d5 = dof[n2 * 3 + 2]
+
+    # Fill the matrix
+    s = np.concatenate((
+        -ux * d0,
+        -uy * d1,
+        -uz * d2,
+         ux * d3,
+         uy * d4,
+         uz * d5
+    ))
+    r = np.concatenate((
+        n1 * 3,
+        n1 * 3 + 1,
+        n1 * 3 + 2,
+        n2 * 3,
+        n2 * 3 + 1,
+        n2 * 3 + 2
+    ))
+    c = np.concatenate([np.arange(m)] * 6)
+
+    return sparse.coo_matrix((s, (r, c)), shape=(len(Nd) * 3, m))
+
 #Solve linear programming problem
 def solveLP(Nd, Cn, f, dof, st, sc, jc):
     l = [col[2] + jc for col in Cn]
@@ -29,6 +63,7 @@ def solveLP(Nd, Cn, f, dof, st, sc, jc):
         cons.extend([eqn[k], q[k] >= -sc * a, q[k] <= st * a])
     prob = cvx.Problem(obj, cons)
     vol = prob.solve()
+    print("Solver status:", prob.status)
     q = [np.array(qi.value).flatten() for qi in q]
     a = np.array(a.value).flatten()
     u = [-np.array(eqnk.dual_value).flatten() for eqnk in eqn]
@@ -49,81 +84,74 @@ def stopViolation(Nd, PML, dof, st, sc, u, jc):
     for i in range(num): 
         PML[lst[vioCn[vioSort[i]]]][3] = True
     return num == 0
-#Visualize truss
-def plotTruss(Nd, Cn, a, q, threshold, str, update = True):
-    plt.ion() if update else plt.ioff()
-    plt.clf(); plt.axis('off'); plt.axis('equal');  plt.draw()
-    plt.title(str)
-    tk = 5 / max(a)
-    for i in [i for i in range(len(a)) if a[i] >= threshold]:
-        if all([q[lc][i]>=0 for lc in range(len(q))]): c = 'r'
-        elif all([q[lc][i]<=0 for lc in range(len(q))]): c = 'b'
-        else: c = 'tab:gray'
-        pos = Nd[Cn[i, [0, 1]].astype(int), :]
-        plt.plot(pos[:, 0], pos[:, 1], c, linewidth = a[i] * tk)
-    plt.pause(0.01) if update else plt.show()
 
-# --- Convex check using SciPy ConvexHull ---
-def is_polygon_convex(domain: pv.PolyData) -> bool:
-    # Extract outer boundary points from the base (z = 0) surface
-    base_z = np.min(domain.points[:, 2])
-    base_points = domain.points[np.abs(domain.points[:, 2] - base_z) < 1e-6]
-    
-    # Drop the z-coordinate to get 2D projection
-    points_2d = base_points[:, :2]
-    
-    # Remove duplicates to avoid issues in ConvexHull
-    points_2d = np.unique(points_2d, axis=0)
-    
-    if len(points_2d) < 3:
-        return False  # Not enough points to form a polygon
+def visualize_grid_and_selected(domain, xv, yv, zv, Nd):
+    # Full grid points
+    grid_points = np.vstack((xv.flatten(), yv.flatten(), zv.flatten())).T
+    grid = pv.PolyData(grid_points)
 
-    try:
-        hull = ConvexHull(points_2d)
-        return len(hull.vertices) == len(points_2d)
-    except:
-        return False  # Degenerate case or error
+    # Selected Nd points
+    Nd_pts = pv.PolyData(Nd)
 
+    p = pv.Plotter()
+    p.add_mesh(domain, style='wireframe', color='lightgray', opacity=0.3)
+    p.add_points(grid, color='gray', point_size=6, render_points_as_spheres=True, label='Full grid')
+    p.add_mesh(domain, style='wireframe', color='lightgray', opacity=0.3)
+    p.add_points(Nd_pts, color='red', point_size=10, render_points_as_spheres=True, label='Inside Nd')
+
+    p.add_legend()
+    p.show()
 #Main function 
-def trussopt(width, height, st, sc, jc):
-    poly = make_domain_with_optional_cutout(width, height, make_hole=False)
+def trussopt(width, height, depth, st, sc, jc):
+    poly = make_domain_with_optional_cutout(width, height, depth, make_hole=False)
     print('open edges', poly.n_open_edges)
+    
     convex = True if is_polygon_convex(poly) else False
-    xv, yv = np.meshgrid(range(width+1), range(height+1))
-    pts = [pv.PolyData(np.array([[xv.flat[i], yv.flat[i], 0.00]])) for i in range(xv.size)] #Hardcoded z, change it.
-    Nd = np.array([pt.points[0][:2] for pt in pts if is_point_inside_domain(poly, pt.points[0])])
-
-    dof, f, PML = np.ones((len(Nd),2)), [], []
+    xv, yv, zv = np.meshgrid(range(width+1), range(height+1), range(depth+1))
+    grid_points = np.stack([xv.ravel(), yv.ravel(), zv.ravel()], axis=1)
+    Nd = np.array([pt for pt in grid_points if is_point_inside_domain(poly, pt)])
+    #visualize_grid_and_selected(poly, xv, yv, zv, Nd)
+    
+    dof, f, PML = np.ones((len(Nd),3)), [], []
     #Load and support conditions
     for i, nd in enumerate(Nd):
-        if nd[0] == 0: dof[i,:] = [0, 0] 
-        f += [0, -1] if (nd == [width, height/2]).all() else [0, 0]
+        #if np.isclose(nd[0], 0): dof[i,:] = [0, 0, 0] 
+        #if nd[0] == 0: dof[i,:] = [0, 0, 0] # fix entire x=0 face
+        if (nd[0] == 0 and nd[2] == 0) or (nd[0] == 0 and nd[2] == depth): dof[i,:] = [0, 0, 0] #fix side edges of the x=0 fae
+        f += [0, -1, 0] if (nd == [width, height/2, depth/2]).all() else [0, 0, 0]
+
+    plot_3d_domain_with_conditions(poly, Nd, dof, f)
+    
     #Create the 'ground structure'
     for i, j in itertools.combinations(range(len(Nd)), 2):
-        dx, dy = abs(Nd[i][0] - Nd[j][0]), abs(Nd[i][1] - Nd[j][1])
-        if gcd(int(dx), int(dy)) == 1 or jc != 0:
+        dx, dy, dz = abs(Nd[i][0] - Nd[j][0]), abs(Nd[i][1] - Nd[j][1]), abs(Nd[i][2] - Nd[j][2])
+        if gcd(int(dx), int(dy), int(dz)) == 1 or jc != 0:
             seg = [] if convex else pv.Line([Nd[i], Nd[j]])
             if convex or is_segment_inside_domain(poly, seg):
-                PML.append( [i, j, np.sqrt(dx**2 + dy**2), False] )
+                PML.append( [i, j, np.sqrt(dx**2 + dy**2 + dz**2), False] )
     PML, dof = np.array(PML), np.array(dof).flatten()
-    f = [f[i:i+len(Nd)*2] for i in range(0, len(f), len(Nd)*2)]
+    f = [f[i:i+len(Nd)*3] for i in range(0, len(f), len(Nd)*3)]
     print('Nodes: %d Members: %d' % (len(Nd), len(PML)))
-    for pm in [p for p in PML if p[2] <= 1.42]: 
+    ls_sel_mem = [p for p in PML if p[2] <= 1.74]
+    for pm in ls_sel_mem: 
+        print("length_mem",pm[2])
         pm[3] = True
     
-    plot_pyvista_domain(poly, Nd, dof, f)
+    Cn = PML[PML[:,3] == True]
+    plot_truss_with_domain_and_bcs(poly, Nd, dof, f, Cn, threshold=1e-4, title="Initial Truss")    
     #Start the 'member adding' loop
     for itr in range(1, 100):
         Cn = PML[PML[:,3] == True]
         vol, a, q, u = solveLP(Nd, Cn, f, dof, st, sc, jc)
         print("Itr: %d, vol: %f, mems: %d" % (itr, vol, len(Cn)))
-        plotTruss(Nd, Cn, a, q, max(a) * 1e-3, "Itr:" + str(itr))
+        plot_truss_with_domain_and_bcs(poly, Nd, dof, f, Cn, a, q, threshold=1e-4, title="Itr:" + str(itr))
         if stopViolation(Nd, PML, dof, st, sc, u, jc): break
     print("Volume: %f" % (vol)) 
-    plotTruss(Nd, Cn, a, q, max(a) * 1e-3, "Finished", False)
+    plot_truss_with_domain_and_bcs(poly, Nd, dof, f, Cn, a, q, threshold=1e-4, title="Truss and Domain", update=False)
+
 #Execution function when called directly by Python
 if __name__ =='__main__': 
-    trussopt(width = 20, height = 10, st = 1, sc =1, jc = 1)
+    trussopt(width = 6, height = 2, depth = 2, st = 1, sc =1, jc = 0.1)
 ##########################################################################
 # This Python script was written by L. He, M. Gilbert, X. Song           #
 # University of Sheffield, United Kingdom                                #
