@@ -240,7 +240,7 @@ if __name__ == "__main__":
 	print("-" * 50)
  
 	to_problem = StructuralTOExamples.LBracketMidLoadStressObjective # Choose the TO problem
-	to_problem = StructuralTOExamples.LBracketMidLoad # Choose the TO problem
+	to_problem = StructuralTOExamples.LBracketThickTopLoad # Choose the TO problem
 	#to_problem = StructuralTOExamples.Inverter # Choose the TO problem
 
 	if (to_problem in StructuralTOExamples):
