@@ -121,12 +121,19 @@ class TopOptSTLRecovery:
         Threshold the UnstructuredGrid 'vtu' on the given 'density_field' scalar.
         Return the cells of the low-density regions below 'threshold'.
         """
-        # Apply a cell threshold: keep cells with density < threshold
-        low_density_region = vtu.threshold(value=threshold, scalars=density_field,
-                                        invert=True)  # invert=True selects cells below threshold
-        
-        print(f"Extracted low density regions: {low_density_region.n_cells} cells")
-        return low_density_region
+        # Convert cell data to point data if necessary
+        if density_field in vtu.cell_data:
+            vtu = vtu.cell_data_to_point_data()
+        # Extract the isosurface of the region below the threshold
+        if density_field in vtu.point_data:
+            print("Density values (point_data):", vtu.point_data[density_field])
+        else:
+            print(f"Density field '{density_field}' not found in point_data.")
+      
+        iso_surface = vtu.contour(isosurfaces=[threshold], scalars=density_field)
+        print(f"Extracted iso surface: {iso_surface.n_cells} cells")
+
+        return iso_surface
 
     def marching_cubes_isosurf(self,voxel_cut, reference_mesh=None, pad=1):
         """
@@ -836,16 +843,14 @@ class TopOptSTLRecovery:
             
             # Step 2: Extract low density regions with lower threshold
             print("Extracting low density regions...")
-            negative_voxels = self.extract_low_density_patches(voxels, 'density', threshold=0.4)
-            voxel_cut = negative_voxels.extract_surface().triangulate().clean()
+            iso_surface = self.extract_low_density_patches(voxels, 'density', threshold=0.5)
+            iso_surface.plot(show_edges=True) if self.visualize else None
+            #voxel_cut = negative_voxels.extract_surface().triangulate().clean()
             
-            # Step 3: Process with marching cubes
-            print("Applying marching cubes algorithm with enhanced parameters...")
-            marching_cubes = self.marching_cubes_isosurf(voxel_cut, reference_mesh=original, pad=2)
-            
+        
             # Step 4: Smooth the surface gently
             print("Applying gentle smoothing to the surface...")
-            smoothed = self.enhanced_smooth(marching_cubes, iterations=50, pass_band=0.2)
+            smoothed = self.enhanced_smooth(iso_surface, iterations=50, pass_band=0.2)
             
             # Step 5: Split into separate void patches with lower threshold
             patch_list = self.split_and_filter_patches(smoothed, cells_threshold_percentage=5)
@@ -1034,12 +1039,12 @@ class TopOptSTLRecovery:
 if __name__ == "__main__":
     print("=== Working Solution with Post-Processing for Multiple Voids ===")
 
-    example = ExamplesCAD.LBracketMidLoad  # Change to the one you want
+    example = ExamplesCAD.Mitchell_1  # Change to the one you want
     design_domain_stl_filepath, topopt_result_vtu_filepath, output_stl = get_example_cad(example)
     
-    stlRecoverty = TopOptSTLRecovery(visualize=True)
+    stlRecovery = TopOptSTLRecovery(visualize=True)
     # Create the model with multiple internal voids and post-processing
-    pv_result = stlRecoverty.create_stl_from_topopt_result(
+    pv_result = stlRecovery.create_stl_from_topopt_result(
         design_domain_stl_filepath=design_domain_stl_filepath,
         topopt_result_vtu_filepath=topopt_result_vtu_filepath,
         shrink_factor=1.08

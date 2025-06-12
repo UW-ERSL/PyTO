@@ -14,6 +14,7 @@ def topopt_mma(fe_solver, #hex_structural_fea.HexStructuralFEA or hex_thermal_fe
 							 rel_conv_tol: float = 1.e-3,
 							 print_progress: bool = True,
 							plot_progress: bool = False,
+							binary_filter: bool = False,	
 							 debug: bool = False,
 							 ) -> tuple[np.ndarray, dict]:
 	"""MMA based topology optimization for minimum compliance.
@@ -198,9 +199,10 @@ def topopt_mma(fe_solver, #hex_structural_fea.HexStructuralFEA or hex_thermal_fe
 	fe_solver.mesh.setPseudoDensity(x)	
 	
 	# Find threshold that preserves volume fraction
-	x_sorted = np.sort(x)
-	threshold = x_sorted[int((1-np.mean(x))*len(x))]
-	x = np.where(x < threshold, 0.0, 1.0)
+	if (binary_filter):
+		x_sorted = np.sort(x)
+		threshold = x_sorted[int((1-np.mean(x))*len(x))]
+		x = np.where(x < threshold, 0.0, 1.0)
 	volfrac = np.mean(x)
 	fe_solver.mesh.setPseudoDensity(x)
 	meshComponents = fe_solver.mesh.find_connected_components()
