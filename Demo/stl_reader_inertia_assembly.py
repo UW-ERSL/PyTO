@@ -138,81 +138,15 @@ def assemble_and_compute_inertia(stl_file_list: list[str], density: float = 1000
     print(f"Assembly Center of Mass: {total_com}")
     print("Inertia Tensor at Assembly COM:")
     print(I_total)
+    plot_parts(parts)
 
-    # Visualize
+def plot_parts(parts_list: list):
+    """ 
+    Args: parts_list: List of STLGeom objects to plot."""
     plotter = pv.Plotter()
     colors = ['red', 'blue', 'green', 'orange', 'yellow']
-    for i, part in enumerate(parts):
+    for i, part in enumerate(parts_list):
         plotter.add_mesh(part.get_pyvista_mesh(), color=colors[i % len(colors)], opacity=0.5)
-    plotter.show()
-
-def test_2components(stl_file1: str, stl_file2: str):
-    
-    # Load two parts
-    stl_geom1 = STLGeom(stl_file1)  # e.g., NoseCone
-    stl_geom2 = STLGeom(stl_file2)  # e.g., PayloadBase
-
-    # Stack part1 on top of part2
-    stack_and_align_parts_in_z(stl_geom1, stl_geom2)
-    density = 1000
-    area1, vol1, com1, mass1, I_com1 = compute_part_mass_and_inertia(stl_geom1, density)
-    area2, vol2, com2, mass2, I_com2 = compute_part_mass_and_inertia(stl_geom2, density)
-
-    mass_total = mass1 + mass2
-    cg_total = (mass1 * com1 + mass2 * com2) / (mass1 + mass2)
-
-    I1_shifted = shift_inertia_to_new_point(I_com1, mass1, com1, cg_total)
-    I2_shifted = shift_inertia_to_new_point(I_com2, mass2, com2, cg_total)
-    I_assembly_at_cg = I1_shifted + I2_shifted
-
-    print(f"mass_total: {mass_total}")
-    print(f"cg_total: {cg_total}")
-    print("Moments of inertia: ( kilograms * square meters (if the stl is in meters) )/" \
-    "Taken at the center of mass and aligned with the output coordinate system.")
-    print(f"Inertia for RocketPy: \n {I_assembly_at_cg}")
-
-    mesh1 = stl_geom1.get_pyvista_mesh()
-    mesh2 = stl_geom2.get_pyvista_mesh()
-    plotter = pv.Plotter()
-    plotter.add_mesh(mesh1, color='red', opacity=0.5)
-    plotter.add_mesh(mesh2, color='blue', opacity=0.5)
-    plotter.show()
-
-def test_3components(stl_file1: str, stl_file2: str, stl_file3: str):
-    
-    # Load two parts
-    stl_geom1 = STLGeom(stl_file1)  # e.g., PayloadBase
-    stl_geom2 = STLGeom(stl_file2)  # e.g., MainBody
-    stl_geom3 = STLGeom(stl_file3)  # e.g., tail
-
-    # Stack part1 on top of part2 on top of part3
-    stack_and_align_three_parts_in_z(stl_geom1, stl_geom2, stl_geom3)
-    density = 1000
-    area1, vol1, com1, mass1, I_com1 = compute_part_mass_and_inertia(stl_geom1, density)
-    area2, vol2, com2, mass2, I_com2 = compute_part_mass_and_inertia(stl_geom2, density)
-    area3, vol3, com3, mass3, I_com3 = compute_part_mass_and_inertia(stl_geom3, density)
-
-    mass_total = mass1 + mass2 + mass3
-    cg_total = (mass1 * com1 + mass2 * com2 + mass3 * com3) / (mass1 + mass2 + mass3)
-
-    I1_shifted = shift_inertia_to_new_point(I_com1, mass1, com1, cg_total)
-    I2_shifted = shift_inertia_to_new_point(I_com2, mass2, com2, cg_total)
-    I3_shifted = shift_inertia_to_new_point(I_com3, mass3, com3, cg_total)
-    I_assembly_at_cg = I1_shifted + I2_shifted + I3_shifted
-
-    print(f"mass_total: {mass_total}")
-    print(f"cg_total: {cg_total}")
-    print("Moments of inertia: ( kilograms * square meters (if the stl is in meters) )/" \
-    "Taken at the center of mass and aligned with the output coordinate system.")
-    print(f"Inertia for RocketPy: \n {I_assembly_at_cg}")
-
-    mesh1 = stl_geom1.get_pyvista_mesh()
-    mesh2 = stl_geom2.get_pyvista_mesh()
-    mesh3 = stl_geom3.get_pyvista_mesh()
-    plotter = pv.Plotter()
-    plotter.add_mesh(mesh1, color='red', opacity=0.5)
-    plotter.add_mesh(mesh2, color='blue', opacity=0.5)
-    plotter.add_mesh(mesh3, color='blue', opacity=0.5)
     plotter.show()
 
 if __name__ == "__main__":
@@ -237,8 +171,6 @@ if __name__ == "__main__":
     #   The density is in kg/m^3.
     #   Each STL geometry is oriented with the Z-axis.
 
-    # Test two parts
-    #test_2components(stl_file1, stl_file2)
-    #test_3components(stl_file1, stl_file2, stl_file3)
+    # Test three parts
     stl_file_list = [stl_file1, stl_file2, stl_file3]
     assemble_and_compute_inertia(stl_file_list, density=1000)
