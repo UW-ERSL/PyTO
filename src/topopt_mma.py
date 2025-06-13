@@ -14,7 +14,7 @@ def topopt_mma(fe_solver, #hex_structural_fea.HexStructuralFEA or hex_thermal_fe
 							 rel_conv_tol: float = 1.e-3,
 							 print_progress: bool = True,
 							plot_progress: bool = False,
-							binary_filter: bool = False,	
+							binarize_topology: bool = False,	
 							 debug: bool = False,
 							 ) -> tuple[np.ndarray, dict]:
 	"""MMA based topology optimization for minimum compliance.
@@ -199,7 +199,7 @@ def topopt_mma(fe_solver, #hex_structural_fea.HexStructuralFEA or hex_thermal_fe
 	fe_solver.mesh.setPseudoDensity(x)	
 	
 	# Find threshold that preserves volume fraction
-	if (binary_filter):
+	if (binarize_topology):
 		x_sorted = np.sort(x)
 		threshold = x_sorted[int((1-np.mean(x))*len(x))]
 		x = np.where(x < threshold, 0.0, 1.0)
@@ -242,7 +242,7 @@ if __name__ == "__main__":
 	print("-" * 50)
  
 	to_problem = StructuralTOExamples.LBracketMidLoadStressObjective # Choose the TO problem
-	to_problem = StructuralTOExamples.LBracketThickTopLoad # Choose the TO problem
+	to_problem = StructuralTOExamples.Mitchell_1 # Choose the TO problem
 	#to_problem = StructuralTOExamples.Inverter # Choose the TO problem
 
 	if (to_problem in StructuralTOExamples):
@@ -295,7 +295,7 @@ if __name__ == "__main__":
 								plot_progress = True,
 								debug = debug)
 	timeTaken = time.time() - startTime
-
+	
 
 	title = f"MMA: vol: {history['volume'][-1]:0.2f}, J: {history['objective'][-1]:.3g}, nFEA: {len(history['objective']):3d}, time: {timeTaken:.0f} s"
 	fe_solver.plot_mesh(title = title, plot_bc = False, save_path = None)

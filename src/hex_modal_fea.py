@@ -263,7 +263,7 @@ class ModalFEA:
       plotter.show() 
     
     return 
-  
+
 if __name__ == "__main__":    
   import hex_modal_fea as fea
   from hex_structural_examples import *

@@ -14,7 +14,7 @@ def topopt_optimality_criteria(
 							print_progress: bool = True,
 							plot_progress: bool = False,
 							debug: bool = False,
-							binary_filter: bool = False,
+							binarize_topology: bool = False,
 							) -> tuple[np.ndarray, dict]:
 	"""Optimality Criteria based topology optimization for minimum compliance.
 
@@ -199,7 +199,7 @@ def topopt_optimality_criteria(
 		print(errorMsg)
 		success = False
 	totalTime = time.time() - tStart
-	if (binary_filter):
+	if (binarize_topology):
 		# extract binary topology while preserving volume fraction
 		x_sorted = np.sort(x)
 		threshold = x_sorted[int((1-np.mean(x))*len(x))]

@@ -1146,8 +1146,64 @@ class HexMesher:
 			plotter.add_mesh(self.stlMesh, color='red', show_edges=True, opacity=0.7, label='Original STL')
 		
 		plotter.show()
-	
-	
+
+		
+	def export_vtu_mesh(self,
+			elem_field,
+			mask_low_pseudodensity = False,
+			density_field='density',
+			file_name= None,
+			):  
+		'''Export the mesh to a VTU file with element field data.
+		Args:
+			elem_field: Array of element field values to export
+			mask_low_pseudodensity: Whether to filter out elements below or above low pseudo density
+			density_field: Name of the field to be added to the mesh
+			file_name: Path to save the VTU file, if None, creates a temp.vtu file.
+		'''
+		# Filter elements based on pseudo_density
+		if (mask_low_pseudodensity):
+			mask = self.elemPseudoDensity > 0.5
+			filtered_elems = self.elemArray[mask]
+			filtered_field = elem_field[mask]
+
+		else:
+			filtered_elems = self.elemArray
+			filtered_field = elem_field
+
+		if len(filtered_elems) == 0:
+			print("No elements to plot after filtering")
+			return
+
+		# Create vertices array
+		vertices = self.node_xyz
+
+		# Create cells array for PyVista
+		cells = np.hstack((
+				np.full((len(filtered_elems), 1), 8),  # 8 vertices per hexahedron
+				filtered_elems
+				))
+
+		# Create PyVista mesh
+		pv_mesh = pv.UnstructuredGrid({12: cells[:, 1:]}, vertices)  # 12 is VTK_HEXAHEDRON
+
+		# Add field data to cell data
+		pv_mesh.cell_data[density_field] = filtered_field
+		
+		# Convert cell data to point data if necessary
+		if density_field in  pv_mesh.cell_data:
+			pv_mesh =  pv_mesh.cell_data_to_point_data()
+		# Extract the isosurface of the region below the threshold
+		if density_field not in  pv_mesh.point_data:
+			print(f"Density field '{density_field}' not found in point_data.")
+
+		# Save image if path is provided
+		if (file_name is None):
+			file_name = './temp.vtu'
+		
+		pv_mesh.save(file_name)
+		return
+			
 if __name__ == "__main__":
     import os
     import time

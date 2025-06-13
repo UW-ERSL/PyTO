@@ -42,7 +42,7 @@ def runTOMethodOnStructuralBenchmarks(optimizationMethod):
 						StructuralTOExamples.CentrifugalPlate]
 	
 	
-	for to_problem in benchmarks_3D_problems:
+	for to_problem in benchmarks_2_5D_problems:
 		if to_problem in benchmarks_2_5D_problems:
 			subFolder = "Compliance2.5D"
 		elif to_problem in benchmarks_3D_problems:
@@ -142,7 +142,10 @@ def runTOMethodOnStructuralBenchmarks(optimizationMethod):
 			# If the CSV file does not exist, create it with the new entry
 			pd.DataFrame([results_list[-1]]).to_csv(result_csv_file, index=False)
 		
-	
+		# Export the mesh with pseudo density to a .vtu file
+		vtu_file = f"{output_dir}/{to_problem.name}.vtu"
+		fe_solver.mesh.export_vtu_mesh(fe_solver.mesh.elemPseudoDensity,
+									file_name = vtu_file,)
 	# Convert results_list to a DataFrame for better visualization
 
 	# Read the results from the existing CSV file if it exists, otherwise create a new DataFrame
@@ -175,6 +178,8 @@ def runTOMethodOnStructuralBenchmarks(optimizationMethod):
 	results_path = f"{output_dir}/{optimizationMethod.name}_summary.png"
 
 	plt.savefig(results_path, bbox_inches='tight')
+
+	
 
 def combine_results():
 	# Get the latest results directory
