@@ -143,9 +143,13 @@ def runTOMethodOnStructuralBenchmarks(optimizationMethod):
 			pd.DataFrame([results_list[-1]]).to_csv(result_csv_file, index=False)
 		
 		# Export the mesh with pseudo density to a .vtu file
-		vtu_file = f"{output_dir}/{to_problem.name}.vtu"
-		fe_solver.mesh.export_vtu_mesh(fe_solver.mesh.elemPseudoDensity,
-									file_name = vtu_file,)
+		if (optimizationMethod == TO_METHODS.DENSITYMMA):
+			vtu_dir= f"./Results/VTU"
+			if not os.path.exists(vtu_dir):
+				os.makedirs(vtu_dir)
+			vtu_file = f"{vtu_dir}/{to_problem.name}.vtu"
+			fe_solver.mesh.export_vtu_mesh(fe_solver.mesh.elemPseudoDensity,
+										file_name = vtu_file,)
 	# Convert results_list to a DataFrame for better visualization
 
 	# Read the results from the existing CSV file if it exists, otherwise create a new DataFrame
@@ -318,7 +322,7 @@ def combine_results():
 if __name__ == "__main__":    
 	
 	optimizationMethods = [TO_METHODS.DENSITYMMA,TO_METHODS.DENSITYOC,TO_METHODS.PARETO]
-	for optimizationMethod in optimizationMethods:
+	for optimizationMethod in [TO_METHODS.DENSITYMMA]:
 		runTOMethodOnStructuralBenchmarks(optimizationMethod)
 		print(f"Finished {optimizationMethod.name} tests.")
 		print("-" * 50)
