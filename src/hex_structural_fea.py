@@ -226,7 +226,8 @@ class HexStructuralFEA:
                    element_stress[:,5]**2))
       return 
 #################################################################
-  def plot_mesh(self, title = None,plot_bc = True,auto_close = True, save_path=None):
+  def plot_mesh(self, title = None,plot_bc = True,rel_arrow_scale = 0.5, 
+                auto_close = True, save_path=None,offsetArrow = False,transparency = 1.0):
     
     self.pyVistaPlotter.clear()
     if (title is None):
@@ -292,12 +293,13 @@ class HexStructuralFEA:
     plotter.add_title(title, font_size=8)
   
     plotter.add_mesh(
-                    pv_mesh,
-                    color='lightgreen',
-                    show_edges=True,
-                    edge_color='black',
-                    line_width=1
-                  )
+            pv_mesh,
+            color='lightgreen',
+            show_edges=True,
+            edge_color='black',
+            line_width=1,
+            opacity=transparency  # Add transparency (0.0 is fully transparent, 1.0 is fully opaque)
+            )
 
 
     # Add coordinate axes widget
@@ -328,7 +330,8 @@ class HexStructuralFEA:
       label2_nodes = np.where(self.mesh.node_indices[:, 3] == 2)[0]
       if len(label2_nodes) > 0  and self.bc is not None: #structural
         # Add force arrows
-        arrow_scale = 0.1 * self.mesh.bbox.diag_length
+        
+        force_norm_avg = np.linalg.norm(self.bc.force)
         for node in label2_nodes:
           # Get force components for this node
           fx = self.bc.force[3*node]
@@ -336,17 +339,20 @@ class HexStructuralFEA:
           fz = self.bc.force[3*node + 2]
           force_vec = np.array([fx, fy, fz])
           
+          force_nrm = np.linalg.norm(force_vec)
           # Only add arrow if force is non-zero
-          if np.linalg.norm(force_vec) > 0:
+          if force_nrm > 0:
+            arrow_scale = rel_arrow_scale * self.mesh.bbox.diag_length*force_nrm/force_norm_avg
             # Normalize and scale force vector
-            force_vec = force_vec / np.linalg.norm(force_vec) * arrow_scale
+            force_vec_dir = force_vec / force_nrm
             
             # Create arrow
             start_point = vertices[node]
-      
+            if (offsetArrow):
+              start_point = start_point -  force_vec_dir*arrow_scale  # Offset start point by arrow length so that it is visible
             # Add arrow to plot
             arrow = pv.Arrow(start = start_point,
-                            direction = force_vec,
+                            direction = force_vec_dir,
                             scale = arrow_scale)
             plotter.add_mesh(arrow, color='red')
     
@@ -545,8 +551,7 @@ class HexStructuralFEA:
         # Convert relative position to actual position based on bounding box
         bbox_min = pv_mesh.bounds[::2]  # [xmin, ymin, zmin]
         bbox_max = pv_mesh.bounds[1::2]  # [xmax, ymax, zmax]
-
-  
+        
         # Create a clipping plane based on the axis
         if axis == 'x':
             normal = (1, 0, 0)
@@ -649,11 +654,11 @@ class HexStructuralFEA:
 if __name__ == "__main__":    
   from hex_structural_examples import StructuralExamples,getStructuralProblem
 
-  problem = StructuralExamples.LBracketThick
-  nDOFDesired = 200000
-  mesh, mat_prop, bc,elem_body_force = getStructuralProblem(problem,nDOFDesired = nDOFDesired)
+  problem = StructuralExamples.BliskPressureLoading
+  nDOFDesired = 500000
+  mesh, mat_prop, bc,elem_body_force = getStructuralProblem(problem,nDOFDesired = nDOFDesired,loadingMode = 4)
   solver = linear_solvers.Solvers.DPCG # typically DPCG or PARDISO
-
+  
   dsolver = deflation.DeflationSolver()
   startTime = time.time()
   if (solver == linear_solvers.Solvers.DPCG):
@@ -671,13 +676,14 @@ if __name__ == "__main__":
         rtol = 1e-8,
         elem_body_force = elem_body_force)
 
-  fe_solver.plot_mesh()
+  fe_solver.plot_mesh(plot_bc = True,offsetArrow = True)
   startTime = time.time()
+
   fe_solver.solve()
   print(f"Time to solve: {time.time() - startTime:.2f} seconds")
   fe_solver.postprocess()
+  print(f"Maximum deformation: {fe_solver.max_deformation:.4e}")
+  print(f"Maximum von Mises stress: {np.max(fe_solver.vonMisesStress):.4e}")
+  
   fe_solver.plot_deformation()
   fe_solver.plot_vonMisesStress()
-  fe_solver.plot_stress_component(0)
-  
-  

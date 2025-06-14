@@ -4,6 +4,7 @@ import bound_cond
 import hex_mesher
 import os
 import enum
+from stl_reader import STLGeom
 script_dir = os.path.dirname(os.path.abspath(__file__))
 
 
@@ -37,9 +38,9 @@ class StructuralExamples(enum.Enum):
 	KnuckleAssembly =  enum.auto()
 	Table =  enum.auto()
 	LBracketThick = enum.auto()
-	BliskQuarter = enum.auto()
 	BliskWithBlade =  enum.auto()
 	BliskWithBladeMass = enum.auto()
+	BliskPressureLoading = enum.auto()
 
 
 
@@ -108,8 +109,6 @@ def getStructuralProblem(problem: StructuralExamples, **kwargs):
     return createCentrifugalPlateProblem(**kwargs)
   elif problem == StructuralExamples.TorquePlate:
     return createTorquePlateProblem(**kwargs)
-  elif problem == StructuralExamples.BliskQuarter:
-    return createBliskQuarterProblem(**kwargs)
   elif problem == StructuralExamples.LBracketThick:
     return createLBracketThickProblem(**kwargs)
   elif problem == StructuralExamples.KnuckleAssembly:
@@ -120,6 +119,8 @@ def getStructuralProblem(problem: StructuralExamples, **kwargs):
     return createArrowHeadProblem(**kwargs)
   elif problem == StructuralExamples.BliskWithBladeMass:
     return createBliskSectionWithBlade(**kwargs)
+  elif problem == StructuralExamples.BliskPressureLoading:
+    return createBliskPressureLoadingProblem(**kwargs)
   else:
     raise ValueError("Invalid structural example name.")
   
@@ -1761,12 +1762,11 @@ def createBliskSectionWithBlade(nDOFDesired: int = 50000, youngs_modulus = 1,
   mesh.createMeshFromSTLFile(stl_file, nElemsDesired=nElemsDesired)
   mesh.createEdofMatStructural()
 
-  # fix inner radius
-  centerPt = [0,0,0]
-  axis = [0,0,1]
-  innerRadius = 0.05
-  fixed_nodes = mesh.get_nodes_within_annular_region(centerPt,axis,innerRadius-mesh.elem_size[0]*0.707,
-                                                     innerRadius+mesh.elem_size[0]*0.707)  
+  # Find nodes with x coordinate close to xMin
+  xMin = np.min(mesh.node_xyz[:, 0])
+  fixed_nodes = np.where(np.abs(mesh.node_xyz[:, 0] - xMin) < mesh.elem_size[0]/2)[0]
+
+  
   fixed_dofs = np.array([3 * fixed_nodes,
               3 * fixed_nodes + 1,
               3 * fixed_nodes + 2]).flatten().astype(int)
@@ -1788,6 +1788,8 @@ def createBliskSectionWithBlade(nDOFDesired: int = 50000, youngs_modulus = 1,
     elem_body_force[3*e:3*e+2] = (material_density*np.prod(mesh.elem_size)) * omega**2 *  center[:2]
 
   print("total body force ",np.linalg.norm(elem_body_force))
+  axis = [0,0,1] # z-axis
+  centerPt = [0,0,0] # center of the blisk section
   outerRadius = 0.22
   load_nodes = mesh.get_nodes_within_annular_region(centerPt,axis,outerRadius-mesh.elem_size[0]*0.707,
                                                     outerRadius+mesh.elem_size[0]*0.707)    
@@ -1821,6 +1823,104 @@ def createBliskSectionWithBlade(nDOFDesired: int = 50000, youngs_modulus = 1,
   return mesh, mat_prop, bc, elem_body_force
 
   # ----------------------------------------
+
+def createBliskPressureLoadingProblem(nDOFDesired: int = 500000, pressure = 1000000, loadingMode = 1):
+  # Read the STL model, create a mesh of desired size, and a structural problem is posed on it.
+    stl_file = os.path.join(script_dir, '../Models/BliskModel/BliskSectionWithBlade.STL')
+
+    stl_geom = STLGeom(stl_file)
+    [area, stl_volume, cg, inertia] = stl_geom.compute_mass_properties()
+  
+    print("STL Volume: ", stl_volume)
+
+    nElemsDesired = nDOFDesired/3    # estimate
+    mesh = hex_mesher.HexMesher()
+
+    mesh.createMeshFromSTLFile(stl_file, nElemsDesired=nElemsDesired)
+    mesh.createEdofMatStructural()
+    mesh_vol = mesh.num_elems * np.prod(mesh.elem_size)
+    print("Mesh Volume: ", mesh_vol)
+    print("Vol error: ", (mesh_vol - stl_volume)/stl_volume * 100, "%")
+  
+    # Fixed boundary condition at x = xMin plane (all DOFs fixed)
+  # Find all nodes with x coordinate close to xMin
+    xMin = np.min(mesh.node_xyz[:, 0])
+    fixed_nodes = np.where(np.abs(mesh.node_xyz[:, 0] - xMin) < mesh.elem_size[0]/2)[0]
+
+    fixed_dofs = np.array([3 * fixed_nodes,
+                3 * fixed_nodes + 1,
+                3 * fixed_nodes + 2]).flatten().astype(int)
+    
+    mesh.node_indices[fixed_nodes, 3] = 1 # for plotting
+    dirichlet_values = 0*np.ones_like(fixed_dofs, dtype = float)
+   
+    # load on the blade surface
+    bladeStartRadius = 0.0575
+    bladeEndRadius = 0.0725
+    
+    triList = []
+    for t in range(stl_geom.stl_n_triangles):
+        normal = stl_geom.tri_normals[t]
+        center = stl_geom.get_triangle_center(t)
+        if np.dot(normal, [0, 1,0]) > 0.05:  # Check if normal is in +y direction
+            # Check if the triangle center is within the annular region
+            if (bladeStartRadius <= np.linalg.norm(center[:2]) <= bladeEndRadius):
+                triList.append(t)
+  
+    centerPt = [0, 0, 0]  # Center of the blisk section
+    axis = [0, 0, 1]  # z-axis
+    blade_nodes = mesh.get_nodes_within_annular_region(centerPt, axis, bladeStartRadius,
+                                                      bladeEndRadius)
+    
+    blade_vertices = mesh.node_xyz[blade_nodes]
+    
+    force = np.zeros(3*mesh.num_nodes)
+    print("Computing pressure force on blade nodes...")
+    for tri in triList:
+        area = stl_geom.tri_areas[tri]
+        normal = stl_geom.tri_normals[tri]
+        if (loadingMode == 1):
+            # Apply pressure force in  -z direction
+            forceTri= -pressure * area * np.array([0,0,1])
+        elif (loadingMode == 2):
+            # Apply pressure force in the normal direction
+            forceTri = -pressure * area * np.array(normal)
+        elif (loadingMode == 3):
+            # Apply pressure force in the y direction, proportional to y component of normal
+            forceTri = -pressure * area * np.array([0,1, 0])*np.dot(normal, [0, 1, 0])
+        elif (loadingMode == 4):
+            # Apply pressure force with random scaling factor
+            x, y, z = stl_geom.get_triangle_center(tri)
+            random_factor = (np.exp((x-bladeStartRadius)/bladeStartRadius)-0.9)
+            forceTri = -pressure * area * np.array([0,0,1]) * random_factor
+        else:
+            raise ValueError("Invalid loading mode.")
+
+        distances = stl_geom.find_points_triangle_distances_vectorized(blade_vertices, tri)
+        # Find nodes close to the triangle and distribute force among them
+        close_nodes_indices = np.where(distances < mesh.elem_size[0]*0.707)[0]
+        if len(close_nodes_indices) > 0:
+          # Get the actual node indices from the blade_nodes array
+          close_nodes = blade_nodes[close_nodes_indices]
+          # Distribute force equally among close nodes
+          mesh.node_indices[close_nodes, 3] = 2 # for plotting
+          for node_idx in close_nodes:
+            force[3*node_idx:3*node_idx+3] += forceTri / len(close_nodes)
+    
+  
+    bc = bound_cond.BC(force=force, fixed_dofs=fixed_dofs, dirichlet_values=dirichlet_values)
+    # Calculate and print total force in each direction
+    total_force_x = np.sum(force[0::3])
+    total_force_y = np.sum(force[1::3])
+    total_force_z = np.sum(force[2::3])
+    print(f"Total force in x direction: {total_force_x:.4e} N")
+    print(f"Total force in y direction: {total_force_y:.4e} N")
+    print(f"Total force in z direction: {total_force_z:.4e} N")
+    print(f"Total force magnitude: {np.sqrt(total_force_x**2 + total_force_y**2 + total_force_z**2):.4e} N")
+    mat_prop = mat_lib.get_material("Steel")
+    elem_body_force = None
+    return mesh, mat_prop, bc, elem_body_force
+
 
 def createKnuckleAssemblyProblem(nDOFDesired: int = 10000, youngs_modulus = [2e11,2e11], 
                                poissons_ratio = [0.28,0.28], totalLoad =  10000):

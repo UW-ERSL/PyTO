@@ -4,12 +4,16 @@ from collections import defaultdict
 from queue import Queue
 import numpy as np
 import pyvista as pv
+from meshparser.parser import MeshParser
 
 
 class STLGeom:
     TOL = 1e-9
 
     def __init__(self, file_path = None):
+        if (file_path is None) or (not file_path):
+            print(f"STLGeom: file path {file_path} invalid.")
+            return
         self.mesh = mesh.Mesh.from_file(file_path)
         
         self.stl_n_triangles = len(self.mesh.vectors)
@@ -22,6 +26,7 @@ class STLGeom:
         self.selected_triangles = set()
         self.file_path = file_path
 
+   
     def create_stl_of_box(self, box_size):
         if isinstance(box_size, (int, float)):
             dx = dy = dz = box_size
@@ -60,6 +65,7 @@ class STLGeom:
         self.tri_neighbors = self.compute_neighbors()
         self.tri_highlight = [False] * self.stl_n_triangles
         
+
     def get_bounding_box(self):
         """
         Compute the bounding box (min/max coordinates) of the STL geometry.
@@ -86,8 +92,9 @@ class STLGeom:
         
         # Area = 0.5 * |cross product|
         areas = 0.5 * np.linalg.norm(cross, axis=1)
-        
         return areas.tolist()
+    
+
     def compute_normals_vectorized(self):
         """Compute all triangle normals using vectorized operations"""
         vectors = self.mesh.vectors
@@ -101,8 +108,9 @@ class STLGeom:
         norms = np.linalg.norm(normals, axis=1, keepdims=True)
         norms[norms < self.TOL] = self.TOL # Avoid division by zero
         normals = normals / norms
-        
         return normals.tolist()
+    
+
     def compute_normal(self, vertices):
         v1 = [vertices[1][i] - vertices[0][i] for i in range(3)]
         v2 = [vertices[2][i] - vertices[0][i] for i in range(3)]
@@ -284,7 +292,6 @@ class STLGeom:
         inertia_tensor[0,0] = crossTerms[1,1] + crossTerms[2,2]
         inertia_tensor[1,1] = crossTerms[0,0] + crossTerms[2,2]
         inertia_tensor[2,2] = crossTerms[0,0] + crossTerms[1,1]
-
 
         inertia_tensor[0,1] = -crossTerms[0,1]
         inertia_tensor[1,0] = -crossTerms[0,1]
@@ -719,8 +726,10 @@ if __name__ == "__main__":
     script_dir = os.path.dirname(os.path.abspath(__file__))
     stl_file = os.path.join(script_dir, '../Models/ThickPlate/ThickPlate.STL')
     stl_file = os.path.join(script_dir, '../Models/BliskModel/BliskSectionWithBlade.STL')
-    stl_file = os.path.join(script_dir, '../Models/Inverter/Inverter.STL')
-    stl_file = os.path.join(script_dir, '../Models/LBracketThick/LBracketThick.STL')
+    #stl_file = os.path.join(script_dir, '../Models/Inverter/Inverter.STL')
+    #stl_file = os.path.join(script_dir, '../Models/LBracketThick/LBracketThick.STL')
+    
+  
     stl_geom = STLGeom(stl_file)
 
     [area, volume, cg, inertia] = stl_geom.compute_mass_properties()

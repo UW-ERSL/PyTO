@@ -371,9 +371,11 @@ def createBliskWithBladeProblem(nDOFDesired: int = 10000, heat_load = 10, T0 = 2
   fixed_dofs = np.array([fixed_nodes]).flatten().astype(int)
   dirichlet_values = T0*np.ones_like(fixed_dofs, dtype = float)
 
-  tipRadius = 0.07
-  load_nodes = mesh.get_nodes_within_annular_region(centerPt,axis,tipRadius-mesh.elem_size[0]*2,
-                                                     tipRadius+mesh.elem_size[0]*2)  
+  bladeStartRadius = 0.055
+  bladeEndRadius = 0.07
+ 
+  load_nodes = mesh.get_nodes_within_annular_region(centerPt,axis,bladeStartRadius,
+                                                     bladeEndRadius)  
   load_dofs = load_nodes
 
   totalHeat= heat_load

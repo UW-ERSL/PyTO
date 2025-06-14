@@ -1212,7 +1212,8 @@ if __name__ == "__main__":
     stlFileName = os.path.join(script_dir, '../Models/LBracket/LBracket.STL')
     stlFileName = os.path.join(script_dir, '../Models/Overhang/Overhang.STL')
     stlFileName = os.path.join(script_dir, '../Models/Inverter/Inverter.STL')
-    mesh.createMeshFromSTLFile(stlFileName, nElemsDesired=12100)
+    stlFileName = os.path.join(script_dir, '../Models/BliskModel/BliskSectionWithBlade.STL')
+    mesh.createMeshFromSTLFile(stlFileName, nElemsDesired=250000)
     mesh.plot()
 
 
