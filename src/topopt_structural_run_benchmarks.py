@@ -12,6 +12,8 @@ import pandas as pd
 def runTOMethodOnStructuralBenchmarks(optimizationMethod):
 	# Create a list to store results
 
+	saveVTU = False  # Set to True if you want to save the VTU files
+
 	results_list = []
 	dsolver = deflation.DeflationSolver()
 
@@ -43,7 +45,7 @@ def runTOMethodOnStructuralBenchmarks(optimizationMethod):
 						StructuralTOExamples.CentrifugalPlate]
 	
 	
-	for to_problem in benchmarks_2_5D_problems:
+	for to_problem in benchmarks_3D_problems:
 		if to_problem in benchmarks_2_5D_problems:
 			subFolder = "Compliance2.5D"
 		elif to_problem in benchmarks_3D_problems:
@@ -149,7 +151,7 @@ def runTOMethodOnStructuralBenchmarks(optimizationMethod):
 			pd.DataFrame([results_list[-1]]).to_csv(result_csv_file, index=False)
 		
 		# Export the mesh with pseudo density to a .vtu file
-		if (optimizationMethod == TO_METHODS.DENSITYMMA):
+		if (saveVTU) and (optimizationMethod == TO_METHODS.DENSITYMMA):
 			vtu_dir= f"./Results/VTU"
 			if not os.path.exists(vtu_dir):
 				os.makedirs(vtu_dir)
