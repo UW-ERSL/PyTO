@@ -1,6 +1,6 @@
 from topopt_common import *
 from topopt_mma import topopt_mma
-from topopt_oc import topopt_optimality_criteria	
+from topopt_ocm import topopt_optimality_criteria	
 from topopt_pareto import topopt_pareto
 from topopt_levelset import topopt_levelset	
 from topopt_thermal_benchmarks import *
@@ -51,7 +51,7 @@ def runTOMethodOnThermalBenchmarks(optimizationMethod):
 		if optimizationMethod == TO_METHODS.DENSITYMMA:
 			u, history,success,errorMsg,nFEAs = topopt_mma(fe_solver = fe_solver,
 									to_params = to_params,print_progress = print_progress)
-		elif optimizationMethod == TO_METHODS.DENSITYOC:
+		elif optimizationMethod == TO_METHODS.DENSITYOCM:
 			u, history, success,errorMsg,nFEAs = topopt_optimality_criteria(fe_solver = fe_solver,
 											to_params = to_params,print_progress = print_progress)
 		elif optimizationMethod == TO_METHODS.PARETO:
@@ -275,7 +275,7 @@ def combine_results():
 
 if __name__ == "__main__":    
 	
-	optimizationMethods = [TO_METHODS.DENSITYMMA, TO_METHODS.DENSITYOC, TO_METHODS.PARETO]
+	optimizationMethods = [TO_METHODS.DENSITYMMA, TO_METHODS.DENSITYOCM, TO_METHODS.PARETO]
 	for optimizationMethod in optimizationMethods:
 		runTOMethodOnThermalBenchmarks(optimizationMethod)
 		print(f"Finished {optimizationMethod.name} tests.")

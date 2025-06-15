@@ -115,7 +115,7 @@ def topopt_pareto(fe_solver,
 	errorMsg = "None"
 	# Observation: Damping using the previous sensitivity values avoids getting trapped in local minima
 	wtDamping = 0.5 # 0 means full wt to current T values, else previous T values are damped in
-
+	nSmoothSteps = 4 # Number of smoothing steps to apply
 	constraintType = to_params.Constraints[0][0] # assume this is the first constraint
 	if (constraintType == TO_QOI.VOLUME_FRACTION):
 		volFractionConstraint = to_params.Constraints[0][2]
@@ -202,7 +202,9 @@ def topopt_pareto(fe_solver,
 					T_body[elem] =  (x[elem]*sol[edof] * nodal_body_force[edof]).sum()
 				T += 2*T_body
 
-			T = (H * T) / Hs
+			for _ in range(nSmoothSteps):
+				T = (H * T) / Hs
+
 			T /= np.max(np.abs(T))  # Normalize sensitivity
 			T = ((1-wtDamping)*T + wtDamping*TPrev)  # Damping
 
@@ -258,7 +260,7 @@ if __name__ == "__main__":
 	from topopt_thermal_benchmarks import *
 	
 	print("-" * 50)
-	to_problem = StructuralTOExamples.LBracketTopLoadStressObjective # Choose the TO problem
+	to_problem = StructuralTOExamples.MBBB # Choose the TO problem
 	#to_problem = ThermalTOExamples.BridgeThermal # Choose the TO problem
 
 	if (to_problem in StructuralTOExamples):

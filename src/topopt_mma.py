@@ -131,7 +131,7 @@ def topopt_mma(fe_solver, #hex_structural_fea.HexStructuralFEA or hex_thermal_fe
 			grad_obj +=  2*ce_body_force*get_material_model_rho_sensitivity(x,material_model)
 
 		if (to_params.APPLY_FILTER_TO_SENSITIVITY) and (to_params.Objective is not TO_QOI.VOLUME_FRACTION):
-			grad_obj = (H @ grad_obj)/Hs # apply filter
+			grad_obj = (H *(x* grad_obj))/Hs/x # apply filter
 		if (elemsWithForces.size > 0):
 			grad_obj[elemsWithForces] = min(grad_obj) # retain elements that have nodes with external forces
 
@@ -242,7 +242,7 @@ if __name__ == "__main__":
 	print("-" * 50)
  
 	to_problem = StructuralTOExamples.LBracketMidLoadStressObjective # Choose the TO problem
-	to_problem = StructuralTOExamples.Mitchell_1 # Choose the TO problem
+	to_problem = StructuralTOExamples.MBBB # Choose the TO problem
 	#to_problem = StructuralTOExamples.Inverter # Choose the TO problem
 
 	if (to_problem in StructuralTOExamples):

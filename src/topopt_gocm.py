@@ -10,7 +10,6 @@ def topopt_optimality_criteria(
 							move: float = 0.2,
 							move_tol: float = 0.05,
 							rel_conv_tol: float = 1.e-3,
-							directLagrangeMethod: bool = False,
 							print_progress: bool = True,
 							plot_progress: bool = False,
 							debug: bool = False,
@@ -86,13 +85,14 @@ def topopt_optimality_criteria(
 	
 	success = True
 	errorMsg = "None"
-
+	lmid = 1 # initial Lagrange multiplier for volume constraint
+	gl = 0 # initial constraint violation of the volume constraint
+	gleps = 0.05 # tolerance on constraint violation of the volume constraint
 	for iter in range(maxIterations):
 		x = np.array(x)
 		if (plot_progress):
 			fe_solver.mesh.setPseudoDensity(x)
 			fe_solver.plot_pseudo_density(auto_close = False, title = f"Iteration {iter}")
-		
 		
 		sol = fe_solver.solve(x, material_model)
 		fe_solver.postprocess()
@@ -108,7 +108,7 @@ def topopt_optimality_criteria(
 			grad_obj +=  2*ce_body_force
 			
 		if (to_params.APPLY_FILTER_TO_SENSITIVITY)  and (to_params.Objective is not TO_QOI.VOLUME_FRACTION):
-			grad_obj = (H * grad_obj)/Hs # apply filter
+			grad_obj = (H *x* grad_obj)/Hs/x # apply filter
 
 		if (elemsWithForces.size > 0):
 			grad_obj[elemsWithForces] = min(grad_obj) # retain elements that have nodes with external forces
@@ -121,43 +121,24 @@ def topopt_optimality_criteria(
 
 		# Optimality criteria update
 		xold = x.copy()
-		if  not directLagrangeMethod: # bisection method
-			# Calculate Lagrange multiplier bounds
-			l1 = 0
-			l2 = 1e12
-			lmid = 0.5 * (l2 + l1)
-			# Bisection loop for volume constraint
-			while (l2 - l1) > 1e-7:
-				lmid = 0.5 * (l2 + l1)
-				b = -grad_obj / lmid
-				b = np.maximum(b, 0.00) # avoid sqrt of negative numbers	
-				# OC update with damping and bounds
-				xnew = np.maximum(xmin,np.maximum(x - move,np.minimum(xmax, np.minimum(x + move, x * np.sqrt(b)))))
-				if np.sum(xnew) - volFractionConstraint * num_elems > 0:
-					l1 = lmid
-				else:
-					l2 = lmid	
-			x = xnew.copy()
-			xPhys = x.copy()
-		else: # direct method
-			#Reference: https://link.springer.com/article/10.1007/s00158-020-02740-y
-			setChange = True
-			eta = 0.5
-			varIn = np.ones(num_elems, dtype = bool)
-			xMaxVec = np.minimum(x+move, xmax)
-			xMinVec = np.maximum(x-move,xmin)
-			volToDistribute = volFractionConstraint*num_elems
-			varTimesGrad = x*(abs(grad_obj))**eta
-			while setChange:
-				xnew = varTimesGrad/((np.sum(varTimesGrad[varIn])+1e-9) /(volToDistribute+1e-9)) 
-				volToDistribute = volFractionConstraint*num_elems -np.sum(xMaxVec[xnew>=xMaxVec]) -np.sum(xMinVec[xnew<=xMinVec])
-				setChange = not np.array_equal((xnew<xMaxVec) & (xnew>xMinVec), varIn)
-				varIn = (xnew < xMaxVec) & (xnew > xMinVec)
-			
-			xnew[xnew>xMaxVec] = xMaxVec[xnew>xMaxVec]
-			xnew[xnew<xMinVec] = xMinVec[xnew<xMinVec]
-			x = xnew
-			xPhys = xnew.copy()
+		
+		g = volConstraint
+		dg = g -gl
+		gl = g
+		if (g > 0 and dg > 0) or (g < 0 and dg < 0):
+			p0 = 1.0
+		elif (g > 0 and dg > -gleps) or (g < 0 and dg < gleps):
+			p0 = 0.5
+		else:
+			p0 = 0.0
+		lmid = lmid*(1 + p0*(g + dg))
+		print(lmid)
+		xnew = np.maximum(xmin, np.maximum(x - move, 
+									 np.minimum(xmax, np.minimum(x + move, 
+									  x*np.sqrt(-grad_obj/(lmid/len(x)))))))
+		x = xnew.copy()
+		xPhys = x.copy()
+    
 
 		if (to_params.APPLY_FILTER_TO_DENSITY):
 			x = H *x/Hs # apply filter
@@ -185,13 +166,13 @@ def topopt_optimality_criteria(
 		if (len(history['objective'])) >= 2:
 			dJ = abs((history['objective'][-1] - history['objective'][-2]) / history['objective'][-2])
 			# we need multiple checks else it will terminate too early 
-			if (dJ < rel_conv_tol) and (volConstraint < rel_conv_tol) and (change < 0.2) and (fraction_grey < 0.1): # success
-				print("OC optimization converged.")
+			if (dJ < rel_conv_tol) and (abs(volConstraint) < rel_conv_tol) and (change < 0.2) and (fraction_grey < 0.1): # success
+				print("GOC optimization converged.")
 				break
 
 			# Also this check for stalling
-			if (dJ < rel_conv_tol) and (volConstraint < rel_conv_tol) and (change < move_tol): # success
-				print("OC optimization converged.")
+			if (dJ < rel_conv_tol) and (abs(volConstraint)  < rel_conv_tol) and (change < move_tol): # success
+				print("GOC optimization converged.")
 				break
 
 	if iter == maxIterations - 1:

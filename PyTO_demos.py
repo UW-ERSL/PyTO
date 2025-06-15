@@ -22,7 +22,7 @@ from hex_modal_fea import ModalFEA
 from hex_thermal_fea import HexThermalFEA
 from topopt_mma import topopt_mma
 from topopt_pareto import topopt_pareto
-from topopt_oc import topopt_optimality_criteria
+from topopt_ocm import topopt_optimality_criteria
 from tet_mesher import TetMesher
 from hex_structural_examples import *
 from hex_thermal_examples import *
