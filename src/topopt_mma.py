@@ -241,9 +241,8 @@ if __name__ == "__main__":
  
 	print("-" * 50)
  
-	to_problem = StructuralTOExamples.LBracketMidLoadStressObjective # Choose the TO problem
-	to_problem = StructuralTOExamples.MBBB # Choose the TO problem
-	#to_problem = StructuralTOExamples.Inverter # Choose the TO problem
+	to_problem = StructuralTOExamples.Inverter # Choose the TO problem
+
 
 	if (to_problem in StructuralTOExamples):
 		mesh, mat_prop, bc,elem_body_force, to_params = getStructuralTOProblem(to_problem)

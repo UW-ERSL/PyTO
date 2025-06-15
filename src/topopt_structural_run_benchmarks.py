@@ -1,6 +1,7 @@
 from topopt_common import *
 from topopt_mma import topopt_mma
 from topopt_ocm import topopt_optimality_criteria	
+from topopt_gocm import topopt_generalized_optimality_criteria	
 from topopt_pareto import topopt_pareto
 from topopt_levelset import topopt_levelset	
 from topopt_structural_benchmarks import *
@@ -85,6 +86,11 @@ def runTOMethodOnStructuralBenchmarks(optimizationMethod):
 			if to_problem in benchmarks_noncompliance_problems:
 				continue
 			u, history, success,errorMsg,nFEAs = topopt_optimality_criteria(fe_solver = fe_solver,
+											to_params = to_params,print_progress = print_progress)
+		elif optimizationMethod == TO_METHODS.DENSITYGOCM:
+			if to_problem in benchmarks_noncompliance_problems:
+				continue
+			u, history, success,errorMsg,nFEAs = topopt_generalized_optimality_criteria(fe_solver = fe_solver,
 											to_params = to_params,print_progress = print_progress)
 		elif optimizationMethod == TO_METHODS.PARETO:
 			if to_problem in benchmarks_noncompliance_problems:
@@ -321,8 +327,8 @@ def combine_results():
 
 if __name__ == "__main__":    
 	
-	optimizationMethods = [TO_METHODS.DENSITYMMA,TO_METHODS.DENSITYOCM,TO_METHODS.PARETO]
-	for optimizationMethod in [TO_METHODS.DENSITYOCM,TO_METHODS.PARETO]:
+	optimizationMethods = [TO_METHODS.DENSITYMMA, TO_METHODS.DENSITYOCM,TO_METHODS.PARETO,]
+	for optimizationMethod in [TO_METHODS.PARETO]:
 		runTOMethodOnStructuralBenchmarks(optimizationMethod)
 		print(f"Finished {optimizationMethod.name} tests.")
 		print("-" * 50)

@@ -3,7 +3,7 @@ from topopt_common import *
 from topopt_material_model import *
 import time
 
-def topopt_optimality_criteria(
+def topopt_generalized_optimality_criteria(
 							fe_solver, #hex_structural_fea.HexStructuralFEA or hex_thermal_fea.HexThermalFEA
 							to_params,
 			  				maxIterations: int = 250,
@@ -85,9 +85,10 @@ def topopt_optimality_criteria(
 	
 	success = True
 	errorMsg = "None"
-	lmid = 1 # initial Lagrange multiplier for volume constraint
-	gl = 0 # initial constraint violation of the volume constraint
+	lmid =1 # initial Lagrange multiplier for volume constraint
+	gPrev = 0 # initial constraint violation of the volume constraint
 	gleps = 0.05 # tolerance on constraint violation of the volume constraint
+	
 	for iter in range(maxIterations):
 		x = np.array(x)
 		if (plot_progress):
@@ -108,7 +109,7 @@ def topopt_optimality_criteria(
 			grad_obj +=  2*ce_body_force
 			
 		if (to_params.APPLY_FILTER_TO_SENSITIVITY)  and (to_params.Objective is not TO_QOI.VOLUME_FRACTION):
-			grad_obj = (H *x* grad_obj)/Hs/x # apply filter
+			grad_obj = (H *(x* grad_obj))/Hs/x # apply filter
 
 		if (elemsWithForces.size > 0):
 			grad_obj[elemsWithForces] = min(grad_obj) # retain elements that have nodes with external forces
@@ -122,23 +123,27 @@ def topopt_optimality_criteria(
 		# Optimality criteria update
 		xold = x.copy()
 		
+		xnew = np.maximum(xmin, np.maximum(x - move, 
+									 np.minimum(xmax, np.minimum(x + move, 
+									  x*np.sqrt(-grad_obj/(lmid/len(x)))))))
+		
+		x = xnew.copy()
+		xPhys = x.copy()
+    
+		
 		g = volConstraint
-		dg = g -gl
-		gl = g
+		dg = g -gPrev
+		gPrev = g
+
 		if (g > 0 and dg > 0) or (g < 0 and dg < 0):
-			p0 = 1.0
+			p0 = 1
 		elif (g > 0 and dg > -gleps) or (g < 0 and dg < gleps):
 			p0 = 0.5
 		else:
 			p0 = 0.0
-		lmid = lmid*(1 + p0*(g + dg))
-		print(lmid)
-		xnew = np.maximum(xmin, np.maximum(x - move, 
-									 np.minimum(xmax, np.minimum(x + move, 
-									  x*np.sqrt(-grad_obj/(lmid/len(x)))))))
-		x = xnew.copy()
-		xPhys = x.copy()
-    
+
+		lmid =  lmid*(1 + p0*(g + dg))
+	
 
 		if (to_params.APPLY_FILTER_TO_DENSITY):
 			x = H *x/Hs # apply filter
@@ -221,8 +226,8 @@ if __name__ == "__main__":
 	from topopt_thermal_benchmarks import *
 
 	print("-" * 50)
-	to_problem = StructuralTOExamples.CantileverMidLoad # Choose the TO problem
-	#to_problem = ThermalTOExamples.FourCornersThermal # Choose the TO problem
+	to_problem = StructuralTOExamples.Mitchell_1 # Choose the TO problem
+	
 
 	if (to_problem in StructuralTOExamples):
 		mesh, mat_prop, bc,elem_body_force, to_params = getStructuralTOProblem(to_problem)
@@ -271,7 +276,7 @@ if __name__ == "__main__":
 	startTime = time.time()		
 	
 	print("OptimizationMethod: OC")
-	sol, history, success,errorMsg,nFEAs = topopt_optimality_criteria(fe_solver = fe_solver,
+	sol, history, success,errorMsg,nFEAs = topopt_generalized_optimality_criteria(fe_solver = fe_solver,
 											to_params = to_params,
 											plot_progress = True,
 											debug = debug)
@@ -280,7 +285,7 @@ if __name__ == "__main__":
 	if not success:
 		print(f"Error: {errorMsg}")
 
-	title = f"OC: vol: {history['volume'][-1]:0.2f}, J: {history['objective'][-1]:.3g}, nFEA: {len(history['objective']):3d}, time: {timeTaken:.0f} s"
+	title = f"GOC: vol: {history['volume'][-1]:0.2f}, J: {history['objective'][-1]:.3g}, nFEA: {len(history['objective']):3d}, time: {timeTaken:.0f} s"
 
 	
 	# plot the optimized mesh
@@ -301,7 +306,7 @@ if __name__ == "__main__":
 	ax2.tick_params(axis='y', labelcolor='tab:orange')
 	ax2.yaxis.set_major_formatter(plt.FormatStrFormatter('%.2f'))
 
-	plt.title('OC: Volume and Compliance vs. Iterations')
+	plt.title('GOC: Volume and Compliance vs. Iterations')
 
 	# Add legend
 	lines1, labels1 = ax1.get_legend_handles_labels()
