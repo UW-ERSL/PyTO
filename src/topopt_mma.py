@@ -110,7 +110,7 @@ def topopt_mma(fe_solver, #hex_structural_fea.HexStructuralFEA or hex_thermal_fe
 			mma_state.x = x.reshape(-1, 1)
 
 		fe_solver.mesh.setPseudoDensity(x)
-		if (plot_progress) and ((mma_state.epoch+1) % 10 == 0):
+		if (plot_progress):
 			fe_solver.plot_pseudo_density(auto_close = False, title = f"Iteration {mma_state.epoch+1}")
 		timeFEAStart = time.time()
 
@@ -122,7 +122,7 @@ def topopt_mma(fe_solver, #hex_structural_fea.HexStructuralFEA or hex_thermal_fe
 		obj, grad_obj = compute_objective_and_gradient(to_params,sol,x, fe_solver,KE, material_model)
 		
 		if (len(history['objective']) == 0):
-			objScaling =   abs(obj)   #  Scale the objective function
+			objScaling = abs(obj)   #  Scale the objective function
 		obj = obj/objScaling
 		grad_obj /=objScaling
 
@@ -130,8 +130,10 @@ def topopt_mma(fe_solver, #hex_structural_fea.HexStructuralFEA or hex_thermal_fe
 			ce_body_force = (sol[fe_solver.mesh.edofMat].reshape(num_elems, 24) * nodal_body_force[fe_solver.mesh.edofMat].reshape(num_elems, 24)).sum(1)
 			grad_obj +=  2*ce_body_force*get_material_model_rho_sensitivity(x,material_model)
 
-		if (to_params.APPLY_FILTER_TO_SENSITIVITY) and (to_params.Objective is not TO_QOI.VOLUME_FRACTION):
-			grad_obj = (H *(x* grad_obj))/Hs/x # apply filter
+		if (to_params.APPLY_FILTER_TO_SENSITIVITY) and (to_params.Objective[0] is TO_QOI.COMPLIANCE):
+			grad_obj = (H *(x* grad_obj))/Hs/x # apply weighted filter
+		elif (to_params.APPLY_FILTER_TO_SENSITIVITY) and (to_params.Objective[0] is not TO_QOI.VOLUME_FRACTION):
+			grad_obj = (H *(grad_obj))/Hs # apply regular filter
 		if (elemsWithForces.size > 0):
 			grad_obj[elemsWithForces] = min(grad_obj) # retain elements that have nodes with external forces
 
@@ -141,8 +143,10 @@ def topopt_mma(fe_solver, #hex_structural_fea.HexStructuralFEA or hex_thermal_fe
 		c, dcdx = compute_constraint_and_gradient(to_params,sol,x, fe_solver,KE, material_model)
 		if (to_params.APPLY_FILTER_TO_SENSITIVITY):
 			for m in range(len(to_params.Constraints)):
-				if (to_params.Constraints[m][0] is not TO_QOI.VOLUME_FRACTION):
-					dcdx[m] = ((H @ dcdx[m])/Hs) # apply filter
+				if (to_params.Constraints[m][0] is TO_QOI.COMPLIANCE):
+					dcdx[m] = ((H *(x*dcdx[m]))/Hs/x) # apply weighted filter
+				elif (to_params.Constraints[m][0] is not TO_QOI.VOLUME_FRACTION):
+					dcdx[m] = ((H * dcdx[m])/Hs)# apply regular filter
 	
 
 		timeMMAStart = time.time()
@@ -197,31 +201,30 @@ def topopt_mma(fe_solver, #hex_structural_fea.HexStructuralFEA or hex_thermal_fe
 			break
 	
 	fe_solver.mesh.setPseudoDensity(x)	
-	
+	volfrac = np.mean(x)
 	# Find threshold that preserves volume fraction
 	if (binarize_topology):
 		x_sorted = np.sort(x)
 		threshold = x_sorted[int((1-np.mean(x))*len(x))]
 		x = np.where(x < threshold, 0.0, 1.0)
-	volfrac = np.mean(x)
-	fe_solver.mesh.setPseudoDensity(x)
-	meshComponents = fe_solver.mesh.find_connected_components()
-	
-	if (len(meshComponents) > 1):
-		if (print_progress):
-			print("Disconnected topology detected. Removing hanging elements.")
-		# Find the largest connected component and its size
-		largest_component = max(meshComponents, key=len)
-		# Set density to 1 for elements in largest component
-		x[:] = 0.0
-		x[list(largest_component)] = 1.0
-		fe_solver.mesh.setPseudoDensity(x.flatten())
 		volfrac = np.mean(x)
-	sol = fe_solver.solve(x, material_model)
-	obj, grad_obj = compute_objective_and_gradient(to_params,sol,x, fe_solver,KE, material_model)
-	history['objective'].append(obj)
-	history['volume'].append(volfrac)
-	history['change'].append(change)
+		fe_solver.mesh.setPseudoDensity(x)
+		meshComponents = fe_solver.mesh.find_connected_components()
+		if (len(meshComponents) > 1):
+			if (print_progress):
+				print("Disconnected topology detected. Removing hanging elements.")
+			# Find the largest connected component and its size
+			largest_component = max(meshComponents, key=len)
+			# Set density to 1 for elements in largest component
+			x[:] = 0.0
+			x[list(largest_component)] = 1.0
+			fe_solver.mesh.setPseudoDensity(x.flatten())
+			volfrac = np.mean(x)
+		sol = fe_solver.solve(x, material_model)
+		obj, grad_obj = compute_objective_and_gradient(to_params,sol,x, fe_solver,KE, material_model)
+		history['objective'].append(obj)
+		history['volume'].append(volfrac)
+		history['change'].append(change)
 	
 	if (volfrac > 1.1*volFractionConstraint):
 		errorMsg = f"vf {volFractionConstraint:0.3f} not reached"

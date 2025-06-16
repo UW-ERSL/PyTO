@@ -107,7 +107,7 @@ def topopt_optimality_criteria(
 			ce_body_force = (sol[fe_solver.mesh.edofMat].reshape(num_elems, 24) * nodal_body_force[fe_solver.mesh.edofMat].reshape(num_elems, 24)).sum(1)
 			grad_obj +=  2*ce_body_force
 			
-		if (to_params.APPLY_FILTER_TO_SENSITIVITY)  and (to_params.Objective is not TO_QOI.VOLUME_FRACTION):
+		if (to_params.APPLY_FILTER_TO_SENSITIVITY):
 			grad_obj = (H *(x* grad_obj))/Hs/x # apply filter
 
 		if (elemsWithForces.size > 0):
