@@ -20,11 +20,12 @@ class StructuralTOExamples(enum.Enum):
 	TorquePlate = enum.auto()
 	DistributedLoad = enum.auto()
 	TensilePlate = enum.auto()
+	ThreeHoleBracket = enum.auto()
 
     # 3D Examples
 	EdgeCantilever = enum.auto()
 	Multiload = enum.auto()
-	ThreeHoleBracket = enum.auto()
+	ThreeHoleBracketThick = enum.auto()
 	LBracketThickTopLoad = enum.auto()
 	LBracketThickMidLoad = enum.auto()
 	Table = enum.auto()
@@ -164,6 +165,13 @@ def getStructuralTOProblem(to_problem: StructuralTOExamples,nDOFDesired = None, 
         to_params.ExtrudeY = True
         to_params.Constraints = [(TO_QOI.VOLUME_FRACTION, None, 0.25)]
         to_params.nDOFDesired = 50000 if nDOFDesired is None else nDOFDesired
+    elif to_problem == StructuralTOExamples.ThreeHoleBracket:
+        structural_problem = StructuralExamples.ThreeHoleBracket
+        to_params.Comment  = "Retaining Material"
+        to_params.ExtrudeZ = True
+        to_params.KeepFixedElems = True
+        to_params.nDOFDesired = 75000 if nDOFDesired is None else nDOFDesired
+        to_params.Constraints = [(TO_QOI.VOLUME_FRACTION, None, 0.25)]
     # 3D Examples
     elif to_problem == StructuralTOExamples.EdgeCantilever:
         structural_problem = StructuralExamples.EdgeCantilever
@@ -171,8 +179,9 @@ def getStructuralTOProblem(to_problem: StructuralTOExamples,nDOFDesired = None, 
         to_params.YSymmetry = True
         to_params.nDOFDesired = 75000 if nDOFDesired is None else nDOFDesired
         to_params.Constraints = [(TO_QOI.VOLUME_FRACTION, None, 0.25)] 
-    elif to_problem == StructuralTOExamples.ThreeHoleBracket:
-        structural_problem = StructuralExamples.ThreeHoleBracket
+     
+    elif to_problem == StructuralTOExamples.ThreeHoleBracketThick:
+        structural_problem = StructuralExamples.ThreeHoleBracketThick
         to_params.Comment  = "Retaining Material"
         to_params.ZSymmetry = True
         to_params.KeepFixedElems = True

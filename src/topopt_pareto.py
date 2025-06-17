@@ -260,7 +260,7 @@ if __name__ == "__main__":
 	from topopt_thermal_benchmarks import *
 	
 	print("-" * 50)
-	to_problem = StructuralTOExamples.Multiload # Choose the TO problem
+	to_problem = StructuralTOExamples.CantileverMidLoad # Choose the TO problem
 	#to_problem = ThermalTOExamples.BridgeThermal # Choose the TO problem
 
 	if (to_problem in StructuralTOExamples):

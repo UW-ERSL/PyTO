@@ -99,6 +99,9 @@ class HexStructuralFEA:
                     self.elem_stiff[0],
                     elem_material_scaling).flatten(order = 'C')
     else:
+      print(f"elem_stiff shape: {self.elem_stiff.shape}")
+      print(f"elem_material_scaling shape: {elem_material_scaling.shape}")
+      print(f"Comppnent ID shape: {self.mesh.elemComponentId.shape}")
       # Multiple materials case (M,N,N)
       elem_stiff_mtrx = np.einsum('mij, m -> mij',
                     self.elem_stiff,
@@ -654,9 +657,9 @@ class HexStructuralFEA:
 if __name__ == "__main__":    
   from hex_structural_examples import StructuralExamples,getStructuralProblem
 
-  problem = StructuralExamples.BliskPressureLoading
-  nDOFDesired = 500000
-  mesh, mat_prop, bc,elem_body_force = getStructuralProblem(problem,nDOFDesired = nDOFDesired,loadingMode = 4)
+  problem = StructuralExamples.KnuckleAssembly
+  nDOFDesired = 100000
+  mesh, mat_prop, bc,elem_body_force = getStructuralProblem(problem,nDOFDesired = nDOFDesired)
   solver = linear_solvers.Solvers.DPCG # typically DPCG or PARDISO
   
   dsolver = deflation.DeflationSolver()

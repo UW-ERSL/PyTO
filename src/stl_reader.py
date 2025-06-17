@@ -4,7 +4,6 @@ from collections import defaultdict
 from queue import Queue
 import numpy as np
 import pyvista as pv
-from meshparser.parser import MeshParser
 
 
 class STLGeom:
