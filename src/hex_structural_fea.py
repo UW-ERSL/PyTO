@@ -227,6 +227,7 @@ class HexStructuralFEA:
                 (element_stress[:,2]-element_stress[:,0])**2) +
                 3*(element_stress[:,3]**2 + element_stress[:,4]**2 +
                    element_stress[:,5]**2))
+      self.elemStrainEnergy = 0.5 * np.sum(strain * element_stress, axis=1)  # Element-wise strain energy
       return 
 #################################################################
   def plot_mesh(self, title = None,plot_bc = True,rel_arrow_scale = 0.5, 

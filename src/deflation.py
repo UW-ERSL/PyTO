@@ -205,7 +205,7 @@ class DeflationSolver:
 		#print("Number of deflation groups: ", self.ws_nGroups)
 		return True
 
-	def create_deflation_groups_adaptive(self, meshData, nGroupsDesired: int, nodalStrainEnergy: np.ndarray, amplification = 10):
+	def create_deflation_groups_adaptive(self, meshData, nGroupsDesired: int, nodalStrainEnergy: np.ndarray):
 		"""Create deflation groups using geometric partitioning.
 
 		
@@ -242,7 +242,7 @@ class DeflationSolver:
 		yLength = np.max(xyz[:,1]) - yMin
 		zLength = np.max(xyz[:,2]) - zMin
 
-		# Calculate base dimensions to achieve desired number of groups
+		# Calculate num of divisions along each direction to achieve desired number of groups
 		temp = xLength * yLength * zLength
 		alpha = (nGroupsDesired / temp) ** (1.0 / 3)
 
@@ -250,42 +250,110 @@ class DeflationSolver:
 		nY = max(round(alpha*yLength),1)
 		nZ = max(round(alpha*zLength),1)
 
-	
-		
-		if np.max(nodalStrainEnergy) > 0:
-			normalized_energy = nodalStrainEnergy / np.max(nodalStrainEnergy)
-		else:
-			normalized_energy = np.zeros_like(nodalStrainEnergy)
-			print("Warning: Strain energy is zero or negative. Using zero for scaling.")
-
-		# Define scaling factor - higher strain energy -> smaller group
-		scaling_factor = 1.0 + amplification* normalized_energy  # Scale from 1x to 3x density
-
 		# Initialize group data structures
 		nGroupsTentative = nX * nY * nZ
 
 		print("Base group dimensions:", [nX, nY, nZ])
 		print(nGroupsTentative, " tentative groups")
-		# Calculate base group sizes
-		sizeX = xLength / nX
-		sizeY = yLength / nY
-		sizeZ = zLength / nZ
 
-		# Initialize arrays for group assignments
-		nodeGroupNumber = np.zeros(meshData.num_nodes, dtype=np.int32)
+		xSegments = np.linspace(xMin, xMin + xLength, nX + 1)
+		ySegments = np.linspace(yMin, yMin + yLength, nY + 1)		
+		zSegments = np.linspace(zMin, zMin + zLength, nZ + 1)
+
+		scaling = 2
+		xMinSize = xLength / nX/scaling
+		yMinSize = yLength / nY/scaling
+		zMinSize = zLength / nZ/scaling
+
+	
+		# Sort nodes by x coordinate
+		sorted_indices = np.argsort(xyz[:, 0])
+		x_sorted = xyz[sorted_indices, 0]
+		se_sorted = nodalStrainEnergy[sorted_indices]
+
+		# Compute cumulative strain energy along x
+		cum_se = np.cumsum(se_sorted)
+		total_se = cum_se[-1]
+		target_se_per_segment = total_se / nX
+
+		# Find xSegments so that each segment has equal strain energy, but not smaller than xMinSize
+		xSegments = [xMin]
+		last_idx = 0
+		for i in range(1, nX):
+			target_se = i * target_se_per_segment
+			# Find the index where cumulative strain energy exceeds the target
+			idx = np.searchsorted(cum_se, target_se)
+			# Ensure minimum segment size
+			while idx < len(x_sorted) and (x_sorted[idx] - xSegments[-1]) < xMinSize:
+				idx += 1
+			if idx >= len(x_sorted):
+				break
+			xSegments.append(x_sorted[idx])
+			last_idx = idx
+		xSegments.append(xMin + xLength)
+		xSegments = np.array(xSegments)
+
+		# Repeat for y direction
+		sorted_indices = np.argsort(xyz[:, 1])
+		y_sorted = xyz[sorted_indices, 1]
+		se_sorted = nodalStrainEnergy[sorted_indices]
+		cum_se = np.cumsum(se_sorted)
+		total_se = cum_se[-1]
+		target_se_per_segment = total_se / nY
+
+		ySegments = [yMin]
+		last_idx = 0
+		for i in range(1, nY):
+			target_se = i * target_se_per_segment
+			idx = np.searchsorted(cum_se, target_se)
+			while idx < len(y_sorted) and (y_sorted[idx] - ySegments[-1]) < yMinSize:
+				idx += 1
+			if idx >= len(y_sorted):
+				break
+			ySegments.append(y_sorted[idx])
+			last_idx = idx
+		ySegments.append(yMin + yLength)
+		ySegments = np.array(ySegments)
+		
+		# Repeat for z direction
+		sorted_indices = np.argsort(xyz[:, 2])
+		z_sorted = xyz[sorted_indices, 2]
+		se_sorted = nodalStrainEnergy[sorted_indices]
+		cum_se = np.cumsum(se_sorted)
+		total_se = cum_se[-1]
+		target_se_per_segment = total_se / nZ
+
+		zSegments = [zMin]
+		last_idx = 0
+		for i in range(1, nZ):
+			target_se = i * target_se_per_segment
+			idx = np.searchsorted(cum_se, target_se)
+			while idx < len(z_sorted) and (z_sorted[idx] - zSegments[-1]) < zMinSize:
+				idx += 1
+			if idx >= len(z_sorted):
+				break
+			zSegments.append(z_sorted[idx])
+			last_idx = idx
+		zSegments.append(zMin + zLength)
+		zSegments = np.array(zSegments)
+		
+		# Assign nodes to groups using adaptive segments
+		ix = np.searchsorted(xSegments, xyz[:, 0], side='right') - 1
+		iy = np.searchsorted(ySegments, xyz[:, 1], side='right') - 1
+		iz = np.searchsorted(zSegments, xyz[:, 2], side='right') - 1
+
+		ix = np.clip(ix, 0, len(xSegments) - 2)
+		iy = np.clip(iy, 0, len(ySegments) - 2)
+		iz = np.clip(iz, 0, len(zSegments) - 2)
+
+		nodeGroupNumber = (ix + nX * iy + nX * nY * iz).astype(np.int32)
+		
+
+	
 		groupCount = np.zeros(nGroupsTentative, dtype=np.int32)
 		groupCenter = np.zeros((nGroupsTentative, 3))
 
-		# Assign nodes to groups using vectorized operations with adaptive sizing
-		rel_pos = xyz - np.array([xMin, yMin, zMin])
-		# Scale the positions by the strain energy factor to create smaller groups in high-energy regions
-		indices = np.floor(rel_pos * scaling_factor[:, np.newaxis] / np.array([sizeX, sizeY, sizeZ])).astype(np.int32)
-		indices = np.minimum(indices, np.array([nX - 1, nY - 1, nZ - 1]))
-
-		# Compute group IDs for all nodes at once
-		nodeGroupNumber = (indices[:, 0] + 
-						nX * indices[:, 1] + 
-						nX * nY * indices[:, 2]).astype(np.int32)
+	
 
 		# Count nodes per group using numpy
 		groupCount = np.bincount(nodeGroupNumber, minlength=nGroupsTentative)
