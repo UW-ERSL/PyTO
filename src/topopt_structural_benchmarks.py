@@ -47,6 +47,78 @@ class StructuralTOExamples(enum.Enum):
 	BliskWithBladeMass = enum.auto()
 	NoseCone = enum.auto()
 
+def getSTLPath_TOProblem(to_problem: StructuralTOExamples):
+    if to_problem == StructuralTOExamples.Mitchell_1:
+        stl_file = "Models/Mitchell/Mitchell.STL"
+    elif to_problem == StructuralTOExamples.Mitchell_2:
+        stl_file = "Models/Mitchell/Mitchell.STL"
+    elif to_problem == StructuralTOExamples.Mitchell_3:
+        stl_file = "Models/Mitchell/Mitchell.STL"
+    elif to_problem == StructuralTOExamples.ShortCantileverTipLoad:
+        stl_file = "Models/ShortCantilever/ShortCantilever.STL"
+    elif to_problem == StructuralTOExamples.ShortCantileverMidLoad:
+        stl_file = "Models/ShortCantilever/ShortCantilever.STL"
+    elif to_problem == StructuralTOExamples.CantileverTipLoad:
+        stl_file = "Models/Cantilever/Cantilever.STL"
+    elif to_problem == StructuralTOExamples.CantileverMidLoad:
+        stl_file = "Models/Cantilever/Cantilever.STL"
+    elif to_problem == StructuralTOExamples.CantileverTipLoadDisplacementObjective:
+        stl_file = "Models/Cantilever/Cantilever.STL"
+    elif to_problem == StructuralTOExamples.MBBB:
+        stl_file = "Models/MBBB/MBBB.STL"
+    elif to_problem == StructuralTOExamples.LBracketTopLoad:
+        stl_file = "Models/LBracket/LBracket.STL"
+    elif to_problem == StructuralTOExamples.LBracketMidLoad:
+        stl_file = "Models/LBracket/LBracket.STL"
+    elif to_problem == StructuralTOExamples.TwoBar:
+        stl_file = "Models/TwoBar/TwoBar.STL"
+    elif to_problem == StructuralTOExamples.TorquePlate:
+        stl_file = "Models/CircularPlateHole/CircularPlateHole.STL"
+    elif to_problem == StructuralTOExamples.DistributedLoad:
+        stl_file = "Models/DistributedLoad/DistributedLoad.STL"
+    elif to_problem == StructuralTOExamples.TensilePlate:
+        stl_file = "Models/TensilePlate/TensilePlate.STL"
+    elif to_problem == StructuralTOExamples.ThreeHoleBracket:
+        stl_file = "Models/ThreeHoleBracket/ThreeHoleBracket.STL"
+    elif to_problem == StructuralTOExamples.EdgeCantilever:
+        stl_file = "Models/EdgeCantilever/EdgeCantilever.STL"
+    elif to_problem == StructuralTOExamples.Multiload:
+        stl_file = "Models/Multiload/Multiload.STL"
+    elif to_problem == StructuralTOExamples.ThreeHoleBracketThick:
+        stl_file = "Models/ThreeHoleBracket/ThreeHoleBracketThick.STL"
+    elif to_problem == StructuralTOExamples.LBracketThickTopLoad:
+        stl_file = "Models/LBracketThick/LBracketThick.STL"
+    elif to_problem == StructuralTOExamples.LBracketThickMidLoad:
+        stl_file = "Models/LBracketThick/LBracketThick.STL"
+    elif to_problem == StructuralTOExamples.Table:
+        stl_file = "Models/Table/Table.STL"
+    elif to_problem == StructuralTOExamples.CantileverMidLoadVolumeObjective:
+        stl_file = "Models/Cantilever/CantileverMidLoad.STL"
+    elif to_problem == StructuralTOExamples.LBracketTopLoadStressObjective:
+        stl_file = "Models/LBracket/LBracket.STL"
+    elif to_problem == StructuralTOExamples.LBracketMidLoadStressObjective:
+        stl_file = "Models/LBracket/LBracket.STL"
+    elif to_problem == StructuralTOExamples.LBracketThickMidLoadStressObjective:
+        stl_file = "Models/LBracketThick/LBracketThick.STL"
+    elif to_problem == StructuralTOExamples.Inverter:
+        stl_file = "Models/Inverter/Inverter.STL"
+    elif to_problem == StructuralTOExamples.CentrifugalPlate:
+        stl_file = "Models/CircularPlateHole/CircularPlateHole.STL"
+    elif to_problem == StructuralTOExamples.GravityPlate:
+        stl_file = "Models/GravityPlate/GravityPlate.STL"
+    elif to_problem == StructuralTOExamples.KnuckleAssembly:
+        stl_file = "Models/KnuckleAssembly/KnuckleAssembly.STL"
+    elif to_problem == StructuralTOExamples.BliskWithBlade:
+        stl_file = "Models/BliskWithBlade/BliskWithBlade.STL"
+    elif to_problem == StructuralTOExamples.BliskWithBladeMass:
+        stl_file = "Models/BliskWithBladeMass/BliskWithBladeMass.STL"
+    elif to_problem == StructuralTOExamples.NoseCone:
+        stl_file = "Models/NoseCone/NoseCone.STL"
+    else:
+        raise ValueError(f"Unknown problem: {to_problem}")
+
+    return stl_file
+
 def getStructuralTOProblem(to_problem: StructuralTOExamples,nDOFDesired = None, **kwargs):
     """Get the structural topology optimization problem based on the specified example.
 

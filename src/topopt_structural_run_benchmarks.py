@@ -12,7 +12,7 @@ import pandas as pd
 def runTOMethodOnStructuralBenchmarks(optimizationMethod):
 	# Create a list to store results
 
-	saveVTU = False  # Set to True if you want to save the VTU files
+	saveVTU = True  # Set to True if you want to save the VTU files for MMA method
 
 	results_list = []
 	dsolver = deflation.DeflationSolver()
@@ -27,10 +27,10 @@ def runTOMethodOnStructuralBenchmarks(optimizationMethod):
 						StructuralTOExamples.TwoBar, 
 						StructuralTOExamples.DistributedLoad,
 						StructuralTOExamples.TorquePlate,
-						StructuralTOExamples.EdgeCantilever,]
+						StructuralTOExamples.ThreeHoleBracket,]
 
-	benchmarks_3D_problems = [ StructuralTOExamples.EdgeCantileverThick, 
-						   StructuralTOExamples.ThreeHoleBracket, 
+	benchmarks_3D_problems = [StructuralTOExamples.EdgeCantilever, 
+						   StructuralTOExamples.ThreeHoleBracketThick, 
 						 StructuralTOExamples.Multiload,
 						   StructuralTOExamples.LBracketThickTopLoad,
 						StructuralTOExamples.LBracketThickMidLoad,
@@ -46,7 +46,7 @@ def runTOMethodOnStructuralBenchmarks(optimizationMethod):
 						StructuralTOExamples.CentrifugalPlate]
 	
 	
-	for to_problem in benchmarks_2_5D_problems+benchmarks_3D_problems+ benchmarks_noncompliance_problems:
+	for to_problem in benchmarks_3D_problems:
 		if to_problem in benchmarks_2_5D_problems:
 			subFolder = "Compliance2.5D"
 		elif to_problem in benchmarks_3D_problems:
@@ -331,7 +331,7 @@ def combine_results():
 if __name__ == "__main__":    
 	
 	optimizationMethods = [TO_METHODS.DENSITYMMA, TO_METHODS.DENSITYOCM,TO_METHODS.PARETO,]
-	for optimizationMethod in optimizationMethods:
+	for optimizationMethod in [TO_METHODS.DENSITYMMA]:
 		runTOMethodOnStructuralBenchmarks(optimizationMethod)
 		print(f"Finished {optimizationMethod.name} tests.")
 		print("-" * 50)
