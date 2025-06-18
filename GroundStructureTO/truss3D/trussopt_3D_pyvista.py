@@ -1,3 +1,6 @@
+import sys
+sys.path.append('../PyTO-1/src') #assuming the PyTO is in the parent directory
+import time
 from math import gcd, ceil
 import itertools
 from scipy import sparse
@@ -8,6 +11,8 @@ import enum
 import os
 script_dir = os.path.dirname(os.path.abspath(__file__))
 
+from topopt_benchmarks import *
+from truss_3D_opt_examples import *
 from truss_domain_using_pyvista import *
 #Calculate equilibrium matrix B
 def calcB(Nd, Cn, dof):
@@ -105,88 +110,27 @@ def visualize_grid_and_selected(domain, xv, yv, zv, Nd):
     p.add_legend()
     p.show()
 
-class Truss_Examples(enum.Enum):
-    # Define the truss problem parameters
-    EdgeSupportedCantilever = enum.auto()
-    CantileverMidLoad = enum.auto()
-    LBracket = enum.auto()
-
-def get_truss_problem(truss_example: Truss_Examples):
-    if truss_example == Truss_Examples.EdgeSupportedCantilever:
-        width, height, depth = 6, 2, 2
-        poly = create_domain_with_optional_cutout(width, height, depth, make_hole=False)
-        bounds = poly.bounds
-        Lx = bounds[1] - bounds[0]
-        Ly = bounds[3] - bounds[2]
-        Lz = bounds[5] - bounds[4]
-
-        # Convert to int explicitly
-        nx, ny, nz = int(Lx) + 1, int(Ly) + 1, int(Lz) + 1
-        xv, yv, zv = np.meshgrid(range(nx), range(ny), range(nz))
-        grid_points = np.stack([xv.ravel(), yv.ravel(), zv.ravel()], axis=1)
-        Nd = np.array([pt for pt in grid_points if is_point_inside_domain(poly, pt)])
-        #visualize_grid_and_selected(poly, xv, yv, zv, Nd)
-        
-        #Load and support conditions
-        dof, f = np.ones((len(Nd),3)), []
-        for i, nd in enumerate(Nd):
-            #if np.isclose(nd[0], 0): dof[i,:] = [0, 0, 0] 
-            if (nd[0] == 0 and nd[2] == 0) or (nd[0] == 0 and nd[2] == depth): dof[i,:] = [0, 0, 0] # fix side edges of the x=0 fae 
-            f += [0, -1, 0] if (nd == [width, height/2, depth/2]).all() else [0, 0, 0]
-    elif truss_example == Truss_Examples.CantileverMidLoad:
-        width, height, depth = 6, 2, 2
-        poly = create_domain_with_optional_cutout(width, height, depth, make_hole=False)
-        bounds = poly.bounds
-        Lx = bounds[1] - bounds[0]
-        Ly = bounds[3] - bounds[2]
-        Lz = bounds[5] - bounds[4]
-
-        # Convert to int explicitly
-        nx, ny, nz = int(Lx) + 1, int(Ly) + 1, int(Lz) + 1
-        xv, yv, zv = np.meshgrid(range(nx), range(ny), range(nz))
-        grid_points = np.stack([xv.ravel(), yv.ravel(), zv.ravel()], axis=1)
-        Nd = np.array([pt for pt in grid_points if is_point_inside_domain(poly, pt)])
-        #visualize_grid_and_selected(poly, xv, yv, zv, Nd)
-        
-        #Load and support conditions
-        dof, f = np.ones((len(Nd),3)), []
-        for i, nd in enumerate(Nd):
-            #if np.isclose(nd[0], 0): dof[i,:] = [0, 0, 0] 
-            if nd[0] == 0: dof[i,:] = [0, 0, 0] # fix entire x=0 face
-            f += [0, -1, 0] if (nd == [width, height/2, depth/2]).all() else [0, 0, 0]
-    elif truss_example == Truss_Examples.LBracket:
-        width, height, depth = 3, 4, 1
-        poly = make_lbracket()
-        bounds = poly.bounds
-        Lx = bounds[1] - bounds[0]
-        Ly = bounds[3] - bounds[2]
-        Lz = bounds[5] - bounds[4]
-
-        # Convert to int explicitly
-        nx, ny, nz = int(Lx) + 1, int(Ly) + 1, int(Lz) + 1
-        xv, yv, zv = np.meshgrid(range(nx), range(ny), range(nz))
-        grid_points = np.stack([xv.ravel(), yv.ravel(), zv.ravel()], axis=1)
-        Nd = np.array([pt for pt in grid_points if is_point_inside_domain(poly, pt)])
-        #visualize_grid_and_selected(poly, xv, yv, zv, Nd)
-        
-        #Load and support conditions
-        dof, f = np.ones((len(Nd),3)), []
-        for i, nd in enumerate(Nd):
-            if nd[0] == height: dof[i,:] = [0, 0, 0] #LBracket
-            f += [-1, 0, 0] if (nd[1] == width and nd[0] == height//3.).all() else [0, 0, 0]
-    else:
-        raise ValueError("Unknown truss problem type.")
-    return poly, Nd, dof, f
-
+def compute_voxel_diagonal(Nd):
+    """
+    Compute the body diagonal of a single voxel from Nd (node positions).
+    Assumes structured grid, returns the diagonal length of a single cube/voxel.
+    """
+    Nd = np.array(Nd)
+    diffs = []
+    for axis in range(3):
+        sorted_axis = np.unique(Nd[:, axis])
+        if len(sorted_axis) > 1:
+            spacing = np.min(np.diff(sorted_axis))
+        else:
+            spacing = 0
+        diffs.append(spacing)
+    
+    dx, dy, dz = diffs
+    return np.sqrt(dx**2 + dy**2 + dz**2) + 1e-4  # add small epsilon
 #Main function 
-def trussopt(truss_example: Truss_Examples, st, sc, jc):
-    poly, Nd, dof, f = get_truss_problem(truss_example)
-    #poly.plot()
-    print('open edges', poly.n_open_edges)
+def trussopt3D(truss_example: Truss3DOptExamples, poly, Nd, dof, f, st, sc, jc, b_plot=False):
     
     convex = True if is_polygon_convex(poly) else False
-    
-    plot_3d_domain_with_bconditions(poly, Nd, dof, f)
     PML = []
     #Create the 'ground structure'
     for i, j in itertools.combinations(range(len(Nd)), 2):
@@ -199,29 +143,77 @@ def trussopt(truss_example: Truss_Examples, st, sc, jc):
     PML, dof = np.array(PML), np.array(dof).flatten()
     f = [f[i:i+len(Nd)*3] for i in range(0, len(f), len(Nd)*3)]
     print('Nodes: %d Members: %d' % (len(Nd), len(PML)))
-    ls_sel_mem = [p for p in PML if p[2] <= 1.75]
+    threshold_length = compute_voxel_diagonal(Nd)
+    ls_sel_mem = [p for p in PML if p[2] <= threshold_length]
+    #ls_sel_mem = [p for p in PML if p[2] <= 1.75]
     for pm in ls_sel_mem: 
         pm[3] = True
     
     Cn = PML[PML[:,3] == True]
-    plot_truss_with_domain_and_bcs(poly, Nd, dof, f, Cn, threshold=1e-4, title="Initial Truss")    
+    if b_plot:
+        plot_truss_with_domain_and_bcs(poly, Nd, dof, f, Cn, threshold=1e-4, title="Initial Truss")    
     #Start the 'member adding' loop
     for itr in range(1, 100):
         Cn = PML[PML[:,3] == True]
         vol, a, q, u = solveLP(Nd, Cn, f, dof, st, sc, jc)
         print("Itr: %d, vol: %f, mems: %d" % (itr, vol, len(Cn)))
-        plot_truss_with_domain_and_bcs(poly, Nd, dof, f, Cn, a, q, threshold=1e-4, title="Itr:" + str(itr))
+        if b_plot:
+            plot_truss_with_domain_and_bcs(poly, Nd, dof, f, Cn, a, q, threshold=1e-4, title="Itr:" + str(itr))
         if stopViolation(poly, Nd, PML, dof, st, sc, u, jc): break
     print("Volume: %f" % (vol)) 
-    plot_truss_with_domain_and_bcs(poly, Nd, dof, f, Cn, a, q, threshold=1e-4, title="Truss and Domain", update=False)
+    return Nd, Cn, a, q
+
+
+def get_truss_width_height(mesh):
+    """
+    Get the width and height of the truss from the mesh.
+    
+    Parameters:
+    - mesh: hex_mesher.HexMesher object
+    
+    Returns:
+    minimum value of 10 for the smallest dimension so that the truss grid can have unit spacing.
+    - truss_width: width of the truss
+    - truss_height: height of the truss
+    - truss_depth: depth of the truss
+    """
+    # Determine physical size of mesh
+    mesh_width = mesh.bbox.x.max - mesh.bbox.x.min
+    mesh_height = mesh.bbox.y.max - mesh.bbox.y.min
+    mesh_depth = mesh.bbox.z.max - mesh.bbox.z.min
+
+    # Determine scale factor so that smallest dimension becomes 10
+    scale_factor = 10.0 / min(mesh_width, mesh_height, mesh_depth)
+
+    # Compute desired truss domain size
+    truss_width = int(np.ceil(mesh_width * scale_factor))
+    truss_height = int(np.ceil(mesh_height * scale_factor))
+    truss_depth = int(np.ceil(mesh_depth * scale_factor))
+    return truss_width, truss_height, truss_depth
 
 #Execution function when called directly by Python
 if __name__ =='__main__': 
-    truss_example = Truss_Examples.LBracket
-    trussopt(truss_example, st = 1, sc =1, jc = 0.1)
+    
+    starttime = time.time()
+    print("-" * 50)
+    to_problem = StructuralTOExamples.LBracketMidLoad # Choose the TO problem
+    print(f"Running {to_problem.name}...") 
+    print("-" * 50)
+
+    # Get the structural problem
+    mesh, mat_prop, bc,elem_body_force, to_params = getStructuralTOProblem(to_problem)
+    truss_width, truss_height, truss_depth  = get_truss_width_height(mesh)
+    
+    truss_example, poly, Nd, dof, f = get_trussopt_3D_example(to_problem, truss_width, truss_height, truss_depth)
+    print('open edges', poly.n_open_edges)
+    plot_3d_domain_with_bconditions(poly, Nd, dof, f)
+    Nd, Cn, a, q = trussopt3D(truss_example, poly, Nd, dof, f, st = 1, sc =1, jc = 0.1, b_plot=False)
+    endtime = time.time()
+    plot_truss_with_domain_and_bcs(poly, Nd, dof, f, Cn, a, q, threshold=1e-4, title="Truss and Domain", update=False)
+    print(f"Execution time: {endtime - starttime:.2f} seconds")
 ##########################################################################
-# This Python script does 3D truss optimization.                         #  
-# It is a modified version of the 2D script mention below.               #
+# A Python script for 3D truss optimization.                             #  
+# It is a modified version of the 2D script mentioned below.             #
 # It uses PyVista for domain creation and visualization,                 #
 # and CVXPY for solving the optimization problem.                        #   
 # The original Python script was taken from                              #   

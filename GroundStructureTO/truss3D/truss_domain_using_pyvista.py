@@ -305,6 +305,20 @@ def plot_truss_with_domain_and_bcs(
         ax.scatter(fully_fixed[:, 0], fully_fixed[:, 1], fully_fixed[:, 2], color='blue', s=30, label='Fully Fixed')
     if len(loads):
         ax.scatter(loads[:, 0], loads[:, 1], loads[:, 2], color='red', marker='v', s=30, label='Loads')
+        # Draw arrows for loads (increase arrow length/width for visibility)
+        for i in np.where(np.any(f != 0, axis=1))[0]:
+            start = Nd[i]
+            force = f[i]
+            norm = np.linalg.norm(force)
+            if norm < 1e-8:
+                continue
+            direction = force / norm
+            arrow_length = 0.5  # Increase this value for longer arrows
+            ax.quiver(
+                start[0], start[1], start[2],
+                direction[0], direction[1], direction[2],
+                length=arrow_length, color='red', linewidth=2, arrow_length_ratio=0.2, normalize=True
+            )
 
     # Plot truss bars
     if a is None or q is None:

@@ -123,7 +123,7 @@ def trussopt(width, height, st, sc, jc):
     plotTruss(Nd, Cn, a, q, max(a) * 1e-3, "Finished", False)
 #Execution function when called directly by Python
 if __name__ =='__main__': 
-    trussopt(width = 20, height = 10, st = 1, sc =1, jc = 1)
+    trussopt(width = 20, height = 10, st = 0.1, sc =0.1, jc = 0.5)
 ##########################################################################
 # This Python script was written by L. He, M. Gilbert, X. Song           #
 # University of Sheffield, United Kingdom                                #
