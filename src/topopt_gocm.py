@@ -15,8 +15,8 @@ def topopt_generalized_optimality_criteria(
 							debug: bool = False,
 							binarize_topology: bool = False,
 							) -> tuple[np.ndarray, dict]:
-	"""Optimality Criteria based topology optimization for minimum compliance.
-
+	"""Generalized optimality criteria method for topology optimization.
+	Kim, N.H., Dong, T., Weinberg, D. and Dalidd, J., 2021.  Applied Sciences, 11(7), p.3175.
 	Args:
 		fe_solver: The structural FEA solver object.
 		maxIterations: Maximum number of iterations.
@@ -31,8 +31,6 @@ def topopt_generalized_optimality_criteria(
 	nDOFPerNode = 3 if isinstance(fe_solver, hex_structural_fea.HexStructuralFEA) else 1
 	material_model = MaterialModel.SIMP 
 	tStart = time.time()
-	elem_body_force = fe_solver.elem_body_force
-
 
 	num_elems = fe_solver.mesh.num_elems
 	if (print_progress):
@@ -44,10 +42,12 @@ def topopt_generalized_optimality_criteria(
 	constraintType = to_params.Constraints[0][0] # assume this is the first constraint
 	if (constraintType == TO_QOI.VOLUME_FRACTION):
 		volFractionConstraint = to_params.Constraints[0][2]
+		x = volFractionConstraint * np.ones(num_elems, dtype = float)
+		
 	else:
-		raise ValueError(f"Unknown constraint type: {constraintType}")
+		x = np.ones(num_elems, dtype = float)
 	
-	x = volFractionConstraint * np.ones(num_elems, dtype = float)
+	
 	xPhys = x.copy()
 
 	if (fe_solver.elem_body_force is not None):
@@ -85,10 +85,8 @@ def topopt_generalized_optimality_criteria(
 	
 	success = True
 	errorMsg = "None"
-	lmid =1 # initial Lagrange multiplier for volume constraint
-	gPrev = 0 # initial constraint violation of the volume constraint
-	gleps = 0.05 # tolerance on constraint violation of the volume constraint
-	
+	l1 = 0
+	l2 = 1e7
 	for iter in range(maxIterations):
 		x = np.array(x)
 		if (plot_progress):
@@ -108,42 +106,59 @@ def topopt_generalized_optimality_criteria(
 			ce_body_force = (sol[fe_solver.mesh.edofMat].reshape(num_elems, 24) * nodal_body_force[fe_solver.mesh.edofMat].reshape(num_elems, 24)).sum(1)
 			grad_obj +=  2*ce_body_force
 			
-		if (to_params.APPLY_FILTER_TO_SENSITIVITY)  and (to_params.Objective is not TO_QOI.VOLUME_FRACTION):
-			grad_obj = (H *(x* grad_obj))/Hs/x # apply filter
+		if (to_params.APPLY_FILTER_TO_SENSITIVITY) and (to_params.Objective[0] is TO_QOI.COMPLIANCE):
+			grad_obj = (H *(x* grad_obj))/Hs/x # apply weighted filter
+		elif (to_params.APPLY_FILTER_TO_SENSITIVITY) and (to_params.Objective[0] is not TO_QOI.VOLUME_FRACTION):
+			grad_obj = (H *(grad_obj))/Hs # apply regular filter
 
 		if (elemsWithForces.size > 0):
 			grad_obj[elemsWithForces] = min(grad_obj) # retain elements that have nodes with external forces
 
 		if (to_params.ElemsToKeep is not None):
 			grad_obj[to_params.ElemsToKeep] = min(grad_obj) # also retain elements that are in the keep list
-
-	
-		volConstraint, _ = compute_volume_constraint_and_gradient(x, volFractionConstraint)
-
+		
+		c, dcdx = compute_constraint_and_gradient(to_params,sol,x, fe_solver,KE, material_model)
+		if (to_params.APPLY_FILTER_TO_SENSITIVITY):
+			for m in range(len(to_params.Constraints)):
+				if (to_params.Constraints[m][0] is TO_QOI.COMPLIANCE):
+					dcdx[m] = ((H *(x*dcdx[m]))/Hs/x) # apply weighted filter
+				elif (to_params.Constraints[m][0] is not TO_QOI.VOLUME_FRACTION):
+					dcdx[m] = ((H * dcdx[m])/Hs)# apply regular filter
 		# Optimality criteria update
 		xold = x.copy()
 		
-		xnew = np.maximum(xmin, np.maximum(x - move, 
-									 np.minimum(xmax, np.minimum(x + move, 
-									  x*np.sqrt(-grad_obj/(lmid/len(x)))))))
+		# Calculate Lagrange multiplier bounds
+		nLocalIter = 0
+		lmid = -np.mean(grad_obj /dcdx[0])
+		l1 = 0.1*lmid
+		l2 = 10*lmid		
+		move = 0.2
+		
+		while   (l2 - l1)/((l1+l2)/2+1e-10) > 1e-4:
+			nLocalIter += 1
+			lmid = 0.5 * (l2 + l1)
+			#print(grad_obj, dcdx[0], c[0], lmid, l1, l2)
+			numer = np.minimum(0,grad_obj) + lmid *  np.minimum(0,dcdx[0]) 
+			denom = np.maximum(0,grad_obj) + lmid *  np.maximum(0,dcdx[0])   # avoid division by zero		
+			D = -numer/denom 
+			
+			#D = np.clip(D,0.1,10)
+			xnew = np.maximum(xmin,np.maximum(x - move,np.minimum(xmax, np.minimum(x + move, x * np.sqrt(D)))))
+			
+			c, _ = compute_constraint_and_gradient(to_params,sol,xnew, fe_solver,KE, material_model)
+			
+			if c[0] > 0: # constraint violated
+				l1 = lmid # increase Lagrange multiplier
+			else:
+				l2 = lmid	# decrease Lagrange multiplier
+		
+		
 		
 		x = xnew.copy()
 		xPhys = x.copy()
-    
-		
-		g = volConstraint
-		dg = g -gPrev
-		gPrev = g
-
-		if (g > 0 and dg > 0) or (g < 0 and dg < 0):
-			p0 = 1
-		elif (g > 0 and dg > -gleps) or (g < 0 and dg < gleps):
-			p0 = 0.5
-		else:
-			p0 = 0.0
-
-		lmid =  lmid*(1 + p0*(g + dg))
-	
+		# Estimate the percentage of grey elements
+		grey_elements = np.sum((x > 0.05) & (x < 0.95))
+		fraction_grey = (grey_elements / num_elems) 
 
 		if (to_params.APPLY_FILTER_TO_DENSITY):
 			x = H *x/Hs # apply filter
@@ -155,13 +170,11 @@ def topopt_generalized_optimality_criteria(
 		history['objective'].append(obj*objScaling)
 		history['volume'].append(np.mean(xPhys))
 		history['change'].append(change)
-		# Estimate the percentage of grey elements
-		grey_elements = np.sum((x > 0.05) & (x < 0.95))
-		fraction_grey = (grey_elements / num_elems) 
+		
 
 		if (print_progress):
 			print(f"it.: {iter+1:d}, obj.: {(obj*objScaling):.3g}, "
-				  	f"vol.: {np.mean(xPhys):.3g}, grey: {fraction_grey:.3f}")
+				  	f"con.: {c[0][0]:.3g}, grey: {fraction_grey:.3f}")
 		if np.isnan(obj):
 			print("Objective function became NaN. Exiting optimization.")
 			errorMsg = "Objective is diverging"
@@ -171,15 +184,15 @@ def topopt_generalized_optimality_criteria(
 		if (len(history['objective'])) >= 2:
 			dJ = abs((history['objective'][-1] - history['objective'][-2]) / history['objective'][-2])
 			# we need multiple checks else it will terminate too early 
-			if (dJ < rel_conv_tol) and (abs(volConstraint) < rel_conv_tol) and (change < 0.2) and (fraction_grey < 0.1): # success
+			if (dJ < rel_conv_tol) and (c[0] < rel_conv_tol) and (change < 0.2) and (fraction_grey < 0.1): # success
 				print("GOC optimization converged.")
 				break
 
 			# Also this check for stalling
-			if (dJ < rel_conv_tol) and (abs(volConstraint)  < rel_conv_tol) and (change < move_tol): # success
+			if (dJ < rel_conv_tol) and (c[0] < rel_conv_tol) and (change < move_tol): # success
 				print("GOC optimization converged.")
 				break
-
+		
 	if iter == maxIterations - 1:
 		errorMsg = "Maximum iterations reached"
 		print(errorMsg)
@@ -210,9 +223,6 @@ def topopt_generalized_optimality_criteria(
 	history['volume'].append(volfrac)
 	history['change'].append(change)
 
-	if (volfrac > 1.1*volFractionConstraint):
-		errorMsg =  f"vf {volFractionConstraint:0.3f} not reached"
-		success = False
 
 	nFEAs = iter + 1
 	print(f"Final objective: {obj:.4g}, vf: {np.mean(x):.3f}")
@@ -226,8 +236,7 @@ if __name__ == "__main__":
 	from topopt_thermal_benchmarks import *
 
 	print("-" * 50)
-	to_problem = StructuralTOExamples.Mitchell_1 # Choose the TO problem
-	
+	to_problem = StructuralTOExamples.CantileverMidLoadVolumeObjective # Choose the TO problem
 
 	if (to_problem in StructuralTOExamples):
 		mesh, mat_prop, bc,elem_body_force, to_params = getStructuralTOProblem(to_problem)
@@ -285,7 +294,7 @@ if __name__ == "__main__":
 	if not success:
 		print(f"Error: {errorMsg}")
 
-	title = f"GOC: vol: {history['volume'][-1]:0.2f}, J: {history['objective'][-1]:.3g}, nFEA: {len(history['objective']):3d}, time: {timeTaken:.0f} s"
+	title = f"OC: vol: {history['volume'][-1]:0.2f}, J: {history['objective'][-1]:.3g}, nFEA: {len(history['objective']):3d}, time: {timeTaken:.0f} s"
 
 	
 	# plot the optimized mesh
@@ -306,7 +315,7 @@ if __name__ == "__main__":
 	ax2.tick_params(axis='y', labelcolor='tab:orange')
 	ax2.yaxis.set_major_formatter(plt.FormatStrFormatter('%.2f'))
 
-	plt.title('GOC: Volume and Compliance vs. Iterations')
+	plt.title('OC: Volume and Compliance vs. Iterations')
 
 	# Add legend
 	lines1, labels1 = ax1.get_legend_handles_labels()

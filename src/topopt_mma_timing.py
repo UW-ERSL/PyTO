@@ -36,7 +36,7 @@ def topopt_mma(fe_solver, #hex_structural_fea.HexStructuralFEA or hex_thermal_fe
 	nDOFPerNode = 3 if isinstance(fe_solver, hex_structural_fea.HexStructuralFEA) else 1
 	material_model = MaterialModel.SIMP 
 
-
+	elem_body_force = fe_solver.elem_body_force
 	tStart = time.time()
 	num_elems= fe_solver.mesh.num_elems
 	history = {'objective': [], 'volume': [], 'change': []}
@@ -88,6 +88,7 @@ def topopt_mma(fe_solver, #hex_structural_fea.HexStructuralFEA or hex_thermal_fe
 	mma_state = mma.init_mma(x0, mma_params)
 	
 	x_old = mma_state.x.reshape(-1)
+
 	timeFEA = 0
 	timeMMA = 0
 	if (fe_solver.elem_body_force is not None):
@@ -169,7 +170,7 @@ def topopt_mma(fe_solver, #hex_structural_fea.HexStructuralFEA or hex_thermal_fe
 		fraction_grey = (grey_elements / num_elems) 
 
 		if (print_progress):
-			print(f"it.: {mma_state.epoch}, obj.: {obj*objScaling:.4g}, con.: {c[0][0]:.3f}, change: {change: 0.3f}, grey: {fraction_grey:.3f}")
+			print(f"it.: {mma_state.epoch}, obj.: {obj*objScaling:.4g}, vf: {np.mean(x):.3f}, change: {change: 0.3f}, grey: {fraction_grey:.3f}")
 		history['objective'].append(obj*objScaling)
 		history['volume'].append(np.mean(x))
 		history['change'].append(change)
@@ -200,8 +201,7 @@ def topopt_mma(fe_solver, #hex_structural_fea.HexStructuralFEA or hex_thermal_fe
 			errorMsg = "Maximum iterations reached."
 			print("MMA optimization terminated due to maximum iterations.")
 			break
-
-		
+	
 	fe_solver.mesh.setPseudoDensity(x)	
 	volfrac = np.mean(x)
 	# Find threshold that preserves volume fraction
@@ -239,14 +239,11 @@ def topopt_mma(fe_solver, #hex_structural_fea.HexStructuralFEA or hex_thermal_fe
 	print(f"Total Time: {time.time() - tStart:.2f} s")
 	print("Error: ", errorMsg)
 	return np.asarray(sol), history,success,errorMsg,nFEAs
-	
-if __name__ == "__main__":    
-	from topopt_structural_benchmarks import *
-	from topopt_thermal_benchmarks import *
- 
+
+def timing_main():
 	print("-" * 50)
  
-	to_problem = StructuralTOExamples.CantileverMidLoadVolumeObjective# Choose the TO problem
+	to_problem = StructuralTOExamples.Mitchell_1# Choose the TO problem
 
 
 	if (to_problem in StructuralTOExamples):
@@ -301,7 +298,8 @@ if __name__ == "__main__":
 								debug = debug)
 	timeTaken = time.time() - startTime
 	
-
+	print(f"Total time taken: {timeTaken:.2f} s")
+	return
 	title = f"MMA: vol: {history['volume'][-1]:0.2f}, J: {history['objective'][-1]:.3g}, nFEA: {len(history['objective']):3d}, time: {timeTaken:.0f} s"
 	fe_solver.plot_mesh(title = title, plot_bc = False, save_path = None)
 	fe_solver.postprocess()
@@ -331,3 +329,18 @@ if __name__ == "__main__":
 
 	plt.grid(True)
 	plt.show()
+	
+if __name__ == "__main__": 
+	from topopt_structural_benchmarks import *
+	from topopt_thermal_benchmarks import *
+	import pstats
+	profiler = cProfile.Profile()
+	profiler.enable()
+
+	timing_main()  # replace with your function
+
+	profiler.disable()
+	stats = pstats.Stats(profiler).sort_stats('cumtime')
+	stats.print_stats(10)  # top 10 lines
+
+	

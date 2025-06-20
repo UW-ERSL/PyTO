@@ -66,29 +66,41 @@ def topopt_levelset(fe_solver,
    
     if isinstance(fe_solver.mat_prop, list): # multiple materials
         if isinstance(fe_solver, hex_structural_fea.HexStructuralFEA):
-            KE_list = [hex_element_stiffness.hex8_stiffness_matrix_structural( mp,fe_solver.mesh.elem_size)
+            KE_list = [hex_element_stiffness.hex8_stiffness_matrix_structural( mp.youngs_modulus,mp.poissons_ratio,fe_solver.mesh.elem_size)
 				for mp in fe_solver.mat_prop]
             KE = KE_list[0]
         elif isinstance(fe_solver, hex_thermal_fea.HexThermalFEA):
-            KE_list = [hex_element_stiffness.hex8_stiffness_matrix_thermal( mp,fe_solver.mesh.elem_size)
+            KE_list = [hex_element_stiffness.hex8_stiffness_matrix_thermal( mp.thermal_conductivity,fe_solver.mesh.elem_size)
 				for mp in fe_solver.mat_prop]
             KE = KE_list[0]	
         print("Assuming all elements have the same material properties")
-    else:
+    else: # single material
         if isinstance(fe_solver, hex_structural_fea.HexStructuralFEA):
-            KE = hex_element_stiffness.hex8_stiffness_matrix_structural( fe_solver.mat_prop,fe_solver.mesh.elem_size)
+            KE = hex_element_stiffness.hex8_stiffness_matrix_structural( fe_solver.mat_prop.youngs_modulus,
+															    fe_solver.mat_prop.poissons_ratio,
+																fe_solver.mesh.elem_size)
         elif isinstance(fe_solver, hex_thermal_fea.HexThermalFEA):
-            KE = hex_element_stiffness.hex8_stiffness_matrix_thermal( fe_solver.mat_prop,fe_solver.mesh.elem_size)
+            KE = hex_element_stiffness.hex8_stiffness_matrix_thermal( fe_solver.mat_prop.thermal_conductivity,fe_solver.mesh.elem_size)
+	
+	
     volCurr = 1.0
     volDecrementWeight = 0.1
     success = True
     errorMsg = ""    
+    constraintType = to_params.Constraints[0][0] # assume this is the first constraint
+    if (constraintType == TO_QOI.VOLUME_FRACTION):
+        volFractionConstraint = to_params.Constraints[0][2]
+    else:
+        volFractionConstraint =1 # default value
+    beta  = 0.35
     for iterNum in range(maxIterations):
         if (plot_progress):
             fe_solver.plot_mesh(plot_bc = False,auto_close = False, title = f'Volfrac: {volCurr:0.3f}')
 
         sol = fe_solver.solve(rho, material_model)
-        obj, grad_obj = compliance(sol,rho, fe_solver,KE, material_model)
+   
+        obj, grad_obj = compute_objective_and_gradient(to_params,sol,rho, fe_solver,KE, material_model)
+		
         shapeSens =(-rho)* (np.dot(sol[fe_solver.mesh.edofMat].reshape(fe_solver.mesh.num_elems, 8*nDOFPerNode), KE) * sol[fe_solver.mesh.edofMat].reshape(fe_solver.mesh.num_elems, 8*nDOFPerNode)).sum(1)
  
         shapeSens = (H * shapeSens)/Hs
@@ -105,13 +117,15 @@ def topopt_levelset(fe_solver,
         history['compliance'].append(obj)
         history['volume'].append(volCurr)
         
+       
+	
         if (print_progress):
             print(f"Iter: {iterNum}, Compliance: {obj:.4f}, Volume: {volCurr:.3f}")
-        if (abs(volCurr - to_params.DesiredVolFraction) < 0.001):
+        if (abs(volCurr - volFractionConstraint) < 0.001):
              break
-        beta  = 0.35
-        adjustedWeight = volDecrementWeight * (1 - abs(volCurr - to_params.DesiredVolFraction))
-        shapeSens = shapeSens + adjustedWeight * (volCurr - to_params.DesiredVolFraction+beta)
+        
+        adjustedWeight = volDecrementWeight * (1 - abs(volCurr - volFractionConstraint))
+        shapeSens = shapeSens + adjustedWeight * (volCurr - volFractionConstraint+beta)
 
         gradMag = GradientMagnitude(lsf,HXD,HYD,HZD)      
         gradMagSmooth = H*gradMag/Hs        
@@ -125,13 +139,14 @@ def topopt_levelset(fe_solver,
     
         lsf /= np.max(np.abs(lsf))
         lsf = H*lsf/Hs
-        if(volCurr - to_params.DesiredVolFraction > 0.001):
+        if(volCurr - volFractionConstraint > 0.001):
             volDecrementWeight += 0.0025
         else:
             volDecrementWeight -= 0.005
         
     sol = fe_solver.solve(rho, material_model)
-    obj, grad_obj = compliance(sol,rho, fe_solver,KE, material_model)
+    obj, _ = compute_objective_and_gradient(to_params,sol,rho, fe_solver,KE, material_model)
+		
     history['compliance'].append(obj)
     history['volume'].append(volCurr)
     if iterNum == maxIterations - 1:
@@ -142,8 +157,8 @@ def topopt_levelset(fe_solver,
         errorMsg = "Disconnected topology"
         success = False
     volfrac = history['volume'][-1]  # Define volfrac based on the last volume in history
-    if volfrac > 1.1 * to_params.DesiredVolFraction:
-        errorMsg = f"vf {to_params.DesiredVolFraction:0.3f} not reached"
+    if volfrac > 1.1 * volFractionConstraint:
+        errorMsg = f"vf {volFractionConstraint:0.3f} not reached"
         success = False
 
     nFEAs = iterNum + 1
@@ -177,9 +192,8 @@ if __name__ == "__main__":
 	from topopt_thermal_benchmarks import *
 	
 	print("-" * 50)
-	to_problem = StructuralTOExamples.MBBB # Choose the TO problem
+	to_problem = StructuralTOExamples.CantileverMidLoad # Choose the TO problem
 	#to_problem = ThermalTOExamples.BridgeThermal # Choose the TO problem
-	
      
 
 	print(f"Running {to_problem.name}...") 

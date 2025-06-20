@@ -17,7 +17,6 @@ import numpy as np
 import scipy
 import scipy.linalg
 import scipy.sparse
-from numba import njit
 
 _SUBSOLV_EPSI_FACTOR = 0.9
 _SUBSOLV_MAX_INNER_ITER = 200

@@ -250,7 +250,7 @@ def getStructuralTOProblem(to_problem: StructuralTOExamples,nDOFDesired = None, 
         to_params.Comment = "Benchmark 3D"
         to_params.YSymmetry = True
         to_params.nDOFDesired = 75000 if nDOFDesired is None else nDOFDesired
-        to_params.Constraints = [(TO_QOI.VOLUME_FRACTION, None, 0.25)] 
+        to_params.Constraints = [(TO_QOI.VOLUME_FRACTION, None, 0.05)] 
      
     elif to_problem == StructuralTOExamples.ThreeHoleBracketThick:
         structural_problem = StructuralExamples.ThreeHoleBracketThick

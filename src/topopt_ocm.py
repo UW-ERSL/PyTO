@@ -10,7 +10,6 @@ def topopt_optimality_criteria(
 							move: float = 0.2,
 							move_tol: float = 0.05,
 							rel_conv_tol: float = 1.e-3,
-							directLagrangeMethod: bool = False,
 							print_progress: bool = True,
 							plot_progress: bool = False,
 							debug: bool = False,
@@ -86,7 +85,7 @@ def topopt_optimality_criteria(
 	
 	success = True
 	errorMsg = "None"
-
+	
 	for iter in range(maxIterations):
 		x = np.array(x)
 		if (plot_progress):
@@ -117,48 +116,30 @@ def topopt_optimality_criteria(
 			grad_obj[to_params.ElemsToKeep] = min(grad_obj) # also retain elements that are in the keep list
 
 	
-		volConstraint, _ = compute_volume_constraint_and_gradient(x, volFractionConstraint)
+		volConstraint, volConstraint_gradient = compute_volume_constraint_and_gradient(x, volFractionConstraint)
 
 		# Optimality criteria update
 		xold = x.copy()
-		if  not directLagrangeMethod: # bisection method
-			# Calculate Lagrange multiplier bounds
-			l1 = 0
-			l2 = 1e12
+		
+		# Calculate Lagrange multiplier bounds
+		l1 = 0
+		l2 = 1e12
+		lmid = 0.5 * (l2 + l1)
+		# Bisection loop for volume constraint
+		while (l2 - l1)/((l1+l2)/2+1e-10) > 1e-7:
 			lmid = 0.5 * (l2 + l1)
-			# Bisection loop for volume constraint
-			while (l2 - l1) > 1e-7:
-				lmid = 0.5 * (l2 + l1)
-				b = -grad_obj / lmid
-				b = np.maximum(b, 0.00) # avoid sqrt of negative numbers	
-				# OC update with damping and bounds
-				xnew = np.maximum(xmin,np.maximum(x - move,np.minimum(xmax, np.minimum(x + move, x * np.sqrt(b)))))
-				if np.sum(xnew) - volFractionConstraint * num_elems > 0:
-					l1 = lmid
-				else:
-					l2 = lmid	
-			x = xnew.copy()
-			xPhys = x.copy()
-		else: # direct method
-			#Reference: https://link.springer.com/article/10.1007/s00158-020-02740-y
-			setChange = True
-			eta = 0.5
-			varIn = np.ones(num_elems, dtype = bool)
-			xMaxVec = np.minimum(x+move, xmax)
-			xMinVec = np.maximum(x-move,xmin)
-			volToDistribute = volFractionConstraint*num_elems
-			varTimesGrad = x*(abs(grad_obj))**eta
-			while setChange:
-				xnew = varTimesGrad/((np.sum(varTimesGrad[varIn])+1e-9) /(volToDistribute+1e-9)) 
-				volToDistribute = volFractionConstraint*num_elems -np.sum(xMaxVec[xnew>=xMaxVec]) -np.sum(xMinVec[xnew<=xMinVec])
-				setChange = not np.array_equal((xnew<xMaxVec) & (xnew>xMinVec), varIn)
-				varIn = (xnew < xMaxVec) & (xnew > xMinVec)
-			
-			xnew[xnew>xMaxVec] = xMaxVec[xnew>xMaxVec]
-			xnew[xnew<xMinVec] = xMinVec[xnew<xMinVec]
-			x = xnew
-			xPhys = xnew.copy()
-
+			D = -grad_obj / (volConstraint_gradient*lmid)	
+			D = np.clip(D, 0.1,10) # 
+			# OC update with damping and bounds
+			xnew = np.maximum(xmin,np.maximum(x - move,np.minimum(xmax, np.minimum(x + move, x * np.sqrt(D)))))
+			volConstraint, _ = compute_volume_constraint_and_gradient(xnew, volFractionConstraint)
+			if volConstraint > 0:
+				l1 = lmid
+			else:
+				l2 = lmid	
+		x = xnew.copy()
+		xPhys = x.copy()
+		
 		if (to_params.APPLY_FILTER_TO_DENSITY):
 			x = H *x/Hs # apply filter
 		# Calculate change and update densities
@@ -240,7 +221,7 @@ if __name__ == "__main__":
 	from topopt_thermal_benchmarks import *
 
 	print("-" * 50)
-	to_problem = StructuralTOExamples.CantileverTipLoad # Choose the TO problem
+	to_problem = StructuralTOExamples.EdgeCantilever # Choose the TO problem
 
 	if (to_problem in StructuralTOExamples):
 		mesh, mat_prop, bc,elem_body_force, to_params = getStructuralTOProblem(to_problem)
