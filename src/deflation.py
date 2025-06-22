@@ -256,99 +256,67 @@ class DeflationSolver:
 		print("Base group dimensions:", [nX, nY, nZ])
 		print(nGroupsTentative, " tentative groups")
 
-		xSegments = np.linspace(xMin, xMin + xLength, nX + 1)
-		ySegments = np.linspace(yMin, yMin + yLength, nY + 1)		
-		zSegments = np.linspace(zMin, zMin + zLength, nZ + 1)
-
-		scaling = 2
-		xMinSize = xLength / nX/scaling
-		yMinSize = yLength / nY/scaling
-		zMinSize = zLength / nZ/scaling
 
 	
-		# Sort nodes by x coordinate
-		sorted_indices = np.argsort(xyz[:, 0])
-		x_sorted = xyz[sorted_indices, 0]
-		se_sorted = nodalStrainEnergy[sorted_indices]
+		# Adaptive grouping using non-intersecting spheres based on nodal strain energy
 
-		# Compute cumulative strain energy along x
-		cum_se = np.cumsum(se_sorted)
-		total_se = cum_se[-1]
-		target_se_per_segment = total_se / nX
+		num_nodes = meshData.num_nodes
+		node_used = np.zeros(num_nodes, dtype=bool)
+		nodeGroupNumber = -np.ones(num_nodes, dtype=np.int32)
+		group_centers = []
+		group_ids = []
+		group_id = 0
 
-		# Find xSegments so that each segment has equal strain energy, but not smaller than xMinSize
-		xSegments = [xMin]
-		last_idx = 0
-		for i in range(1, nX):
-			target_se = i * target_se_per_segment
-			# Find the index where cumulative strain energy exceeds the target
-			idx = np.searchsorted(cum_se, target_se)
-			# Ensure minimum segment size
-			while idx < len(x_sorted) and (x_sorted[idx] - xSegments[-1]) < xMinSize:
-				idx += 1
-			if idx >= len(x_sorted):
-				break
-			xSegments.append(x_sorted[idx])
-			last_idx = idx
-		xSegments.append(xMin + xLength)
-		xSegments = np.array(xSegments)
-
-		# Repeat for y direction
-		sorted_indices = np.argsort(xyz[:, 1])
-		y_sorted = xyz[sorted_indices, 1]
-		se_sorted = nodalStrainEnergy[sorted_indices]
-		cum_se = np.cumsum(se_sorted)
-		total_se = cum_se[-1]
-		target_se_per_segment = total_se / nY
-
-		ySegments = [yMin]
-		last_idx = 0
-		for i in range(1, nY):
-			target_se = i * target_se_per_segment
-			idx = np.searchsorted(cum_se, target_se)
-			while idx < len(y_sorted) and (y_sorted[idx] - ySegments[-1]) < yMinSize:
-				idx += 1
-			if idx >= len(y_sorted):
-				break
-			ySegments.append(y_sorted[idx])
-			last_idx = idx
-		ySegments.append(yMin + yLength)
-		ySegments = np.array(ySegments)
+		# Sort nodes by descending strain energy
+		node_order = np.argsort(-nodalStrainEnergy)
+		avg_strain_energy = np.sum(nodalStrainEnergy) / nGroupsDesired
 		
-		# Repeat for z direction
-		sorted_indices = np.argsort(xyz[:, 2])
-		z_sorted = xyz[sorted_indices, 2]
-		se_sorted = nodalStrainEnergy[sorted_indices]
-		cum_se = np.cumsum(se_sorted)
-		total_se = cum_se[-1]
-		target_se_per_segment = total_se / nZ
+		print("Average strain energy per group:", avg_strain_energy)
 
-		zSegments = [zMin]
-		last_idx = 0
-		for i in range(1, nZ):
-			target_se = i * target_se_per_segment
-			idx = np.searchsorted(cum_se, target_se)
-			while idx < len(z_sorted) and (z_sorted[idx] - zSegments[-1]) < zMinSize:
-				idx += 1
-			if idx >= len(z_sorted):
-				break
-			zSegments.append(z_sorted[idx])
-			last_idx = idx
-		zSegments.append(zMin + zLength)
-		zSegments = np.array(zSegments)
-		
-		# Assign nodes to groups using adaptive segments
-		ix = np.searchsorted(xSegments, xyz[:, 0], side='right') - 1
-		iy = np.searchsorted(ySegments, xyz[:, 1], side='right') - 1
-		iz = np.searchsorted(zSegments, xyz[:, 2], side='right') - 1
+		while np.any(~node_used):
+			# Pick the unused node with highest strain energy
+			for idx in node_order:
+				if not node_used[idx]:
+					center_idx = idx
+					break
 
-		ix = np.clip(ix, 0, len(xSegments) - 2)
-		iy = np.clip(iy, 0, len(ySegments) - 2)
-		iz = np.clip(iz, 0, len(zSegments) - 2)
+			center = xyz[center_idx]
+			# Find all unused nodes within a growing radius until total strain energy in sphere is at least average
+			# Compute average strain energy per group
+			radius = 0.5*meshData.elem_size[0]
+			found = False
+			while not found:
+				dist = np.linalg.norm(xyz - center, axis=1)
+				in_sphere = (~node_used) & (dist <= radius)
+				total_energy = np.sum(nodalStrainEnergy[in_sphere])
+				#print(f"Group {group_id}: radius={radius:.5f}, nodes={np.sum(in_sphere)}, energy={total_energy:.2f}")
+				if radius > 10*meshData.elem_size[0]:
+					# Give up on this node
+					break
+				if (total_energy >= avg_strain_energy and np.sum(in_sphere) >= self.minNodesPerGroup):
+					found = True
+				else:
+					radius += meshData.elem_size[0]*0.7
 
-		nodeGroupNumber = (ix + nX * iy + nX * nY * iz).astype(np.int32)
-		
+			# Assign group number to nodes in the sphere
+			nodeGroupNumber[in_sphere] = group_id
+			node_used[in_sphere] = True
+			group_centers.append(center)
+			group_ids.append(group_id)
+			group_id += 1
+			# Reset radius for next group
+			
 
+		# For any remaining unassigned nodes, assign to nearest group
+		unassigned = np.where(nodeGroupNumber == -1)[0]
+		if len(unassigned) > 0:
+			centers_arr = np.array(group_centers)
+			for idx in unassigned:
+				distances = np.linalg.norm(centers_arr - xyz[idx], axis=1)
+				nearest = np.argmin(distances)
+				nodeGroupNumber[idx] = group_ids[nearest]
+
+		nGroupsTentative = group_id
 	
 		groupCount = np.zeros(nGroupsTentative, dtype=np.int32)
 		groupCenter = np.zeros((nGroupsTentative, 3))
@@ -378,7 +346,7 @@ class DeflationSolver:
 				groupMapping[group] = currentGroupNumber
 				currentGroupNumber = currentGroupNumber+1
 		self.ws_nGroups = currentGroupNumber
-		#print("Number of new groups: ", self.ws_nGroups)
+		print("Number of actual groups: ", self.ws_nGroups)
 
 		if (any(groupMapping == -1)):
 			# Find small groups that need reassignment
@@ -520,15 +488,16 @@ class DeflationSolver:
 		plotter.set_background('white')
 
 		# Add points with group coloring
-		plotter.add_mesh(points, scalars='groups', 
-						point_size=7,
-						render_points_as_spheres=True,
-						cmap='rainbow')
+		if(False):
+			plotter.add_mesh(points, scalars='groups', 
+							point_size=7,
+							render_points_as_spheres=True,
+							cmap='rainbow')
 
 		# Add group centers as black spheres
 		group_centers = self.ws_groupCenter
 		centers_cloud = pv.PolyData(group_centers)
-		plotter.add_mesh(centers_cloud, color='black', point_size=15, render_points_as_spheres=True)
+		plotter.add_mesh(centers_cloud, color='black', point_size=6, render_points_as_spheres=True)
 
 		plotter.add_axes()
 

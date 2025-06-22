@@ -8,7 +8,7 @@ from topopt_structural_benchmarks import *
 import time
 
 
-to_problem = StructuralTOExamples.EdgeCantilever# Choose the TO problem
+to_problem = StructuralTOExamples.LBracketMidLoad # Choose the TO problem
 mesh, mat_prop, bc,elem_body_force, to_params = getStructuralTOProblem(to_problem,nDOFDesired=100000)
 
 

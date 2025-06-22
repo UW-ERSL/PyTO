@@ -129,11 +129,15 @@ def topopt_generalized_optimality_criteria(
 		
 		# Calculate Lagrange multiplier bounds
 		nLocalIter = 0
-		lmid = -np.mean(grad_obj /dcdx[0])
+		lestimate = -np.mean(grad_obj /dcdx[0])
+		if (iter == 0):
+			lmid = lestimate
+		else:
+			lmid = 0.5 * (lestimate + lmid)
 		l1 = 0.1*lmid
 		l2 = 10*lmid		
 		move = 0.2
-		
+	
 		while   (l2 - l1)/((l1+l2)/2+1e-10) > 1e-4:
 			nLocalIter += 1
 			lmid = 0.5 * (l2 + l1)
@@ -143,7 +147,8 @@ def topopt_generalized_optimality_criteria(
 			D = -numer/denom 
 			
 			#D = np.clip(D,0.1,10)
-			xnew = np.maximum(xmin,np.maximum(x - move,np.minimum(xmax, np.minimum(x + move, x * np.sqrt(D)))))
+			xEst = x*np.pow(D,0.5) # square root to avoid large changes
+			xnew = np.maximum(xmin,np.maximum(x - move,np.minimum(xmax, np.minimum(x + move, xEst))))
 			
 			c, _ = compute_constraint_and_gradient(to_params,sol,xnew, fe_solver,KE, material_model)
 			
@@ -152,8 +157,7 @@ def topopt_generalized_optimality_criteria(
 			else:
 				l2 = lmid	# decrease Lagrange multiplier
 		
-		
-		
+
 		x = xnew.copy()
 		xPhys = x.copy()
 		# Estimate the percentage of grey elements
