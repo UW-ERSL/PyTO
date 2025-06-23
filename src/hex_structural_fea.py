@@ -99,9 +99,6 @@ class HexStructuralFEA:
                     self.elem_stiff[0],
                     elem_material_scaling).flatten(order = 'C')
     else:
-      print(f"elem_stiff shape: {self.elem_stiff.shape}")
-      print(f"elem_material_scaling shape: {elem_material_scaling.shape}")
-      print(f"Comppnent ID shape: {self.mesh.elemComponentId.shape}")
       # Multiple materials case (M,N,N)
       elem_stiff_mtrx = np.einsum('mij, m -> mij',
                     self.elem_stiff,
