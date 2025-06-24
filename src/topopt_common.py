@@ -17,7 +17,6 @@ DIRECT_SOLVER_DOF_CUTOFF = 100000 #  dof limit for direct solver, for greater nu
 class TO_METHODS(enum.Enum):
 	DENSITYMMA = enum.auto()
 	DENSITYOCM = enum.auto()
-	DENSITYGOCM = enum.auto()
 	PARETO = enum.auto()
 	LEVELSET = enum.auto()
 
