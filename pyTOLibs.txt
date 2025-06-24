@@ -13,4 +13,5 @@ pip install pyamg
 pip install numba
 pip insyall trimesh
 pip install pymeshfix
+pip install mmapy
 conda install conda-forge::cyipopt
