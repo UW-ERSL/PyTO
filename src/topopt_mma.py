@@ -1,7 +1,6 @@
 from topopt_common import *
 from topopt_material_model import *
 import time
-import mma
 import matplotlib.pyplot as plt
 from mmaWrapper import runMMA
 def topopt_mma(fe_solver, #hex_structural_fea.HexStructuralFEA or hex_thermal_fea.HexThermalFEA
@@ -134,7 +133,7 @@ def topopt_mma(fe_solver, #hex_structural_fea.HexStructuralFEA or hex_thermal_fe
    
 
     [xOptimal,f0val, df0dx, gval, dgdx,nFEAs] = runMMA(nVariables,nConstraints,optimizationFunction,x0,lowerBound,
-			 upperBound, verbose = True)
+			 upperBound, verbose = print_progress)
 
     x = np.asarray(xOptimal).flatten()
     fe_solver.mesh.setPseudoDensity(x)  
@@ -183,7 +182,7 @@ if __name__ == "__main__":
  
     print("-" * 50)
  
-    to_problem = StructuralTOExamples.EdgeCantilever# Choose the TO problem
+    to_problem = StructuralTOExamples.CantileverTipLoad# Choose the TO problem
 
 
     if (to_problem in StructuralTOExamples):

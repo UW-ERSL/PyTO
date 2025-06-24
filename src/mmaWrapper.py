@@ -55,7 +55,7 @@ def runMMA(nVariables,nConstraints,optimizationFunction,X0,lowerBound,
 	
 	xold1 = xval.copy() 
 	xold2 = xval.copy()
-	move = 1.0
+	move = 0.2
 	c = 100 * eeem
 	d = eeem.copy()
 	a0 = 1
