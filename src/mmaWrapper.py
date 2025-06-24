@@ -17,7 +17,8 @@ import numpy as np
 import time
 
 def runMMA(nVariables,nConstraints,optimizationFunction,X0,lowerBound,
-			 upperBound, fErrAcceptable = 1e-4,gErrAcceptable = 1e-4,maxIterations = 250,kktTol = 1e-6,verbose = False):
+			 upperBound, fTolerance = 1e-4,gTolerance = 1e-4,
+			 maxIterations = 250,timeLimitSecs = 3600,move_limit = 0.2,kktTol = 1e-6,verbose = False):
 	'''
 	 Input
 		nVariables: scalar (N)
@@ -55,7 +56,7 @@ def runMMA(nVariables,nConstraints,optimizationFunction,X0,lowerBound,
 	
 	xold1 = xval.copy() 
 	xold2 = xval.copy()
-	move = 0.2
+	move = move_limit
 	c = 100 * eeem
 	d = eeem.copy()
 	a0 = 1
@@ -74,6 +75,7 @@ def runMMA(nVariables,nConstraints,optimizationFunction,X0,lowerBound,
 	f0valPrev = f0val/f0Scaling
 	fErr = 1
 	gErr = 1
+	tStart = time.time()
 	while (kktnorm > kkttol and outit < maxoutit) :
 		outit += 1
 		outeriter += 1
@@ -101,127 +103,21 @@ def runMMA(nVariables,nConstraints,optimizationFunction,X0,lowerBound,
 		timeMMA += time.time() - startTime
 		fErr = np.abs(f0val - f0valPrev) / (1e-10 + np.abs(f0val))
 		gErr = np.max(gval)
-		if (outit > 5 and fErr < fErrAcceptable and gErr < gErrAcceptable):
-			if(verbose):
-				print('Convergence reached with fEerr: ', fErr, ' and max(gval): ', max(gval))
-			break
 		if(verbose):
 			print('iter: {}, f: {:.3e}, max(g): {:.3e}, fErr: {:.3e}'.format(
 				outeriter, f0val if np.isscalar(f0val) else float(f0val), 
 				gErr, fErr))
+		if (fErr < fTolerance and gErr < gTolerance):
+			if(verbose):
+				print(f'Convergence reached with fEerr: {fErr:.3e} and max(gval): f{gErr:.3e}')
+			break
+	
 		f0valPrev = f0val.copy()
+		if (time.time() - tStart > timeLimitSecs):
+			print(f"Time limit of {timeLimitSecs:0.2f} reached, exiting...")
+			break	
 	if(verbose):
-		print("time MMA: ", timeMMA, "time FuncEval: ", timeFuncEval)
+		print(f"MMA (secs):  {timeMMA:0.2f}")
+		print(f"FuncEval (secs): {timeFuncEval:0.2f}")
 
 	return [xval,f0val, df0dx, gval, dgdx,outit]
-
-def sampleFunction1(xval: np.ndarray) -> Tuple[float, np.ndarray, np.ndarray, np.ndarray]:
-	'''
-	Minimize:
-		 x(1)^2 + x(2)^2 + x(3)^2
-	
-	Subject to: 
-		(x(1)-5)^2 + (x(2)-2)^2 + (x(3)-1)^2 <= 9
-		(x(1)-3)^2 + (x(2)-4)^2 + (x(3)-3)^2 <= 9
-		0 <= x(j) <= 5, for j=1,2,3.
-		
-	Note that:
-		f0val: a scalar
-		df0dx: (N,1) array, where N is the number of variables
-		gval: (M,1) array, where M is the number of constraints
-		dgdx: (M,N) array
-	'''
-	f0val = xval[0][0]**2 + xval[1][0]**2 + xval[2][0]**2 # objective
-	df0dx = 2 * xval # gradient of objective
-	
-	gval1 = ((xval.T - np.array([[5, 2, 1]]))**2).sum() - 9
-	gval2 = ((xval.T - np.array([[3, 4, 3]]))**2).sum() - 9
-	gval = np.array([[gval1, gval2]]).T # inequality constraints
-	dgdx1 = 2 * (xval.T - np.array([[5, 2, 1]]))
-	dgdx2 = 2 * (xval.T - np.array([[3, 4, 3]]))
-	dgdx = np.concatenate((dgdx1, dgdx2)) # gradient of inequality constraints
-	return f0val, df0dx, gval, dgdx
-
-def sampleFunction2(xval: np.ndarray) -> Tuple[float, np.ndarray, np.ndarray, np.ndarray]:
-	'''
-	Minimize:
-		sin(x+y) + (x-y)*(x-y) - 1.5*x + 2.5*y +1
-	
-	Subject to: 
-		-1 <= x0 <= 2
-		-2 <= x1 <= 2
-		
-	'''
-	x = xval[0]
-	y = xval[1]
-	f0val = np.sin(x+y) + (x-y)*(x-y) - 1.5*x + 2.5*y +1 # objective
-	df0dx = np.array([np.cos(x+y) + 2*(x-y)- 1.5 ])
-	df0dy = np.array([np.cos(x+y) - 2*(x-y) + 2.5])
-	df0dx = np.concatenate((df0dx, df0dy)) # gradient of objective
-	
-	gval = np.array([[-1]]) # dummy inequality constraints
-	dgdx = np.array([[0,0]]) # gradient of inequality constraints
-	
-	return f0val, df0dx, gval, dgdx
-
-def twoSpringSystem(xval: np.ndarray) -> Tuple[float, np.ndarray, np.ndarray, np.ndarray]:
-	'''
-	Minimize:
-		potential energy of a 2 spring system
-	
-	Subject to: 
-		v - u**3 <=0
-		
-	'''
-	u = xval[0]
-	v = xval[1]
-	L12 = np.sqrt(u*u+(1+v)*(1+v))
-	L13 = np.sqrt(u*u+(1-v)*(1-v))
-	f0val = 0.5*(100*(L12-1)**2 + 50*(L13-1)**2) - (10*u+8*v)
-	df0du = np.array([100.0*u*(np.sqrt(u**2 + (v + 1)**2) - 1)/np.sqrt(u**2 + (v + 1)**2) + 50.0*u*(np.sqrt(u**2 + (1 - v)**2) - 1)/np.sqrt(u**2 + (1 - v)**2) - 10])
-	df0dv = np.array([-8 + 100.0*(v + 1)*(np.sqrt(u**2 + (v + 1)**2) - 1)/np.sqrt(u**2 + (v + 1)**2) + 50.0*(v - 1)*(np.sqrt(u**2 + (1 - v)**2) - 1)/np.sqrt(u**2 + (1 - v)**2)])
-	df0dx = np.concatenate((df0du, df0dv)) # gradient of objective
-	
-	gval = np.array([u**3 -v]) #  inequality constraints
-	dgdx = np.array([[3*u[0]**2,-1]]) # gradient of inequality constraints
-
-	
-	return f0val, df0dx, gval, dgdx
-
-def  thompsonProblem(xval: np.ndarray) -> Tuple[float, np.ndarray, np.ndarray, np.ndarray]:
-	nPoints = int(len(xval)/3)
-	pts = np.reshape(xval,(3,nPoints))
-	f = 0
-	for i in range(nPoints):
-		pt_i = pts[:,i]
-		for j in range(i+1,nPoints):
-			pt_j = pts[:,j]
-			dist = np.sqrt((pt_i[0] - pt_j[0])**2 + \
-					(pt_i[1] - pt_j[1])**2 + \
-					(pt_i[2] - pt_j[2])**2 ) +1e-12# avoid divide by zero
-			f = f + 1/dist
-
-	f0val = [f]
-
-	df0dx = np.zeros((nPoints*3,1))
-	for i in range(nPoints):
-		pt_i = pts[:,i]
-		for j in range(nPoints):
-			if i == j:
-				continue
-			pt_j = pts[:,j]
-			dist = np.sqrt((pt_i[0] - pt_j[0])**2 + (pt_i[1] - pt_j[1])**2 + (pt_i[2] - pt_j[2])**2) + 1e-12
-			grad = -(pt_i - pt_j) / (dist**3)
-			df0dx[3*i:3*i+3,0] += grad
-
-
-	gval = np.zeros((nPoints,1))
-	for i in range(nPoints):
-		gval[i,0] = pts[0,i]*pts[0,i] + pts[1,i]*pts[1,i] + pts[2,i]*pts[2,i] -1
-		
-	dgdx = np.zeros((nPoints, nPoints*3))
-	for i in range(nPoints):
-		dgdx[i,3*i:3*i+3] = 2 * pts[:,i]
-
-	return f0val, df0dx, gval, dgdx
-

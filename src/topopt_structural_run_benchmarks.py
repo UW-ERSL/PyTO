@@ -16,7 +16,6 @@ def runTOMethodOnStructuralBenchmarks(optimizationMethod):
 	results_list = []
 	dsolver = deflation.DeflationSolver()
 
-
 	benchmarks_2_5D_problems = [StructuralTOExamples.Mitchell_1, StructuralTOExamples.Mitchell_2,
 						StructuralTOExamples.Mitchell_3, 
 						StructuralTOExamples.ShortCantileverTipLoad, StructuralTOExamples.ShortCantileverMidLoad,
@@ -45,7 +44,7 @@ def runTOMethodOnStructuralBenchmarks(optimizationMethod):
 						StructuralTOExamples.CentrifugalPlate]
 	
 	
-	for to_problem in benchmarks_3D_problems:
+	for to_problem in benchmarks_2_5D_problems:
 		if to_problem in benchmarks_2_5D_problems:
 			subFolder = "Compliance2.5D"
 		elif to_problem in benchmarks_3D_problems:
@@ -325,7 +324,7 @@ def combine_results():
 if __name__ == "__main__":    
 	
 	optimizationMethods = [TO_METHODS.DENSITYMMA, TO_METHODS.DENSITYOCM,TO_METHODS.PARETO]
-	for optimizationMethod in [TO_METHODS.DENSITYOCM,TO_METHODS.PARETO]:
+	for optimizationMethod in optimizationMethods:
 		runTOMethodOnStructuralBenchmarks(optimizationMethod)
 		print(f"Finished {optimizationMethod.name} tests.")
 		print("-" * 50)

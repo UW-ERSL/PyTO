@@ -5,17 +5,15 @@ import matplotlib.pyplot as plt
 from mmaWrapper import runMMA
 def topopt_mma(fe_solver, #hex_structural_fea.HexStructuralFEA or hex_thermal_fea.HexThermalFEA
                            to_params,
-                           minMMAIterations: int = 5,
                             maxMMAIterations: int = 250, 
-                            timeLimit: float =3600, #1 hour
+                            timeLimitSecs: float =3600, #1 hour
                              move_limit: float = 0.2,
                              kkt_tol: float = 1.e-6,
-                             move_tol: float = 0.05,
-                             rel_conv_tol: float = 1.e-3,
+                             objective_tol: float = 1.e-4,
+                             constraint_tol: float = 1.e-4,
                              print_progress: bool = True,
                             plot_progress: bool = False,
                             binarize_topology: bool = False,    
-                             debug: bool = False,
                              ) -> tuple[np.ndarray, dict]:
     """MMA based topology optimization for minimum compliance.
 
@@ -133,7 +131,8 @@ def topopt_mma(fe_solver, #hex_structural_fea.HexStructuralFEA or hex_thermal_fe
    
 
     [xOptimal,f0val, df0dx, gval, dgdx,nFEAs] = runMMA(nVariables,nConstraints,optimizationFunction,x0,lowerBound,
-			 upperBound, verbose = print_progress)
+			 upperBound, maxIterations = maxMMAIterations,timeLimitSecs= timeLimitSecs, move_limit = move_limit,
+             fTolerance= objective_tol,gTolerance= constraint_tol,kktTol = kkt_tol, verbose = print_progress)
 
     x = np.asarray(xOptimal).flatten()
     fe_solver.mesh.setPseudoDensity(x)  
@@ -182,7 +181,7 @@ if __name__ == "__main__":
  
     print("-" * 50)
  
-    to_problem = StructuralTOExamples.CantileverTipLoad# Choose the TO problem
+    to_problem = StructuralTOExamples.ThreeHoleBracketThick# Choose the TO problem
 
 
     if (to_problem in StructuralTOExamples):
