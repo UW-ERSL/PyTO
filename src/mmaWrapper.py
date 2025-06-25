@@ -11,8 +11,7 @@ of the code written by Arjen Deetman.
 
 # Loading modules
 from __future__ import division
-from mmapy import mmasub, gcmmasub,kktcheck
-from typing import Tuple
+from mmapy import mmasub, kktcheck
 import numpy as np
 import time
 
@@ -109,7 +108,7 @@ def runMMA(nVariables,nConstraints,optimizationFunction,X0,lowerBound,
 				gErr, fErr))
 		if (fErr < fTolerance and gErr < gTolerance):
 			if(verbose):
-				print(f'Convergence reached with fEerr: {fErr:.3e} and max(gval): f{gErr:.3e}')
+				print(f'Convergence reached with fEerr: {fErr:.3e} and max(gval): {gErr:.3e}')
 			break
 	
 		f0valPrev = f0val.copy()

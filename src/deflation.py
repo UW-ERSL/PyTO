@@ -105,7 +105,7 @@ class DeflationSolver:
 
 		# Initialize group data structures
 		nGroupsTentative = nX * nY * nZ
-		#print("Group dimensions:", [nX, nY, nZ])
+		print("Group dimensions:", [nX, nY, nZ])
 		
 		# Calculate group sizes
 		sizeX = xLength / nX
@@ -120,6 +120,7 @@ class DeflationSolver:
 		#print("Number of tentative groups:", nGroupsTentative)
 		
 		# Assign nodes to groups using vectorized operations
+
 		rel_pos = xyz - np.array([xMin, yMin, zMin])
 		indices = np.floor(rel_pos / np.array([sizeX, sizeY, sizeZ])).astype(np.int32)
 		indices = np.minimum(indices, np.array([nX - 1, nY - 1, nZ - 1]))
@@ -205,6 +206,161 @@ class DeflationSolver:
 		#print("Number of deflation groups: ", self.ws_nGroups)
 		return True
 
+	def create_deflation_groups_manual(self, meshData, nGroupsDesired: int):
+		"""Create deflation groups using geometric partitioning.
+
+		This method divides the domain into approximately equal-sized boxes
+		and assigns nodes to groups based on their spatial location. It also
+		handles cases where some groups have too few nodes by merging them
+		with nearby groups.
+
+		Args:
+			meshData: Mesh data object containing node and element information
+			nGroupsDesired (int): Target number of deflation groups
+			
+		Returns:
+			bool: True if grouping was successful
+			
+		Algorithm Steps:
+		1. Calculate domain dimensions and group sizes
+		2. Create initial groups based on spatial coordinates
+		3. Merge small groups with neighbors
+		4. Compute final group centers and counts
+		"""
+		# Limit number of groups based on minimum nodes per group
+		nGroupsDesired = min(nGroupsDesired, 
+						   int(meshData.num_nodes/(1 + self.minNodesPerGroup)))
+		
+		xyz = meshData.node_xyz
+
+		xMin = np.min(xyz[:,0])
+		yMin = np.min(xyz[:,1])
+		zMin = np.min(xyz[:,2])		
+		xLength = np.max(xyz[:,0]) - xMin
+		yLength = np.max(xyz[:,1]) - yMin
+		zLength = np.max(xyz[:,2]) - zMin
+
+		# Calculate group dimensions to achieve desired number of groups
+		temp = xLength * yLength * zLength
+		alpha = (nGroupsDesired / temp) ** (1.0 / 3)
+		
+		nX = max(round(alpha*xLength),1)
+		nY = max(round(alpha*yLength),1)
+		nZ = max(round(alpha*zLength),1)
+	
+		# Initialize group data structures
+		nGroupsTentative = nX * nY * nZ
+		
+		#print("Group dimensions:", [nX, nY, nZ])
+		
+		# Make group lengths slightly increase along X
+		# We'll use a linear scaling: length_x = base_length * (1 + alpha * (i / nX))
+		alpha = 0 # increase from left to right
+		base_sizeX = xLength / (nX * (1 + 0.5 * alpha))  # normalize so total length matches
+
+		sizeX_arr = np.array([base_sizeX * (1 + alpha * (i / max(nX-1,1))) for i in range(nX)])
+		sizeX_cumsum = np.concatenate(([0], np.cumsum(sizeX_arr)))
+		# Now, for each node, find which X group it belongs to
+		x_rel = xyz[:, 0] - xMin
+		x_group = np.searchsorted(sizeX_cumsum, x_rel, side='right') - 1
+		x_group = np.clip(x_group, 0, nX-1)
+		# Y and Z are uniform
+		sizeY = yLength / nY
+		sizeZ = zLength / nZ
+		y_group = np.floor((xyz[:, 1] - yMin) / sizeY).astype(np.int32)
+		y_group = np.clip(y_group, 0, nY-1)
+		z_group = np.floor((xyz[:, 2] - zMin) / sizeZ).astype(np.int32)
+		z_group = np.clip(z_group, 0, nZ-1)
+		indices = np.stack([x_group, y_group, z_group], axis=1)
+	
+		
+		# Initialize arrays for group assignments
+		nodeGroupNumber = np.zeros(meshData.num_nodes, dtype=np.int32)
+		groupCount = np.zeros(nGroupsTentative, dtype=np.int32)
+		groupCenter = np.zeros((nGroupsTentative, 3))
+		
+
+		# Compute group IDs for all nodes at once
+		nodeGroupNumber = (indices[:, 0] + 
+						nX * indices[:, 1] + 
+						nX * nY * indices[:, 2]).astype(np.int32)
+
+		# Count nodes per group using numpy
+		groupCount = np.bincount(nodeGroupNumber, minlength=nGroupsTentative)
+
+		# Compute group centers using vectorized operations
+		groupCenter = np.zeros((nGroupsTentative, 3))
+		for i in range(3):
+			np.add.at(groupCenter[:, i], nodeGroupNumber, xyz[:, i])
+
+		for group in range(nGroupsTentative):
+			if (groupCount[group] > 0):
+				for i in range(3):
+					groupCenter[group,i] /=  groupCount[group] # we will need this for reassignment	
+		# Identify groups with very few nodes
+		groupMapping = np.zeros(nGroupsTentative,dtype = np.int32)
+		currentGroupNumber  = 0
+		for group in range(nGroupsTentative):
+			if (groupCount[group] < self.minNodesPerGroup):
+				groupMapping[group] = -1
+			else:
+				groupMapping[group] = currentGroupNumber
+				currentGroupNumber = currentGroupNumber+1
+		self.ws_nGroups = currentGroupNumber
+		#print("Number of new groups: ", self.ws_nGroups)
+		if (any(groupMapping == -1)):
+			# Find small groups that need reassignment
+			small_groups = np.where((groupMapping == -1) & (groupCount > 0))[0]
+			valid_groups = np.where(groupCount >= self.minNodesPerGroup)[0]
+
+			if len(small_groups) > 0:
+				# Compute distances between all small groups and valid groups at once
+				small_centers = groupCenter[small_groups][:, np.newaxis, :]  # Shape: (n_small, 1, 3)
+				valid_centers = groupCenter[valid_groups][np.newaxis, :, :]  # Shape: (1, n_valid, 3)
+				distances = np.linalg.norm(small_centers - valid_centers, axis=2)  # Shape: (n_small, n_valid)
+				
+				# Find closest valid group for each small group
+				closest_valid_indices = valid_groups[np.argmin(distances, axis=1)]
+				
+				# Update group mapping
+				groupMapping[small_groups] = groupMapping[closest_valid_indices]
+
+			# assign nodes
+			groupCount = np.zeros(self.ws_nGroups,dtype = np.int32)
+			groupCenter = np.zeros((self.ws_nGroups ,3))
+			# Replace the node-by-node loop with vectorized operations
+			valid_nodes = nodeGroupNumber != -1
+			nodeGroupNumber[valid_nodes] = groupMapping[nodeGroupNumber[valid_nodes]]
+
+			# Count nodes per group using numpy
+			groupCount = np.bincount(nodeGroupNumber[valid_nodes], minlength=self.ws_nGroups)
+
+			# Compute group centers using vectorized operations
+			groupCenter = np.zeros((self.ws_nGroups, 3))
+			for i in range(3):
+				np.add.at(groupCenter[:, i], nodeGroupNumber[valid_nodes], xyz[valid_nodes, i])
+			for group in range(self.ws_nGroups):
+				for i in range(3):
+					groupCenter[group,i] /=  groupCount[group] 
+		
+		# Finally copy the data structures
+		self.ws_nodeGroupNumber = nodeGroupNumber
+		self.ws_groupCount = groupCount
+		self.ws_groupCenter = groupCenter
+
+
+		if (any(self.ws_groupCount < self.minNodesPerGroup)):
+			print('Warning: Groups with very few nodes... might lead to numerical issues')
+			print('Smallest group size:', np.min(self.ws_groupCount))
+			input('Continue?')
+
+		if (np.sum(self.ws_groupCount) != meshData.num_nodes):
+			print('Invalid assignment of nodes to groups. Technical bug.')
+			return False
+
+		print("Number of deflation groups: ", self.ws_nGroups)
+		return True
+	
 	def create_deflation_groups_adaptive(self, meshData, nGroupsDesired: int, nodalStrainEnergy: np.ndarray):
 		"""Create deflation groups using geometric partitioning.
 

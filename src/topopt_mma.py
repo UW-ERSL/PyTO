@@ -181,19 +181,19 @@ if __name__ == "__main__":
  
     print("-" * 50)
  
-    to_problem = StructuralTOExamples.ThreeHoleBracketThick# Choose the TO problem
-
+    to_problem = StructuralTOExamples.EdgeCantilever# Choose the TO problem
+    nDOFDesired = 100000
 
     if (to_problem in StructuralTOExamples):
-        mesh, mat_prop, bc,elem_body_force, to_params = getStructuralTOProblem(to_problem)
+        mesh, mat_prop, bc,elem_body_force, to_params = getStructuralTOProblem(to_problem,nDOFDesired=nDOFDesired)
     elif (to_problem in ThermalTOExamples):
-        mesh, mat_prop, bc,elem_body_force, to_params = getThermalTOProblem(to_problem)
+        mesh, mat_prop, bc,elem_body_force, to_params = getThermalTOProblem(to_problem,nDOFDesired=nDOFDesired)
 
     
     print(f"Running {to_problem.name}...") 
     print("-" * 50)
     solver = lin_solv.Solvers.PARDISO # # Choose solver. Typically PARDISO, but DPCG for DOF > 200,000
-    debug = False
+   
 
     dsolver = deflation.DeflationSolver()
     if (to_params.nDOFDesired > DIRECT_SOLVER_DOF_CUTOFF):# Typically PARDISO, but DPCG for large DOF problems
@@ -232,8 +232,7 @@ if __name__ == "__main__":
     
     u, history,success,errorMsg,nFEAs = topopt_mma(fe_solver = fe_solver,
                                 to_params = to_params,
-                                plot_progress = True,
-                                debug = debug)
+                                plot_progress = False)
     timeTaken = time.time() - startTime
     
 
