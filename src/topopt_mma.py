@@ -181,8 +181,8 @@ if __name__ == "__main__":
  
     print("-" * 50)
  
-    to_problem = StructuralTOExamples.EdgeCantilever# Choose the TO problem
-    nDOFDesired = 100000
+    to_problem = StructuralTOExamples.LBracketTopLoad# Choose the TO problem
+    nDOFDesired = 1000000
 
     if (to_problem in StructuralTOExamples):
         mesh, mat_prop, bc,elem_body_force, to_params = getStructuralTOProblem(to_problem,nDOFDesired=nDOFDesired)
