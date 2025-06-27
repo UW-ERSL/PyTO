@@ -12,7 +12,7 @@ def runTOMethodOnStructuralBenchmarks(optimizationMethod):
 	# Create a list to store results
 
 	saveVTU = False  # Set to True if you want to save the VTU files for MMA method
-
+	binarize_topology = True  # Set to True if you want to binarize the topology for MMA/OCM method
 	results_list = []
 	dsolver = deflation.DeflationSolver()
 
@@ -81,12 +81,12 @@ def runTOMethodOnStructuralBenchmarks(optimizationMethod):
 					elem_body_force = elem_body_force)
 		
 		if optimizationMethod == TO_METHODS.DENSITYMMA:
-			u, history,success,errorMsg,nFEAs = topopt_mma(fe_solver = fe_solver,
+			u, history,success,errorMsg,nFEAs = topopt_mma(fe_solver = fe_solver,binarize_topology = binarize_topology,
 									to_params = to_params,print_progress = print_progress)
 		elif optimizationMethod == TO_METHODS.DENSITYOCM:
 			if to_problem in benchmarks_noncompliance_problems:
 				continue
-			u, history, success,errorMsg,nFEAs = topopt_optimality_criteria(fe_solver = fe_solver,
+			u, history, success,errorMsg,nFEAs = topopt_optimality_criteria(fe_solver = fe_solver,binarize_topology = binarize_topology,
 											to_params = to_params,print_progress = print_progress)
 		elif optimizationMethod == TO_METHODS.PARETO:
 			if to_problem in benchmarks_noncompliance_problems:

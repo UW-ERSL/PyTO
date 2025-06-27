@@ -13,7 +13,7 @@ def topopt_mma(fe_solver, #hex_structural_fea.HexStructuralFEA or hex_thermal_fe
                              constraint_tol: float = 1.e-4,
                              print_progress: bool = True,
                             plot_progress: bool = False,
-                            binarize_topology: bool = False,    
+                            binarize_topology: bool = True,    
                              ) -> tuple[np.ndarray, dict]:
     """MMA based topology optimization for minimum compliance.
 
@@ -181,7 +181,7 @@ if __name__ == "__main__":
  
     print("-" * 50)
  
-    to_problem = StructuralTOExamples.TorquePlate# Choose the TO problem
+    to_problem = StructuralTOExamples.CantileverMidLoad# Choose the TO problem
     nDOFDesired = 25000
 
     if (to_problem in StructuralTOExamples):

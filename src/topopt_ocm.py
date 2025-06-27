@@ -9,11 +9,11 @@ def topopt_optimality_criteria(
 			  				maxIterations: int = 250,
 							move: float = 0.2,
 							move_tol: float = 0.05,
-							rel_conv_tol: float = 1.e-3,
+							rel_conv_tol: float = 1.e-4,
 							print_progress: bool = True,
 							plot_progress: bool = False,
 							debug: bool = False,
-							binarize_topology: bool = False,
+							binarize_topology: bool = True,
 							) -> tuple[np.ndarray, dict]:
 	"""Optimality Criteria based topology optimization for minimum compliance.
 
