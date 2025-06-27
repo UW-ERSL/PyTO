@@ -103,7 +103,7 @@ def topopt_mma(fe_solver, #hex_structural_fea.HexStructuralFEA or hex_thermal_fe
             grad_obj +=  2*ce_body_force*get_material_model_rho_sensitivity(x,material_model)
 
         if (to_params.APPLY_FILTER_TO_SENSITIVITY) and (to_params.Objective[0] is TO_QOI.COMPLIANCE):
-            grad_obj = (H *(x* grad_obj))/Hs/x # apply weighted filter
+            grad_obj = (H *(x*grad_obj))/Hs/x # apply weighted filter
         elif (to_params.APPLY_FILTER_TO_SENSITIVITY) and (to_params.Objective[0] is not TO_QOI.VOLUME_FRACTION):
             grad_obj = (H *(grad_obj))/Hs # apply regular filter
         if (elemsWithForces.size > 0):
@@ -181,8 +181,8 @@ if __name__ == "__main__":
  
     print("-" * 50)
  
-    to_problem = StructuralTOExamples.LBracketTopLoad# Choose the TO problem
-    nDOFDesired = 1000000
+    to_problem = StructuralTOExamples.TorquePlate# Choose the TO problem
+    nDOFDesired = 25000
 
     if (to_problem in StructuralTOExamples):
         mesh, mat_prop, bc,elem_body_force, to_params = getStructuralTOProblem(to_problem,nDOFDesired=nDOFDesired)
@@ -232,7 +232,7 @@ if __name__ == "__main__":
     
     u, history,success,errorMsg,nFEAs = topopt_mma(fe_solver = fe_solver,
                                 to_params = to_params,
-                                plot_progress = False)
+                                plot_progress = True)
     timeTaken = time.time() - startTime
     
 

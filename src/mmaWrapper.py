@@ -61,9 +61,7 @@ def runMMA(nVariables,nConstraints,optimizationFunction,X0,lowerBound,
 	a0 = 1
 	a = zerom.copy()
 	outeriter = 0
-	# Calculate function values and gradients of the objective and constraints functions
-	if outeriter == 0:
-		f0val, df0dx, gval, dgdx = optimizationFunction(xval)
+	f0val, df0dx, gval, dgdx = optimizationFunction(xval)
 
 	# The iterations start
 	kktnorm = kkttol + 10
