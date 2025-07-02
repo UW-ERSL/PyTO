@@ -48,9 +48,15 @@ class TetMesher:
         tet = tetgen.TetGen(surf)
 
         if (mergeFacets):
-            nodes, elements = tet.tetrahedralize(switches=f"pq1.5a{max_tet_volume}Q",bgmesh = bgmesh)
+            if (bgmesh is None):
+                nodes, elements = tet.tetrahedralize(switches=f"pq1.5a{max_tet_volume}Q")
+            else:
+                nodes, elements = tet.tetrahedralize(switches=f"pq1.5a{max_tet_volume}mQ",bgmesh = bgmesh)
         else:
-            nodes, elements = tet.tetrahedralize(switches=f"pq1.5a{max_tet_volume}QM",bgmesh = bgmesh)
+            if (bgmesh is None):
+                nodes, elements = tet.tetrahedralize(switches=f"pq1.5a{max_tet_volume}QM")
+            else:
+                nodes, elements = tet.tetrahedralize(switches=f"pq1.5a{max_tet_volume}mQM",bgmesh = bgmesh)
         self.node_xyz = nodes
         self.origin = np.min(self.node_xyz, axis=0)
         self.elems = elements
