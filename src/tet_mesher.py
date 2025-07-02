@@ -10,7 +10,7 @@ class TetMesher:
         self.num_nodes = 0
         self.num_elems = 0
     
-    def createTetMeshFromSTLFile(self, stlFileName: str, mergeFacets = True, nElemsDesired: int = 10000):
+    def createTetMeshFromSTLFile(self, stlFileName: str, mergeFacets = True, nElemsDesired: int = 10000, bgmesh = None):
         """
         Create a tetrahedral mesh from an STL file.
         This function reads an STL file, cleans and repairs the surface, and generates a tetrahedral mesh
@@ -48,9 +48,9 @@ class TetMesher:
         tet = tetgen.TetGen(surf)
 
         if (mergeFacets):
-            nodes, elements = tet.tetrahedralize(switches=f"pq1.5a{max_tet_volume}Q")
+            nodes, elements = tet.tetrahedralize(switches=f"pq1.5a{max_tet_volume}Q",bgmesh = bgmesh)
         else:
-            nodes, elements = tet.tetrahedralize(switches=f"pq1.5a{max_tet_volume}QM")
+            nodes, elements = tet.tetrahedralize(switches=f"pq1.5a{max_tet_volume}QM",bgmesh = bgmesh)
         self.node_xyz = nodes
         self.origin = np.min(self.node_xyz, axis=0)
         self.elems = elements
