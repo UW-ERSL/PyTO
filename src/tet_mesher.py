@@ -87,6 +87,15 @@ class TetMesher:
         self.num_nodes = len(self.node_xyz)
         self.num_elems = len(self.elems)
         print(f"Tetmesh: Number of nodes: {self.num_nodes}, Number of elements: {self.num_elems}")
+        # Compute total mesh volume by summing volumes of all tetrahedra
+        def tet_volume(a, b, c, d):
+            return abs(np.dot((a - d), np.cross((b - d), (c - d)))) / 6.0
+
+        volumes = np.array([
+            tet_volume(self.node_xyz[e[0]], self.node_xyz[e[1]], self.node_xyz[e[2]], self.node_xyz[e[3]])
+            for e in self.elems
+        ])
+        self.volume = np.sum(volumes)
 
         self.createSurfaceMesh()
     
@@ -343,7 +352,7 @@ class TetMesher:
         dist = np.linalg.norm(nodes, axis=1)
         return np.where((dist >= innerRadius) & (dist <= outerRadius))[0]
     
-    def getNodesOnBoundingBoxPlane(self, axis: int, min_limit: bool): # WRITTEN BY GAURAV DEODHARE
+    def getNodesOnBoundingBoxPlane(self, axis: int, min_limit: bool): 
         """
         Get the nodes on a bounding box plane for the tetrahedral mesh.
 
@@ -366,7 +375,7 @@ class TetMesher:
 
         return nodes_on_plane
 
-    def get_nodes_within_radius(self, pt: np.ndarray, r: float) -> np.ndarray: # WRITTEN BY GAURAV DEODHARE
+    def get_nodes_within_radius(self, pt: np.ndarray, r: float) -> np.ndarray: 
             """Find nodes within a given radius from a point.
             
             Args:
@@ -382,7 +391,8 @@ class TetMesher:
             # Find nodes within the radius (compare squared distances to squared radius)
             nodes_within_radius = np.where(distances_sq <= r**2)[0]
             return nodes_within_radius
-    def get_boundary_nodes(self) -> np.ndarray: # WRITTEN BY GAURAV DEODHARE
+    
+    def get_boundary_nodes(self) -> np.ndarray: 
         """
         Find nodes that lie on the boundary of a tetrahedral mesh.
 
@@ -396,44 +406,80 @@ class TetMesher:
         boundary_nodes = np.unique(self.surface_triangles.flatten())
         return boundary_nodes
 
-    
-    def get_element_containing_point(self, point: np.ndarray) -> tuple: # WRITTEN BY GAURAV DEODHARE
-        """Find the element that contains the given point in a tetrahedral mesh and compute its shape functions.
+    # def get_element_containing_point(self, point: np.ndarray) -> tuple: 
+    #     """Find the element that contains the given point in a tetrahedral mesh and compute its shape functions.
         
+    #     Args:
+    #         point: Array of shape (3,) containing x, y, z coordinates.
+            
+    #     Returns:
+    #         tuple: (Index of the element containing the point, Shape function values at the point),
+    #             or (-1, None) if no element is found.
+    #     """
+    #     # Iterate through all elements to find the one containing the point
+    #     for elem_idx, elem_nodes in enumerate(self.elems):
+    #         # Get vertices of the tetrahedron
+    #         vertices = self.node_xyz[elem_nodes]  # Shape: (4, 3)
+
+    #         # Compute the matrix for barycentric coordinates
+    #         bary_matrix = np.vstack([
+    #             vertices.T,
+    #             np.ones((1, 4))
+    #         ])  # Shape: (4, 4)
+
+    #         # Add the point to compute barycentric coordinates
+    #         point_extended = np.append(point, 1)
+            
+    #         # Solve for barycentric coordinates
+    #         try:
+    #             bary_coords = np.linalg.solve(bary_matrix, point_extended)
+    #         except np.linalg.LinAlgError:
+    #             continue  # Skip elements with degenerate tetrahedra
+
+    #         # Check if all barycentric coordinates are between 0 and 1 (inclusive)
+    #         if np.all(bary_coords >= 0) and np.all(bary_coords <= 1):
+    #             # Compute shape function values (they are equal to barycentric coordinates for tet4)
+    #             shape_functions = bary_coords
+    #             return elem_idx, shape_functions
+
+    #     return -1, None  # No containing element foun
+    
+    def get_element_containing_point(self, point: np.ndarray) -> tuple: 
+        """Efficiently find the element containing a point in a tetrahedral mesh and compute its shape functions.
+
         Args:
             point: Array of shape (3,) containing x, y, z coordinates.
-            
+
         Returns:
             tuple: (Index of the element containing the point, Shape function values at the point),
                 or (-1, None) if no element is found.
         """
-        # Iterate through all elements to find the one containing the point
-        for elem_idx, elem_nodes in enumerate(self.elems):
-            # Get vertices of the tetrahedron
+        # Use a bounding box filter to reduce candidate elements
+        point = np.asarray(point)
+        bbox_min = np.min(self.node_xyz[self.elems], axis=1)
+        bbox_max = np.max(self.node_xyz[self.elems], axis=1)
+        in_bbox = np.all((point >= bbox_min) & (point <= bbox_max), axis=1)
+        candidate_indices = np.where(in_bbox)[0]
+
+        for elem_idx in candidate_indices:
+            elem_nodes = self.elems[elem_idx]
             vertices = self.node_xyz[elem_nodes]  # Shape: (4, 3)
-
-            # Compute the matrix for barycentric coordinates
-            bary_matrix = np.vstack([
-                vertices.T,
-                np.ones((1, 4))
-            ])  # Shape: (4, 4)
-
-            # Add the point to compute barycentric coordinates
-            point_extended = np.append(point, 1)
-            
-            # Solve for barycentric coordinates
+            # Compute barycentric coordinates
+            T = np.hstack((vertices[1:] - vertices[0], np.eye(3)))
             try:
-                bary_coords = np.linalg.solve(bary_matrix, point_extended)
+                # Solve for barycentric coordinates (lambda1, lambda2, lambda3)
+                lambdas = np.linalg.solve((vertices[1:] - vertices[0]).T, (point - vertices[0]))
+                bary_coords = np.empty(4)
+                bary_coords[0] = 1 - np.sum(lambdas)
+                bary_coords[1:] = lambdas
             except np.linalg.LinAlgError:
-                continue  # Skip elements with degenerate tetrahedra
-
-            # Check if all barycentric coordinates are between 0 and 1 (inclusive)
-            if np.all(bary_coords >= 0) and np.all(bary_coords <= 1):
-                # Compute shape function values (they are equal to barycentric coordinates for tet4)
-                shape_functions = bary_coords
-                return elem_idx, shape_functions
+                continue  # Skip degenerate tets
+            if np.all(bary_coords >= -1e-10) and np.all(bary_coords <= 1 + 1e-10):
+                return elem_idx, bary_coords
 
         return -1, None  # No containing element found
+    
+
     def get_surface_triangles_within_annular_region(self, centerPt, axis, innerRadius, outerRadius):
         # Get the surface triangles within the annular region defined by the center point, axis, and radii
         axis = axis / np.linalg.norm(axis)
@@ -452,17 +498,17 @@ class TetMesher:
         return surface_tri_indices
     
     def get_surface_triangles_on_bounding_box(self,  axis_dir = 0, min_plane = True):
-        # Get the surface triangles within the annular region defined by the center point, axis, and radii
-        nodes = self.node_xyz
+        
+        nodes_xyz = self.node_xyz
         
         if (min_plane):
-            ref_val = np.min(nodes[:,axis_dir])
+            ref_val = np.min(nodes_xyz[:,axis_dir])
         else:
-            ref_val = np.max(nodes[:,axis_dir])
-        # Find surface triangles where all three nodes are within the annular region
+            ref_val = np.max(nodes_xyz[:,axis_dir])
+
         surface_tri_indices = []
         for i, tri in enumerate(self.surface_triangles):
-            if all(abs(nodes[node,axis_dir]-ref_val)<1e-10 for node in tri):
+            if all(abs(nodes_xyz[node,axis_dir]-ref_val)<1e-10 for node in tri):
                 surface_tri_indices.append(i)
         return surface_tri_indices
     
