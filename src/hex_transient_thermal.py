@@ -93,7 +93,7 @@ class HexTransientThermalFEA:
         K = self.K_mtrx
         C = self.C_mtrx
         A = K + C/dt
-        for timeIndex in range(1,time_steps):
+        for timeIndex in range(time_steps):
             print(f"Time step {timeIndex}/{time_steps}")
             heatFluxApplied = heat_flux_func(timeIndex, self.deltaTime, self.mesh)
             if timeIndex == 0:
