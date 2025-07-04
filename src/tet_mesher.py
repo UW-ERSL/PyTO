@@ -10,7 +10,7 @@ class TetMesher:
         self.num_nodes = 0
         self.num_elems = 0
     
-    def createTetMeshFromSTLFile(self, stlFileName: str, mergeFacets = True, nElemsDesired: int = 10000, bgmesh = None):
+    def createTetMeshFromSTLFile(self, stlFileName: str, mergeFacets = True, nElemsDesired: int = 10000, elemSizeFunction = None):
         """
         Create a tetrahedral mesh from an STL file.
         This function reads an STL file, cleans and repairs the surface, and generates a tetrahedral mesh
@@ -19,7 +19,7 @@ class TetMesher:
         stlFileName (str): The path to the STL file.
         nElemsDesired (int, optional): The desired number of tetrahedral elements. Default is 10000.
         Attributes:
-        self.stlMesh (pyvista.PolyData): The cleaned and repaired STL surface mesh.
+        self.stlGeom (pyvista.PolyData): The cleaned and repaired STL surface mesh.
         self.node_xyz (numpy.ndarray): The array of node coordinates.
         self.elems (numpy.ndarray): The array of tetrahedral elements.
         self.num_nodes (int): The number of nodes in the mesh.
@@ -32,9 +32,9 @@ class TetMesher:
         Average element size.
         """
 
-        self.stlMesh = pv.read(stlFileName)
+        self.stlGeom = pv.read(stlFileName)
         # Clean and repair the STL surface
-        surf = self.stlMesh.clean()
+        surf = self.stlGeom.clean()
 
         # Calculate approximate volume constraint based on desired number of elements
         total_volume = surf.volume
@@ -46,6 +46,30 @@ class TetMesher:
 
         # Generate tetrahedral mesh with target number of cells and quality constraints
         tet = tetgen.TetGen(surf)
+
+        # If an element size function is provided, use it to create a background mesh
+        if elemSizeFunction is not None:
+            resolution = 10
+        
+            x_min, x_max, y_min, y_max, z_min, z_max = self.stlGeom.bounds
+
+            x_vals = np.linspace(x_min, x_max, resolution)
+            y_vals = np.linspace(y_min, y_max, resolution)
+            z_vals = np.linspace(z_min, z_max, resolution)
+            grid_x, grid_y, grid_z = np.meshgrid(x_vals, y_vals, z_vals, indexing="ij")
+
+            # Create structured grid
+            bgmesh = pv.StructuredGrid(grid_x, grid_y, grid_z).triangulate()
+
+            # Compute target size field
+            sizes = np.zeros(bgmesh.n_points)
+            for i in range(bgmesh.n_points):
+                pt = bgmesh.points[i, :3]
+                sizes[i] = elemSizeFunction(pt)
+            bgmesh.point_data["target_size"] = sizes
+
+        else:
+            bgmesh = None
 
         if (mergeFacets):
             if (bgmesh is None):
@@ -471,15 +495,25 @@ class TetMesher:
         
 if __name__ == "__main__":
     import os
+
+    def cube_size_function_constant(pt):
+        # Example size function that returns a constant size
+        return 0.1
+    
+    def cube_size_function_linear(pt):
+        # Example size function that returns a constant size
+        z_min = 0.0
+        z_max = 1.0
+        z = pt[2]
+        size = 0.1 + (0.02 - 0.1) * (z - z_min) / (z_max - z_min)
+        size = np.clip(size, 0.02, 0.1)
+        return size
+
+    
     tetmesh = TetMesher()
     script_dir = os.path.dirname(os.path.abspath(__file__))
-    # stlFileName = os.path.join(script_dir, '../Models/Overhang/Overhang.STL')
-    # tetmesh.createTetMeshFromSTLFile(stlFileName, nElemsDesired=20000)
-    # tetmesh.plot()
-    stlFileName = os.path.join(script_dir, '../Models/Overhang/OverhangSplitLine.STL')
-    tetmesh.createTetMeshFromSTLFile(stlFileName, nElemsDesired=20000,mergeFacets=False)
+    stlFileName = os.path.join(script_dir, '../Models/Cube/Cube.STL')
+    tetmesh.createTetMeshFromSTLFile(stlFileName, nElemsDesired=20000,mergeFacets=False, elemSizeFunction=cube_size_function_linear)
     tetmesh.plot()
    
-
-
 
