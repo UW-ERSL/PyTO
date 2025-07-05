@@ -524,15 +524,14 @@ class TetMesher:
         
         # Compute scale factor for axes labels if needed
         max_val = np.abs(self.node_xyz).max()
-        if max_val > 1e4:
-            scale = 1e-3
-            unit = " (*0.001)"
-        elif max_val < 1e-2 and max_val > 0:
-            scale = 1e3
-            unit = " (*1000)"
-        else:
-            scale = 1.0
-            unit = ""
+        scale = 1.0
+        unit = ""
+        if max_val > 0:
+            # Round to the closest lower power of 10 for scaling
+            exp = int(np.floor(np.log10(max_val)))
+            scale = 10 ** (-exp)
+            unit = f" (* {1/scale:.2e})"
+        
         labels = [
             f"X {unit}",
             f"Y {unit}",
@@ -545,9 +544,11 @@ class TetMesher:
         p.show_grid(
             xtitle=labels[0], ytitle=labels[1], ztitle=labels[2]
         )
+        print(f"Number of nodes: {self.num_nodes}, Number of elements: {self.num_elems}") 
+        p.add_title(f"{title} (Nodes: {self.num_nodes}, Elems: {self.num_elems})", font_size=10)
         p.show_axes()
         p.show()
-        print(f"Number of nodes: {self.num_nodes}, Number of elements: {self.num_elems}") 
+        
 
     def plotField(self, field, show_edges =  True, show_scalar_bar = True, show_grid = False):
         plotter = pv.UnstructuredGrid({pv.CellType.TETRA: self.elems}, self.node_xyz)
