@@ -72,7 +72,7 @@ class TetTransientThermalFEA:
                                 shape=(self.bc.num_dofs, self.bc.num_dofs))
     
 
-    def solve_newmark(self, time_steps: int, heat_flux_func, callback=None) -> np.ndarray:
+    def solve_newmark(self, time_steps: int, heat_flux_func, callback=None,beta = 1) -> np.ndarray:
         """
         Solves the transient thermal problem using the Newmark method.
         Parameters:
@@ -100,19 +100,21 @@ class TetTransientThermalFEA:
         self.assemble_global_stiffness_matrices()
         K = self.K_mtrx
         C = self.C_mtrx
-        A = K + C/dt
+        Keff = beta*K + C/dt
+        B = -(1 - beta)*K + C/dt
         for timeIndex in range(time_steps):
             if (callback is None):
                 print(f"Time step {timeIndex} / {time_steps-1}")
-            heatFluxApplied = heat_flux_func(timeIndex, self.deltaTime, self.mesh)
+            F = heat_flux_func(timeIndex, self.deltaTime, self.mesh)
             if timeIndex == 0:
-                b = heatFluxApplied
+                Feff = F
             else:
-                b = self.C_mtrx @ self.u[:, timeIndex-1]/self.deltaTime + heatFluxApplied
-            self.u[:, timeIndex] = lin_sol.solve(A, b, self.solver, self.bc)
+                Feff = B @ self.u[:, timeIndex-1] + (1-beta)*FPrev + beta*F
+            self.u[:, timeIndex] = lin_sol.solve(Keff, Feff, self.solver, self.bc)
+            FPrev = F.copy()
             if callback:
                 callback(timeIndex, self.u[:, timeIndex])
-                
+            
         return self.u
 
 if __name__ == "__main__":
