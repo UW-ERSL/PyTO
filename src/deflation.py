@@ -255,7 +255,7 @@ class DeflationSolver:
 		
 		# Make group lengths slightly increase along X
 		# We'll use a linear scaling: length_x = base_length * (1 + alpha * (i / nX))
-		alpha = 0 # increase from left to right
+		alpha = 1 # increase from left to right
 		base_sizeX = xLength / (nX * (1 + 0.5 * alpha))  # normalize so total length matches
 
 		sizeX_arr = np.array([base_sizeX * (1 + alpha * (i / max(nX-1,1))) for i in range(nX)])
@@ -739,7 +739,7 @@ class DeflationSolver:
 			p = z + beta * p - W @ mu
 			
 			rz = rz_new
-		#print("Deflated PCG iterations:", iter_num + 1)
+		print("Deflated PCG iterations:", iter_num + 1)
 		if (iter_num == maxIters - 1):
 			print("Warning: Maximum iterations reached in DPCG; relative residual:", np.sqrt(rz_new/rz0))
 		return x
