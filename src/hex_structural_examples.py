@@ -2013,9 +2013,10 @@ def createKnuckleAssemblyProblem(nDOFDesired: int = 10000, youngs_modulus = [2e1
 
   # There are 2 components in the assembly
   # Assign material properties to each component
-  mat_prop = 2*[None]
-  mat_prop[0] = mat_lib.get_material("Steel") # Knuckle
-  mat_prop[1] = mat_lib.get_material("Aluminum")# Shaft
+  steel = mat_lib.get_material("Steel")
+  aluminum = mat_lib.get_material("Aluminum")
+  mat_prop = [steel if cid == 1 else aluminum for cid in mesh.elemComponentId]
+
   elem_body_force = None
   return mesh, mat_prop, bc, elem_body_force
 
