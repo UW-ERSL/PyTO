@@ -181,7 +181,7 @@ if __name__ == "__main__":
  
     print("-" * 50)
  
-    to_problem = StructuralTOExamples.CantileverMidLoad# Choose the TO problem
+    to_problem = StructuralTOExamples.LBracketMidLoadStressObjective# Choose the TO problem
     nDOFDesired = 25000
 
     if (to_problem in StructuralTOExamples):

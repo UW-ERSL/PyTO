@@ -347,13 +347,14 @@ class STLGeom:
         }
         return triangle_data
     
-    def plotGeometry(self, show_edges=False, show_axes=True, show_bounding_box=True):
+    def plotGeometry(self, show_edges=False, show_axes=True, show_bounding_box=True,plotter = None):
          # Create a PyVista mesh from the STL data
         vertices = self.mesh.vectors.reshape(-1, 3)
         faces = np.arange(len(vertices)).reshape(-1, 3)
         faces = np.column_stack((np.full(len(faces), 3), faces))
         mesh = pv.PolyData(vertices, faces)
-        plotter = pv.Plotter()
+        if (plotter is None):
+            plotter = pv.Plotter()
         plotter.add_mesh(mesh, show_edges=show_edges)
         if show_axes:
             plotter.add_axes()
