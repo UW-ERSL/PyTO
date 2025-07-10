@@ -175,10 +175,11 @@ class TetStructuralFEA:
     
     return 
 
-  def plot_deformation(self):
+  def plot_deformation(self,plotter=None):
     """Plot the deformed shape of the mesh."""
     # Create a PyVista plotter
-    plotter = pv.Plotter()
+    if plotter is None:
+        plotter = pv.Plotter()
     # Create a PyVista mesh from the tetrahedral mesh
     pv_mesh = pv.UnstructuredGrid({pv.CellType.TETRA: self.mesh.elems[:,0:4]}, self.mesh.node_xyz)
     

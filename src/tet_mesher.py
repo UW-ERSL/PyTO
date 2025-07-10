@@ -520,7 +520,7 @@ class TetMesher:
                 surface_tri_indices.append(i)
         return surface_tri_indices
 
-    def plot(self, title='Tet Mesh'):
+    def plot(self, title='Tet Mesh',plotter = None):
         
         # Compute scale factor for axes labels if needed
         max_val = np.abs(self.node_xyz).max()
@@ -538,17 +538,17 @@ class TetMesher:
             f"Z {unit}"
         ]
         # Plot with scaled axes labels
-        p = pv.Plotter()
+        if plotter is None:
+            plotter = pv.Plotter()
         plotter = pv.UnstructuredGrid({pv.CellType.TETRA: self.elems}, scale*self.node_xyz)
-        p.add_mesh(plotter, show_edges=True)
-        p.show_grid(
+        plotter.add_mesh(plotter, show_edges=True)
+        plotter.show_grid(
             xtitle=labels[0], ytitle=labels[1], ztitle=labels[2]
         )
         print(f"Number of nodes: {self.num_nodes}, Number of elements: {self.num_elems}") 
-        p.add_title(f"{title} (Nodes: {self.num_nodes}, Elems: {self.num_elems})", font_size=10)
-        p.show_axes()
-        p.show()
-        
+        plotter.add_title(f"{title} (Nodes: {self.num_nodes}, Elems: {self.num_elems})", font_size=10)
+        plotter.show_axes()
+        plotter.show()
 
     def plotField(self, field, show_edges =  True, show_scalar_bar = True, show_grid = False):
         plotter = pv.UnstructuredGrid({pv.CellType.TETRA: self.elems}, self.node_xyz)

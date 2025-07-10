@@ -228,7 +228,7 @@ class HexStructuralFEA:
       return 
 #################################################################
   def plot_mesh(self, title = None,plot_bc = True,rel_arrow_scale = 0.5, 
-                auto_close = True, save_path=None,offsetArrow = False,transparency = 1.0):
+                auto_close = True, save_path=None,offsetArrow = False,transparency = 1.0, plotter=None):
     
     self.pyVistaPlotter.clear()
     if (title is None):
@@ -278,18 +278,18 @@ class HexStructuralFEA:
     # Add density values to cells
     pv_mesh.cell_data['density'] = face_densities
 
-    # Create plotter
-
-    if save_path is  None:
-      plotter = self.pyVistaPlotter 
-      if plotter.iren is None:
-        self.create_pyvista_plotter()
-        plotter = self.pyVistaPlotter 
-        plotter.show(interactive_update=True, auto_close=False)
-    else:
-      plotter = pv.Plotter(off_screen=True) # for saving images
-      plotter.camera_position =self.camera_position
-      plotter.enable_anti_aliasing()
+    if (plotter is None):
+      # Create plotter
+      if save_path is None:
+        plotter = self.pyVistaPlotter
+        if plotter.iren is None:
+          self.create_pyvista_plotter()
+          plotter = self.pyVistaPlotter 
+          plotter.show(interactive_update=True, auto_close=False)
+      else:
+        plotter = pv.Plotter(off_screen=True) # for saving images
+        plotter.camera_position =self.camera_position
+        plotter.enable_anti_aliasing()
     
     plotter.add_title(title, font_size=8)
   
@@ -366,7 +366,7 @@ class HexStructuralFEA:
     self.camera_position = plotter.camera_position # For all future displays
     return
 ################################################################# 
-  def plot_deformation(self,auto_close = True, save_path=None):
+  def plot_deformation(self,auto_close = True, save_path=None, plotter=None):
     """Plot the deformed mesh with the deformation scaled by a factor."""
     # Return if no solution exists yet
     if not hasattr(self, 'sol'):
@@ -431,16 +431,17 @@ class HexStructuralFEA:
     # Add density values to cells
     pv_mesh.cell_data['density'] = face_densities
 
-    # Create plotter
-    save_path = None
-    if save_path is  None:
-      plotter = self.pyVistaPlotter 
-      if plotter.iren is None:
-        self.create_pyvista_plotter()
+    if plotter is None:
+      # Create plotter
+      save_path = None
+      if save_path is  None:
         plotter = self.pyVistaPlotter 
-        plotter.show(interactive_update=True, auto_close=False)
-    else:
-      plotter = pv.Plotter(off_screen=True)
+        if plotter.iren is None:
+          self.create_pyvista_plotter()
+          plotter = self.pyVistaPlotter 
+          plotter.show(interactive_update=True, auto_close=False)
+      else:
+        plotter = pv.Plotter(off_screen=True)
     
     plotter.add_title(f'Deformation scale: {scale:.2g}', font_size=8)
     # Add mesh to plotter
@@ -491,7 +492,7 @@ class HexStructuralFEA:
             colormap = 'jet',
             auto_close = True,
             fontsize=10,
-            cross_section=None):  # New parameter for cross-section
+            cross_section=None, plotter = None):  # New parameter for cross-section
     """Plot element field on the mesh.
     
     Args:
@@ -535,15 +536,15 @@ class HexStructuralFEA:
     # Add field data to cell data
     pv_mesh.cell_data['field'] = filtered_field
 
-    # Create plotter
-    if save_path is None:
-      plotter = self.pyVistaPlotter 
-      if plotter.iren is None:
-        self.create_pyvista_plotter()
-        plotter = self.pyVistaPlotter
-
-    else:
-      plotter = pv.Plotter(off_screen=True)
+    if plotter is None:
+      # Create plotter
+      if save_path is None:
+        plotter = self.pyVistaPlotter 
+        if plotter.iren is None:
+          self.create_pyvista_plotter()
+          plotter = self.pyVistaPlotter
+      else:
+        plotter = pv.Plotter(off_screen=True)
 
     # If cross-section is specified, create a clipped mesh
     if cross_section is not None:
@@ -655,7 +656,7 @@ class HexStructuralFEA:
 if __name__ == "__main__":    
   from hex_structural_examples import StructuralExamples,getStructuralProblem
 
-  problem = StructuralExamples.KnuckleAssembly
+  problem = StructuralExamples.LBracketThick
   nDOFDesired = 100000
   mesh, mat_prop, bc,elem_body_force = getStructuralProblem(problem,nDOFDesired = nDOFDesired)
   solver = linear_solvers.Solvers.DPCG # typically DPCG or PARDISO

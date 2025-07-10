@@ -130,20 +130,24 @@ class TetThermalFEA:
     self.sol = u.copy()
     return u
   
-  def plotTemperature(self, show_edges =  True, show_scalar_bar = True, show_grid = False):
-    plotter = pv.UnstructuredGrid({pv.CellType.TETRA: self.mesh.elems}, self.mesh.node_xyz)
-    plotter.point_data["field"] = self.sol
+  def plotTemperature(self, show_edges =  True, show_scalar_bar = True, show_grid = False,plotter=None):
+    if plotter is None:
+        plotter = pv.Plotter()
+    pv_mesh = pv.UnstructuredGrid({pv.CellType.TETRA: self.mesh.elems}, self.mesh.node_xyz)
+    
+    pv_mesh.point_data["field"] = self.sol
     # Some common alternatives:
-    plotter.plot(show_edges=show_edges, show_scalar_bar=show_scalar_bar, show_grid=show_grid, cmap="jet",
-                    scalar_bar_args={ 
+    
+    plotter.add_mesh(pv_mesh, scalars="field", show_edges=show_edges, cmap="jet",
+                     scalar_bar_args={ 
                   'title': '',
                   'vertical': True,
                   'position_x': 0.8,
                   'position_y': 0.3,
                   'width': 0.1
-                  })      # Classic rainbow colormap
-        
-
+                  })      # Classic rainbow colormap  
+    plotter.add_axes()
+    plotter.show()
 if __name__ == "__main__":
     import time	
     from tet_thermal_examples import TetThermalExamples, getTetThermalProblem

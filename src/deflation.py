@@ -105,7 +105,7 @@ class DeflationSolver:
 
 		# Initialize group data structures
 		nGroupsTentative = nX * nY * nZ
-		print("Group dimensions:", [nX, nY, nZ])
+		
 		
 		# Calculate group sizes
 		sizeX = xLength / nX
@@ -739,7 +739,7 @@ class DeflationSolver:
 			p = z + beta * p - W @ mu
 			
 			rz = rz_new
-		print("Deflated PCG iterations:", iter_num + 1)
+		#print("Deflated PCG iterations:", iter_num + 1)
 		if (iter_num == maxIters - 1):
 			print("Warning: Maximum iterations reached in DPCG; relative residual:", np.sqrt(rz_new/rz0))
 		return x

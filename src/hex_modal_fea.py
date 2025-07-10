@@ -136,7 +136,7 @@ class ModalFEA:
     return eigenvals, eigenvecs
 
   
-  def plot_eigenmode(self, mode = 0):
+  def plot_eigenmode(self, mode = 0,plotter = None):
     # Return if no solution exists yet
     if not hasattr(self, 'eigenvecs'):
       return None
@@ -205,11 +205,10 @@ class ModalFEA:
     pv_mesh.cell_data['density'] = face_densities
 
     # Create plotter
-    save_path = None
-    if save_path is  None:
-      plotter = pv.Plotter(window_size=(500, 400))
-    else:
-      plotter = pv.Plotter(off_screen=True)
+  
+    if plotter is None:
+      plotter = pv.Plotter()
+    
     
     plotter.add_title(f'Eigenmode: {mode}; freq: {self.eigenvals[mode]:0.3g} Hz', font_size=8)
     # Add mesh to plotter
@@ -253,14 +252,7 @@ class ModalFEA:
     
     # Enable anti-aliasing for better quality
     plotter.enable_anti_aliasing()
-    
-    # Save image if path is provided
-    if save_path:
-      #plotter.show(screenshot = save_path)
-      plotter.screenshot(save_path)
-      plotter.close()
-    else:
-      plotter.show() 
+    plotter.show() 
     
     return 
 

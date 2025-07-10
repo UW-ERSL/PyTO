@@ -1122,8 +1122,9 @@ class HexMesher:
 		self.elemPseudoDensity = rho.copy()
 
 
-	def plot(self,title="Voxelized Mesh"):
-		plotter = pv.Plotter()	
+	def plot(self,title="Voxelized Mesh",plotter = None):
+		if plotter is None:
+			plotter = pv.Plotter()
 		plotter.add_title(title)
 		
 		# Add voxelized mesh with component colors

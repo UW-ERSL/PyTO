@@ -1,4 +1,4 @@
-# %%
+
 """
 This script compares the performance of different linear solvers for finite element analysis (FEA) problems.
 
