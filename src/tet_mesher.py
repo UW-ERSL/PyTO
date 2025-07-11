@@ -540,8 +540,8 @@ class TetMesher:
         # Plot with scaled axes labels
         if plotter is None:
             plotter = pv.Plotter()
-        plotter = pv.UnstructuredGrid({pv.CellType.TETRA: self.elems}, scale*self.node_xyz)
-        plotter.add_mesh(plotter, show_edges=True)
+        pv_mesh = pv.UnstructuredGrid({pv.CellType.TETRA: self.elems}, scale*self.node_xyz)
+        plotter.add_mesh(pv_mesh, show_edges=True)
         plotter.show_grid(
             xtitle=labels[0], ytitle=labels[1], ztitle=labels[2]
         )
