@@ -91,11 +91,11 @@ class TetMesher:
         def tet_volume(a, b, c, d):
             return abs(np.dot((a - d), np.cross((b - d), (c - d)))) / 6.0
 
-        volumes = np.array([
+        self.volumes = np.array([
             tet_volume(self.node_xyz[e[0]], self.node_xyz[e[1]], self.node_xyz[e[2]], self.node_xyz[e[3]])
             for e in self.elems
         ])
-        self.volume = np.sum(volumes)
+        self.volume = np.sum(self.volumes)
 
         self.createSurfaceMesh()
     
