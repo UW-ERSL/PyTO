@@ -8,6 +8,11 @@ from PyQt5.QtCore import QSize
 from PyQt5.QtGui import QIcon
 from pyvistaqt import QtInteractor
 from stl_reader import STLGeom
+import bound_cond
+import mat_lib
+import linear_solvers
+from hex_mesher import HexMesher
+import hex_structural_fea
 """
 1) Need to Implement Analysis Windows and downstream
 """
@@ -323,7 +328,7 @@ class MainWindow(QtWidgets.QMainWindow):
         elif name == "Display Options":
             QtWidgets.QMessageBox.information(self, "Coming Soon", "Display Options window will be implemented soon.")
         elif name == "Analysis":
-            QtWidgets.QMessageBox.information(self, "Coming Soon", "Analysis window will be implemented soon.")
+           self.open_analysis_window()
         elif name == "TopOpt Constraints":
             QtWidgets.QMessageBox.information(self, "Coming Soon", "TopOpt Constraints window will be implemented soon.")
         elif name == "Structural TopOpt":
@@ -403,7 +408,7 @@ class MainWindow(QtWidgets.QMainWindow):
                 pass
             self.highlight_actor = None
 
-        # Get currently highlighted triangles (excluding constrained ones)
+        # Get currently highlighted triangles
         highlight_ids = []
         for i, h in enumerate(self.stl_geom.tri_highlight):
             if h and i not in self.constrained_triangles:  # Don't highlight constrained triangles
@@ -415,13 +420,30 @@ class MainWindow(QtWidgets.QMainWindow):
             self.plotter.render()
             return
 
-        # Create highlight mesh
-        unique_points, all_faces = self.stl_geom.get_unique_points_and_faces()
-        highlight_faces = []
-        for tri_id in highlight_ids:
-            highlight_faces.extend(all_faces[tri_id * 4:tri_id * 4 + 4])
+        # Collect vertices and faces from highlighted triangles
+        vertices = []
+        faces = []
+        vertex_count = 0
         
-        highlight_mesh = pv.PolyData(unique_points, highlight_faces).compute_normals(cell_normals=True, point_normals=True)
+        for tri_id in highlight_ids:
+            # Get triangle vertices from mesh.vectors
+            triangle_vertices = self.stl_geom.mesh.vectors[tri_id]
+            
+            # Add vertices to list
+            for vertex in triangle_vertices:
+                vertices.append(vertex)
+            
+            # Create face (triangle with 3 vertices)
+            face = [3, vertex_count, vertex_count + 1, vertex_count + 2]
+            faces.extend(face)
+            vertex_count += 3
+        
+        # Convert to numpy arrays
+        vertices = np.array(vertices)
+        faces = np.array(faces)
+        
+        # Create PyVista mesh
+        highlight_mesh = pv.PolyData(vertices, faces).compute_normals(cell_normals=True, point_normals=True)
         
         # Calculate offset
         bounds = self.plotter.bounds
@@ -522,8 +544,12 @@ class MainWindow(QtWidgets.QMainWindow):
 
     def open_structural_loads_window(self):
         self.structural_loads_window = StructuralLoadsWindow(self)
-        
         self.structural_loads_window.show()
+
+    # def open_analysis_window(self):
+    #     """Open the analysis window"""
+    #     dialog = AnalysisWindow(self)
+    #     dialog.exec_()
 #---------------------------------------------------------------------------
 class Settings:
     def __init__(self):
@@ -1285,7 +1311,7 @@ class StructuralLoadsWindow(QtWidgets.QDialog):
                 # Create force text showing the actual force value with sign
                 force_text = f"{axis_name}: {force_value:+.1f} {force_unit}"
                 
-                # Add text using PyVista's text capabilities
+                # Add text
                 text_actor = self.parent.plotter.add_point_labels(
                     [text_pos], 
                     [force_text],
@@ -1335,14 +1361,31 @@ class StructuralLoadsWindow(QtWidgets.QDialog):
                 pass
         self.parent.constraint_actors.clear()
 
-        # Create mesh for constrained triangles
-        unique_points, all_faces = self.parent.stl_geom.get_unique_points_and_faces()
-        constraint_faces = []
-        for tri_id in self.parent.constrained_triangles:
-            constraint_faces.extend(all_faces[tri_id * 4:tri_id * 4 + 4])
+        # Create mesh for constrained triangles using existing STL data
+        vertices = []
+        faces = []
+        vertex_count = 0
         
-        if constraint_faces:
-            constraint_mesh = pv.PolyData(unique_points, constraint_faces).compute_normals(cell_normals=True, point_normals=True)
+        for tri_id in self.parent.constrained_triangles:
+            # Get triangle vertices from mesh.vectors
+            triangle_vertices = self.parent.stl_geom.mesh.vectors[tri_id]
+            
+            # Add vertices to list
+            for vertex in triangle_vertices:
+                vertices.append(vertex)
+            
+            # Create face (triangle with 3 vertices)
+            face = [3, vertex_count, vertex_count + 1, vertex_count + 2]
+            faces.extend(face)
+            vertex_count += 3
+        
+        if vertices:
+            # Convert to numpy arrays
+            vertices = np.array(vertices)
+            faces = np.array(faces)
+            
+            # Create PyVista mesh
+            constraint_mesh = pv.PolyData(vertices, faces).compute_normals(cell_normals=True, point_normals=True)
             
             # Calculate offset (slightly larger than highlight offset)
             bounds = self.parent.plotter.bounds
@@ -1365,16 +1408,16 @@ class StructuralLoadsWindow(QtWidgets.QDialog):
         self.parent.plotter.render()
 
     def apply_fixed_constraint(self):
-        """Apply fixed XYZ constraint - make triangles black and non-selectable"""
+        """Apply fixed XYZ constraint"""
             
-        # Get detailed triangle data instead of just indices
+        # Get triangle data
         selected_triangles_data = self.parent.stl_geom.store_selected_triangles()
         
         if not selected_triangles_data:
             QtWidgets.QMessageBox.warning(self, "No Selection", "No triangles selected for constraint.")
             return
         
-        # Extract triangle indices from the detailed data
+        # Extract triangle indices from the data
         selected_faces = [tri_data['index'] for tri_data in selected_triangles_data]
         
         # Add selected triangles to constrained set
@@ -1403,7 +1446,7 @@ class StructuralLoadsWindow(QtWidgets.QDialog):
             QtWidgets.QMessageBox.warning(self, "No Selection", "No triangles selected for constraint.")
             return
         
-        # Extract triangle indices from the detailed data
+        # Extract triangle indices from the data
         selected_faces = [tri_data['index'] for tri_data in selected_triangles_data]
         
         # Add selected triangles to constrained set
@@ -1480,6 +1523,7 @@ class StructuralLoadsWindow(QtWidgets.QDialog):
 
         self.parent.update_LivVar('structural_loads.fixed_constraints', True)
 #---------------------------------------------------------------------------
+
 #----------------------------------------------------------------------------
 if __name__ == "__main__":
     app = QtWidgets.QApplication(sys.argv)
