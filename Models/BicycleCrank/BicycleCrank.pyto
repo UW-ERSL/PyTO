@@ -1,0 +1,113 @@
+{
+  "version": "2025.01",
+  "stl_file_path": "C:/Users/Krishnan Suresh/Dropbox/Personal/suresh/Software/Github/ERSL-Private/PyTO/Models/BicycleCrank/BicycleCrank.STL",
+  "settings": {
+    "unit_system": "MKS",
+    "temperature_unit": "Kelvin",
+    "angle_unit": "Degree"
+  },
+  "material_data": {
+    "name": "Steel",
+    "properties": {
+      "Young's Modulus": 210000000000.0,
+      "Poisson's Ratio": 0.3,
+      "Yield Strength": 250000000.0,
+      "Density": 7850,
+      "Thermal Conductivity": 50,
+      "Thermal Expansion": 1.2e-05,
+      "Specific Heat Capacity": 500,
+      "Price": 0.8
+    }
+  },
+  "force_data": [
+    {
+      "triangles": [
+        91,
+        92
+      ],
+      "force_x": 1000.0,
+      "force_y": 0.0,
+      "force_z": 0.0,
+      "load_set": 0,
+      "type": "force_xyz"
+    }
+  ],
+  "constraint_data": [
+    {
+      "type": "Fixed XYZ"
+    }
+  ],
+  "constrained_triangles": [
+    128,
+    129,
+    130,
+    131,
+    132,
+    133,
+    134,
+    135,
+    136,
+    137,
+    138,
+    139,
+    140,
+    141,
+    142,
+    143,
+    144,
+    145,
+    146,
+    147,
+    148,
+    149,
+    150,
+    151,
+    152,
+    153,
+    154,
+    155,
+    156,
+    157,
+    158,
+    159,
+    160,
+    161,
+    162,
+    163,
+    164,
+    165,
+    166,
+    167,
+    168,
+    169,
+    101,
+    102,
+    103,
+    104,
+    105,
+    106,
+    107,
+    108,
+    109,
+    110,
+    111,
+    112,
+    113,
+    114,
+    115,
+    116,
+    117,
+    118,
+    119,
+    120,
+    121,
+    122,
+    123,
+    124,
+    125,
+    126,
+    127
+  ],
+  "thermal_loads": {},
+  "topopt_constraints": null
+}

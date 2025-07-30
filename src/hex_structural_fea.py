@@ -161,13 +161,13 @@ class HexStructuralFEA:
           The order of the stress components is:
           sigma_xx, sigma_yy, sigma_zz, sigma_yz, sigma_xz, sigma_xy
       """
-   
       gradN = (1 / 8) * np.array([
         [-1, 1, 1, -1, -1, 1, 1, -1],
-        [-1, -1, 1, 1, -1, -1, 1, 1],
+        [-1, -1, 1, 1, -1, -1, 1, 1], 
         [-1, -1, -1, -1, 1, 1, 1, 1]
       ])
-      
+      for i in range(3):
+        gradN[i, :] = 2*gradN[i,:] / self.mesh.elem_size[i]
       # Get element degrees of freedom
       edof = self.mesh.edofMat
       
@@ -431,7 +431,9 @@ class HexStructuralFEA:
     # Add density values to cells
     pv_mesh.cell_data['density'] = face_densities
 
-    if plotter is None:
+    externalPlotter = False # assume that a plotter is provided
+    if plotter is None: 
+      externalPlotter = True # create a new plotter
       # Create plotter
       save_path = None
       if save_path is  None:
@@ -443,7 +445,7 @@ class HexStructuralFEA:
       else:
         plotter = pv.Plotter(off_screen=True)
     
-    plotter.add_title(f'Deformation scale: {scale:.2g}', font_size=8)
+      plotter.add_title(f'Deformation', font_size=8)
     # Add mesh to plotter
     nDOF = 3*self.mesh.num_nodes
     plotter.add_mesh(
@@ -479,7 +481,10 @@ class HexStructuralFEA:
       plotter.screenshot(save_path)
       plotter.close()
     else:
-      plotter.show(interactive_update=not auto_close, auto_close=auto_close)
+      if (externalPlotter):
+        plotter.show(interactive_update=not auto_close, auto_close=auto_close)
+      else:
+        plotter.show()
     self.camera_position = plotter.camera_position # For all future displays
     return 
 
@@ -624,7 +629,7 @@ class HexStructuralFEA:
             save_path=None,
             fontsize=8):
     self.pyVistaPlotter.clear()
-    self.plot_elem_field(self.vonMisesStress, title = f'vonMises stress; max: {np.max(self.vonMisesStress):.2e} ',
+    self.plot_elem_field(self.vonMisesStress, title = f'vonMises stress ',
                           save_path=save_path, fontsize=fontsize)
 
 #################################################################    
@@ -656,8 +661,8 @@ class HexStructuralFEA:
 if __name__ == "__main__":    
   from hex_structural_examples import StructuralExamples,getStructuralProblem
 
-  problem = StructuralExamples.LBracketThick
-  nDOFDesired = 100000
+  problem = StructuralExamples.BliskPressureLoading
+  nDOFDesired = 500000
   mesh, mat_prop, bc,elem_body_force = getStructuralProblem(problem,nDOFDesired = nDOFDesired)
   solver = linear_solvers.Solvers.DPCG # typically DPCG or PARDISO
   
@@ -689,3 +694,5 @@ if __name__ == "__main__":
   
   fe_solver.plot_deformation()
   fe_solver.plot_vonMisesStress()
+  fe_solver.plot_stress_component(0)
+  

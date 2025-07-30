@@ -164,9 +164,9 @@ def createTensileBarProblem(nDOFDesired: int = 10000, L: float = [10, 1, 1],tens
 
   fixed_nodes = mesh.getNodesOnBoundingBoxPlane(0,True) # x = 0 plane
   fixed_dofs = np.array([3 * fixed_nodes]).flatten().astype(int) # fixed in x direction
-  fixed_dofs = np.array([3 * fixed_nodes,
-              3 * fixed_nodes + 1,
-              3 * fixed_nodes + 2]).flatten().astype(int)
+  # fixed_dofs = np.array([3 * fixed_nodes,
+  #             3 * fixed_nodes + 1,
+  #             3 * fixed_nodes + 2]).flatten().astype(int)
   dirichlet_values = 0*np.ones_like(fixed_dofs, dtype = float)
   mesh.node_indices[fixed_nodes, 3] = 1
   
@@ -306,7 +306,7 @@ def createTorsionBarProblem(nDOFDesired: int = 10000, L: float = [1, 0.2, 0.2], 
     return mesh, mat_prop, bc, elem_body_force
   # ----------------------------------------
 
-def createBeamBendingProblem(nDOFDesired: int = 10000, L: float = [10, 1, 1],tensileForce = 10000):
+def createBeamBendingProblem(nDOFDesired: int = 10000, L: float = [10, 1, 1],appliedLoad = 10000):
   """Creates a tensile problem with approximate desired DOFs.
 
   Parameters:
@@ -343,8 +343,7 @@ def createBeamBendingProblem(nDOFDesired: int = 10000, L: float = [10, 1, 1],ten
   # Fix all DOFs at x=0 plane (cantilever)
   fixed_nodes = mesh.getNodesOnBoundingBoxPlane(0,True) # x = 0 plane
   fixed_dofs = np.array([3 * fixed_nodes,
-              3 * fixed_nodes + 1,
-              3 * fixed_nodes + 2]).flatten().astype(int)
+                         3 * fixed_nodes + 2]).flatten().astype(int)
   dirichlet_values = 0*np.ones_like(fixed_dofs, dtype = float)
   mesh.node_indices[fixed_nodes, 3] = 1
   
@@ -384,7 +383,7 @@ def createBeamBendingProblem(nDOFDesired: int = 10000, L: float = [10, 1, 1],ten
   # Normalize forces to achieve desired total load
   load_nodes = np.union1d(np.union1d(face_nodes, edge_nodes), corner_nodes)
   total_load = np.sum(force[3*load_nodes + 2])
-  force[3*load_nodes + 2] *= tensileForce/abs(total_load)
+  force[3*load_nodes + 2] *= appliedLoad/abs(total_load)
   print("Total force:", np.sum(force[3*load_nodes + 2]))
   mesh.node_indices[load_nodes, 3] = 2
   
@@ -399,9 +398,9 @@ def createBeamBendingProblem(nDOFDesired: int = 10000, L: float = [10, 1, 1],ten
   # For a beam with rectangular cross-section under end load P
   # Maximum deflection = PL^3/(3EI) where I = (w*h^3)/12
   I = (L[1]*L[2]**3)/12
-  print("Theoretical max deflection: {:.2g}".format(tensileForce*L[0]**3/(3*mat_prop.youngs_modulus*I)))
+  print("Theoretical max deflection: {:.2g}".format(appliedLoad*L[0]**3/(3*mat_prop.youngs_modulus*I)))
   # Maximum bending stress = My/I where M = PL and y = h/2
-  print("Theoretical max stress: {:.2g}".format(tensileForce*L[0]*L[2]/(2*I)))
+  print("Theoretical max axial stress: {:.2g}".format(appliedLoad*L[0]*L[2]/(2*I)))
   print('-----------------------------')
  
   return mesh, mat_prop, bc, elem_body_force
@@ -1810,7 +1809,7 @@ def createBliskSectionWithBlade(nDOFDesired: int = 50000, youngs_modulus = 1,
                                poissons_ratio = 0.28, material_density = 1,rpm = 10000,radialForce =200000): #radial force zero
  
   # Read the STL model, create a mesh of desired size, and a structural problem is posed on it.
-  stl_file = os.path.join(script_dir, '../Models/BliskModel/BliskSectionWithBlade2.STL')
+  stl_file = os.path.join(script_dir, '../Models/BliskModel/BliskSectionWithBlade.STL')
 
 
   nElemsDesired = nDOFDesired/3    # estimate
@@ -1881,9 +1880,9 @@ def createBliskSectionWithBlade(nDOFDesired: int = 50000, youngs_modulus = 1,
 
   # ----------------------------------------
 
-def createBliskPressureLoadingProblem(nDOFDesired: int = 500000, pressure = 1000000, loadingMode = 1):
+def createBliskPressureLoadingProblem(nDOFDesired: int = 50000, pressure = 1000000, loadingMode = 2):
   # Read the STL model, create a mesh of desired size, and a structural problem is posed on it.
-    stl_file = os.path.join(script_dir, '../Models/BliskModel/BliskSectionWithBlade.STL')
+    stl_file = os.path.join(script_dir, '../Models/BliskModel/BliskSectionWithBladeRotated.STL')
 
     stl_geom = STLGeom(stl_file)
     [area, stl_volume, cg, inertia] = stl_geom.compute_mass_properties()
