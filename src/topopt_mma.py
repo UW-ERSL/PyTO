@@ -13,7 +13,9 @@ def topopt_mma(fe_solver, #hex_structural_fea.HexStructuralFEA or hex_thermal_fe
                              constraint_tol: float = 1.e-4,
                              print_progress: bool = True,
                             plot_progress: bool = False,
-                            binarize_topology: bool = True,    
+                            binarize_topology: bool = True,   
+                            progress_callback=None, 
+                            plotter=None  
                              ) -> tuple[np.ndarray, dict]:
     """MMA based topology optimization for minimum compliance.
 
@@ -89,7 +91,7 @@ def topopt_mma(fe_solver, #hex_structural_fea.HexStructuralFEA or hex_thermal_fe
             x = H*x/Hs
         fe_solver.mesh.setPseudoDensity(x)
         if (plot_progress):
-            fe_solver.plot_pseudo_density(auto_close = False, title = f"Iteration {len(history['objective']) + 1} - Density", save_path = None)
+            fe_solver.plot_pseudo_density(auto_close = False, title = f"Iter {len(history['objective']) + 1} - Density", save_path = None)
         sol = fe_solver.solve(x, material_model)
         fe_solver.postprocess()
 

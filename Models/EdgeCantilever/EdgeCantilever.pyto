@@ -1,6 +1,6 @@
 {
   "version": "2025.01",
-  "stl_file_path": "C:/Users/Krishnan Suresh/Dropbox/Personal/suresh/Software/Github/ERSL-Private/PyTO/Models/EdgeCantilever/EdgeCantilever.STL",
+  "stl_file_path": "D:/Dropbox/Personal/suresh/Software/Github/ERSL-Private/PyTO/Models/EdgeCantilever/EdgeCantilever.STL",
   "settings": {
     "unit_system": "MKS",
     "temperature_unit": "Kelvin",
@@ -26,7 +26,7 @@
         7
       ],
       "force_x": 0.0,
-      "force_y": -10000.0,
+      "force_y": -1000.0,
       "force_z": 0.0,
       "load_set": 0,
       "type": "force_xyz"

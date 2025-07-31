@@ -355,9 +355,10 @@ class STLGeom:
         mesh = pv.PolyData(vertices, faces)
         if (plotter is None):
             plotter = pv.Plotter()
+            if show_axes:
+                plotter.add_axes()
         plotter.add_mesh(mesh, show_edges=show_edges)
-        if show_axes:
-            plotter.add_axes()
+        
         if show_bounding_box:
             plotter.add_bounding_box()
             # Get bounding box

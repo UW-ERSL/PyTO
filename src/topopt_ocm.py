@@ -14,6 +14,8 @@ def topopt_optimality_criteria(
 							plot_progress: bool = False,
 							debug: bool = False,
 							binarize_topology: bool = True,
+							progress_callback=None, 
+                            plotter=None  
 							) -> tuple[np.ndarray, dict]:
 	"""Optimality Criteria based topology optimization for minimum compliance.
 

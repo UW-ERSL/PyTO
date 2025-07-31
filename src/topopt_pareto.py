@@ -11,7 +11,9 @@ def topopt_pareto(fe_solver,
 							xVoid: float = 0,
 							print_progress: bool = True,
 							plot_progress: bool = False,
-							debug: bool = False
+							debug: bool = False,
+							progress_callback=None, 
+                            plotter=None  
 							)-> tuple[np.ndarray, dict]:
 	"""Pareto method for Topology Optimization.
 

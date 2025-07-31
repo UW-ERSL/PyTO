@@ -277,8 +277,9 @@ class HexStructuralFEA:
     
     # Add density values to cells
     pv_mesh.cell_data['density'] = face_densities
-
+    externalPlotter = False # assume that a plotter is provided
     if (plotter is None):
+      externalPlotter = True
       # Create plotter
       if save_path is None:
         plotter = self.pyVistaPlotter
@@ -290,8 +291,17 @@ class HexStructuralFEA:
         plotter = pv.Plotter(off_screen=True) # for saving images
         plotter.camera_position =self.camera_position
         plotter.enable_anti_aliasing()
+      # Add coordinate axes widget
+      plotter.add_axes(
+                    xlabel='X',
+                    ylabel='Y',
+                    zlabel='Z',
+                    line_width=2,
+                    labels_off=False,  # Show axis labels
+                    color='black'
+                    )
     
-    plotter.add_title(title, font_size=8)
+      plotter.add_title(title, font_size=8)
   
     plotter.add_mesh(
             pv_mesh,
@@ -302,17 +312,6 @@ class HexStructuralFEA:
             opacity=transparency  # Add transparency (0.0 is fully transparent, 1.0 is fully opaque)
             )
 
-
-    # Add coordinate axes widget
-    plotter.add_axes(
-                    xlabel='X',
-                    ylabel='Y',
-                    zlabel='Z',
-                    line_width=2,
-                    labels_off=False,  # Show axis labels
-                    color='black'
-                    )
-    
     if (plot_bc):
       # Add dots and force arrows for labeled nodes
       point_size = 10  # Size of dots in pixels
@@ -358,11 +357,16 @@ class HexStructuralFEA:
             plotter.add_mesh(arrow, color='red')
     
     # Save image if path is provided
+
     if save_path:
       plotter.screenshot(save_path)
       plotter.close()
     else:
-      plotter.show(interactive_update=not auto_close, auto_close=auto_close) 
+      if (externalPlotter):
+        # Show plot interactively if not saving
+        plotter.show(interactive_update=not auto_close, auto_close=auto_close)
+      else:
+        plotter.show()
     self.camera_position = plotter.camera_position # For all future displays
     return
 ################################################################# 
@@ -444,8 +448,16 @@ class HexStructuralFEA:
           plotter.show(interactive_update=True, auto_close=False)
       else:
         plotter = pv.Plotter(off_screen=True)
-    
-      plotter.add_title(f'Deformation', font_size=8)
+      # Add coordinate axes widget
+      plotter.add_axes(
+                    xlabel='X',
+                    ylabel='Y',
+                    zlabel='Z',
+                    line_width=2,
+                    labels_off=False,  # Show axis labels
+                    color='black'
+                    )
+   
     # Add mesh to plotter
     nDOF = 3*self.mesh.num_nodes
     plotter.add_mesh(
@@ -456,7 +468,7 @@ class HexStructuralFEA:
                     edge_color='black',
                     line_width=1,
                     scalar_bar_args={
-                            'title': '',
+                            'title': 'Deformation',
                             'vertical': True,
                             'position_x': 0.8,
                             'position_y': 0.3,
@@ -464,15 +476,7 @@ class HexStructuralFEA:
                             }
                   )
 
-    # Add coordinate axes widget
-    plotter.add_axes(
-                    xlabel='X',
-                    ylabel='Y',
-                    zlabel='Z',
-                    line_width=2,
-                    labels_off=False,  # Show axis labels
-                    color='black'
-                    )
+    
 
 
     # Save image if path is provided
@@ -540,8 +544,9 @@ class HexStructuralFEA:
 
     # Add field data to cell data
     pv_mesh.cell_data['field'] = filtered_field
-
+    externalPlotter = False # assume that a plotter is provided
     if plotter is None:
+      externalPlotter = True 
       # Create plotter
       if save_path is None:
         plotter = self.pyVistaPlotter 
@@ -550,6 +555,15 @@ class HexStructuralFEA:
           plotter = self.pyVistaPlotter
       else:
         plotter = pv.Plotter(off_screen=True)
+      # Add coordinate axes widget
+      plotter.add_axes(
+            xlabel='X',
+            ylabel='Y',
+            zlabel='Z',
+            line_width=2,
+            labels_off=False,  # Show axis labels
+            color='black'
+            )
 
     # If cross-section is specified, create a clipped mesh
     if cross_section is not None:
@@ -596,7 +610,7 @@ class HexStructuralFEA:
             edge_color='black',
             line_width=1,
             scalar_bar_args={
-              'title': '',
+              'title': title,
               'vertical': True,
               'position_x': 0.8,
               'position_y': 0.3,
@@ -604,33 +618,28 @@ class HexStructuralFEA:
             }
           )
 
-    # Add title
-    plotter.add_title(title, font_size=8)
 
-    # Add coordinate axes widget
-    plotter.add_axes(
-            xlabel='X',
-            ylabel='Y',
-            zlabel='Z',
-            line_width=2,
-            labels_off=False,  # Show axis labels
-            color='black'
-            )
+    
     # Save image if path is provided
+    
     if save_path:
       plotter.screenshot(save_path)
       plotter.close()
     else:
-      plotter.show(interactive_update=not auto_close, auto_close=auto_close)
+      if (externalPlotter):
+        # Show plot interactively if not saving
+        plotter.show(interactive_update=not auto_close, auto_close=auto_close)
+      else:
+        plotter.show()
     self.camera_position = plotter.camera_position # For all future displays
     return 
 #################################################################
   def plot_vonMisesStress(self,
             save_path=None,
-            fontsize=8):
+            fontsize=8,plotter = None):
     self.pyVistaPlotter.clear()
     self.plot_elem_field(self.vonMisesStress, title = f'vonMises stress ',
-                          save_path=save_path, fontsize=fontsize)
+                          save_path=save_path, fontsize=fontsize,plotter = plotter)
 
 #################################################################    
   def plot_strain_component(self,strainComponent = 0,
@@ -661,8 +670,8 @@ class HexStructuralFEA:
 if __name__ == "__main__":    
   from hex_structural_examples import StructuralExamples,getStructuralProblem
 
-  problem = StructuralExamples.BliskPressureLoading
-  nDOFDesired = 500000
+  problem = StructuralExamples.EdgeCantilever
+  nDOFDesired = 50000
   mesh, mat_prop, bc,elem_body_force = getStructuralProblem(problem,nDOFDesired = nDOFDesired)
   solver = linear_solvers.Solvers.DPCG # typically DPCG or PARDISO
   
