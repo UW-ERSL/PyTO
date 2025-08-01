@@ -561,6 +561,50 @@ class MainWindow(QtWidgets.QMainWindow):
         dialog.show()
 
     def open_topopt_constraints_window(self):
+        # Only remove mesh/analysis/result actors, keep geometry, loads, constraints, and info
+        keep_names = {
+            "geometry_info",
+            "stl_geometry",
+        }
+        # Add all structural/thermal load actors and constraint actors to keep_names
+        if hasattr(self, "force_actors"):
+            for actor in self.force_actors:
+                if hasattr(actor, "GetName"):
+                    keep_names.add(actor.GetName())
+        if hasattr(self, "constraint_actors"):
+            for actor in self.constraint_actors:
+                if hasattr(actor, "GetName"):
+                    keep_names.add(actor.GetName())
+        if hasattr(self, "thermal_loads_window"):
+            for attr in ["fixed_temp_actors", "heat_source_actors", "total_heat_actors"]:
+                if hasattr(self.thermal_loads_window, attr):
+                    for actor in getattr(self.thermal_loads_window, attr):
+                        if hasattr(actor, "GetName"):
+                            keep_names.add(actor.GetName())
+        if hasattr(self, "topopt_constraint_actors"):
+            for actor in self.topopt_constraint_actors.values():
+                if isinstance(actor, list):
+                    for a in actor:
+                        if hasattr(a, "GetName"):
+                            keep_names.add(a.GetName())
+                else:
+                    if hasattr(actor, "GetName"):
+                        keep_names.add(actor.GetName())
+
+        # Remove all actors not in keep_names
+        for name in list(self.plotter.actors.keys()):
+            if name not in keep_names:
+                self.plotter.remove_actor(name, reset_camera=False)
+
+        # Re-plot the STL geometry if not present
+        if self.stl_geom and "stl_geometry" not in self.plotter.actors:
+            self.stl_geom.plotGeometry(
+                show_edges=False,
+                show_axes=False,
+                show_bounding_box=False,
+                plotter=self.plotter
+            )
+        self.update_highlights()
         self.topopt_constraints_window = TopOptConstraintsWindow(self)
         self.topopt_constraints_window.show()
 
@@ -836,10 +880,9 @@ class GeometryWindow(QtWidgets.QDialog):
             self.parent.plotter.add_text(
                 "\n".join(info_lines),
                 position="upper_left",
-                font_size=12,
+                font_size=10,
                 color="black",
                 name="geometry_info",
-                font="arial",
             )
 
             # Set geometry reference
@@ -848,10 +891,12 @@ class GeometryWindow(QtWidgets.QDialog):
             # Enable picking
             self.parent.plotter.disable_picking()
             
+            picker = pv._vtk.vtkCellPicker()
+            picker.SetTolerance(1e-8)
             self.parent.plotter.enable_point_picking(
                 callback=self.parent.on_left_button_press,
                 use_picker=True,
-                picker='cell',
+                picker=picker,  
                 show_message=False,
                 left_clicking=True,
                 show_point=False
@@ -1014,7 +1059,12 @@ class MaterialWindow(QtWidgets.QDialog):
     def on_material_changed(self, name):
         mat = self.materials[name]
         for key, field in self.fields.items():
-            field.setText(str(mat[key]))
+            value = mat[key]
+            # Show large/small numbers in scientific notation, others as normal
+            if isinstance(value, float) and (abs(value) >= 1e5 or (abs(value) < 1e-2 and value != 0)):
+                field.setText(f"{value:.2e}")
+            else:
+                field.setText(str(value))
             field.setReadOnly(name != "Custom")
         if self.material_applied:
             self.material_combo.setEnabled(False)
@@ -1262,6 +1312,26 @@ class StructuralLoadsWindow(QtWidgets.QDialog):
         """Handle selection mode changes"""
         mode_text = self.selection_combo.currentText()
         self.parent.highlight_mode = self.SELECTION_MODES[mode_text]
+        if self.parent.stl_geom:
+            # Turn ON triangle edges in "Triangle" mode, OFF otherwise
+            for name, actor in self.parent.plotter.actors.items():
+                if hasattr(actor, 'GetProperty'):
+                    prop = actor.GetProperty()
+                    if self.parent.highlight_mode == "triangle":
+                        if hasattr(prop, 'EdgeVisibilityOn'):
+                            prop.EdgeVisibilityOn()
+                            prop.SetEdgeColor(0, 0, 0)
+                            prop.SetLineWidth(1)
+                    else:
+                        if hasattr(prop, 'EdgeVisibilityOff'):
+                            prop.EdgeVisibilityOff()
+            if self.parent.highlight_mode == "triangle":
+                self.parent.update_highlights()
+            else:
+                if getattr(self.parent, "highlight_actor", None):
+                    self.parent.plotter.remove_actor(self.parent.highlight_actor, reset_camera=False)
+                    self.parent.highlight_actor = None
+                self.parent.plotter.render()
 
     def _on_load_type_changed(self, load_type):
         """Handle load type changes and update UI visibility"""
@@ -1330,34 +1400,35 @@ class StructuralLoadsWindow(QtWidgets.QDialog):
             spinbox.setValue(0)
 
     def apply_force(self):
-        """Apply forces in X, Y, and Z directions"""
+        """Apply resultant force to selected triangles"""
         selected_triangles = self.get_selected_triangles()
         if not selected_triangles:
             return
-        
+
         forces = self.get_force_values()
         if not self.validate_forces(forces):
             return
-        
-        #Convert to base units
+
+        # Convert to base units
         converted_forces = self.convert_forces_to_base_units(forces)
-        
-        #Apply visualization for each non-zero force
-        applied_forces = []
-        config = self.LOAD_TYPES["Force"]
-        
-        for axis, force_value in converted_forces.items():
-            if force_value != 0:
-                direction = config["directions"][axis]
-                self.visualize_force_arrows(selected_triangles, force_value, 
-                                           direction, config["color"], axis)
-                applied_forces.append(f"{axis}: {force_value:+.1f}")
-        
-        #Store force data
+        force_vec = np.array([converted_forces['X'], converted_forces['Y'], converted_forces['Z']])
+        nonzero = [k for k, v in converted_forces.items() if abs(v) > 1e-12]
+        norm = np.linalg.norm(force_vec)
+        if norm == 0:
+            return
+
+        unit_direction = force_vec / norm
+
+        # Decide label value: show signed value if only one axis, else resultant (always positive)
+        if len(nonzero) == 1:
+            label_value = converted_forces[nonzero[0]]
+        else:
+            label_value = norm
+
+        self.visualize_force_arrows(selected_triangles, norm, unit_direction, "red", "Resultant", label_value)
+
         self.store_force_data(selected_triangles, converted_forces)
-        
-        #Update UI state
-        self.update_force(selected_triangles, applied_forces)
+        self.update_force(selected_triangles, [f"Resultant: {label_value:+.1f}"])
 
     def store_force_data(self, selected_triangles, forces):
         """Store force data for analysis"""
@@ -1394,23 +1465,16 @@ class StructuralLoadsWindow(QtWidgets.QDialog):
         #Notify display options window
         self.parent.notify_display_options_update()
 
-    def visualize_force_arrows(self, selected_triangles, force_value, direction_vector, color, axis_name):
+    def visualize_force_arrows(self, selected_triangles, force_value, direction_vector, color, axis_name, label_value=None):
         """Create directional arrow visualization for forces"""
-        #Use threshold system for performance
         display_triangles = self.get_display_triangles(selected_triangles)
-        
         if not display_triangles:
             return
-        
-        # Calculate arrow properties
+
         arrow_scale = self.calculate_arrow_scale()
         actual_direction = np.array(direction_vector) * (1.0 if force_value >= 0 else -1.0)
-        
-        # Create arrow visualization
         centers = np.array([tri_data['center'] for tri_data in display_triangles])
         arrows = self.create_arrow_mesh(centers, actual_direction, arrow_scale)
-        
-        # Add to plotter
         force_actor = self.parent.plotter.add_mesh(
             arrows,
             color=color,
@@ -1418,10 +1482,9 @@ class StructuralLoadsWindow(QtWidgets.QDialog):
             name=f'{axis_name.lower()}_force_arrows_{len(self.parent.force_actors)}'
         )
         self.parent.force_actors.append(force_actor)
-        
-        # Add text label
-        self.add_force_text_label(display_triangles[0], force_value, actual_direction, color, axis_name)
-        
+
+        # Pass label_value to the label function
+        self.add_force_text_label(display_triangles[0], label_value if label_value is not None else force_value, actual_direction, color, axis_name)
         self.parent.plotter.render()
 
     def get_display_triangles(self, selected_triangles):
@@ -1451,27 +1514,23 @@ class StructuralLoadsWindow(QtWidgets.QDialog):
         return arrows.glyph(orient='vectors', scale='vectors', factor=1.0)
 
     def add_force_text_label(self, triangle, force_value, direction, color, axis_name):
-        """Add text label for force visualization"""
-        # Calculate text position
+        """Add text label for force visualization at the tip of the first arrow"""
+        # Calculate arrow scale and offset
         geom_size = self.calculate_arrow_scale() / self.ARROW_SCALE_FACTOR
         text_offset = 0.12 * geom_size
-        
+
         # Normalize direction for text placement
         magnitude = np.linalg.norm(direction)
         if magnitude > 0:
-            dx, dy, dz = direction / magnitude
-            
-            # Calculate perpendicular position
-            text_pos = [
-                triangle['center'][0] + text_offset * (-dy),
-                triangle['center'][1] + text_offset * (dx),
-                triangle['center'][2] + text_offset * 0.2
-            ]
-            
+            unit_dir = direction / magnitude
+            # Arrow tip position: center + direction * arrow_scale
+            arrow_tip = np.array(triangle['center']) + unit_dir * self.calculate_arrow_scale()
+            text_pos = arrow_tip.tolist()
+
             # Create and add text
             force_unit = self.parent.settings.get_force_unit_string()
             force_text = f"{force_value:+.1f} {force_unit}"
-            
+
             text_actor = self.parent.plotter.add_point_labels(
                 [text_pos], [force_text],
                 font_size=DEFAULT_FONT_SIZE, text_color=color,
@@ -4040,11 +4099,11 @@ class DisplayOptionsWindow(QtWidgets.QDialog):
         # Visualization logic based on field selection
         if geometry_choice == "FEA Results":
             if field_choice == "Displacement" and hasattr(self.parent, "fe_solver") and self.parent.fe_solver:
-                self.parent.fe_solver.plot_deformation(self.parent.plotter)
+                self.parent.fe_solver.plot_deformation(plotter=self.parent.plotter)
             elif field_choice == "Von Mises" and hasattr(self.parent, "fe_solver") and self.parent.fe_solver:
                 self.parent.fe_solver.plot_vonMisesStress(plotter=self.parent.plotter)
             elif field_choice == "Temperature" and hasattr(self.parent, "thermal_fe_solver") and self.parent.thermal_fe_solver:
-                self.parent.thermal_fe_solver.plot_temperature(self.parent.plotter)
+                self.parent.thermal_fe_solver.plot_temperature(plotter=self.parent.plotter)
 
         # Show initial design (STL) if selected
         if geometry_choice == "Initial Design" and self.parent.stl_geom:
@@ -4062,9 +4121,9 @@ class DisplayOptionsWindow(QtWidgets.QDialog):
         elif geometry_choice == "FEA Results":
             # Prefer structural FEA if available, else thermal
             if hasattr(self.parent, "fe_solver") and self.parent.fe_solver is not None:
-                self.parent.fe_solver.plot_deformation(self.parent.plotter)
+                self.parent.fe_solver.plot_deformation(plotter = self.parent.plotter)
             elif hasattr(self.parent, "thermal_fe_solver") and self.parent.thermal_fe_solver is not None:
-                self.parent.thermal_fe_solver.plot_temperature(self.parent.plotter)
+                self.parent.thermal_fe_solver.plot_temperature(plotter = self.parent.plotter)
 
         # Show final design if selected
         elif geometry_choice == "Final Design" and hasattr(self.parent, "topopt_results") and self.parent.topopt_results:

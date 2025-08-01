@@ -377,7 +377,7 @@ class HexStructuralFEA:
       return None
 
     # Create vertices array
-    vertices = self.mesh.node_xyz
+    vertices = self.mesh.node_xyz.copy()
   
     sol = self.sol.copy()
     sol = sol.reshape((-1, 3))
@@ -637,7 +637,7 @@ class HexStructuralFEA:
   def plot_vonMisesStress(self,
             save_path=None,
             fontsize=8,plotter = None):
-    self.pyVistaPlotter.clear()
+    
     self.plot_elem_field(self.vonMisesStress, title = f'vonMises stress ',
                           save_path=save_path, fontsize=fontsize,plotter = plotter)
 
@@ -645,15 +645,15 @@ class HexStructuralFEA:
   def plot_strain_component(self,strainComponent = 0,
             save_path=None,
             fontsize=8):
-    self.pyVistaPlotter.clear()
-    self.plot_elem_field(self.strainComponents[:,strainComponent], title = f'Strain component: {strainComponent} ',
+    
+    self.plot_elem_field(self.strainComponents[:,strainComponent], title = f'Strain: {strainComponent} ',
                           save_path=save_path,fontsize=fontsize)
 #################################################################
   def plot_stress_component(self,stressComponent = 0,
             save_path=None,
             fontsize=10):
     self.pyVistaPlotter.clear()
-    self.plot_elem_field(self.stressComponents[:,stressComponent], title = f'Stress component: {stressComponent} ',
+    self.plot_elem_field(self.stressComponents[:,stressComponent], title = f'Stress: {stressComponent} ',
                           save_path=save_path, fontsize=fontsize)
 #################################################################
   def plot_pseudo_density(self,

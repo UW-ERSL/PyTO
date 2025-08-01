@@ -2,6 +2,7 @@
 import os
 import win32com.client #pip install pypiwin32
 from stl_reader import STLGeom
+import numpy as np
 
 class SolidWorksInterface:
     def __init__(self):
@@ -32,13 +33,20 @@ class SolidWorksInterface:
     def getAllDimensions(self):
         try:
             model = self.sw.ActiveDoc
-            myDimension = model.Parameter("D1@Sketch1")
-            print('myDimension')
-    
-            dimensions = {}
+            swConfig = model.ConfigurationManager.ActiveConfiguration
+            parameterCount = swConfig.GetParameterCount
+            print(f"Number of parameters: {parameterCount}")
+            dimensions = []
+            names = []
+            values = []
+            swConfig.GetParameters(parameterCount,names, values)
+            dimensions = list(zip(names, values))
+            print(dimensions)
+            input("Press Enter to continue...")
             return dimensions
         except Exception as e:
             print(f"Error: {str(e)}")
+            input("Press Enter to continue...")
             return []
 
     def getDimension(self,dimensionName):
@@ -56,7 +64,36 @@ class SolidWorksInterface:
             model = self.sw.ActiveDoc
             myDimension = model.Parameter(dimensionName)
             myDimension.SystemValue = value
-            model.ForceRebuild3(2) 
+            model.ForceRebuild3(True) 
+            dimCheck = self.getDimension(dimensionName)  # get dimension
+            if not np.isclose(dimCheck, value, atol=1e-6):
+                #print(f"Dimension {dimensionName} not set correctly. Expected {value}, got {dimCheck}.")
+                return False
+            print(f"Dimension {dimensionName} set to {value}.")
+            if not self.isBodyValid():
+                #print("Body is invalid after dimension change.")
+                return False
+            return True
+        except Exception as e:
+            print(f"Error: {str(e)}")
+            return False
+        
+    def setDimensions(self,dimensionNames, values):
+        try:
+            model = self.sw.ActiveDoc
+            for dimensionName, value in zip(dimensionNames, values):
+                myDimension = model.Parameter(dimensionName)
+                myDimension.SystemValue = value
+            model.ForceRebuild3(True) 
+            for dimensionName, value in zip(dimensionNames, values): # check if dimensions are set correctly
+                dimCheck = self.getDimension(dimensionName)  # get dimension
+                if not np.isclose(dimCheck, value, atol=1e-6):
+                    print(f"Dimension {dimensionName} not set correctly. Expected {value}, got {dimCheck}.")
+                    return False
+                print(f"Dimension {dimensionName} set to {value}.")
+            if not self.isBodyValid():
+                #print("Body is invalid after dimension change.")
+                return False
             return True
         except Exception as e:
             print(f"Error: {str(e)}")
@@ -122,10 +159,12 @@ class SolidWorksInterface:
             return False
         
 if __name__ == "__main__":
-    input("Is SolidWorks open with a part loaded? Press Enter to continue...")
+    input("Is SolidWorks open with a threeHolesPart?\nPress Enter to continue...")
     sw = SolidWorksInterface()
-    
-    dim0 = sw.getDimension("D1@Sketch1")  # get dimension
+   
+
+    dimName = "d@SideHolesSketch"
+    dim0 = sw.getDimension(dimName)  # get dimension
     [area,vol,cg,inertia] = sw.getMassProperties()
     print(f"\nProperties Before:")
     print(f"Dim    : {dim0:.3e}")
@@ -133,11 +172,15 @@ if __name__ == "__main__":
     print(f"Volume  : {vol:.3e}")
     print(f"CG      : [{cg[0]:.3e}, {cg[1]:.3e}, {cg[2]:.3e}]")
     print(f"Inertia : [{', '.join([f'{x:.3e}' for x in inertia])}]")
+    print(f"Edge Count: {sw.getEdgeCount()}")
+    print(f"Face Count: {sw.getFaceCount()}")
     
+    if not sw.setDimension(dimName,1.1*dim0):
+        print(f"Failed to set dimension. Resetting to original value.")
+        sw.setDimension(dimName,dim0)
 
-    sw.setDimension("D1@Sketch1",1.05*dim0) # increase by 5%
-
-    dim = sw.getDimension("D1@Sketch1")  # get dimension
+    dim = sw.getDimension(dimName)  # get dimension
+  
     [area,vol,cg,inertia] = sw.getMassProperties()
     print(f"\nProperties After:")
     print(f"Dim    : {dim:.3e}")
@@ -145,10 +188,8 @@ if __name__ == "__main__":
     print(f"Volume  : {vol:.3e}")
     print(f"CG      : [{cg[0]:.3e}, {cg[1]:.3e}, {cg[2]:.3e}]")
     print(f"Inertia : [{', '.join([f'{x:.3e}' for x in inertia])}]")
-
-    sw.setDimension("D1@Sketch1",dim0)  # reset
-    stlGeom = sw.getSTL()
-    stlGeom.plotGeometry()
-   
-    
-    
+    print(f"Edge Count: {sw.getEdgeCount()}")
+    print(f"Face Count: {sw.getFaceCount()}")
+    input("Press Enter to continue...")
+    sw.setDimension(dimName,dim0)  # reset
+ 
