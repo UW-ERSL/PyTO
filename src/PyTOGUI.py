@@ -4166,7 +4166,6 @@ class DisplayOptionsWindow(QtWidgets.QDialog):
         should_plot = (
             (geometry_choice == "Initial Design" and self.parent.stl_geom) or
             (geometry_choice == "Mesh" and hasattr(self.parent, "hex_mesh") and self.parent.hex_mesh) or
-            (geometry_choice == "FEA Results" and hasattr(self.parent, "fe_solver") and self.parent.fe_solver) or
             (geometry_choice == "Final Design" and hasattr(self.parent, "topopt_results") and self.parent.topopt_results)
         )
         if should_plot:
@@ -4175,20 +4174,20 @@ class DisplayOptionsWindow(QtWidgets.QDialog):
                     self.parent.plotter.remove_actor(name, reset_camera=False)
 
         # Visualization logic based on field selection
-        if geometry_choice == "FEA Results":
-            if field_choice == "Displacement":
+        if geometry_choice == "Mesh":
+            if field_choice == "Deformation":
                 if hasattr(self.parent, "fe_solver") and self.parent.fe_solver:
-                    self.parent.fe_solver.plot_deformation(plotter = self.parent.plotter)
-            elif field_choice == "Von Mises":
+                    self.parent.fe_solver.plot_deformation(plotter=self.parent.plotter)
+            elif field_choice == "Von Mises stress":
                 if hasattr(self.parent, "fe_solver") and self.parent.fe_solver:
                     self.parent.fe_solver.plot_vonMisesStress(plotter=self.parent.plotter)
             elif field_choice == "Temperature":
                 if hasattr(self.parent, "thermal_fe_solver") and self.parent.thermal_fe_solver:
-                    self.parent.thermal_fe_solver.plot_temperature(plotter = self.parent.plotter)
+                    self.parent.thermal_fe_solver.plot_temperature(plotter=self.parent.plotter)
                 else:
                     QtWidgets.QMessageBox.warning(self, "Thermal Results Missing", "Please solve for thermal analysis first.")
-
-        # Show initial design (STL) if selected
+            elif field_choice == "None":
+                AnalysisWindow(self.parent).visualize_colored_mesh("structural")
         elif geometry_choice == "Initial Design" and self.parent.stl_geom:
             self.parent.stl_geom.plotGeometry(
                 show_edges=self.show_triangles.isChecked(),
@@ -4196,10 +4195,6 @@ class DisplayOptionsWindow(QtWidgets.QDialog):
                 show_bounding_box=self.show_bounding_box_checkbox.isChecked(),
                 plotter=self.parent.plotter
             )
-        # Show mesh if selected
-        elif geometry_choice == "Mesh" and hasattr(self.parent, "hex_mesh") and self.parent.hex_mesh:
-            AnalysisWindow(self.parent).visualize_colored_mesh("structural")
-        # Show final design if selected
         elif geometry_choice == "Final Design" and hasattr(self.parent, "topopt_results") and self.parent.topopt_results:
             fe_solver = self.parent.topopt_results.get("fe_solver")
             if fe_solver:
@@ -4457,6 +4452,33 @@ class DisplayOptionsWindow(QtWidgets.QDialog):
         """Reset the camera view"""
         self.parent.plotter.reset_camera()
         self.parent.plotter.render()
+
+    def on_geometry_changed(self, text):
+        """If Initial Design or Final Design, force field to None."""
+        if text in ["Initial Design", "Final Design"]:
+            self.field_combo.blockSignals(True)
+            self.field_combo.setCurrentText("None")
+            self.field_combo.blockSignals(False)
+        self.update_display()
+
+    def on_field_changed(self, text):
+        """If geometry is Initial Design or Final Design and field is not None, warn and switch to Mesh."""
+        if self.geometry_combo.currentText() in ["Initial Design", "Final Design"] and text != "None":
+            QtWidgets.QMessageBox.warning(
+                self, "Invalid Selection",
+                "To display Deformation, Von Mises stress, or Temperature, switch to Mesh."
+            )
+            # Switch to Mesh if available
+            idx = self.geometry_combo.findText("Mesh")
+            if idx != -1:
+                self.geometry_combo.setCurrentIndex(idx)
+            else:
+                # No mesh available, force field to None
+                self.field_combo.blockSignals(True)
+                self.field_combo.setCurrentText("None")
+                self.field_combo.blockSignals(False)
+        self.update_display()
+
         
     def update_geometry_options(self):
         # """Update geometry dropdown options and select current state."""
@@ -4490,31 +4512,28 @@ class DisplayOptionsWindow(QtWidgets.QDialog):
         # self.geometry_combo.addItems(items)
         # self.geometry_combo.setCurrentIndex(current_index)
         # self.geometry_combo.blockSignals(False)
-        """Update geometry dropdown options and select current state intelligently."""
+        #"""Update geometry dropdown options and select current state intelligently."""
+        """Show Initial Design, Mesh (if available), and Final Design (if structural topopt done) in geometry dropdown."""
         items = ["Initial Design"]
         current_index = 0
 
-        # Check for mesh
         has_mesh = hasattr(self.parent, "hex_mesh") and self.parent.hex_mesh is not None
         if has_mesh:
             items.append("Mesh")
-            current_index = 1
+            if self.geometry_combo.currentText() == "Mesh":
+                current_index = len(items) - 1
 
-        # Check for FEA results (structural or thermal)
-        has_structural_FEA = hasattr(self.parent, "fe_solver") and self.parent.fe_solver is not None
-        has_thermal_FEA = hasattr(self.parent, "thermal_fe_solver") and self.parent.thermal_fe_solver is not None
-        has_FEA = has_structural_FEA or has_thermal_FEA
-        if has_FEA:
-            items.append("FEA Results")
-            current_index = len(items) - 1  # <-- Always select FEA Results if available
-
-        # Check for topology optimization
-        has_topopt = hasattr(self.parent, "topopt_results") and self.parent.topopt_results is not None
-        if has_topopt:
+        # Only show Final Design if structural topopt has been performed and converged
+        has_final = (
+            hasattr(self.parent, "topopt_results")
+            and self.parent.topopt_results is not None
+            and self.parent.topopt_results.get("converged", False)
+        )
+        if has_final:
             items.append("Final Design")
-            current_index = len(items) - 1  # <-- Select Final Design if available
+            if self.geometry_combo.currentText() == "Final Design":
+                current_index = len(items) - 1
 
-        # Update dropdown items only if changed
         self.geometry_combo.blockSignals(True)
         self.geometry_combo.clear()
         self.geometry_combo.addItems(items)
@@ -4541,11 +4560,13 @@ class DisplayOptionsWindow(QtWidgets.QDialog):
     #                 self.field_combo.addItem(field)
 
     def update_field_options(self):
-        """Update field dropdown options based on available analysis data"""
+        """Always show None, Deformation, Von Mises stress, Temperature."""
         self.field_combo.blockSignals(True)
         self.field_combo.clear()
-        # Always add these options
-        self.field_combo.addItems(["Displacement", "Von Mises", "Temperature"])
+        self.field_combo.addItems(["None", "Deformation", "Von Mises stress", "Temperature"])
+        # If geometry is Initial Design or Final Design, force field to None
+        if self.geometry_combo.currentText() in ["Initial Design", "Final Design"]:
+            self.field_combo.setCurrentText("None")
         self.field_combo.blockSignals(False)
                     
     def showEvent(self, event):
@@ -4862,6 +4883,7 @@ class ProjectsWindow(QtWidgets.QDialog):
 #----------------------------------------------------------------------------
 if __name__ == "__main__":
     app = QtWidgets.QApplication(sys.argv)
+    app.setStyleSheet("* { font-size: 14pt; }")
     window = MainWindow()
     window.show()
     sys.exit(app.exec_())

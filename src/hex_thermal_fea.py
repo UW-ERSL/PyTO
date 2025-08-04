@@ -111,7 +111,7 @@ class HexThermalFEA:
 
 
   #################################################################
-  def plot_temperature(self):
+  def plot_temperature(self,auto_close = True,plotter=None, save_path=None):
     # Return if no solution exists yet
     if not hasattr(self, 'sol'):
       return None
@@ -170,15 +170,26 @@ class HexThermalFEA:
     
     # Add density values to cells
     pv_mesh.cell_data['density'] = face_densities
-
-    # Create plotter
-    save_path = None
-    if save_path is  None:
-      plotter = pv.Plotter(window_size=(500, 400))
-    else:
-      plotter = pv.Plotter(off_screen=True)
-    
-    plotter.add_title(f'Max Temp: {np.max(sol):.4g}', font_size=8)
+    externalPlotter = False # assume that a plotter is provided
+    if plotter is None: 
+      externalPlotter = True # create a new plotter
+      # Create plotter
+      save_path = None
+      if save_path is  None:
+        plotter = pv.Plotter(window_size=(500, 400))
+      else:
+        plotter = pv.Plotter(off_screen=True)
+      
+      plotter.add_title(f'Max Temp: {np.max(sol):.4g}', font_size=8)
+          # Add coordinate axes widget
+      plotter.add_axes(
+                      xlabel='X',
+                      ylabel='Y',
+                      zlabel='Z',
+                      line_width=2,
+                      labels_off=False,  # Show axis labels
+                      color='black'
+                      )
     # Add mesh to plotter
     nDOF = 3*self.mesh.num_nodes
     plotter.add_mesh(
@@ -197,15 +208,7 @@ class HexThermalFEA:
                             }
                   )
 
-    # Add coordinate axes widget
-    plotter.add_axes(
-                    xlabel='X',
-                    ylabel='Y',
-                    zlabel='Z',
-                    line_width=2,
-                    labels_off=False,  # Show axis labels
-                    color='black'
-                    )
+
 
     # Set camera position for left-bottom-forward view
     view_distance = 2.5 * self.mesh.bbox.diag_length
@@ -227,9 +230,12 @@ class HexThermalFEA:
       plotter.screenshot(save_path)
       plotter.close()
     else:
-      plotter.show() 
-    
-    return 
+      if (externalPlotter):
+        plotter.show(interactive_update=not auto_close, auto_close=auto_close)
+      else:
+        plotter.show()
+
+    return
 
 #################################################################
   def plot_mesh(self, title = None,plot_bc = True,auto_close = True, save_path=None):

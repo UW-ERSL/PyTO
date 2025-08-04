@@ -1,0 +1,74 @@
+{
+  "version": "2025.01",
+  "stl_file_path": "C:/Users/Krishnan Suresh/Dropbox/Personal/suresh/Software/Github/ERSL-Private/PyTO/Models/HeatBlock/HeatBlock.STL",
+  "settings": {
+    "unit_system": "MKS",
+    "temperature_unit": "Kelvin",
+    "angle_unit": "Degree"
+  },
+  "material_data": {
+    "name": "Aluminum",
+    "properties": {
+      "Young's Modulus": 70000000000.0,
+      "Poisson's Ratio": 0.33,
+      "Yield Strength": 270000000.0,
+      "Density": 2700,
+      "Thermal Conductivity": 237,
+      "Thermal Expansion": 2.3e-05,
+      "Specific Heat Capacity": 900,
+      "Price": 2.0
+    }
+  },
+  "force_data": [],
+  "constraint_data": [],
+  "constrained_triangles": [],
+  "thermal_loads": {
+    "fixed_temps": [],
+    "heat_sources": [
+      {
+        "triangles": [
+          134,
+          135,
+          136,
+          137,
+          138,
+          139,
+          140,
+          141,
+          142,
+          143,
+          144,
+          145,
+          146,
+          147,
+          148,
+          149,
+          150,
+          151,
+          152,
+          153,
+          154,
+          155,
+          156,
+          157,
+          158,
+          159,
+          160,
+          161,
+          162,
+          163,
+          164,
+          165,
+          166,
+          167,
+          168,
+          169
+        ],
+        "type": "heat_flux",
+        "heat_flux": -1000.0
+      }
+    ],
+    "total_heat_sources": []
+  },
+  "topopt_constraints": null
+}
