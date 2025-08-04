@@ -30,6 +30,11 @@ def topopt_optimality_criteria(
 	Returns: A tuple containing the displacement field of the optimized structure
 		and a dictionary containing the optimization history.
 	"""
+	def log_message(msg): # This is a helper function to log messages in GUI or console
+		if progress_callback:
+			progress_callback(str(msg))
+		else:
+			print(msg)   
 	nDOFPerNode = 3 if isinstance(fe_solver, hex_structural_fea.HexStructuralFEA) else 1
 	material_model = MaterialModel.SIMP 
 	tStart = time.time()
@@ -38,7 +43,7 @@ def topopt_optimality_criteria(
 
 	num_elems = fe_solver.mesh.num_elems
 	if (print_progress):
-		print("Computing Filters ...")
+		log_message("Computing Filters ...")
 	[H,Hs] = createFilters(fe_solver, to_params)
 	elemsWithForces = find_elements_with_forces(fe_solver.mesh, fe_solver.bc.force,nDOFPerNode)
 
@@ -76,7 +81,7 @@ def topopt_optimality_criteria(
 			KE_list = [hex_element_stiffness.hex8_stiffness_matrix_thermal( mp.thermal_conductivity,fe_solver.mesh.elem_size)
 				for mp in fe_solver.mat_prop]
 			KE = KE_list[0]	
-		print("Assuming all elements have the same material properties")
+		log_message("Assuming all elements have the same material properties")
 	else: # single material
 		if isinstance(fe_solver, hex_structural_fea.HexStructuralFEA):
 			KE = hex_element_stiffness.hex8_stiffness_matrix_structural( fe_solver.mat_prop.youngs_modulus,
@@ -157,10 +162,10 @@ def topopt_optimality_criteria(
 		fraction_grey = (grey_elements / num_elems) 
 
 		if (print_progress):
-			print(f"it.: {iter+1:d}, obj.: {(obj*objScaling):.3g}, "
+			log_message(f"it.: {iter+1:d}, obj.: {(obj*objScaling):.3g}, "
 				  	f"vol.: {np.mean(xPhys):.3g}, grey: {fraction_grey:.3f}")
 		if np.isnan(obj):
-			print("Objective function became NaN. Exiting optimization.")
+			log_message("Objective function became NaN. Exiting optimization.")
 			errorMsg = "Objective is diverging"
 			success = False
 			break
@@ -169,17 +174,17 @@ def topopt_optimality_criteria(
 			dJ = abs((history['objective'][-1] - history['objective'][-2]) / history['objective'][-2])
 			# we need multiple checks else it will terminate too early 
 			if (dJ < rel_conv_tol) and (volConstraint < rel_conv_tol) and (change < 0.2) and (fraction_grey < 0.1): # success
-				print("OC optimization converged.")
+				log_message("OC optimization converged.")
 				break
 
 			# Also this check for stalling
 			if (dJ < rel_conv_tol) and (volConstraint < rel_conv_tol) and (change < move_tol): # success
-				print("OC optimization converged.")
+				log_message("OC optimization converged.")
 				break
 
 	if iter == maxIterations - 1:
 		errorMsg = "Maximum iterations reached"
-		print(errorMsg)
+		log_message(errorMsg)
 		success = False
 	totalTime = time.time() - tStart
 	if (binarize_topology):
@@ -192,7 +197,7 @@ def topopt_optimality_criteria(
 	meshComponents = fe_solver.mesh.find_connected_components()
 	if (len(meshComponents) > 1):
 		if (print_progress):
-			print("Disconnected topology detected. Removing hanging elements.")
+			log_message("Disconnected topology detected. Removing hanging elements.")
 		# Find the largest connected component and its size
 		largest_component = max(meshComponents, key=len)
 		# Set density to 1 for elements in largest component
@@ -212,9 +217,9 @@ def topopt_optimality_criteria(
 		success = False
 
 	nFEAs = iter + 1
-	print(f"Final objective: {obj:.4g}, vf: {np.mean(x):.3f}")
-	print(f"Total Time: {totalTime:.2f} s")
-	print("Error: ", errorMsg)
+	log_message(f"Final objective: {obj:.4g}, vf: {np.mean(x):.3f}")
+	log_message(f"Total Time: {totalTime:.2f} s")
+	log_message(f"Error: {errorMsg}")
 	return sol, history, success, errorMsg, nFEAs
 
 	 

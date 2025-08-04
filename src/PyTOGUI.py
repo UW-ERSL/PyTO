@@ -282,6 +282,30 @@ class MainWindow(QtWidgets.QMainWindow):
         pass
 #################################################################
 
+    def update_geometry_info_text(self):
+        """Update the geometry info text in the upper left corner with current units and material."""
+        if not self.stl_geom:
+            return
+        area, volume, _, _ = self.stl_geom.compute_mass_properties()
+        bounds = self.stl_geom.get_bounding_box()
+        length_unit = self.settings.get_length_unit_string()
+        material_name = self.applied_material.get("name", "None") if getattr(self, "applied_material", None) else "None"
+        info_lines = [
+            f"Model: {os.path.basename(self.stl_geom.file_path)}",
+            f"Volume: {volume:.2e} {length_unit}³",
+            f"Length: {bounds[1] - bounds[0]:.2e} {length_unit}" if bounds else "Length: N/A",
+            f"Material: {material_name}"
+        ]
+        self.plotter.remove_actor("geometry_info")
+        self.plotter.add_text(
+            "\n".join(info_lines),
+            position="upper_left",
+            font_size=12,
+            color="black",
+            name="geometry_info",
+            font="arial"
+        )
+
     def handle_button_click(self, config):
         """button click handler"""
         if not self.check_button_availability(config):
@@ -781,11 +805,20 @@ class UnitsWindow(QtWidgets.QDialog):
         )
         if hasattr(self.parent(), "set_sidebar_icon"):
             self.parent().set_sidebar_icon("Units", "check")
-        
-        #just a message about units being applied
         if hasattr(self.parent(), "message_text"):
-            self.parent().message_text.append(f"Units defined: {self.unit_combo.currentText()}, " + 
-                                      f"{self.temp_combo.currentText()}, {self.angle_combo.currentText()}")
+            self.parent().message_text.append(
+                f"Units defined: {self.unit_combo.currentText()}, "
+                f"{self.temp_combo.currentText()}, {self.angle_combo.currentText()}"
+            )
+        # Update all open windows with new units
+        if hasattr(self.parent(), "update_geometry_info_text"):
+            self.parent().update_geometry_info_text()
+        if hasattr(self.parent(), "structural_loads_window"):
+            self.parent().structural_loads_window.update_units()
+        if hasattr(self.parent(), "material_window"):
+            self.parent().material_window.update_units()
+        if hasattr(self.parent(), "thermal_loads_window"):
+            self.parent().thermal_loads_window.update_units()
         
         self.accept()
 #---------------------------------------------------------------------------
@@ -946,7 +979,8 @@ class MaterialWindow(QtWidgets.QDialog):
         self.setFixedSize(300, 400)
         self.parent = parent 
 
-        self.materials = {
+        # Store all materials in SI units only!
+        self.materials_SI = {
             "Steel": {
                 "Young's Modulus": 2.1e11,
                 "Poisson's Ratio": 0.3,
@@ -995,36 +1029,28 @@ class MaterialWindow(QtWidgets.QDialog):
         form_layout = QtWidgets.QFormLayout()
         form_layout.setLabelAlignment(QtCore.Qt.AlignRight)
 
-        #Material name dropdown
+        # Material name dropdown
         self.material_combo = QtWidgets.QComboBox()
-        self.material_combo.addItems(self.materials.keys())
+        self.material_combo.addItems(self.materials_SI.keys())
         self.material_combo.currentTextChanged.connect(self.on_material_changed)
         form_layout.addRow("Material Name:", self.material_combo)
 
-        #Create fields
+        # Create fields
         self.fields = {}
-
         self.fields["Young's Modulus"] = QtWidgets.QLineEdit()
         form_layout.addRow(self.label_with_unit("Young's Modulus"), self.fields["Young's Modulus"])
-
         self.fields["Poisson's Ratio"] = QtWidgets.QLineEdit()
         form_layout.addRow("Poisson's Ratio (-):", self.fields["Poisson's Ratio"])
-
         self.fields["Yield Strength"] = QtWidgets.QLineEdit()
         form_layout.addRow(self.label_with_unit("Yield Strength"), self.fields["Yield Strength"])
-
         self.fields["Density"] = QtWidgets.QLineEdit()
         form_layout.addRow(self.label_with_unit("Density"), self.fields["Density"])
-
         self.fields["Thermal Conductivity"] = QtWidgets.QLineEdit()
         form_layout.addRow("Thermal Conductivity (W/m-K):", self.fields["Thermal Conductivity"])
-
         self.fields["Thermal Expansion"] = QtWidgets.QLineEdit()
         form_layout.addRow("Thermal Expansion (m/m-K):", self.fields["Thermal Expansion"])
-
         self.fields["Specific Heat Capacity"] = QtWidgets.QLineEdit()
         form_layout.addRow("Spec. Heat Capacity (J/kg-K):", self.fields["Specific Heat Capacity"])
-
         self.fields["Price"] = QtWidgets.QLineEdit()
         form_layout.addRow("Price (US$/kg):", self.fields["Price"])
 
@@ -1033,7 +1059,7 @@ class MaterialWindow(QtWidgets.QDialog):
 
         layout.addLayout(form_layout)
 
-        #Checkbox and buttons
+        # Checkbox and buttons
         self.optimize_check = QtWidgets.QCheckBox("Do not optimize")
         layout.addWidget(self.optimize_check)
 
@@ -1048,7 +1074,6 @@ class MaterialWindow(QtWidgets.QDialog):
         self.on_material_changed(self.material_combo.currentText())
 
     def label_with_unit(self, key):
-        """Return label with dynamic unit for key."""
         s = self.parent.settings
         if key == "Young's Modulus" or key == "Yield Strength":
             return f"{key} ({s.get_stress_unit_string()}):"
@@ -1057,14 +1082,23 @@ class MaterialWindow(QtWidgets.QDialog):
         return key
 
     def on_material_changed(self, name):
-        mat = self.materials[name]
+        mat_SI = self.materials_SI[name]
+        s = self.parent.settings
         for key, field in self.fields.items():
-            value = mat[key]
-            # Show large/small numbers in scientific notation, others as normal
-            if isinstance(value, float) and (abs(value) >= 1e5 or (abs(value) < 1e-2 and value != 0)):
-                field.setText(f"{value:.2e}")
+            value = mat_SI[key]
+            # Convert for display
+            if key in ["Young's Modulus", "Yield Strength"]:
+                value_disp = s.convert_stress(value, from_system="MKS", to_system=s.unit_system)
+            elif key == "Density":
+                # Optionally implement density conversion if needed
+                value_disp = value
             else:
-                field.setText(str(value))
+                value_disp = value
+            # Show large/small numbers in scientific notation, others as normal
+            if isinstance(value_disp, float) and (abs(value_disp) >= 1e5 or (abs(value_disp) < 1e-2 and value_disp != 0)):
+                field.setText(f"{value_disp:.2e}")
+            else:
+                field.setText(str(value_disp))
             field.setReadOnly(name != "Custom")
         if self.material_applied:
             self.material_combo.setEnabled(False)
@@ -1074,28 +1108,35 @@ class MaterialWindow(QtWidgets.QDialog):
 
     def apply_material(self):
         name = self.material_combo.currentText()
+        s = self.parent.settings
         if name == "Custom":
-            #Save custom values
+            # Save custom values (convert back to SI)
             for key in self.fields:
                 try:
-                    val = float(self.fields[key].text())
+                    val_disp = float(self.fields[key].text())
+                    # Convert back to SI for storage
+                    if key in ["Young's Modulus", "Yield Strength"]:
+                        val_SI = s.convert_stress(val_disp, from_system=s.unit_system, to_system="MKS")
+                    elif key == "Density":
+                        val_SI = val_disp  # Add conversion if needed
+                    else:
+                        val_SI = val_disp
                 except ValueError:
                     QtWidgets.QMessageBox.warning(self, "Input Error", f"Invalid value for {key}")
                     return
-                self.materials["Custom"][key] = val
+                self.materials_SI["Custom"][key] = val_SI
         self.material_applied = True
         self.on_material_changed(name)
 
-        #Store the applied material in parent for later use
+        # Store the applied material in parent for later use (in SI units)
         self.parent.applied_material = {
             'name': name,
-            'properties': self.materials[name].copy()
+            'properties': self.materials_SI[name].copy()
         }
 
-        #Update geometry info text if geometry is loaded
+        # Update geometry info text if geometry is loaded
         if getattr(self.parent, "stl_geom", None):
             self.parent.plotter.remove_actor("geometry_info")
-            # Reuse the info text logic from GeometryWindow
             area, volume, _, _ = self.parent.stl_geom.compute_mass_properties()
             bounds = self.parent.stl_geom.get_bounding_box()
             length_unit = self.parent.settings.get_length_unit_string()
@@ -1115,22 +1156,18 @@ class MaterialWindow(QtWidgets.QDialog):
                 font="arial",
             )
 
-        #Update LivVar to indicate material is defined
         self.parent.update_LivVar('material_defined', True)
-        
         self.parent.message_text.append(f"Material '{name}' applied successfully.")
-
         self.parent.set_sidebar_icon("Material", "check")
         self.parent.set_sidebar_icon("Structural Loads", "arrow")
-
         self.close()
-        
+
     def update_units(self):
-        #Dyanmic Label Update
         form_layout = self.layout().itemAt(0).layout()
         form_layout.labelForField(self.fields["Young's Modulus"]).setText(self.label_with_unit("Young's Modulus"))
         form_layout.labelForField(self.fields["Yield Strength"]).setText(self.label_with_unit("Yield Strength"))
         form_layout.labelForField(self.fields["Density"]).setText(self.label_with_unit("Density"))
+        self.on_material_changed(self.material_combo.currentText())
 
     def showEvent(self, event):
         super().showEvent(event)
@@ -1368,16 +1405,17 @@ class StructuralLoadsWindow(QtWidgets.QDialog):
 
     def convert_forces_to_base_units(self, forces):
         """Convert forces from current units to base units"""
-        current_unit_system = self.parent.settings.unit_system
-        if current_unit_system == "MKS":
-            return forces
+        # current_unit_system = self.parent.settings.unit_system
+        # if current_unit_system == "MKS":
+        #     return forces
         
-        converted = {}
-        for axis, force_value in forces.items():
-            converted[axis] = self.parent.settings.convert_force(
-                force_value, current_unit_system, "MKS"
-            )
-        return converted
+        # converted = {}
+        # for axis, force_value in forces.items():
+        #     converted[axis] = self.parent.settings.convert_force(
+        #         force_value, current_unit_system, "MKS"
+        #     )
+        # return converted
+        return forces
 
     def get_force_values(self):
         """Get force values from spinboxes"""
@@ -1404,6 +1442,23 @@ class StructuralLoadsWindow(QtWidgets.QDialog):
         selected_triangles = self.get_selected_triangles()
         if not selected_triangles:
             return
+
+        # Remove any previous force data and actors for these triangles
+        selected_indices = set(tri['index'] for tri in selected_triangles)
+        # Remove force data
+        self.parent.force_data = [
+            fd for fd in self.parent.force_data
+            if not selected_indices.intersection(set(fd['triangles']))
+        ]
+        # Remove force actors (arrows and labels)
+        new_force_actors = []
+        for actor in self.parent.force_actors:
+            # Try to remove all actors, but keep those not associated with these triangles
+            try:
+                self.parent.plotter.remove_actor(actor, reset_camera=False)
+            except Exception:
+                pass
+        self.parent.force_actors = []
 
         forces = self.get_force_values()
         if not self.validate_forces(forces):
@@ -1653,6 +1708,13 @@ class StructuralLoadsWindow(QtWidgets.QDialog):
             lighting=True
         )
         self.parent.constraint_actors.append(constraint_actor)
+    
+    def update_units(self):
+        """Update force spinbox prefixes and units."""
+        force_unit = self.parent.settings.get_force_unit_string()
+        for axis, spinbox in self.force_spinboxes.items():
+            spinbox.setPrefix(f"{axis}: ")
+            spinbox.setSuffix(f" {force_unit}")
 #---------------------------------------------------------------------------
 class ThermalLoadsWindow(QtWidgets.QDialog):
     ARROW_THRESHOLD = 25
@@ -2151,6 +2213,23 @@ class ThermalLoadsWindow(QtWidgets.QDialog):
 
         # Notify display options window
         self.parent.notify_display_options_update()
+
+    def update_units(self):
+        """Update thermal spinbox prefixes and units."""
+        temp_unit = self.parent.settings.get_temperature_unit_symbol()
+        length_unit = self.parent.settings.get_length_unit_string()
+        
+        # Update temperature spinbox
+        self.temp_value_spin.setPrefix(f"Temperature ({temp_unit}): ")
+        self.temp_value_spin.setSuffix(f" {temp_unit}")
+        
+        # Update heat flux spinbox
+        self.heat_flux_value_spin.setPrefix(f"Heat Flux (W/{length_unit}²): ")
+        self.heat_flux_value_spin.setSuffix(f" W/{length_unit}²")
+        
+        # Update total heat spinbox
+        self.total_heat_value_spin.setPrefix("Total Heat (W): ")
+        self.total_heat_value_spin.setSuffix(" W")
 #---------------------------------------------------------------------------
 class AnalysisWindow(QtWidgets.QDialog):
     def __init__(self, parent):
@@ -3452,13 +3531,6 @@ class StructuralTopOptWindow(QtWidgets.QDialog):
         self.stop_button.setStyleSheet("QPushButton { background-color: #ff6b6b; }")
         layout.addWidget(self.stop_button)
         
-        # Results display area
-        self.results_label = QtWidgets.QLabel("Results will appear here")
-        self.results_label.setStyleSheet("QLabel { background-color: #f0f0f0; padding: 10px; }")
-        self.results_label.setWordWrap(True)
-        self.results_label.setMinimumHeight(100)
-        layout.addWidget(self.results_label)
-        
         # Close button
         close_button = QtWidgets.QPushButton("Close")
         close_button.clicked.connect(self.close)
@@ -3477,8 +3549,6 @@ class StructuralTopOptWindow(QtWidgets.QDialog):
         self.optimization_running = True
         self.optimize_button.setEnabled(False)
         self.stop_button.setEnabled(True)
-
-        self.results_label.setText("Starting optimization...")
         
         self.parent.message_text.append(f"Starting structural topology optimization")
         self.parent.message_text.append(f"Method: {method}, Volume Fraction: {volume_fraction}")
@@ -3510,17 +3580,19 @@ class StructuralTopOptWindow(QtWidgets.QDialog):
         # Create FE solver
         fe_solver = self.create_fe_solver_for_topopt()
         
-        QtCore.QMetaObject.invokeMethod(
-            self.results_label,
-            "setText",
-            QtCore.Qt.QueuedConnection,
-            QtCore.Q_ARG(str, f"Running {method} topology optimization...\nThis may take several minutes.")
-        )
-        
         success = False
         error_msg = ""
         u, history, n_feas = None, None, 0
-        
+
+        def gui_progress_callback(msg):
+            QtCore.QMetaObject.invokeMethod(
+                self.parent.message_text,
+                "append",
+                QtCore.Qt.QueuedConnection,
+                QtCore.Q_ARG(str, str(msg))
+            )
+
+      
         try:
             if method == "DENSITY-MMA":
                 u, history, success, error_msg, n_feas = topopt_mma(
@@ -3532,9 +3604,10 @@ class StructuralTopOptWindow(QtWidgets.QDialog):
                     kkt_tol=1e-6,
                     objective_tol=1e-4,
                     constraint_tol=1e-4,
-                    print_progress=False,
+                    print_progress=True,
                     plot_progress=False,
-                    binarize_topology=True
+                    binarize_topology=True,
+                    progress_callback=gui_progress_callback
                 )
                 
             elif method == "DENSITY-OC":
@@ -3547,7 +3620,8 @@ class StructuralTopOptWindow(QtWidgets.QDialog):
                     rel_conv_tol=1e-4,
                     print_progress=False,
                     plot_progress=False,
-                    binarize_topology=True
+                    binarize_topology=True,
+                    progress_callback=gui_progress_callback
                 )
                 
             elif method == "PARETO":
@@ -3560,7 +3634,8 @@ class StructuralTopOptWindow(QtWidgets.QDialog):
                     min_local_iters=2,
                     max_local_iters=5,
                     print_progress=False,
-                    plot_progress=False
+                    plot_progress=False,
+                    progress_callback=gui_progress_callback
                 )
                 
             elif method == "LEVELSET":
@@ -3570,7 +3645,8 @@ class StructuralTopOptWindow(QtWidgets.QDialog):
                     maxIterations=250,
                     numReinit=10000,
                     plot_progress=False,
-                    print_progress=False
+                    print_progress=False,
+                    progress_callback=gui_progress_callback
                 )
                 
             else:
@@ -3592,14 +3668,6 @@ class StructuralTopOptWindow(QtWidgets.QDialog):
                 QtCore.Q_ARG(object, u),
                 QtCore.Q_ARG(object, fe_solver)
             )
-
-    # def print_progress_to_message_box(self, msg):
-    #     QtCore.QMetaObject.invokeMethod(
-    #         self.parent.message_text,
-    #         "append",
-    #         QtCore.Qt.QueuedConnection,
-    #         QtCore.Q_ARG(str, msg)
-    #     )
 
     @QtCore.pyqtSlot(bool, str, object, object, object)
     def optimization_completed(self, success, error_msg, history, u, fe_solver):
@@ -3634,8 +3702,6 @@ class StructuralTopOptWindow(QtWidgets.QDialog):
                 f"Target volume: {self.vol_spinbox.value():.3f}"
             )
             
-            self.results_label.setText(results_text)
-            
             self.parent.message_text.append("Structural topology optimization completed successfully")
             self.parent.message_text.append(f"Method: {self.method_combo.currentText()}")
             self.parent.message_text.append(f"Final objective: {final_objective:.6e}, Volume fraction: {final_volume:.3f}")
@@ -3657,17 +3723,30 @@ class StructuralTopOptWindow(QtWidgets.QDialog):
             self.visualize_optimized_topology(fe_solver)
             
         else:
-            self.results_label.setText(f"Optimization failed:\n{error_msg}")
             self.parent.message_text.append(f"Structural topology optimization failed: {error_msg}")
 
     def apply_topopt_constraints_to_params(self, to_params):
-        """Apply topology optimization constraints"""
+        print("[DEBUG] apply_topopt_constraints_to_params CALLED")
         constraints = self.parent.topopt_constraints
-        
+        print("[DEBUG] constraints:", constraints)
+        #constraints = self.parent.topopt_constraints
+
+        # Handle extrude constraint
+        manufacturing = constraints.get('manufacturing', {})
+        extrude = manufacturing.get('extrude', {})
+        if extrude.get('enabled', False):
+            direction = extrude.get('value', None)
+            if direction:
+                # Map GUI direction to vector or enum as needed by your TOParams
+                dir_map = {"XDir": (1, 0, 0), "YDir": (0, 1, 0), "ZDir": (0, 0, 1)}
+                to_params.EXTRUDE_DIRECTION = dir_map.get(direction, None)
+                print(f"[DEBUG] Applying extrude constraint: {direction} -> {to_params.EXTRUDE_DIRECTION}")
+
+        # Existing handling for 'other' constraints
         other_constraints = constraints.get('other', {})
         if other_constraints.get('connected_topology', False):
             to_params.ENSURE_CONNECTED_TOPOLOGY = True
-        
+
         if other_constraints.get('keep_fixed_faces', False):
             analysis_window = AnalysisWindow(self.parent)
             boundary_nodes, boundary_points, tolerance = analysis_window.get_boundary_mapping_data()
@@ -3675,6 +3754,9 @@ class StructuralTopOptWindow(QtWidgets.QDialog):
                 list(self.parent.constrained_triangles), boundary_nodes, boundary_points, tolerance
             )
             to_params.ElemsToKeep = list(constrained_elements)
+
+        # Print all to_params for debugging
+        print("[DEBUG] TOParams after applying constraints:", vars(to_params))
 
     def create_fe_solver_for_topopt(self):
         """Create FE solver for topology optimization"""
@@ -3792,8 +3874,6 @@ class StructuralTopOptWindow(QtWidgets.QDialog):
                 f"Target volume: {self.vol_spinbox.value():.3f}"
             )
             
-            self.results_label.setText(results_text)
-            
             self.parent.message_text.append("Structural topology optimization completed successfully")
             self.parent.message_text.append(f"Final objective: {final_objective:.6e}, Volume fraction: {final_volume:.3f}")
             
@@ -3814,7 +3894,6 @@ class StructuralTopOptWindow(QtWidgets.QDialog):
             self.visualize_optimized_topology(fe_solver)
             
         else:
-            self.results_label.setText(f"Optimization failed:\n{error_msg}")
             self.parent.message_text.append(f"Structural topology optimization failed: {error_msg}")
     
     def visualize_optimized_topology(self, fe_solver):
@@ -4081,7 +4160,6 @@ class DisplayOptionsWindow(QtWidgets.QDialog):
         self.update_checkbox_states()  # Update checkbox states when window opens
             
     def update_display(self):
-        """Update display based on current settings"""
         geometry_choice = self.geometry_combo.currentText()
         field_choice = self.field_combo.currentText()
         # Only clear actors if something will be plotted
@@ -4098,15 +4176,20 @@ class DisplayOptionsWindow(QtWidgets.QDialog):
 
         # Visualization logic based on field selection
         if geometry_choice == "FEA Results":
-            if field_choice == "Displacement" and hasattr(self.parent, "fe_solver") and self.parent.fe_solver:
-                self.parent.fe_solver.plot_deformation(plotter=self.parent.plotter)
-            elif field_choice == "Von Mises" and hasattr(self.parent, "fe_solver") and self.parent.fe_solver:
-                self.parent.fe_solver.plot_vonMisesStress(plotter=self.parent.plotter)
-            elif field_choice == "Temperature" and hasattr(self.parent, "thermal_fe_solver") and self.parent.thermal_fe_solver:
-                self.parent.thermal_fe_solver.plot_temperature(plotter=self.parent.plotter)
+            if field_choice == "Displacement":
+                if hasattr(self.parent, "fe_solver") and self.parent.fe_solver:
+                    self.parent.fe_solver.plot_deformation(plotter = self.parent.plotter)
+            elif field_choice == "Von Mises":
+                if hasattr(self.parent, "fe_solver") and self.parent.fe_solver:
+                    self.parent.fe_solver.plot_vonMisesStress(plotter=self.parent.plotter)
+            elif field_choice == "Temperature":
+                if hasattr(self.parent, "thermal_fe_solver") and self.parent.thermal_fe_solver:
+                    self.parent.thermal_fe_solver.plot_temperature(plotter = self.parent.plotter)
+                else:
+                    QtWidgets.QMessageBox.warning(self, "Thermal Results Missing", "Please solve for thermal analysis first.")
 
         # Show initial design (STL) if selected
-        if geometry_choice == "Initial Design" and self.parent.stl_geom:
+        elif geometry_choice == "Initial Design" and self.parent.stl_geom:
             self.parent.stl_geom.plotGeometry(
                 show_edges=self.show_triangles.isChecked(),
                 show_axes=self.show_axis.isChecked(),
@@ -4116,76 +4199,47 @@ class DisplayOptionsWindow(QtWidgets.QDialog):
         # Show mesh if selected
         elif geometry_choice == "Mesh" and hasattr(self.parent, "hex_mesh") and self.parent.hex_mesh:
             AnalysisWindow(self.parent).visualize_colored_mesh("structural")
-            
-        # Show FEA Results if selected
-        elif geometry_choice == "FEA Results":
-            # Prefer structural FEA if available, else thermal
-            if hasattr(self.parent, "fe_solver") and self.parent.fe_solver is not None:
-                self.parent.fe_solver.plot_deformation(plotter = self.parent.plotter)
-            elif hasattr(self.parent, "thermal_fe_solver") and self.parent.thermal_fe_solver is not None:
-                self.parent.thermal_fe_solver.plot_temperature(plotter = self.parent.plotter)
-
         # Show final design if selected
         elif geometry_choice == "Final Design" and hasattr(self.parent, "topopt_results") and self.parent.topopt_results:
             fe_solver = self.parent.topopt_results.get("fe_solver")
             if fe_solver:
                 fe_solver.plot_mesh(plotter=self.parent.plotter)
 
-        # Update bounding box display
         if self.show_bounding_box_checkbox.isChecked():
             self.show_bounding_box(True)
         else:
             self.show_bounding_box(False)
-            
-        # Update geometry display
         if self.show_triangles.isChecked():
             self.show_mesh_edges(True)
         else:
             self.show_mesh_edges(False)
-            
-        # Update text display
         if self.show_text.isChecked():
             self.show_geometry_text(True)
         else:
             self.show_geometry_text(False)
-            
-        # Update axis display
         if self.show_axis.isChecked():
             self.show_axes(True)
         else:
             self.show_axes(False)
-            
-        # Update transparency
         if self.show_transparent_geometry.isChecked():
             self.set_geometry_transparency(0.5)
         else:
             self.set_geometry_transparency(1.0)
-            
-        # Update structural loads visibility
         if self.show_structural_loads_checkbox.isChecked():
             self.show_structural_loads(True)
         else:
             self.show_structural_loads(False)
-            
-        # Update thermal loads visibility
         if self.show_thermal_loads_checkbox.isChecked():
             self.show_thermal_loads(True)
         else:
             self.show_thermal_loads(False)
-            
-        # Update TopOpt constraints visibility
         if self.show_topopt_constraints_checkbox.isChecked():
             self.show_topopt_constraints(True)
         else:
             self.show_topopt_constraints(False)
 
-        # if self.show_non_design_parts_checkbox.isChecked():
-        #     self.show_non_design_parts(True)
-        # else:
-        #     self.show_non_design_parts(False)
-            
         self.parent.plotter.render()
-        
+
     def update_cutting(self):
         """Update cutting planes based on spinbox values"""
         x_percent = self.x_cutting_spin.value() / 100.0
@@ -4213,7 +4267,7 @@ class DisplayOptionsWindow(QtWidgets.QDialog):
                     prop.EdgeVisibilityOff()
 
     def show_bounding_box(self, show):
-        """Show or hide bounding box"""
+        """Show or hide bounding box (only for STL geometry)"""
         bbox_actor_name = "bounding_box_display"
         if show:
             if bbox_actor_name not in self.parent.plotter.actors:
@@ -4498,7 +4552,7 @@ class DisplayOptionsWindow(QtWidgets.QDialog):
         """Update options when window is shown"""
         super().showEvent(event)
         self.update_geometry_options()
-        self.update_field_options()
+        self.update_field_options() 
 #----------------------------------------------------------------------------
 class ProjectsWindow(QtWidgets.QDialog):
     def __init__(self, parent):
@@ -4609,6 +4663,27 @@ class ProjectsWindow(QtWidgets.QDialog):
             self.parent.update_LivVar('material_defined', True)
             self.parent.set_sidebar_icon("Material", "check")
             self.parent.set_sidebar_icon("Structural Loads", "arrow")
+            # Update geometry info text with correct material after restoring material
+            if getattr(self.parent, "stl_geom", None):
+                area, volume, _, _ = self.parent.stl_geom.compute_mass_properties()
+                bounds = self.parent.stl_geom.get_bounding_box()
+                length_unit = self.parent.settings.get_length_unit_string()
+                material_name = self.parent.applied_material.get("name", "None")
+                info_lines = [
+                    f"Model: {os.path.basename(self.parent.stl_geom.file_path)}",
+                    f"Volume: {volume:.2e} {length_unit}³",
+                    f"Length: {bounds[1] - bounds[0]:.2e} {length_unit}" if bounds else "Length: N/A",
+                    f"Material: {material_name}"
+                ]
+                self.parent.plotter.remove_actor("geometry_info")
+                self.parent.plotter.add_text(
+                    "\n".join(info_lines),
+                    position="upper_left",
+                    font_size=12,
+                    color="black",
+                    name="geometry_info",
+                    font="arial"
+                )
         
         # Restore structural loads
         self.parent.force_data = project_data.get('force_data', [])
@@ -4626,7 +4701,7 @@ class ProjectsWindow(QtWidgets.QDialog):
         if project_data.get('topopt_constraints'):
             self.restore_topopt_constraints(project_data['topopt_constraints'])
         
-        self.parent.message_text.append(f"Project loaded with all visualizations: {os.path.basename(filename)}")
+        self.parent.message_text.append(f"Project loaded: {os.path.basename(filename)}")
         self.close()
 
     def load_geometry(self, file_path):
@@ -4638,11 +4713,16 @@ class ProjectsWindow(QtWidgets.QDialog):
         bounds = stl_geom.get_bounding_box()
         length_unit = self.parent.settings.get_length_unit_string()
 
+        # Get material name or 'None'
+        material_name = "None"
+        if getattr(self.parent, "applied_material", None):
+            material_name = self.parent.applied_material.get("name", "None")
+
         info_lines = [
             f"Model: {os.path.basename(file_path)}",
             f"Volume: {volume:.2e} {length_unit}³",
             f"Length: {bounds[1] - bounds[0]:.2e} {length_unit}" if bounds else "Length: N/A",
-            f"Surface Area: {area:.2e} {length_unit}²"
+            f"Material: {material_name}"
         ]
 
         self.parent.plotter.remove_actor("geometry_info")

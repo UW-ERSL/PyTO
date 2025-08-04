@@ -17,7 +17,9 @@ import time
 
 def runMMA(nVariables,nConstraints,optimizationFunction,X0,lowerBound,
 			 upperBound, fTolerance = 1e-4,gTolerance = 1e-4,
-			 maxIterations = 250,timeLimitSecs = 3600,move_limit = 0.2,kktTol = 1e-6,verbose = False):
+			 maxIterations = 250,timeLimitSecs = 3600,move_limit = 0.2,kktTol = 1e-6,verbose = False, progress_callback=None):
+	
+
 	'''
 	 Input
 		nVariables: scalar (N)
@@ -35,6 +37,12 @@ def runMMA(nVariables,nConstraints,optimizationFunction,X0,lowerBound,
 		kktTol (optional):  float
 		verbos (optional): Boolean to print
 	'''
+
+	def log_message(msg):
+		if progress_callback:
+			progress_callback(str(msg))
+		else:
+			print(msg)  
 	# Set numpy print options
 	np.set_printoptions(precision=4, formatter={'float': '{:0.4f}'.format})
 	
@@ -101,20 +109,20 @@ def runMMA(nVariables,nConstraints,optimizationFunction,X0,lowerBound,
 		fErr = np.abs(f0val - f0valPrev) / (1e-10 + np.abs(f0val))
 		gErr = np.max(gval)
 		if(verbose):
-			print('iter: {}, f: {:.3e}, max(g): {:.3e}, fErr: {:.3e}'.format(
+			log_message('iter: {}, f: {:.3e}, max(g): {:.3e}, fErr: {:.3e}'.format(
 				outeriter, f0val if np.isscalar(f0val) else float(f0val), 
 				gErr, fErr))
 		if (fErr < fTolerance and gErr < gTolerance):
 			if(verbose):
-				print(f'Convergence reached with fEerr: {fErr:.3e} and max(gval): {gErr:.3e}')
+				log_message(f'Convergence reached with fEerr: {fErr:.3e} and max(gval): {gErr:.3e}')
 			break
 	
 		f0valPrev = f0val.copy()
 		if (time.time() - tStart > timeLimitSecs):
-			print(f"Time limit of {timeLimitSecs:0.2f} reached, exiting...")
+			log_message(f"Time limit of {timeLimitSecs:0.2f} reached, exiting...")
 			break	
 	if(verbose):
-		print(f"MMA (secs):  {timeMMA:0.2f}")
-		print(f"FuncEval (secs): {timeFuncEval:0.2f}")
+		log_message(f"MMA (secs):  {timeMMA:0.2f}")
+		log_message(f"FuncEval (secs): {timeFuncEval:0.2f}")
 
 	return [xval,f0val, df0dx, gval, dgdx,outit]

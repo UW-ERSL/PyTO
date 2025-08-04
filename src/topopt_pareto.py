@@ -32,6 +32,11 @@ def topopt_pareto(fe_solver,
 	Returns: A tuple containing the displacement field of the optimized structure
 		and a dictionary containing the optimization history.
 	"""
+	def log_message(msg): # This is a helper function to log messages in GUI or console
+		if progress_callback:
+			progress_callback(str(msg))
+		else:
+			print(msg)  
 	nDOFPerNode = 3 if isinstance(fe_solver, hex_structural_fea.HexStructuralFEA) else 1
 	tStart = time.time()
 	
@@ -47,7 +52,7 @@ def topopt_pareto(fe_solver,
 	
 	history = {'objective': [],'compliance':[], 'volume': []}
 	if (print_progress):
-		print("Computing Filters ...")
+		log_message("Computing Filters ...")
 	[H,Hs] = createFilters(fe_solver, to_params)
 
 	elemsWithForces = find_elements_with_forces(fe_solver.mesh, fe_solver.bc.force,nDOFPerNode)
@@ -72,7 +77,7 @@ def topopt_pareto(fe_solver,
 			KE_list = [hex_element_stiffness.hex8_stiffness_matrix_thermal( mp.thermal_conductivity,fe_solver.mesh.elem_size)
 				for mp in fe_solver.mat_prop]
 			KE = KE_list[0]	
-		print("Assuming all elements have the same material properties")
+		log_message("Assuming all elements have the same material properties")
 	else: # single material
 		if isinstance(fe_solver, hex_structural_fea.HexStructuralFEA):
 			KE = hex_element_stiffness.hex8_stiffness_matrix_structural( fe_solver.mat_prop.youngs_modulus,
@@ -109,7 +114,7 @@ def topopt_pareto(fe_solver,
 	T /= np.max(np.abs(T))  # Normalize sensitivity
 
 	if (print_progress):
-		print(f"vf={history['volume'][-1]:.3f}, obj={history['objective'][-1]:.3g}, compliance={history['compliance'][-1]:.3g}, #FEA={nFEAs:2d}")
+		log_message(f"vf={history['volume'][-1]:.3f}, obj={history['objective'][-1]:.3g}, compliance={history['compliance'][-1]:.3g}, #FEA={nFEAs:2d}")
 	vol_decr = vol_decr_max
 	
 	success = True
@@ -130,8 +135,8 @@ def topopt_pareto(fe_solver,
 		# Move to next volume fraction
 		volfrac = max(volFractionConstraint, volfrac - vol_decr)
 		if (debug):
-			print("-" * 50)
-			print(f"Attempting v={volfrac:.3f}")
+			log_message("-" * 50)
+			log_message(f"Attempting v={volfrac:.3f}")
 		# Initialize local iteration variables
 		localIter = 0
 		JTemp = history['objective'][-1]  # Store previous value
@@ -142,7 +147,7 @@ def topopt_pareto(fe_solver,
 		innerLoopSuccess = True
 		while True:
 			if (debug):
-				print(f"Local Iteration: {localIter}/{max_local_iters}, JTemp: {JTemp:.3g}, JPrev: {JPrev:.3g}")
+				log_message(f"Local Iteration: {localIter}/{max_local_iters}, JTemp: {JTemp:.3g}, JPrev: {JPrev:.3g}")
 			# Check convergence, and break if converged
 			if localIter >= min_local_iters:
 				if abs(JPrev - JTemp)/abs(JTemp) < rel_err or abs(min(JPrev,JPrevPrev) - JTemp)/abs(JTemp)  < rel_err:
@@ -158,9 +163,9 @@ def topopt_pareto(fe_solver,
 				volfrac = volfrac + vol_decr # Restore volume fraction
 				vol_decr *= 0.75 # Reduce volume decrement
 				if (debug):
-					print("**Failed to converge, restoring previous design")
-					print(f"Previous successful vol_frac: {vol_frac_success:.5g}")
-					print(f"Reducing vol_decr to: {vol_decr:.5g}")
+					log_message("**Failed to converge, restoring previous design")
+					log_message(f"Previous successful vol_frac: {vol_frac_success:.5g}")
+					log_message(f"Reducing vol_decr to: {vol_decr:.5g}")
 				if vol_decr < vol_decr_min:
 					terminatePareto = True
 				break
@@ -223,10 +228,10 @@ def topopt_pareto(fe_solver,
 			if (volfrac > 1.1*volFractionConstraint):
 				success = False
 				errorMsg =  f"vf {volFractionConstraint:0.3f} not reached"
-				print("-" * 50)
-				print("Pareto: Failed to reach volume fraction.")
-				print("1. Check for incorrect symmetry constraints")
-				print("2. Increase mesh size")
+				log_message("-" * 50)
+				log_message("Pareto: Failed to reach volume fraction.")
+				log_message("1. Check for incorrect symmetry constraints")
+				log_message("2. Increase mesh size")
 			break
 		if innerLoopSuccess:
 			meshComponents = fe_solver.mesh.find_connected_components()
@@ -245,15 +250,15 @@ def topopt_pareto(fe_solver,
 			scale = history['objective'][-1] / history['objective'][0]
 			vol_decr = max(vol_decr_min,min(vol_decr,vol_decr_max/scale)) # Reduce volume increment for steep increase in compliance
 			if (print_progress):
-				print(f"vf={history['volume'][-1]:.3f}, obj={history['objective'][-1]:.3g}, compliance={history['compliance'][-1]:.3g}, #FEA={nFEAs:2d}")
+				log_message(f"vf={history['volume'][-1]:.3f}, obj={history['objective'][-1]:.3g}, compliance={history['compliance'][-1]:.3g}, #FEA={nFEAs:2d}")
 			fe_solver.mesh.setPseudoDensity(x.flatten())
 
 
 	totalTime = time.time() - tStart
 
-	print(f"Final: vf={history['volume'][-1]:.3f}, obj={history['objective'][-1]:.3g}, compliance={history['compliance'][-1]:.3g}, #FEA={nFEAs:2d}")
-	print(f"Total Time: {totalTime:.2f} s")
-	print("Error: ", errorMsg)
+	log_message(f"Final: vf={history['volume'][-1]:.3f}, obj={history['objective'][-1]:.3g}, compliance={history['compliance'][-1]:.3g}, #FEA={nFEAs:2d}")
+	log_message(f"Total Time: {totalTime:.2f} s")
+	log_message(f"Error: {errorMsg}")
 	return sol, history, success,errorMsg,nFEAs
 
 
