@@ -28,8 +28,16 @@ class HexThermalFEA:
 
     self.mesh, self.mat_prop, self.bc = mesh, mat_prop, bc
     self.solver, self.kwargs = solver, kwargs
-    self.elem_stiff = np.asarray(
-                    elem_stiff.hex8_stiffness_matrix_thermal(mat_prop.thermal_conductivity, mesh.elem_size))
+    # Handle single material or list of materials
+    if isinstance(mat_prop, list):
+      # Create element stiffness matrix for each material
+      elem_stiff_list = [elem_stiff.hex8_stiffness_matrix_thermal(mp.thermal_conductivity, mesh.elem_size)
+                         for mp in mat_prop]
+      self.elem_stiff = np.stack(elem_stiff_list)  # shape: (num_materials, 8, 8)
+    else:
+      self.elem_stiff = np.expand_dims(
+        elem_stiff.hex8_stiffness_matrix_thermal(mat_prop.thermal_conductivity, mesh.elem_size), axis=0)
+      
 
     self.node_idx = np.stack((
                       np.kron(self.mesh.edofMat, np.ones((8, 1))).flatten(),
@@ -52,9 +60,23 @@ class HexThermalFEA:
     self.pyVistaPlotter.camera_position =self.camera_position
     # Enable anti-aliasing for better quality
     self.pyVistaPlotter.enable_anti_aliasing()
-    
+##################################################################
+  def set_thermal_material(self, mat_prop: mat_lib.Material | list[mat_lib.Material]):
+    """
+    Set or update the thermal material(s) and recompute element stiffness matrices.
+    Args:
+      mat_prop: Single Material or list of Materials.
+    """
+    self.mat_prop = mat_prop
+    if isinstance(mat_prop, list):
+      elem_stiff_list = [elem_stiff.hex8_stiffness_matrix_thermal(mp.thermal_conductivity, self.mesh.elem_size)
+                         for mp in mat_prop]
+      self.elem_stiff = np.stack(elem_stiff_list)
+    else:
+      self.elem_stiff = np.expand_dims(
+        elem_stiff.hex8_stiffness_matrix_thermal(mat_prop.thermal_conductivity, self.mesh.elem_size), axis=0)   
 #################################################################
-  def solve(self, x: np.ndarray = None,material_model: MaterialModel = None) -> np.ndarray:
+  def solve(self, x: np.ndarray = None,material_model: MaterialModel = None, elem_mat_id: np.ndarray = None) -> np.ndarray:
     """Solve the thermal finite element problem.
 
     Args:
@@ -68,8 +90,19 @@ class HexThermalFEA:
 
     elem_material_scaling = get_thermal_material_model_scaling(x, material_model)
 
-    elem_stiff_mtrx = np.einsum('ij, e -> eij',
-                                 self.elem_stiff, elem_material_scaling).flatten(order = 'C')
+     # Multi-material support
+    if self.elem_stiff.shape[0] == 1 or elem_mat_id is None:
+        # Single material case
+        elem_stiff_mtrx = np.einsum('ij, e -> eij',
+                                    self.elem_stiff[0], elem_material_scaling).flatten(order='C')
+    else:
+        # Multi-material case: select correct stiffness for each element
+        # elem_mat_id: array of shape (num_elems,) with values in [0, num_materials-1]
+        elem_stiff_mtrx = np.zeros((self.mesh.num_elems, 8, 8))
+        for e in range(self.mesh.num_elems):
+          mat_idx = elem_mat_id[e]
+          elem_stiff_mtrx[e] = self.elem_stiff[mat_idx] * elem_material_scaling[e]
+        elem_stiff_mtrx = elem_stiff_mtrx.flatten(order='C')
 
 
     stiff_mtrx = sp.coo_matrix((elem_stiff_mtrx, (self.node_idx[:, 0], self.node_idx[:, 1])),
