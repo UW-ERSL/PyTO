@@ -53,10 +53,9 @@ class SolidWorksInterface:
         try:
             model = self.sw.ActiveDoc
             myDimension = model.Parameter(dimensionName)
-            
             return myDimension.SystemValue
         except Exception as e:
-            print(f"Error: {str(e)}")
+            #print(f"Error: {str(e)}")
             return False
         
     def setDimension(self,dimensionName, value):
@@ -69,13 +68,13 @@ class SolidWorksInterface:
             if not np.isclose(dimCheck, value, atol=1e-6):
                 #print(f"Dimension {dimensionName} not set correctly. Expected {value}, got {dimCheck}.")
                 return False
-            print(f"Dimension {dimensionName} set to {value}.")
+            #print(f"Dimension {dimensionName} set to {value}.")
             if not self.isBodyValid():
                 #print("Body is invalid after dimension change.")
                 return False
             return True
         except Exception as e:
-            print(f"Error: {str(e)}")
+            #print(f"Error: {str(e)}")
             return False
         
     def setDimensions(self,dimensionNames, values):
@@ -88,15 +87,15 @@ class SolidWorksInterface:
             for dimensionName, value in zip(dimensionNames, values): # check if dimensions are set correctly
                 dimCheck = self.getDimension(dimensionName)  # get dimension
                 if not np.isclose(dimCheck, value, atol=1e-6):
-                    print(f"Dimension {dimensionName} not set correctly. Expected {value}, got {dimCheck}.")
+                    #print(f"Dimension {dimensionName} not set correctly. Expected {value}, got {dimCheck}.")
                     return False
-                print(f"Dimension {dimensionName} set to {value}.")
+                #print(f"Dimension {dimensionName} set to {value}.")
             if not self.isBodyValid():
                 #print("Body is invalid after dimension change.")
                 return False
             return True
         except Exception as e:
-            print(f"Error: {str(e)}")
+            #print(f"Error: {str(e)}")
             return False
         
     def getMassProperties(self):
@@ -126,7 +125,7 @@ class SolidWorksInterface:
             else:
                 return False
         except Exception as e:  
-            print(f"Error: {str(e)}")
+            #print(f"Error: {str(e)}")
             return False
      
     def getSTL(self):

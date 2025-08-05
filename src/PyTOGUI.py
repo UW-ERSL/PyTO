@@ -23,12 +23,12 @@ from topopt_ocm import topopt_optimality_criteria
 from topopt_pareto import topopt_pareto
 from topopt_levelset import topopt_levelset 
 """
-1) writing a new functions of plotting (making changes in the exising functions of plotting)
+1) 
 2) Adaptive sizing of Arrows for topopt constraints
 3) Need to Implement Help window
-4) Cyclic (Z) constraints are wrong, need to fix the logic for cyclic symmetry
-5) To introduce Torque loads, need to implement a new load type
-6) Need to implement Plane method for selecting triangles
+4) 
+5) 
+6) 
 7) 
 8) 
 9)  
@@ -831,38 +831,22 @@ class GeometryWindow(QtWidgets.QDialog):
 
         layout = QtWidgets.QVBoxLayout(self)
 
-        self.info_label = QtWidgets.QLabel("No geometry loaded.")
-        layout.addWidget(self.info_label)
-
         load_btn = QtWidgets.QPushButton("Load STL Geometry")
         load_btn.clicked.connect(self.load_geometry)
         layout.addWidget(load_btn)
 
-        # Add Update Geometry button
-        self.update_btn = QtWidgets.QPushButton("Update Geometry")
-        self.update_btn.clicked.connect(self.update_geometry)
-        self.update_btn.setEnabled(False)  # Initially disabled
-        layout.addWidget(self.update_btn)
+        # # Add Update Geometry button
+        # self.update_btn = QtWidgets.QPushButton("Update Geometry")
+        # self.update_btn.clicked.connect(self.update_geometry)
+        # self.update_btn.setEnabled(False)  # Initially disabled
+        # layout.addWidget(self.update_btn)
 
         close_btn = QtWidgets.QPushButton("Close")
         close_btn.clicked.connect(self.close)
         layout.addWidget(close_btn)
 
-        # Update button state based on current geometry
-        self.update_button_state()
-
-    def update_button_state(self):
-        """Enable/disable Update Geometry button based on whether geometry is loaded"""
-        has_geometry = self.parent.stl_geom is not None
-        self.update_btn.setEnabled(has_geometry)
-        
-        if has_geometry:
-            self.info_label.setText("Geometry loaded successfully.")
-        else:
-            self.info_label.setText("No geometry loaded.")
-
     def load_geometry(self):
-        """Load STL geometry"""
+        """Load STL geometry (always clears and reloads)"""
         options = QtWidgets.QFileDialog.Options()
         file_path, _ = QtWidgets.QFileDialog.getOpenFileName(
             self,
@@ -872,15 +856,14 @@ class GeometryWindow(QtWidgets.QDialog):
             options=options
         )
         if file_path:
-            # Store camera position
-            camera_pos = self.parent.plotter.camera_position
-            
-            
-            #self.parent.plotter.clear_actors()
-    
+            # Clear the plotter completely
+            self.parent.plotter.clear_actors()
+            self.parent.plotter.reset_camera()
+            self.parent.plotter.disable_picking()
+
             # Create new STL geometry
             self.stl_geom = STLGeom(file_path)
-            
+
             # Plot geometry
             self.stl_geom.plotGeometry(
                 show_edges=False, 
@@ -888,7 +871,7 @@ class GeometryWindow(QtWidgets.QDialog):
                 show_bounding_box=False, 
                 plotter=self.parent.plotter
             )
-            
+
             # Calculate properties
             area, volume, _, _ = self.stl_geom.compute_mass_properties()
             bounds = self.stl_geom.get_bounding_box()
@@ -922,8 +905,6 @@ class GeometryWindow(QtWidgets.QDialog):
             self.parent.stl_geom = self.stl_geom
 
             # Enable picking
-            self.parent.plotter.disable_picking()
-            
             picker = pv._vtk.vtkCellPicker()
             picker.SetTolerance(1e-8)
             self.parent.plotter.enable_point_picking(
@@ -934,42 +915,21 @@ class GeometryWindow(QtWidgets.QDialog):
                 left_clicking=True,
                 show_point=False
             )
-            
+
             # Add right-click observer
             self.parent.plotter.iren.add_observer("RightButtonPressEvent", self.parent.on_right_button_press)
-            
+
             # Update LivVar
             self.parent.update_LivVar('geometry_loaded', True)
-            
+
             # Update sidebar icons
             self.parent.set_sidebar_icon("Geometry", "check")
             self.parent.set_sidebar_icon("Material", "arrow")
 
-            # Update button state
-            self.update_button_state()
-            
             # Success message
             self.parent.message_text.append(f"Geometry loaded: {os.path.basename(file_path)}")
 
-    def update_geometry(self):
-        """Update geometry
-        1) to update the geometry need to clear the existing geometry
-        2) then load the new geometry"""
-
-        # Clear the plotter completely
-        self.parent.plotter.clear_actors()
-
-        self.parent.plotter.reset_camera()
-
-        # Clear existing geometry reference
-        #self.parent.stl_geom = None
-
-        # Disable picking
-        self.parent.plotter.disable_picking()
-
-        self.update_button_state()  # Disable update button
-
-        self.load_geometry()
+            self.close()
 #---------------------------------------------------------------------------
 class MaterialWindow(QtWidgets.QDialog):
     """Dialog for selecting and editing material properties."""
@@ -1229,7 +1189,7 @@ class StructuralLoadsWindow(QtWidgets.QDialog):
     }
     
     SELECTION_MODES = {
-        "Coarse Cylinder": "coarse",
+        "Plane/Cylinder": "coarse",
         "Triangle": "triangle"
     }
 
@@ -1724,7 +1684,7 @@ class ThermalLoadsWindow(QtWidgets.QDialog):
     
     # Selection mode configuration
     SELECTION_MODES = {
-        "Coarse Cylinder": "coarse",
+        "Plane/Cylinder": "coarse",
         "Triangle": "triangle"
     }
     
@@ -2402,7 +2362,7 @@ class AnalysisWindow(QtWidgets.QDialog):
 
     def get_element_colors(self, color_type="structural"):
         mesh = self.parent.hex_mesh
-        element_colors = np.full(mesh.num_elems, np.nan)  # Default gray
+        element_colors = np.full(mesh.num_elems, 0.65)  # Default gray
 
         # Build node-to-element map once
         node_to_elem = self.build_node_to_elem_map(mesh)
@@ -2454,33 +2414,28 @@ class AnalysisWindow(QtWidgets.QDialog):
         # Create colored mesh polydata
         mesh_polydata = self.create_mesh_polydata(element_colors)
         
-        # Define visualization parameters based on type
-        viz_params = {
-            "structural": {
-                "cmap": "viridis",
-                "name": "colored_mesh"
-            },
-            "thermal": {
-                "cmap": "coolwarm", 
-                "name": "thermal_mesh"
-            }
-        }
-        
-        params = viz_params.get(visualization_type, viz_params["structural"])
-        
-        # Add to plotter
+        from matplotlib.colors import ListedColormap
+        if visualization_type == "structural":
+            custom_cmap = ListedColormap(["black", "#dddddd", "red"])  # 0.0=black, 0.65=gray, 1.0=red
+            cmap = custom_cmap
+        elif visualization_type == "thermal":
+            thermal_cmap = ListedColormap(["#0074D9", "#FF851B", "#FF4136"])  # 0.0=blue, 0.5=orange, 1.0=red
+            cmap = thermal_cmap
+        else:
+            cmap = "coolwarm"
+
         self.parent.plotter.add_mesh(
             mesh_polydata,
             scalars='element_colors',
-            cmap=params["cmap"],
+            cmap=cmap,
             clim=[0, 1],
             show_edges=True,
             edge_color='black',
             line_width=1,
             show_scalar_bar=False,
-            name=params["name"]
+            name="colored_mesh" if visualization_type == "structural" else "thermal_mesh"
         )
-        
+
         self.parent.plotter.reset_camera()
 
     # def create_mesh_polydata(self, element_colors):
@@ -3510,15 +3465,6 @@ class StructuralTopOptWindow(QtWidgets.QDialog):
         vol_layout.addWidget(self.vol_spinbox)
         layout.addLayout(vol_layout)
         
-        # Use all loads checkbox
-        self.use_all_loads = QtWidgets.QCheckBox("Use all Loads?")
-        self.use_all_loads.setChecked(True)
-        layout.addWidget(self.use_all_loads)
-        
-        # Save Intermediate checkbox
-        self.save_intermediate = QtWidgets.QCheckBox("Save Intermediate?")
-        layout.addWidget(self.save_intermediate)
-        
         # Optimize button
         self.optimize_button = QtWidgets.QPushButton("Optimize")
         self.optimize_button.clicked.connect(self.start_optimization)
@@ -3543,8 +3489,6 @@ class StructuralTopOptWindow(QtWidgets.QDialog):
         
         method = self.method_combo.currentText()
         volume_fraction = self.vol_spinbox.value()
-        use_all_loads = self.use_all_loads.isChecked()
-        save_intermediate = self.save_intermediate.isChecked()
         
         self.optimization_running = True
         self.optimize_button.setEnabled(False)
@@ -3556,14 +3500,14 @@ class StructuralTopOptWindow(QtWidgets.QDialog):
         import threading
         self.optimization_thread = threading.Thread(
             target=self.run_optimization,
-            args=(method, volume_fraction, use_all_loads, save_intermediate)
+            args=(method, volume_fraction)
         )
         self.optimization_thread.daemon = True
         self.optimization_thread.start()
         
         return True
         
-    def run_optimization(self, method, volume_fraction, use_all_loads, save_intermediate):
+    def run_optimization(self, method, volume_fraction):
         """Run the topology optimization using the selected method"""
         
         # Create TO parameters
@@ -4162,11 +4106,15 @@ class DisplayOptionsWindow(QtWidgets.QDialog):
     def update_display(self):
         geometry_choice = self.geometry_combo.currentText()
         field_choice = self.field_combo.currentText()
+
+        # Remove old scalar bars before plotting new field
+        self.remove_scalar_bar()
+
         # Only clear actors if something will be plotted
         should_plot = (
             (geometry_choice == "Initial Design" and self.parent.stl_geom) or
             (geometry_choice == "Mesh" and hasattr(self.parent, "hex_mesh") and self.parent.hex_mesh) or
-            (geometry_choice == "Final Design" and hasattr(self.parent, "topopt_results") and self.parent.topopt_results)
+            (geometry_choice == "TopOpt" and hasattr(self.parent, "topopt_results") and self.parent.topopt_results)
         )
         if should_plot:
             for name in list(self.parent.plotter.actors.keys()):
@@ -4195,10 +4143,20 @@ class DisplayOptionsWindow(QtWidgets.QDialog):
                 show_bounding_box=self.show_bounding_box_checkbox.isChecked(),
                 plotter=self.parent.plotter
             )
-        elif geometry_choice == "Final Design" and hasattr(self.parent, "topopt_results") and self.parent.topopt_results:
+        elif geometry_choice == "TopOpt" and hasattr(self.parent, "topopt_results") and self.parent.topopt_results:
             fe_solver = self.parent.topopt_results.get("fe_solver")
             if fe_solver:
-                fe_solver.plot_mesh(plotter=self.parent.plotter)
+                if field_choice == "Deformation":
+                    fe_solver.plot_deformation(plotter=self.parent.plotter)
+                elif field_choice == "Von Mises stress":
+                    fe_solver.plot_vonMisesStress(plotter=self.parent.plotter)
+                elif field_choice == "Temperature":
+                    if hasattr(self.parent, "thermal_fe_solver") and self.parent.thermal_fe_solver:
+                        self.parent.thermal_fe_solver.plot_temperature(plotter=self.parent.plotter)
+                    else:
+                        QtWidgets.QMessageBox.warning(self, "Thermal Results Missing", "Please solve for thermal analysis first.")
+                elif field_choice == "None":
+                    fe_solver.plot_mesh(plotter=self.parent.plotter)
 
         if self.show_bounding_box_checkbox.isChecked():
             self.show_bounding_box(True)
@@ -4454,16 +4412,16 @@ class DisplayOptionsWindow(QtWidgets.QDialog):
         self.parent.plotter.render()
 
     def on_geometry_changed(self, text):
-        """If Initial Design or Final Design, force field to None."""
-        if text in ["Initial Design", "Final Design"]:
+        """If Initial Design or TopOpt, force field to None."""
+        if text in ["Initial Design", "TopOpt"]:
             self.field_combo.blockSignals(True)
             self.field_combo.setCurrentText("None")
             self.field_combo.blockSignals(False)
         self.update_display()
 
     def on_field_changed(self, text):
-        """If geometry is Initial Design or Final Design and field is not None, warn and switch to Mesh."""
-        if self.geometry_combo.currentText() in ["Initial Design", "Final Design"] and text != "None":
+        """If geometry is Initial Design or TopOpt and field is not None, warn and switch to Mesh."""
+        if self.geometry_combo.currentText() in ["Initial Design", "TopOpt"] and text != "None":
             QtWidgets.QMessageBox.warning(
                 self, "Invalid Selection",
                 "To display Deformation, Von Mises stress, or Temperature, switch to Mesh."
@@ -4503,7 +4461,7 @@ class DisplayOptionsWindow(QtWidgets.QDialog):
         # # Check for topology optimization
         # has_topopt = hasattr(self.parent, "topopt_results") and self.parent.topopt_results is not None
         # if has_topopt:
-        #     items.append("Final Design")
+        #     items.append("TopOpt")
         #     current_index = 2
 
         # # Update dropdown items only if changed
@@ -4513,7 +4471,7 @@ class DisplayOptionsWindow(QtWidgets.QDialog):
         # self.geometry_combo.setCurrentIndex(current_index)
         # self.geometry_combo.blockSignals(False)
         #"""Update geometry dropdown options and select current state intelligently."""
-        """Show Initial Design, Mesh (if available), and Final Design (if structural topopt done) in geometry dropdown."""
+        """Show Initial Design, Mesh (if available), and TopOpt (if structural topopt done) in geometry dropdown."""
         items = ["Initial Design"]
         current_index = 0
 
@@ -4523,15 +4481,15 @@ class DisplayOptionsWindow(QtWidgets.QDialog):
             if self.geometry_combo.currentText() == "Mesh":
                 current_index = len(items) - 1
 
-        # Only show Final Design if structural topopt has been performed and converged
-        has_final = (
+        # Only show TopOpt if structural topopt has been performed and converged
+        has_topopt = (
             hasattr(self.parent, "topopt_results")
             and self.parent.topopt_results is not None
             and self.parent.topopt_results.get("converged", False)
         )
-        if has_final:
-            items.append("Final Design")
-            if self.geometry_combo.currentText() == "Final Design":
+        if has_topopt:
+            items.append("TopOpt")
+            if self.geometry_combo.currentText() in ["TopOpt"]:
                 current_index = len(items) - 1
 
         self.geometry_combo.blockSignals(True)
@@ -4564,10 +4522,16 @@ class DisplayOptionsWindow(QtWidgets.QDialog):
         self.field_combo.blockSignals(True)
         self.field_combo.clear()
         self.field_combo.addItems(["None", "Deformation", "Von Mises stress", "Temperature"])
-        # If geometry is Initial Design or Final Design, force field to None
-        if self.geometry_combo.currentText() in ["Initial Design", "Final Design"]:
+        # If geometry is Initial Design or TopOpt, force field to None
+        if self.geometry_combo.currentText() in ["Initial Design", "TopOpt"]:
             self.field_combo.setCurrentText("None")
         self.field_combo.blockSignals(False)
+
+    def remove_scalar_bar(self):
+        """Remove all scalar bars from the plotter."""
+        if hasattr(self.parent.plotter, 'scalar_bars'):
+            for name in list(self.parent.plotter.scalar_bars.keys()):
+                self.parent.plotter.remove_scalar_bar(name)
                     
     def showEvent(self, event):
         """Update options when window is shown"""
@@ -4883,7 +4847,7 @@ class ProjectsWindow(QtWidgets.QDialog):
 #----------------------------------------------------------------------------
 if __name__ == "__main__":
     app = QtWidgets.QApplication(sys.argv)
-    app.setStyleSheet("* { font-size: 14pt; }")
+    app.setStyleSheet("* { font-size: 12pt; }")
     window = MainWindow()
     window.show()
     sys.exit(app.exec_())
