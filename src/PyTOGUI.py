@@ -23,7 +23,7 @@ from topopt_ocm import topopt_optimality_criteria
 from topopt_pareto import topopt_pareto
 from topopt_levelset import topopt_levelset 
 """
-1) 
+1) TopOpt results
 2) Adaptive sizing of Arrows for topopt constraints
 3) Need to Implement Help window
 4) 
@@ -3438,6 +3438,15 @@ class StructuralTopOptWindow(QtWidgets.QDialog):
         self.optimization_thread = None
         
         self.setup_ui()
+
+        if hasattr(self.parent, "fe_solver") and self.parent.fe_solver is not None:
+            # Clear all actors except geometry info
+            for name in list(self.parent.plotter.actors.keys()):
+                if name != 'geometry_info':
+                    self.parent.plotter.remove_actor(name, reset_camera=False)
+            # Show mesh
+            self.parent.fe_solver.plot_mesh(plotter=self.parent.plotter)
+            self.parent.plotter.render()
     
     def setup_ui(self):
         layout = QtWidgets.QVBoxLayout(self)
@@ -3536,7 +3545,16 @@ class StructuralTopOptWindow(QtWidgets.QDialog):
                 QtCore.Q_ARG(str, str(msg))
             )
 
-      
+        def plot_progress_callback():
+            """Plot pseudo-density on GUI plotter without clearing geometry_info"""
+            QtCore.QMetaObject.invokeMethod(
+                self,
+                "update_visualization",
+                QtCore.Qt.QueuedConnection,
+                QtCore.Q_ARG(object, fe_solver),
+                QtCore.Q_ARG(int, len(history['objective']) if history else 0)
+            )
+
         try:
             if method == "DENSITY-MMA":
                 u, history, success, error_msg, n_feas = topopt_mma(
@@ -3549,9 +3567,11 @@ class StructuralTopOptWindow(QtWidgets.QDialog):
                     objective_tol=1e-4,
                     constraint_tol=1e-4,
                     print_progress=True,
-                    plot_progress=False,
+                    plot_progress=True,
                     binarize_topology=True,
-                    progress_callback=gui_progress_callback
+                    progress_callback=gui_progress_callback,
+                    plotter=self.parent.plotter,
+                    plot_progress_callback=plot_progress_callback
                 )
                 
             elif method == "DENSITY-OC":
@@ -3563,9 +3583,11 @@ class StructuralTopOptWindow(QtWidgets.QDialog):
                     move_tol=0.05,
                     rel_conv_tol=1e-4,
                     print_progress=False,
-                    plot_progress=False,
+                    plot_progress=True,
                     binarize_topology=True,
-                    progress_callback=gui_progress_callback
+                    progress_callback=gui_progress_callback,
+                    plotter=self.parent.plotter,
+                    plot_progress_callback=plot_progress_callback
                 )
                 
             elif method == "PARETO":
@@ -3578,8 +3600,10 @@ class StructuralTopOptWindow(QtWidgets.QDialog):
                     min_local_iters=2,
                     max_local_iters=5,
                     print_progress=False,
-                    plot_progress=False,
-                    progress_callback=gui_progress_callback
+                    plot_progress=True,
+                    progress_callback=gui_progress_callback,
+                    plotter=self.parent.plotter,
+                    plot_progress_callback=plot_progress_callback
                 )
                 
             elif method == "LEVELSET":
@@ -3588,9 +3612,11 @@ class StructuralTopOptWindow(QtWidgets.QDialog):
                     to_params=to_params,
                     maxIterations=250,
                     numReinit=10000,
-                    plot_progress=False,
+                    plot_progress=True,
                     print_progress=False,
-                    progress_callback=gui_progress_callback
+                    progress_callback=gui_progress_callback,
+                    plotter=self.parent.plotter,
+                    plot_progress_callback=plot_progress_callback
                 )
                 
             else:
@@ -3613,6 +3639,36 @@ class StructuralTopOptWindow(QtWidgets.QDialog):
                 QtCore.Q_ARG(object, fe_solver)
             )
 
+    @QtCore.pyqtSlot(object, int)
+    def update_visualization(self, fe_solver, iteration):
+        """Update visualization during optimization without clearing geometry_info"""
+        # Store geometry_info actor if it exists
+        geometry_info_actor = None
+        if 'geometry_info' in self.parent.plotter.actors:
+            geometry_info_actor = self.parent.plotter.actors['geometry_info']
+        
+        # Clear all actors except geometry_info
+        for name in list(self.parent.plotter.actors.keys()):
+            if name != 'geometry_info':
+                self.parent.plotter.remove_actor(name, reset_camera=False)
+        
+        # Plot pseudo-density
+        fe_solver.plot_pseudo_density(
+            plotter=self.parent.plotter,
+            auto_close=False,
+            title=f"Iteration {iteration + 1}"
+        )
+        
+        # Force restore geometry_info by re-adding it to the plotter
+        if geometry_info_actor:
+            # Remove it first if it exists (in case plot_pseudo_density added something with same name)
+            if 'geometry_info' in self.parent.plotter.actors and self.parent.plotter.actors['geometry_info'] != geometry_info_actor:
+                self.parent.plotter.remove_actor('geometry_info', reset_camera=False)
+            # Re-add the original geometry_info actor
+            self.parent.plotter.add_actor(geometry_info_actor, name='geometry_info')
+        
+        self.parent.plotter.render()
+
     @QtCore.pyqtSlot(bool, str, object, object, object)
     def optimization_completed(self, success, error_msg, history, u, fe_solver):
         """Handle optimization completion"""
@@ -3621,9 +3677,7 @@ class StructuralTopOptWindow(QtWidgets.QDialog):
         self.stop_button.setEnabled(False)
         
         if success and history is not None:
-
-            
-            # Handle different history formats from different solvers
+            # Handle different history formats
             if 'objective' in history:
                 final_objective = history['objective'][-1]
                 final_volume = history['volume'][-1]
@@ -3636,15 +3690,6 @@ class StructuralTopOptWindow(QtWidgets.QDialog):
                 final_objective = 0.0
                 final_volume = 0.0
                 n_iterations = 0
-            
-            results_text = (
-                f"Optimization completed successfully!\n\n"
-                f"Method: {self.method_combo.currentText()}\n"
-                f"Final objective: {final_objective:.6e}\n"
-                f"Final volume fraction: {final_volume:.3f}\n"
-                f"Iterations: {n_iterations}\n"
-                f"Target volume: {self.vol_spinbox.value():.3f}"
-            )
             
             self.parent.message_text.append("Structural topology optimization completed successfully")
             self.parent.message_text.append(f"Method: {self.method_combo.currentText()}")
@@ -3670,37 +3715,37 @@ class StructuralTopOptWindow(QtWidgets.QDialog):
             self.parent.message_text.append(f"Structural topology optimization failed: {error_msg}")
 
     def apply_topopt_constraints_to_params(self, to_params):
-        print("[DEBUG] apply_topopt_constraints_to_params CALLED")
+        """Map GUI TopOpt constraints to TOParams fields"""
         constraints = self.parent.topopt_constraints
-        print("[DEBUG] constraints:", constraints)
-        #constraints = self.parent.topopt_constraints
-
-        # Handle extrude constraint
+        
+        # Manufacturing constraints
         manufacturing = constraints.get('manufacturing', {})
         extrude = manufacturing.get('extrude', {})
         if extrude.get('enabled', False):
             direction = extrude.get('value', None)
             if direction:
-                # Map GUI direction to vector or enum as needed by your TOParams
-                dir_map = {"XDir": (1, 0, 0), "YDir": (0, 1, 0), "ZDir": (0, 0, 1)}
-                to_params.EXTRUDE_DIRECTION = dir_map.get(direction, None)
-                print(f"[DEBUG] Applying extrude constraint: {direction} -> {to_params.EXTRUDE_DIRECTION}")
+                to_params.ExtrudeX = direction == "XDir"
+                to_params.ExtrudeY = direction == "YDir"
+                to_params.ExtrudeZ = direction == "ZDir"
 
-        # Existing handling for 'other' constraints
-        other_constraints = constraints.get('other', {})
-        if other_constraints.get('connected_topology', False):
-            to_params.ENSURE_CONNECTED_TOPOLOGY = True
+        # Symmetry constraints
+        symmetry = constraints.get('symmetry', {})
+        to_params.XSymmetry = symmetry.get('x_symmetry', False)
+        to_params.YSymmetry = symmetry.get('y_symmetry', False)
+        to_params.ZSymmetry = symmetry.get('z_symmetry', False)
 
-        if other_constraints.get('keep_fixed_faces', False):
+        # Other constraints
+        other = constraints.get('other', {})
+        to_params.ENSURE_CONNECTED_TOPOLOGY = other.get('connected_topology', False)
+
+        # Keep fixed faces
+        if other.get('keep_fixed_faces', False):
             analysis_window = AnalysisWindow(self.parent)
             boundary_nodes, boundary_points, tolerance = analysis_window.get_boundary_mapping_data()
             constrained_elements = analysis_window.map_triangles_to_elements(
                 list(self.parent.constrained_triangles), boundary_nodes, boundary_points, tolerance
             )
             to_params.ElemsToKeep = list(constrained_elements)
-
-        # Print all to_params for debugging
-        print("[DEBUG] TOParams after applying constraints:", vars(to_params))
 
     def create_fe_solver_for_topopt(self):
         """Create FE solver for topology optimization"""
@@ -3797,67 +3842,36 @@ class StructuralTopOptWindow(QtWidgets.QDialog):
         
         return True
     
-    @QtCore.pyqtSlot(bool, str, object, object, object)
-    def optimization_completed(self, success, error_msg, history, u, fe_solver):
-        """Handle optimization completion"""
-        self.optimization_running = False
-        self.optimize_button.setEnabled(True)
-        self.stop_button.setEnabled(False)
-        
-        if success and history is not None:
-            
-            final_objective = history['objective'][-1]
-            final_volume = history['volume'][-1]
-            n_iterations = len(history['objective'])
-            
-            results_text = (
-                f"Optimization completed successfully!\n\n"
-                f"Final objective: {final_objective:.6e}\n"
-                f"Final volume fraction: {final_volume:.3f}\n"
-                f"Iterations: {n_iterations}\n"
-                f"Target volume: {self.vol_spinbox.value():.3f}"
-            )
-            
-            self.parent.message_text.append("Structural topology optimization completed successfully")
-            self.parent.message_text.append(f"Final objective: {final_objective:.6e}, Volume fraction: {final_volume:.3f}")
-            
-            self.parent.update_LivVar('topopt.structural_performed', True)
-            self.parent.set_sidebar_icon("Structural TopOpt", "check")
-            
-            self.parent.topopt_results = {
-                'method': self.method_combo.currentText(),
-                'volume_fraction': final_volume,
-                'objective': final_objective,
-                'iterations': n_iterations,
-                'converged': True,
-                'history': history,
-                'displacement': u,
-                'fe_solver': fe_solver
-            }
-            
-            self.visualize_optimized_topology(fe_solver)
-            
-        else:
-            self.parent.message_text.append(f"Structural topology optimization failed: {error_msg}")
-    
     def visualize_optimized_topology(self, fe_solver):
-        """Visualize the optimized topology using FE solver's plot_mesh method"""
-        # Clear existing visualization except geometry info
+        """Visualize the optimized topology"""
+        # Store geometry_info if exists
+        geometry_info_actor = None
+        if 'geometry_info' in self.parent.plotter.actors:
+            geometry_info_actor = self.parent.plotter.actors['geometry_info']
+        
+        # Clear all actors except geometry_info
         for name in list(self.parent.plotter.actors.keys()):
             if name != 'geometry_info':
                 self.parent.plotter.remove_actor(name, reset_camera=False)
         
-        # Use FE solver's plot_mesh method
+        # Plot final optimized mesh
         fe_solver.plot_mesh(plotter=self.parent.plotter)
-        self.parent.plotter.render()
         
+        # Force restore geometry_info by re-adding it
+        if geometry_info_actor:
+            # Remove any conflicting actor with same name
+            if 'geometry_info' in self.parent.plotter.actors and self.parent.plotter.actors['geometry_info'] != geometry_info_actor:
+                self.parent.plotter.remove_actor('geometry_info', reset_camera=False)
+            # Re-add the original geometry_info actor
+            self.parent.plotter.add_actor(geometry_info_actor, name='geometry_info')
+        
+        self.parent.plotter.render()
         self.parent.message_text.append("Optimized topology visualized")
     
     def stop_optimization(self):
         """Stop the optimization process"""
         if self.optimization_running:
             self.optimization_running = False
-            self.results_label.setText("Optimization stopped by user")
             self.parent.message_text.append("Structural topology optimization stopped by user")
             
             self.optimize_button.setEnabled(True)
@@ -4847,7 +4861,7 @@ class ProjectsWindow(QtWidgets.QDialog):
 #----------------------------------------------------------------------------
 if __name__ == "__main__":
     app = QtWidgets.QApplication(sys.argv)
-    app.setStyleSheet("* { font-size: 12pt; }")
+    app.setStyleSheet("* { font-size: 14pt; }")
     window = MainWindow()
     window.show()
     sys.exit(app.exec_())

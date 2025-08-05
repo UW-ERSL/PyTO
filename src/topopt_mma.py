@@ -95,8 +95,16 @@ def topopt_mma(fe_solver, #hex_structural_fea.HexStructuralFEA or hex_thermal_fe
         if (to_params.APPLY_FILTER_TO_DENSITY):
             x = H*x/Hs
         fe_solver.mesh.setPseudoDensity(x)
+        # if (plot_progress):
+        #     fe_solver.plot_pseudo_density(auto_close = False, title = f"Iter {len(history['objective']) + 1} - Density", save_path = None)
         if (plot_progress):
-            fe_solver.plot_pseudo_density(auto_close = False, title = f"Iter {len(history['objective']) + 1} - Density", save_path = None)
+           if progress_callback is not None:
+               progress_callback()
+           fe_solver.plot_pseudo_density(
+                   plotter=plotter,
+                   auto_close=False,
+                   title=f"Iter {len(history['objective']) + 1} - Density"
+               )
         sol = fe_solver.solve(x, material_model)
         fe_solver.postprocess()
 
@@ -189,7 +197,7 @@ if __name__ == "__main__":
  
     print("-" * 50)
  
-    to_problem = StructuralTOExamples.LBracketMidLoadStressObjective# Choose the TO problem
+    to_problem = StructuralTOExamples.LBracketMidLoad# Choose the TO problem
     nDOFDesired = 25000
 
     if (to_problem in StructuralTOExamples):

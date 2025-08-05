@@ -660,11 +660,12 @@ class HexStructuralFEA:
             save_path=None,
             auto_close = True,
             title = 'Pseudo density',
-            fontsize=10):
+            fontsize=10,
+            plotter = None):
     self.pyVistaPlotter.clear()
     self.plot_elem_field(self.mesh.elemPseudoDensity, colormap='gray_r', auto_close = auto_close,
                          mask_low_pseudodensity=False, title= title,
-                save_path=save_path, fontsize=fontsize)
+                save_path=save_path, fontsize=fontsize,plotter = plotter)
     
 #################################################################
 if __name__ == "__main__":    
