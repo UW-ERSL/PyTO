@@ -936,7 +936,7 @@ class MaterialWindow(QtWidgets.QDialog):
     def __init__(self, parent):
         super().__init__(parent)
         self.setWindowTitle("Material")
-        self.setFixedSize(300, 400)
+        self.setBaseSize(300, 400)
         self.parent = parent 
 
         # Store all materials in SI units only!
@@ -3537,23 +3537,24 @@ class StructuralTopOptWindow(QtWidgets.QDialog):
         error_msg = ""
         u, history, n_feas = None, None, 0
 
-        def gui_progress_callback(msg):
-            QtCore.QMetaObject.invokeMethod(
-                self.parent.message_text,
-                "append",
-                QtCore.Qt.QueuedConnection,
-                QtCore.Q_ARG(str, str(msg))
-            )
-
-        def plot_progress_callback():
-            """Plot pseudo-density on GUI plotter without clearing geometry_info"""
-            QtCore.QMetaObject.invokeMethod(
-                self,
-                "update_visualization",
-                QtCore.Qt.QueuedConnection,
-                QtCore.Q_ARG(object, fe_solver),
-                QtCore.Q_ARG(int, len(history['objective']) if history else 0)
-            )
+        def progress_callback(*args):
+            if len(args) == 0:
+                # Called with no arguments: update plot
+                QtCore.QMetaObject.invokeMethod(
+                    self,
+                    "update_visualization",
+                    QtCore.Qt.QueuedConnection,
+                    QtCore.Q_ARG(object, fe_solver),
+                    QtCore.Q_ARG(int, len(history['objective']) if history else 0)
+                )
+            elif len(args) == 1 and isinstance(args[0], str):
+                # Called with a string: log message
+                QtCore.QMetaObject.invokeMethod(
+                    self.parent.message_text,
+                    "append",
+                    QtCore.Qt.QueuedConnection,
+                    QtCore.Q_ARG(str, str(args[0]))
+                )
 
         try:
             if method == "DENSITY-MMA":
@@ -3569,9 +3570,8 @@ class StructuralTopOptWindow(QtWidgets.QDialog):
                     print_progress=True,
                     plot_progress=True,
                     binarize_topology=True,
-                    progress_callback=gui_progress_callback,
-                    plotter=self.parent.plotter,
-                    plot_progress_callback=plot_progress_callback
+                    progress_callback=progress_callback,
+                    plotter=self.parent.plotter,  
                 )
                 
             elif method == "DENSITY-OC":
@@ -3585,9 +3585,8 @@ class StructuralTopOptWindow(QtWidgets.QDialog):
                     print_progress=False,
                     plot_progress=True,
                     binarize_topology=True,
-                    progress_callback=gui_progress_callback,
                     plotter=self.parent.plotter,
-                    plot_progress_callback=plot_progress_callback
+                    progress_callback=progress_callback
                 )
                 
             elif method == "PARETO":
@@ -3601,9 +3600,9 @@ class StructuralTopOptWindow(QtWidgets.QDialog):
                     max_local_iters=5,
                     print_progress=False,
                     plot_progress=True,
-                    progress_callback=gui_progress_callback,
+                    
                     plotter=self.parent.plotter,
-                    plot_progress_callback=plot_progress_callback
+                    progress_callback=progress_callback
                 )
                 
             elif method == "LEVELSET":
@@ -3614,9 +3613,9 @@ class StructuralTopOptWindow(QtWidgets.QDialog):
                     numReinit=10000,
                     plot_progress=True,
                     print_progress=False,
-                    progress_callback=gui_progress_callback,
+                    progress_callback=progress_callback,
                     plotter=self.parent.plotter,
-                    plot_progress_callback=plot_progress_callback
+                    
                 )
                 
             else:
@@ -4861,7 +4860,7 @@ class ProjectsWindow(QtWidgets.QDialog):
 #----------------------------------------------------------------------------
 if __name__ == "__main__":
     app = QtWidgets.QApplication(sys.argv)
-    app.setStyleSheet("* { font-size: 14pt; }")
+    app.setStyleSheet("* { font-size: 10pt; }")
     window = MainWindow()
     window.show()
     sys.exit(app.exec_())

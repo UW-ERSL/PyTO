@@ -96,8 +96,10 @@ def topopt_optimality_criteria(
 	for iter in range(maxIterations):
 		x = np.array(x)
 		if (plot_progress):
+			if progress_callback is not None:
+				progress_callback()	
 			fe_solver.mesh.setPseudoDensity(x)
-			fe_solver.plot_pseudo_density(auto_close = False, title = f"Iteration {iter}")
+			fe_solver.plot_pseudo_density(plotter=plotter,auto_close = False, title = f"Iteration {iter}")
 		
 		
 		sol = fe_solver.solve(x, material_model)

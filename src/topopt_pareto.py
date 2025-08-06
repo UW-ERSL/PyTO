@@ -131,7 +131,9 @@ def topopt_pareto(fe_solver,
 	
 	while volfrac > volFractionConstraint:
 		if (plot_progress):
-			fe_solver.plot_mesh(plot_bc = False,auto_close = False, title = f'Volfrac: {volfrac:0.3f}')
+			if progress_callback is not None:
+				progress_callback()
+			fe_solver.plot_mesh(plotter=plotter,plot_bc = False,auto_close = False, title = f'Volfrac: {volfrac:0.3f}')
 		# Move to next volume fraction
 		volfrac = max(volFractionConstraint, volfrac - vol_decr)
 		if (debug):
