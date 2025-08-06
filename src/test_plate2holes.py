@@ -15,12 +15,15 @@ faceCount0 = solidWorks.getFaceCount()
 print("edgeCount0: ", edgeCount0)
 print("faceCount0: ", faceCount0) 
  
+success =solidWorks.setDimensions([dimName1,dimName2], [0.16,0.26])
+print(success)
 
+input("Press Enter to continue...")
 p1Min = 0.10
 p1Max = 0.90
 p2Min = 0.25
 p2Max = 0.60
-N = 200
+N = 2000
 # Generate evenly spaced points for p1 and p2
 p1Range = np.random.uniform(p1Min, p1Max, N)
 p2Range = np.random.uniform(p2Min, p2Max, N)

@@ -13,6 +13,10 @@ class SolidWorksInterface:
         except Exception as e:
             print(f"Error: {str(e)}")
 
+        VARIANT = win32com.client.VARIANT
+        VT_BOOL = win32com.client.pythoncom.VT_BYREF | win32com.client.pythoncom.VT_BOOL
+        self.isWarning = VARIANT(VT_BOOL, False) 
+
     def getEdgeCount(self):
         try:
             bodies = self.part.GetBodies2(0,True)
@@ -59,34 +63,12 @@ class SolidWorksInterface:
             #print(f"Error: {str(e)}")
             return False
         
-    def setDimension(self,dimensionName, value):
-        try:
-            model = self.sw.ActiveDoc
-            myDimension = model.Parameter(dimensionName)
-            myDimension.SystemValue = value
-            model.ForceRebuild3(True) 
-            dimCheck = self.getDimension(dimensionName)  # get dimension
-            if not np.isclose(dimCheck, value, atol=1e-6):
-                #print(f"Dimension {dimensionName} not set correctly. Expected {value}, got {dimCheck}.")
-                return False
-            #print(f"Dimension {dimensionName} set to {value}.")
-            if not self.isBodyValid():
-                #print("Body is invalid after dimension change.")
-                return False
-            return True
-        except Exception as e:
-            #print(f"Error: {str(e)}")
-            return False
     
     def checkAllFeatures(self):
         model = self.sw.ActiveDoc
         feat = model.FirstFeature
-        VARIANT = win32com.client.VARIANT
-        VT_BOOL = win32com.client.pythoncom.VT_BYREF | win32com.client.pythoncom.VT_BOOL
-        isWarning = VARIANT(VT_BOOL, False)     
         while feat is not None:
-            code = feat.GetErrorCode2(isWarning)
-            #print(f" {feat.Name} error code: {code}")
+            code = feat.GetErrorCode2(self.isWarning)
             if (code != 0):
                 return False
             feat = feat.GetNextFeature
@@ -100,14 +82,16 @@ class SolidWorksInterface:
                 value = values[i]
                 myDimension = model.Parameter(dimensionName)
                 myDimension.SystemValue = value
-            model.ForceRebuild3(True)
+            success = model.EditRebuild3
+            if not success:
+                return False
+            if not self.isBodyValid():
+                #print("Body is invalid after dimension change.")
+                return False
             success = self.checkAllFeatures()
             if not success:
                 return False
 
-            if not self.isBodyValid():
-                #print("Body is invalid after dimension change.")
-                return False
             return True
         except Exception as e:
             #print(f"Error: {str(e)}")
