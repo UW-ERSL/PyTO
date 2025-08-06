@@ -9,7 +9,7 @@ p1Default = 0.034
 dimName2 = "D8@Sketch1"
 p2Default = 0.019
 
-success =solidWorks.setDimensions({dimName1,dimName2}, {p1Default,p2Default})
+success =solidWorks.setDimensions([dimName1,dimName2], [p1Default,p2Default])
 edgeCount0 = solidWorks.getEdgeCount()
 faceCount0 = solidWorks.getFaceCount()
 print("edgeCount0: ", edgeCount0)
@@ -18,7 +18,7 @@ p1Min = 0.010
 p1Max = 0.090
 p2Min = 0.025
 p2Max = 0.060
-N = 2000
+N = 200
 # Generate evenly spaced points for p1 and p2
 p1Range = np.random.uniform(p1Min, p1Max, N)
 p2Range = np.random.uniform(p2Min, p2Max, N)
@@ -30,8 +30,7 @@ for i in range(N):
     p2 = p2Range[i]
 
     # Set the dimensions
-    solidWorks.setDimensions({dimName1,dimName2}, {p1,p2})
-    success = solidWorks.setDimensions({dimName1,dimName2}, {p1,p2})
+    success = solidWorks.setDimensions([dimName1,dimName2], [p1,p2])
     if not success:
         results.append((p1, p2, False))
         continue
@@ -46,7 +45,7 @@ for i in range(N):
             results.append((p1, p2, False))
         
  
-solidWorks.setDimensions({dimName1,dimName2}, {p1Default,p2Default})
+solidWorks.setDimensions([dimName1,dimName2],[p1Default,p2Default])
 # Separate the points based on success/failure
 success_points = [(p1, p2) for p1, p2, success in results if success]
 failure_points = [(p1, p2) for p1, p2, success in results if not success]

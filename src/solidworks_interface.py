@@ -1,4 +1,5 @@
 
+import code
 import os
 import win32com.client #pip install pypiwin32
 from stl_reader import STLGeom
@@ -76,20 +77,34 @@ class SolidWorksInterface:
         except Exception as e:
             #print(f"Error: {str(e)}")
             return False
-        
+    
+    def checkAllFeatures(self):
+        model = self.sw.ActiveDoc
+        feat = model.FirstFeature
+        VARIANT = win32com.client.VARIANT
+        VT_BOOL = win32com.client.pythoncom.VT_BYREF | win32com.client.pythoncom.VT_BOOL
+        isWarning = VARIANT(VT_BOOL, False)     
+        while feat is not None:
+            code = feat.GetErrorCode2(isWarning)
+            #print(f" {feat.Name} error code: {code}")
+            if (code != 0):
+                return False
+            feat = feat.GetNextFeature
+        return True
+
     def setDimensions(self,dimensionNames, values):
         try:
             model = self.sw.ActiveDoc
-            for dimensionName, value in zip(dimensionNames, values):
+            for i in range(len(dimensionNames)):
+                dimensionName = dimensionNames[i]
+                value = values[i]
                 myDimension = model.Parameter(dimensionName)
                 myDimension.SystemValue = value
-            model.ForceRebuild3(True) 
-            for dimensionName, value in zip(dimensionNames, values): # check if dimensions are set correctly
-                dimCheck = self.getDimension(dimensionName)  # get dimension
-                if not np.isclose(dimCheck, value, atol=1e-6):
-                    #print(f"Dimension {dimensionName} not set correctly. Expected {value}, got {dimCheck}.")
-                    return False
-                #print(f"Dimension {dimensionName} set to {value}.")
+            model.ForceRebuild3(True)
+            success = self.checkAllFeatures()
+            if not success:
+                return False
+
             if not self.isBodyValid():
                 #print("Body is invalid after dimension change.")
                 return False
