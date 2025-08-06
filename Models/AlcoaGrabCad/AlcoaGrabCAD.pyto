@@ -1,6 +1,6 @@
 {
   "version": "2025.01",
-  "stl_file_path": "C:/Users/Krishnan Suresh/Dropbox/Personal/suresh/Software/Github/ERSL-Private/PyTO/Models/AlcoaGrabCad/AlcoaGrabCAD.stl",
+  "stl_file_path": "AlcoaGrabCAD.stl",
   "settings": {
     "unit_system": "IPS",
     "temperature_unit": "Kelvin",
@@ -1299,7 +1299,7 @@
         1390,
         1391
       ],
-      "force_x": 2000.0,
+      "force_x": 1000.0,
       "force_y": 0.0,
       "force_z": 0.0,
       "load_set": 0,
@@ -2241,6 +2241,10 @@
     2037,
     2038
   ],
-  "thermal_loads": {},
+  "thermal_loads": {
+    "fixed_temps": [],
+    "heat_sources": [],
+    "total_heat_sources": []
+  },
   "topopt_constraints": null
 }

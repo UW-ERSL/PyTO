@@ -15,4 +15,3 @@ pip insyall trimesh
 pip install pymeshfix
 pip install mmapy
 pip install pyvistaqt
-conda install conda-forge::cyipopt

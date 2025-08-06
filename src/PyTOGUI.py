@@ -3569,7 +3569,7 @@ class StructuralTopOptWindow(QtWidgets.QDialog):
                     constraint_tol=1e-4,
                     print_progress=True,
                     plot_progress=True,
-                    binarize_topology=True,
+                    binarize_topology=False,
                     progress_callback=progress_callback,
                     plotter=self.parent.plotter,  
                 )
