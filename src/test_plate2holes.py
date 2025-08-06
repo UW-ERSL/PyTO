@@ -10,6 +10,7 @@ dimName2 = "D4@Sketch2"
 p2Default = 0.48
 
 success =solidWorks.setDimensions([dimName1,dimName2], [p1Default,p2Default])
+print(success)
 edgeCount0 = solidWorks.getEdgeCount()
 faceCount0 = solidWorks.getFaceCount()
 print("edgeCount0: ", edgeCount0)
