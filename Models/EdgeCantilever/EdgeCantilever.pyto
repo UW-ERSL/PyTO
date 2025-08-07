@@ -1,6 +1,6 @@
 {
   "version": "2025.01",
-  "stl_file_path": "D:/Dropbox/Personal/suresh/Software/Github/ERSL-Private/PyTO/Models/EdgeCantilever/EdgeCantilever.STL",
+  "stl_file_path": "EdgeCantilever.STL",
   "settings": {
     "unit_system": "MKS",
     "temperature_unit": "Kelvin",
@@ -34,7 +34,11 @@
   ],
   "constraint_data": [
     {
-      "type": "Fixed XYZ"
+      "type": "Fixed XYZ",
+      "triangles": [
+        2,
+        3
+      ]
     }
   ],
   "constrained_triangles": [

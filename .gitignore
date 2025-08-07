@@ -2,6 +2,7 @@
 *.face
 *.node
 *.msh
+*.vtu
 /PyTOSlides
 /Results
 /__pycache__

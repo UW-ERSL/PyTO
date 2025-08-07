@@ -1,6 +1,6 @@
 {
   "version": "2025.01",
-  "stl_file_path": "C:/Users/Krishnan Suresh/Dropbox/Personal/suresh/Software/Github/ERSL-Private/PyTO/Models/BicycleCrank/BicycleCrank.STL",
+  "stl_file_path": "BicycleCrank.STL",
   "settings": {
     "unit_system": "MKS",
     "temperature_unit": "Kelvin",
@@ -22,8 +22,75 @@
   "force_data": [
     {
       "triangles": [
-        91,
-        92
+        101,
+        102,
+        103,
+        104,
+        105,
+        106,
+        107,
+        108,
+        109,
+        110,
+        111,
+        112,
+        113,
+        114,
+        115,
+        116,
+        117,
+        118,
+        119,
+        120,
+        121,
+        122,
+        123,
+        124,
+        125,
+        126,
+        127,
+        128,
+        129,
+        130,
+        131,
+        132,
+        133,
+        134,
+        135,
+        136,
+        137,
+        138,
+        139,
+        140,
+        141,
+        142,
+        143,
+        144,
+        145,
+        146,
+        147,
+        148,
+        149,
+        150,
+        151,
+        152,
+        153,
+        154,
+        155,
+        156,
+        157,
+        158,
+        159,
+        160,
+        161,
+        162,
+        163,
+        164,
+        165,
+        166,
+        167,
+        168,
+        169
       ],
       "force_x": 1000.0,
       "force_y": 0.0,
@@ -34,80 +101,89 @@
   ],
   "constraint_data": [
     {
-      "type": "Fixed XYZ"
+      "type": "Fixed XYZ",
+      "triangles": [
+        91,
+        92,
+        93,
+        94,
+        95,
+        96,
+        97,
+        98
+      ]
     }
   ],
   "constrained_triangles": [
-    128,
-    129,
-    130,
-    131,
-    132,
-    133,
-    134,
-    135,
-    136,
-    137,
-    138,
-    139,
-    140,
-    141,
-    142,
-    143,
-    144,
-    145,
-    146,
-    147,
-    148,
-    149,
-    150,
-    151,
-    152,
-    153,
-    154,
-    155,
-    156,
-    157,
-    158,
-    159,
-    160,
-    161,
-    162,
-    163,
-    164,
-    165,
-    166,
-    167,
-    168,
-    169,
-    101,
-    102,
-    103,
-    104,
-    105,
-    106,
-    107,
-    108,
-    109,
-    110,
-    111,
-    112,
-    113,
-    114,
-    115,
-    116,
-    117,
-    118,
-    119,
-    120,
-    121,
-    122,
-    123,
-    124,
-    125,
-    126,
-    127
+    96,
+    97,
+    98,
+    91,
+    92,
+    93,
+    94,
+    95
   ],
   "thermal_loads": {},
-  "topopt_constraints": null
+  "topopt_constraints": {
+    "manufacturing": {
+      "extrude": {
+        "enabled": false,
+        "value": "XDir"
+      },
+      "am_build": {
+        "enabled": false,
+        "value": "+XDir"
+      },
+      "draw_direction": {
+        "enabled": false,
+        "value": "XDir"
+      },
+      "cyclic_symmetry": {
+        "enabled": false,
+        "value": "(2) 180 deg"
+      }
+    },
+    "patterns": {
+      "x_grid": {
+        "enabled": false,
+        "value": 2
+      },
+      "y_grid": {
+        "enabled": false,
+        "value": 2
+      },
+      "z_grid": {
+        "enabled": false,
+        "value": 2
+      }
+    },
+    "performance": {
+      "stress_safety": {
+        "enabled": false,
+        "value": 1.0
+      },
+      "max_displacement": {
+        "enabled": false,
+        "value": 160.0
+      },
+      "min_frequency": {
+        "enabled": false,
+        "value": 1000.0
+      },
+      "max_temperature": {
+        "enabled": false,
+        "value": 2000.0
+      }
+    },
+    "symmetry": {
+      "x_symmetry": true,
+      "y_symmetry": false,
+      "z_symmetry": false
+    },
+    "other": {
+      "connected_topology": true,
+      "keep_fixed_faces": true
+    }
+  }
 }

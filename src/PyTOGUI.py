@@ -5,6 +5,7 @@ import pyvista as pv
 import numpy as np
 import math
 import time
+import json
 from scipy.sparse import coo_matrix
 from PyQt5 import QtWidgets, QtCore
 from PyQt5.QtCore import QSize
@@ -15,6 +16,7 @@ import bound_cond
 import mat_lib
 import linear_solvers
 from hex_mesher import HexMesher
+import deflation
 from hex_thermal_fea import HexThermalFEA
 import hex_structural_fea
 from topopt_mma import topopt_mma
@@ -1193,6 +1195,8 @@ class StructuralLoadsWindow(QtWidgets.QDialog):
         "Triangle": "triangle"
     }
 
+    
+
     def __init__(self, parent):
         super().__init__(parent)
         self.parent = parent
@@ -1502,6 +1506,144 @@ class StructuralLoadsWindow(QtWidgets.QDialog):
         self.add_force_text_label(display_triangles[0], label_value if label_value is not None else force_value, actual_direction, color, axis_name)
         self.parent.plotter.render()
 
+    
+
+    def apply_torque(self):
+        """Apply torque to selected planar or cylindrical surfaces with visualization and unit conversion."""
+        selected_triangles = self.get_selected_triangles()
+        if not selected_triangles:
+            return
+
+        # Remove previous torque data and actors for these triangles
+        selected_indices = set(tri['index'] for tri in selected_triangles)
+        self.parent.force_data = [
+            fd for fd in self.parent.force_data
+            if not (fd.get('type') == 'torque' and selected_indices.intersection(set(fd['triangles'])))
+        ]
+        if hasattr(self.parent, 'torque_actors'):
+            for actor in self.parent.torque_actors:
+                self.parent.plotter.remove_actor(actor, reset_camera=False)
+            self.parent.torque_actors = []
+        else:
+            self.parent.torque_actors = []
+
+        torque_value = self.torque_magnitude_spin.value()
+        if abs(torque_value) < 1e-12:
+            QtWidgets.QMessageBox.warning(self, "Zero Torque", "Please enter a non-zero torque value.")
+            return
+
+        # Use STLGeom's assign_highlighted_triangles_to_group for surface info
+        stl = self.parent.stl_geom
+        surface_type, avg_normal, area, cyl_axis, axis_point, cyl_radius = stl.assign_highlighted_triangles_to_group(
+            group=1, stl_verbose=False
+        )
+        if surface_type not in ["PLANAR", "CYLINDER"]:
+            QtWidgets.QMessageBox.warning(self, "Error", "Torque can only be applied to planar or cylindrical surfaces.")
+            return
+
+        # Direction: normal for planar, axis for cylinder
+        direction = avg_normal if surface_type == "PLANAR" else cyl_axis
+        direction = np.array(direction)
+        norm = np.linalg.norm(direction)
+        if norm < 1e-8:
+            QtWidgets.QMessageBox.warning(self, "Error", "Invalid torque direction.")
+            return
+        direction = direction / norm
+
+        # Store torque data
+        torque_info = {
+            'triangles': [tri['index'] for tri in selected_triangles],
+            'triangle_data': selected_triangles,
+            'torque': torque_value,
+            'direction': direction.tolist(),
+            'axis_point': axis_point,
+            'surface_type': surface_type,
+            'type': 'torque',
+            'load_set': self.load_set_spin.value()
+        }
+        self.parent.force_data.append(torque_info)
+
+        # Visualization
+        self.visualize_torque(axis_point, direction, torque_value, surface_type, cyl_radius)
+
+        # Message and state update
+        force_unit = self.parent.settings.get_force_unit_string()
+        self.parent.message_text.append(
+            f"Applied torque ({torque_value:+.1f} {force_unit}·m) to {len(selected_triangles)} triangles ({surface_type.lower()})"
+        )
+        self.parent.update_LivVar('structural_loads.forces_applied', True)
+        self.torque_magnitude_spin.setValue(0)
+        self.parent.notify_display_options_update()
+    
+    TORQUE_RADIUS_FACTOR = 0.18
+
+    def visualize_torque(self, axis_point, direction, torque_value, surface_type, cyl_radius):
+        """Visualize torque as a curved arrow (arc + conical tip) and text label."""
+        plotter = self.parent.plotter
+        color = "green"
+        arc_degrees = 270
+        arc_resolution = 36
+        
+        # Ensure torque_actors exists
+        if not hasattr(self.parent, "torque_actors"):
+            self.parent.torque_actors = []
+
+        axis_point = np.array(axis_point, dtype=float)
+        direction = np.array(direction, dtype=float)
+        bbox = plotter.bounds
+        model_size = max(bbox[1]-bbox[0], bbox[3]-bbox[2], bbox[5]-bbox[4]) if bbox else 1.0
+        if surface_type == "CYLINDER":
+            if cyl_radius is None:
+                cyl_radius = model_size * 0.25 
+            radius = cyl_radius * self.TORQUE_RADIUS_FACTOR
+        else:
+            radius = model_size * self.TORQUE_RADIUS_FACTOR
+
+        radius = np.clip(radius, model_size*0.01, model_size*0.12)
+
+        # Find two perpendicular vectors to direction
+        perp1 = np.cross(direction, [1,0,0]) if abs(direction[0]) < 0.9 else np.cross(direction, [0,1,0])
+        if np.linalg.norm(perp1) < 1e-8:
+            perp1 = np.cross(direction, [0,0,1])
+        perp1 /= np.linalg.norm(perp1)
+        perp2 = np.cross(direction, perp1)
+        perp2 /= np.linalg.norm(perp2)
+
+        # Arc points
+        arc_points = []
+        for i in range(arc_resolution):
+            angle = np.deg2rad(i * arc_degrees / (arc_resolution-1))
+            pt = (axis_point +
+                radius * (np.cos(angle) * perp1 + np.sin(angle) * perp2))
+            arc_points.append(pt)
+        arc_poly = pv.lines_from_points(np.array(arc_points))
+        arc_actor = plotter.add_mesh(arc_poly, color=color, line_width=4, name=f"torque_arc_{len(self.parent.torque_actors)}")
+        self.parent.torque_actors.append(arc_actor)
+
+        # Conical tip at end of arc
+        tip_dir = arc_points[-1] - arc_points[-2]
+        tip_dir /= np.linalg.norm(tip_dir)
+        tip_start = arc_points[-1]
+        cone_height = model_size * 0.02
+        cone_radius = model_size * 0.010
+        cone = pv.Cone(center=tip_start + tip_dir * (cone_height/2), direction=tip_dir, height=cone_height, radius=cone_radius, resolution=32)
+        tip_actor = plotter.add_mesh(cone, color=color, name=f"torque_tip_{len(self.parent.torque_actors)}")
+        self.parent.torque_actors.append(tip_actor)
+
+        # Text label
+        text_offset = model_size * 0.05
+        text_pos = axis_point + perp1 * text_offset
+        force_unit = self.parent.settings.get_force_unit_string()
+        torque_text = f"{torque_value:+.1f} {force_unit}·m"
+        text_actor = plotter.add_point_labels(
+            [text_pos], [torque_text],
+            font_size=DEFAULT_FONT_SIZE, text_color=color,
+            shape_opacity=0,
+            name=f'torque_text_{len(self.parent.torque_actors)}'
+        )
+        self.parent.torque_actors.append(text_actor)
+        plotter.render()
+
     def get_display_triangles(self, selected_triangles):
         """Get triangles to display based on threshold system"""
         if len(selected_triangles) > self.ARROW_THRESHOLD:
@@ -1554,14 +1696,6 @@ class StructuralLoadsWindow(QtWidgets.QDialog):
             )
             self.parent.force_actors.append(text_actor)
 
-    def apply_torque(self):
-        """Apply torque to selected triangles"""
-        selected_triangles = self.get_selected_triangles()
-        if not selected_triangles:
-            return
-        
-        self.parent.message_text.append(f"Applied torque to {len(selected_triangles)} triangles.")
-
     def apply_constraint(self, config):
         """constraint application method"""
         selected_triangles = self.get_selected_triangles()
@@ -1580,14 +1714,17 @@ class StructuralLoadsWindow(QtWidgets.QDialog):
     def apply_constraint_to_triangles(self, triangle_ids, constraint_type):
         """Apply constraint to specific triangles"""
         # Add to constrained set
+        self.parent.constraint_data = [
+        c for c in self.parent.constraint_data
+        if not (c.get('triangles') and set(c['triangles']).intersection(triangle_ids))
+        ]
+        # Add to constrained set
         self.parent.constrained_triangles.update(triangle_ids)
-        
         # Clear highlights
         for face_id in triangle_ids:
             self.parent.stl_geom.tri_highlight[face_id] = False
-        
-        # Store constraint data
-        self.parent.constraint_data.append({'type': constraint_type})
+        # Store constraint data with triangle info
+        self.parent.constraint_data.append({'type': constraint_type, 'triangles': list(triangle_ids)})
 
     def update_constraint_application(self, triangle_ids, constraint_type):
         """update constraint application"""
@@ -1896,10 +2033,34 @@ class ThermalLoadsWindow(QtWidgets.QDialog):
         mode_text = self.selection_combo.currentText()
         self.parent.highlight_mode = self.SELECTION_MODES[mode_text]
 
-    def on_thermal_type_changed(self, thermal_type):
-        """Handle thermal type changes and update UI visibility"""
-        self.update_group_visibility(thermal_type)
-        self.adjustSize()
+    def on_selection_mode_changed(self, index):
+        """Handle selection mode changes (make it work like structural loads)"""
+        mode_text = self.selection_combo.currentText()
+        self.parent.highlight_mode = self.SELECTION_MODES[mode_text]
+        if self.parent.stl_geom:
+            # Turn ON triangle edges in "Triangle" mode, OFF otherwise
+            for name, actor in self.parent.plotter.actors.items():
+                if hasattr(actor, 'GetProperty'):
+                    prop = actor.GetProperty()
+                    if self.parent.highlight_mode == "triangle":
+                        if hasattr(prop, 'EdgeVisibilityOn'):
+                            prop.EdgeVisibilityOn()
+                            prop.SetEdgeColor(0, 0, 0)
+                            prop.SetLineWidth(1)
+                    else:
+                        if hasattr(prop, 'EdgeVisibilityOff'):
+                            prop.EdgeVisibilityOff()
+            if self.parent.highlight_mode == "triangle":
+                self.parent.update_highlights()
+            else:
+                if getattr(self.parent, "highlight_actor", None):
+                    self.parent.plotter.remove_actor(self.parent.highlight_actor, reset_camera=False)
+                    self.parent.highlight_actor = None
+                self.parent.plotter.render()
+    
+    def on_thermal_type_changed(self, text):
+        """Update input group visibility when thermal type changes"""
+        self.update_group_visibility(text)
 
     def update_group_visibility(self, thermal_type):
         """Update visibility of thermal input groups"""
@@ -2369,17 +2530,20 @@ class AnalysisWindow(QtWidgets.QDialog):
         boundary_nodes, boundary_points, tolerance = self.get_boundary_mapping_data()
 
         if color_type == "structural":
-            if self.parent.constrained_triangles:
-                constrained_elements = self.map_triangles_to_elements(
-                    list(self.parent.constrained_triangles), boundary_nodes, boundary_points, tolerance, node_to_elem
-                )
-                element_colors[list(constrained_elements)] = 0.0  # Black
+                if self.parent.constrained_triangles:
+                    constrained_elements = self.map_triangles_to_elements(
+                        list(self.parent.constrained_triangles), boundary_nodes, boundary_points, tolerance, node_to_elem
+                    )
+                    element_colors[list(constrained_elements)] = 0.0  # Black
 
-            for force_info in self.parent.force_data:
-                force_elements = self.map_triangles_to_elements(
-                    force_info['triangles'], boundary_nodes, boundary_points, tolerance, node_to_elem
-                )
-                element_colors[list(force_elements)] = 1.0  # Red
+                for force_info in self.parent.force_data:
+                    force_elements = self.map_triangles_to_elements(
+                        force_info['triangles'], boundary_nodes, boundary_points, tolerance, node_to_elem
+                    )
+                    if force_info.get('type') == 'torque':
+                        element_colors[list(force_elements)] = 0.33  # Green for torque
+                    else:
+                        element_colors[list(force_elements)] = 1.0  # Red for force
 
         elif color_type == "thermal":
             if not (self.parent.thermal_loads_window and self.parent.thermal_loads_window.thermal_loads):
@@ -2416,7 +2580,7 @@ class AnalysisWindow(QtWidgets.QDialog):
         
         from matplotlib.colors import ListedColormap
         if visualization_type == "structural":
-            custom_cmap = ListedColormap(["black", "#dddddd", "red"])  # 0.0=black, 0.65=gray, 1.0=red
+            custom_cmap = ListedColormap(["black", "#22cc22", "#dddddd", "red"])  # 0.0=black, 0.65=gray, 1.0=red
             cmap = custom_cmap
         elif visualization_type == "thermal":
             thermal_cmap = ListedColormap(["#0074D9", "#FF851B", "#FF4136"])  # 0.0=blue, 0.5=orange, 1.0=red
@@ -2607,6 +2771,13 @@ class AnalysisWindow(QtWidgets.QDialog):
             # Apply constraints based on constraint_data
             for constraint in self.parent.constraint_data:
                 constraint_type = constraint['type']
+                triangles = constraint.get('triangles', [])
+                constrained_elements = self.map_triangles_to_elements(
+                    triangles, boundary_nodes, boundary_points, tolerance
+                )
+                constrained_nodes = set()
+                for elem_id in constrained_elements:
+                    constrained_nodes.update(self.parent.hex_mesh.elemArray[elem_id])
                 if constraint_type == 'Fixed XYZ':
                     fixed_nodes['xyz'].update(constrained_nodes)
                 elif constraint_type == 'Fixed X':
@@ -2616,23 +2787,61 @@ class AnalysisWindow(QtWidgets.QDialog):
                 elif constraint_type == 'Fixed Z':
                     fixed_nodes['z'].update(constrained_nodes)
         
-        # Map force triangles to load nodes
+        # Map force and torque triangles to load nodes
         load_nodes_groups = []
         load_forces = []
-        
+
         for force_info in self.parent.force_data:
             force_elements = self.map_triangles_to_elements(
                 force_info['triangles'], boundary_nodes, boundary_points, tolerance
             )
-            
-            # Convert elements to nodes
             force_nodes = set()
             for elem_id in force_elements:
                 force_nodes.update(self.parent.hex_mesh.elemArray[elem_id])
-            
-            if force_nodes:
-                load_nodes_groups.append(list(force_nodes))
-                load_forces.append([force_info['force_x'], force_info['force_y'], force_info['force_z']])
+
+            if force_info.get('type') == 'torque':
+                # Distribute torque, tangential force proportional to radius
+                axis_point = np.array(force_info.get('axis_point', [0, 0, 0]))
+                direction = np.array(force_info.get('direction', [0, 0, 1]))
+                torque_value = force_info.get('torque', 0.0)
+                nodes = list(force_nodes)
+                if not nodes or np.linalg.norm(direction) < 1e-12:
+                    continue
+ 
+                node_xyz = self.parent.hex_mesh.node_xyz[nodes]
+                # Project node positions onto the plane perpendicular to the torque axis
+                direction = direction / np.linalg.norm(direction)
+                # Find face center (mean of node positions)
+                face_center = np.mean(node_xyz, axis=0)
+                # For each node, compute vector from center to node, projected onto plane
+                r_vecs = node_xyz - face_center
+                # Remove component along axis (project onto plane)
+                r_proj = r_vecs - np.outer(np.dot(r_vecs, direction), direction)
+                r_norm = np.linalg.norm(r_proj, axis=1)
+                # Avoid division by zero
+                r_norm[r_norm < 1e-12] = 1e-12
+                # Tangential direction: axis x r_proj as per (right-hand rule)
+                tangent_dirs = np.cross(direction, r_proj)
+                tangent_dirs = tangent_dirs / np.linalg.norm(tangent_dirs, axis=1)[:, None]
+                # Force magnitude proportional to radius, normalized so sum(r x F) = torque_value
+                # First, compute unscaled force vectors
+                force_vecs = tangent_dirs * r_norm[:, None]
+                # Compute scaling factor
+                torque_actual = np.sum(np.cross(r_proj, force_vecs), axis=0)
+                scale = torque_value / (np.dot(torque_actual, direction) + 1e-12)
+                force_vecs = force_vecs * scale
+                for node, fvec in zip(nodes, force_vecs):
+                    load_nodes_groups.append([node])
+                    load_forces.append(fvec.tolist())
+            else:
+                # Standard force
+                if force_nodes:
+                    load_nodes_groups.append(list(force_nodes))
+                    load_forces.append([
+                        force_info.get('force_x', 0.0),
+                        force_info.get('force_y', 0.0),
+                        force_info.get('force_z', 0.0)
+                    ])
         
         # Prepare load data for solver
         load_data = {
@@ -2647,6 +2856,18 @@ class AnalysisWindow(QtWidgets.QDialog):
             load_data,
             self.parent.applied_material['properties']
         )
+
+        # Before calling fe_solver.solve(), add:
+        if self.get_solver() == linear_solvers.Solvers.DPCG:
+            
+            self.parent.dsolver = deflation.DeflationSolver()
+            nGroups = min(self.parent.dsolver.maxGroups, max(self.parent.dsolver.minGroups, round(3*self.parent.hex_mesh.num_nodes/self.parent.dsolver.dofPerGroup)))
+            self.parent.dsolver.create_deflation_groups(self.parent.hex_mesh, nGroups)
+            self.parent.dsolver.create_deflation_matrix(self.parent.hex_mesh)
+            # Make sure bc is available here
+            self.parent.dsolver.W = self.parent.dsolver.W[bc.free_dofs, :]
+        else:
+            self.parent.dsolver = None
         
         # Create FEA solver
         fe_solver = hex_structural_fea.HexStructuralFEA(
@@ -2654,6 +2875,7 @@ class AnalysisWindow(QtWidgets.QDialog):
             mat_prop=mat_prop,
             bc=bc,
             solver=self.get_solver(),
+            dsolver=getattr(self.parent, 'dsolver', None),
             rtol=1e-8
         )
         
@@ -2748,7 +2970,7 @@ class AnalysisWindow(QtWidgets.QDialog):
             self.parent.plotter.remove_actor('stl_geometry', reset_camera=False)
         
         # Use thermal FEA's built-in plot_temperature method
-        temp_info = fe_solver.plot_temperature(self.parent.plotter)
+        temp_info = fe_solver.plot_temperature(plotter=self.parent.plotter)
         if temp_info:
             self.parent.message_text.append(temp_info)
         
@@ -3582,11 +3804,11 @@ class StructuralTopOptWindow(QtWidgets.QDialog):
                     move=0.2,
                     move_tol=0.05,
                     rel_conv_tol=1e-4,
-                    print_progress=False,
+                    print_progress=True,
                     plot_progress=True,
-                    binarize_topology=True,
+                    binarize_topology=False,
+                    progress_callback=progress_callback,
                     plotter=self.parent.plotter,
-                    progress_callback=progress_callback
                 )
                 
             elif method == "PARETO":
@@ -3598,11 +3820,11 @@ class StructuralTopOptWindow(QtWidgets.QDialog):
                     vol_decr_min=0.0025,
                     min_local_iters=2,
                     max_local_iters=5,
-                    print_progress=False,
+                    print_progress=True,
                     plot_progress=True,
-                    
+                    binarize_topology=False,
+                    progress_callback=progress_callback,
                     plotter=self.parent.plotter,
-                    progress_callback=progress_callback
                 )
                 
             elif method == "LEVELSET":
@@ -3611,11 +3833,11 @@ class StructuralTopOptWindow(QtWidgets.QDialog):
                     to_params=to_params,
                     maxIterations=250,
                     numReinit=10000,
+                    print_progress=True,
                     plot_progress=True,
-                    print_progress=False,
+                    binarize_topology=False,
                     progress_callback=progress_callback,
                     plotter=self.parent.plotter,
-                    
                 )
                 
             else:
@@ -3698,7 +3920,7 @@ class StructuralTopOptWindow(QtWidgets.QDialog):
             self.parent.set_sidebar_icon("Structural TopOpt", "check")
             
             self.parent.topopt_results = {
-                'method': self.method_combo.currentText(),
+                'method': self.method_combo.currentText(), 
                 'volume_fraction': final_volume,
                 'objective': final_objective,
                 'iterations': n_iterations,
@@ -3709,6 +3931,16 @@ class StructuralTopOptWindow(QtWidgets.QDialog):
             }
             
             self.visualize_optimized_topology(fe_solver)
+
+            stl_path = self.parent.stl_geom.file_path
+            vtu_path = os.path.splitext(stl_path)[0] + ".vtu"
+            mesh = self.parent.hex_mesh
+            mesh.export_vtu_mesh(
+                elem_field=mesh.elemPseudoDensity,
+                mask_low_pseudodensity=False,
+                density_field='density',
+                file_name=vtu_path
+            )
             
         else:
             self.parent.message_text.append(f"Structural topology optimization failed: {error_msg}")
@@ -4328,9 +4560,14 @@ class DisplayOptionsWindow(QtWidgets.QDialog):
                     self.parent.plotter.add_actor(actor)
                 else:
                     self.parent.plotter.remove_actor(actor, reset_camera=False)
-                    
         if hasattr(self.parent, 'constraint_actors'):
             for actor in self.parent.constraint_actors:
+                if show:
+                    self.parent.plotter.add_actor(actor)
+                else:
+                    self.parent.plotter.remove_actor(actor, reset_camera=False)
+        if hasattr(self.parent, 'torque_actors'):
+            for actor in self.parent.torque_actors:
                 if show:
                     self.parent.plotter.add_actor(actor)
                 else:
@@ -4579,6 +4816,14 @@ class ProjectsWindow(QtWidgets.QDialog):
         
         if not filename:
             return
+
+        # Store STL path as relative to project file location
+        stl_abs_path = os.path.abspath(self.parent.stl_geom.file_path)
+        project_dir = os.path.dirname(os.path.abspath(filename))
+        try:
+            stl_rel_path = os.path.relpath(stl_abs_path, project_dir)
+        except Exception:
+            stl_rel_path = self.parent.stl_geom.file_path
             
         # Clean thermal loads data
         thermal_loads_data = {}
@@ -4595,14 +4840,28 @@ class ProjectsWindow(QtWidgets.QDialog):
                     thermal_loads_data[load_type].append(clean_load)
         
         # Clean force data
-        clean_force_data = [{
-            key: force_info.get(key, 0 if 'force' in key else (0 if key == 'load_set' else ''))
-            for key in ['triangles', 'force_x', 'force_y', 'force_z', 'load_set', 'type']
-        } for force_info in self.parent.force_data]
+        clean_force_data = []
+        for force_info in self.parent.force_data:
+            data = {
+                'triangles': force_info.get('triangles', []),
+                'force_x': force_info.get('force_x', 0.0),
+                'force_y': force_info.get('force_y', 0.0),
+                'force_z': force_info.get('force_z', 0.0),
+                'load_set': force_info.get('load_set', 0),
+                'type': force_info.get('type', ''),
+            }
+            # Save torque-specific fields if present
+            if force_info.get('type') == 'torque':
+                data['torque'] = force_info.get('torque', 0.0)
+                data['direction'] = force_info.get('direction', [0, 0, 1])
+                data['axis_point'] = force_info.get('axis_point', [0, 0, 0])
+                data['surface_type'] = force_info.get('surface_type', '')
+                data['cyl_radius'] = force_info.get('cyl_radius', None)
+            clean_force_data.append(data)
         
         project_data = {
             'version': '2025.01',
-            'stl_file_path': self.parent.stl_geom.file_path,
+            'stl_file_path': stl_rel_path,
             'settings': {
                 'unit_system': self.parent.settings.unit_system,
                 'temperature_unit': self.parent.settings.temperature_unit,
@@ -4617,7 +4876,6 @@ class ProjectsWindow(QtWidgets.QDialog):
         }
         
         try:
-            import json
             with open(filename, 'w') as f:
                 json.dump(project_data, f, indent=2, default=str)
             self.parent.message_text.append(f"Project saved: {os.path.basename(filename)}")
@@ -4631,8 +4889,6 @@ class ProjectsWindow(QtWidgets.QDialog):
         
         if not filename:
             return
-            
-        import json
         try:
             with open(filename, 'r') as f:
                 project_data = json.load(f)
@@ -4650,10 +4906,21 @@ class ProjectsWindow(QtWidgets.QDialog):
         
         # Load geometry
         stl_path = project_data.get('stl_file_path')
-        if stl_path and os.path.exists(stl_path):
-            self.load_geometry(stl_path)
-        else:
-            self.parent.message_text.append(f"Warning: STL file not found: {stl_path}")
+        if stl_path:
+            # Resolve relative to project file location if not absolute
+            if not os.path.isabs(stl_path):
+                stl_path_full = os.path.normpath(os.path.join(os.path.dirname(filename), stl_path))
+            else:
+                stl_path_full = stl_path
+            # If not found, try current directory
+            if not os.path.exists(stl_path_full):
+                stl_basename = os.path.basename(stl_path)
+                stl_path_full = os.path.join(os.getcwd(), stl_basename)
+            # If still not found, warn
+            if os.path.exists(stl_path_full):
+                self.load_geometry(stl_path_full)
+            else:
+                self.parent.message_text.append(f"Warning: STL file not found: {stl_path_full}")
         
         # Restore material
         if project_data.get('material_data'):
@@ -4751,14 +5018,24 @@ class ProjectsWindow(QtWidgets.QDialog):
         # Recreate force visualizations
         for force_info in self.parent.force_data:
             force_info['triangle_data'] = self.recreate_triangle_data(force_info['triangles'])
-            config = self.parent.structural_loads_window.LOAD_TYPES["Force"]
-            
-            for axis in ['X', 'Y', 'Z']:
-                force_value = force_info.get(f'force_{axis.lower()}', 0)
-                if force_value != 0:
-                    direction = config["directions"][axis]
-                    self.parent.structural_loads_window.visualize_force_arrows(
-                        force_info['triangle_data'], force_value, direction, config["color"], axis)
+            if force_info.get('type') == 'torque':
+                # Visualize torque
+                axis_point = force_info.get('axis_point', [0, 0, 0])
+                direction = force_info.get('direction', [0, 0, 1])
+                torque_value = force_info.get('torque', 0.0)
+                surface_type = force_info.get('surface_type', 'PLANAR')
+                cyl_radius = force_info.get('cyl_radius', None)
+                self.parent.structural_loads_window.visualize_torque(
+                    axis_point, direction, torque_value, surface_type, cyl_radius=cyl_radius
+                )
+            else:
+                config = self.parent.structural_loads_window.LOAD_TYPES["Force"]
+                for axis in ['X', 'Y', 'Z']:
+                    force_value = force_info.get(f'force_{axis.lower()}', 0)
+                    if force_value != 0:
+                        direction = config["directions"][axis]
+                        self.parent.structural_loads_window.visualize_force_arrows(
+                            force_info['triangle_data'], force_value, direction, config["color"], axis)
         
         # Update structural loads state
         if self.parent.force_data:
