@@ -3,8 +3,6 @@ import os
 import vtk
 import pyvista as pv
 import numpy as np
-import math
-import time
 import json
 from scipy.sparse import coo_matrix
 from PyQt5 import QtWidgets, QtCore
@@ -28,14 +26,6 @@ from topopt_levelset import topopt_levelset
 1) TopOpt results
 2) Adaptive sizing of Arrows for topopt constraints
 3) Need to Implement Help window
-4) 
-5) 
-6) 
-7) 
-8) 
-9)  
-10)  
-11)
 """
 DEFAULT_FONT_SIZE = 32
 #---------------------------------------------------------------------------
@@ -1191,7 +1181,7 @@ class StructuralLoadsWindow(QtWidgets.QDialog):
     }
     
     SELECTION_MODES = {
-        "Plane/Cylinder": "coarse",
+        "Facet": "coarse",
         "Triangle": "triangle"
     }
 
@@ -1821,7 +1811,7 @@ class ThermalLoadsWindow(QtWidgets.QDialog):
     
     # Selection mode configuration
     SELECTION_MODES = {
-        "Plane/Cylinder": "coarse",
+        "Facet": "coarse",
         "Triangle": "triangle"
     }
     
@@ -2438,22 +2428,18 @@ class AnalysisWindow(QtWidgets.QDialog):
             return
         
         # Create mesh
-        t0 = time.time()
+
         mesher = HexMesher()
         mesher.createMeshFromSTLFile(self.parent.stl_geom.file_path, self.elements_spin.value())
-        t1 = time.time()
-        print(f"Mesh generation: {t1-t0:.2f} s")
+
         self.parent.hex_mesh = mesher
 
-        t2 = time.time()
+  
         
 
         # Prepare mesh for FEA
         self.prepare_mesh_for_analysis(mesher, "structural")
 
-        t3 = time.time()
-        print(f"Mesh preparation: {t3-t2:.2f} s")
-        
         # Check if thermal loads exist
         if (hasattr(self.parent, 'thermal_loads_window') and 
             self.parent.thermal_loads_window and
@@ -2464,9 +2450,7 @@ class AnalysisWindow(QtWidgets.QDialog):
         else:
             # Show structural colored mesh
             self.visualize_colored_mesh("structural")
-            t4 = time.time()
-            print(f"Mesh plotting: {t4-t3:.2f} s")
-        
+
         # Update state
         self.parent.update_LivVar('mesh_generated', True)
         self.parent.message_text.append(f"Mesh generated: {mesher.num_elems} elements, {mesher.num_nodes} nodes")
@@ -2602,30 +2586,6 @@ class AnalysisWindow(QtWidgets.QDialog):
 
         self.parent.plotter.reset_camera()
 
-    # def create_mesh_polydata(self, element_colors):
-    #     mesh = self.parent.hex_mesh
-
-    #     t0 = time.time()
-    #     # Vectorized cell array: shape (num_elems, 9), first column is 8, rest are node indices
-    #     num_elems = mesh.num_elems
-    #     elemArray = np.asarray(mesh.elemArray, dtype=np.int64)
-    #     cells = np.hstack([np.full((num_elems, 1), 8, dtype=np.int64), elemArray])
-    #     cells = cells.flatten()
-    #     t1 = time.time()
-    #     print(f"[PROFILE] Vectorized cell array: {t1-t0:.4f} s")
-
-    #     grid = pv.UnstructuredGrid(cells, [pv.CellType.HEXAHEDRON] * num_elems, mesh.node_xyz)
-    #     grid.cell_data['element_colors'] = element_colors
-
-    #     t2 = time.time()
-    #     print(f"[PROFILE] UnstructuredGrid creation: {t2-t1:.4f} s")
-
-    #     surf = grid.extract_surface()
-    #     t3 = time.time()
-    #     print(f"[PROFILE] extract_surface: {t3-t2:.4f} s")
-
-    #     return surf
-
     def create_mesh_polydata(self, element_colors):
         mesh = self.parent.hex_mesh
         num_elems = mesh.num_elems
@@ -2638,24 +2598,19 @@ class AnalysisWindow(QtWidgets.QDialog):
 
     def prepare_mesh_for_analysis(self, mesh, analysis_type="structural"):
         """Mesh preparation for both structural and thermal FEA"""
-
-        t_start = time.time()
-
         # Common attributes for both analysis types
         mesh.elemPseudoDensity = np.ones(mesh.num_elems)
         mesh.elemNeighborsArray = np.zeros((mesh.num_elems, 6), dtype=int)
         mesh.node_indices = np.zeros((mesh.num_nodes, 4), dtype=int)
         mesh.elemComponentId = np.zeros(mesh.num_elems, dtype=int)
-        t_common = time.time()
-        print(f"[PROFILE] Common attributes: {t_common - t_start:.4f} s")
+      
 
         if analysis_type == "thermal":
             # Thermal: 1 DOF per node
             mesh.edofMat = np.zeros((mesh.num_elems, 8), dtype=int)
             for elem_id in range(mesh.num_elems):
                 mesh.edofMat[elem_id] = mesh.elemArray[elem_id]
-            t_edof = time.time()
-            print(f"[PROFILE] Thermal edofMat: {t_edof - t_common:.4f} s")
+
 
             # Create node_idx for thermal FEA
             row_indices, col_indices = [], []
@@ -2666,8 +2621,6 @@ class AnalysisWindow(QtWidgets.QDialog):
                         row_indices.append(node_i)
                         col_indices.append(node_j)
             mesh.node_idx = np.column_stack((row_indices, col_indices))
-            t_nodeidx = time.time()
-            print(f"[PROFILE] Thermal node_idx: {t_nodeidx - t_edof:.4f} s")
 
         else:  # structural
             # Structural: 3 DOFs per node
@@ -2678,40 +2631,30 @@ class AnalysisWindow(QtWidgets.QDialog):
                 for node in element_nodes:
                     dofs.extend([3*node, 3*node+1, 3*node+2])
                 mesh.edofMat[elem_id] = dofs
-            t_edof = time.time()
-            print(f"[PROFILE] Structural edofMat: {t_edof - t_common:.4f} s")
+  
 
         # Common element-to-node mapping
         self.create_element_to_node_mapping(mesh)
-        t_mapping = time.time()
-        print(f"[PROFILE] Element-to-node mapping: {t_mapping - (t_nodeidx if analysis_type=='thermal' else t_edof):.4f} s")
-        print(f"[PROFILE] Total prepare_mesh_for_analysis: {t_mapping - t_start:.4f} s")
 
     def create_element_to_node_mapping(self, mesh):
         """Create element to node field mapping matrix (common for both analysis types)"""
-        import time
-        t0 = time.time()
 
         row_indices, col_indices, data = [], [], []
         weight = 1.0 / 8.0  # Equal weight for 8 nodes per hex element
 
-        t1 = time.time()
+ 
         for elem_id in range(mesh.num_elems):
             element_nodes = mesh.elemArray[elem_id]
             for node in element_nodes:
                 row_indices.append(node)
                 col_indices.append(elem_id)
                 data.append(weight)
-        t2 = time.time()
-        print(f"[PROFILE] Loop over elements: {t2 - t1:.4f} s")
+
 
         mesh.elem_to_node_field_mapping = coo_matrix(
             (data, (row_indices, col_indices)), 
             shape=(mesh.num_nodes, mesh.num_elems)
         ).tocsr()
-        t3 = time.time()
-        print(f"[PROFILE] Sparse matrix construction: {t3 - t2:.4f} s")
-        print(f"[PROFILE] Total create_element_to_node_mapping: {t3 - t0:.4f} s")
 
     def create_material_properties(self):
         """Create material properties object for both analysis types"""
@@ -3653,7 +3596,7 @@ class StructuralTopOptWindow(QtWidgets.QDialog):
         super().__init__(parent)
         self.setWindowTitle("Structural TopOpt")
         self.setWindowModality(QtCore.Qt.NonModal)
-        self.resize(300, 400)
+        self.setBaseSize(300, 400)
         self.parent = parent
         
         self.optimization_running = False
@@ -3822,7 +3765,6 @@ class StructuralTopOptWindow(QtWidgets.QDialog):
                     max_local_iters=5,
                     print_progress=True,
                     plot_progress=True,
-                    binarize_topology=False,
                     progress_callback=progress_callback,
                     plotter=self.parent.plotter,
                 )
@@ -4748,24 +4690,6 @@ class DisplayOptionsWindow(QtWidgets.QDialog):
         self.geometry_combo.setCurrentIndex(current_index)
         self.geometry_combo.blockSignals(False)
         
-                
-    # def update_field_options(self):
-    #     """Update field dropdown options based on available analysis data"""
-    #     current_items = [self.field_combo.itemText(i) for i in range(self.field_combo.count())]
-        
-    #     # Add structural analysis fields
-    #     if hasattr(self.parent, 'analysis_results'):
-    #         fields_to_add = ["Displacement", "Stress", "Strain"]
-    #         for field in fields_to_add:
-    #             if field not in current_items:
-    #                 self.field_combo.addItem(field)
-                    
-    #     # Add thermal analysis fields
-    #     if hasattr(self.parent, 'thermal_results'):
-    #         thermal_fields = ["Temperature", "HeatFlux"]
-    #         for field in thermal_fields:
-    #             if field not in current_items:
-    #                 self.field_combo.addItem(field)
 
     def update_field_options(self):
         """Always show None, Deformation, Von Mises stress, Temperature."""
