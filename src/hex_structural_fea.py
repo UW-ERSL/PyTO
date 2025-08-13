@@ -314,17 +314,15 @@ class HexStructuralFEA:
 
     if (plot_bc):
       # Add dots and force arrows for labeled nodes
-      point_size = 10  # Size of dots in pixels
+      point_size = 10.0  # Size of dots in pixels
 
       # Add black dots for label 1 (fixed nodes)
       label1_nodes = np.where(self.mesh.node_indices[:, 3] == 1)[0]
+  
       if len(label1_nodes) > 0 and self.bc is not None:
         points1 = vertices[label1_nodes]
-        dots1 = pv.PolyData(points1)
-        plotter.add_points(dots1,
-                          color='black',
-                          point_size=point_size,
-                          render_points_as_spheres=True)
+        pts = pv.PointSet(points1)
+        plotter.add_mesh(pts, color='black')
 
       # Add force arrows for label 2 (without red dots)
       label2_nodes = np.where(self.mesh.node_indices[:, 3] == 2)[0]
@@ -671,8 +669,8 @@ class HexStructuralFEA:
 if __name__ == "__main__":    
   from hex_structural_examples import StructuralExamples,getStructuralProblem
 
-  problem = StructuralExamples.EdgeCantilever
-  nDOFDesired = 50000
+  problem = StructuralExamples.BeamBending
+  nDOFDesired = 10000
   mesh, mat_prop, bc,elem_body_force = getStructuralProblem(problem,nDOFDesired = nDOFDesired)
   solver = linear_solvers.Solvers.DPCG # typically DPCG or PARDISO
   

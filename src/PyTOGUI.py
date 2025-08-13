@@ -21,7 +21,8 @@ from topopt_mma import topopt_mma
 from topopt_common import TOParams, TO_QOI
 from topopt_ocm import topopt_optimality_criteria
 from topopt_pareto import topopt_pareto
-from topopt_levelset import topopt_levelset 
+from topopt_levelset import topopt_levelset
+from topopt_stl_recovery import extract_isosurface, subtract_voids_from_stl 
 """
 1) TopOpt results
 2) Adaptive sizing of Arrows for topopt constraints
@@ -79,7 +80,7 @@ class MainWindow(QtWidgets.QMainWindow):
         {"name": "TopOpt Constraints", "icon": "cross", "requires": "loads_applied", "handler": "open_topopt_constraints_window"},
         {"name": "Structural TopOpt", "icon": "cross", "requires": "topopt_constraints_defined", "handler": "open_structural_topopt_window"},
         {"name": "Thermal TopOpt", "icon": "cross", "requires": "topopt_constraints_defined", "handler": "show_coming_soon"},
-        {"name": "TopOpt Results", "icon": "cross", "requires": "topopt_performed", "handler": "show_coming_soon"},
+        {"name": "TopOpt Results", "icon": "cross", "requires": "topopt_performed", "handler": "open_topopt_results_window"},
         {"name": "Projects", "icon": "arrow", "always_enabled": True, "handler": "open_projects_window"},
         {"name": "Help", "icon": "arrow", "always_enabled": True, "handler": "show_help"}
     ]
@@ -267,6 +268,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.plotter.set_background('white')
         self.plotter.enable_parallel_projection()
 
+        
 #################################################################
     def connect_events(self):
         """Connect event handlers"""
@@ -635,6 +637,10 @@ class MainWindow(QtWidgets.QMainWindow):
     def open_display_options_window(self):
         dialog = DisplayOptionsWindow(self)
         dialog.show()
+
+    def open_topopt_results_window(self):
+        self.topopt_results_window = TopOptResultsWindow(self)
+        self.topopt_results_window.show()
 
     def show_coming_soon(self):
         QtWidgets.QMessageBox.information(self, "Coming Soon", 
@@ -1124,6 +1130,21 @@ class MaterialWindow(QtWidgets.QDialog):
     def showEvent(self, event):
         super().showEvent(event)
         self.update_units()
+
+#---------------------------------------------------------------------------
+class ScientificDoubleSpinBox(QtWidgets.QDoubleSpinBox):
+    def valueFromText(self, text):
+        try:
+            # Accept both normal and scientific notation
+            return float(text)
+        except Exception:
+            return super().valueFromText(text)
+    def textFromValue(self, value):
+        # Show in scientific notation for large/small values, else normal
+        if abs(value) >= 1e5 or (abs(value) < 1e-2 and value != 0):
+            return f"{value:.2e}"
+        else:
+            return f"{value:.2f}"
 #---------------------------------------------------------------------------
 class StructuralLoadsWindow(QtWidgets.QDialog):
     # Class-level configuration
@@ -1259,8 +1280,8 @@ class StructuralLoadsWindow(QtWidgets.QDialog):
         parent_layout.addWidget(self.force_group)
 
     def create_force_spinbox(self, prefix):
-        """Create a single force spinbox with standard settings"""
-        spinbox = QtWidgets.QDoubleSpinBox()
+        """Create a single force spinbox with scientific notation support"""
+        spinbox = ScientificDoubleSpinBox()
         spinbox.setRange(*self.FORCE_RANGE)
         spinbox.setDecimals(self.FORCE_DECIMALS)
         spinbox.setPrefix(prefix)
@@ -1397,22 +1418,50 @@ class StructuralLoadsWindow(QtWidgets.QDialog):
         if not selected_triangles:
             return
 
-        # Remove any previous force data and actors for these triangles
+        # Only remove force data for triangles that overlap with current selection
         selected_indices = set(tri['index'] for tri in selected_triangles)
-        # Remove force data
+        
+        # Remove force data only for overlapping triangles
         self.parent.force_data = [
             fd for fd in self.parent.force_data
             if not selected_indices.intersection(set(fd['triangles']))
         ]
-        # Remove force actors (arrows and labels)
-        new_force_actors = []
-        for actor in self.parent.force_actors:
-            # Try to remove all actors, but keep those not associated with these triangles
-            try:
-                self.parent.plotter.remove_actor(actor, reset_camera=False)
-            except Exception:
-                pass
-        self.parent.force_actors = []
+        
+        # Remove only the force actors associated with overlapping triangles
+        # Since we don't have a direct mapping, we'll need to be more careful here
+        # For now, let's modify to only remove actors if there's complete overlap
+        actors_to_remove = []
+        remaining_actors = []
+        
+        # Check if we have stored metadata about which actors belong to which triangles
+        # If not, we'll need to rebuild all visualizations
+        if hasattr(self.parent, 'force_actor_triangle_mapping'):
+            # If we have mapping, remove only specific actors
+            for i, actor in enumerate(self.parent.force_actors):
+                actor_triangles = self.parent.force_actor_triangle_mapping.get(i, set())
+                if actor_triangles.intersection(selected_indices):
+                    actors_to_remove.append(actor)
+                    try:
+                        self.parent.plotter.remove_actor(actor, reset_camera=False)
+                    except Exception:
+                        pass
+                else:
+                    remaining_actors.append(actor)
+            self.parent.force_actors = remaining_actors
+        else:
+            # If no mapping exists, we need to rebuild all force visualizations
+            # This is a safer approach but less efficient
+            for actor in self.parent.force_actors:
+                try:
+                    self.parent.plotter.remove_actor(actor, reset_camera=False)
+                except Exception:
+                    pass
+            self.parent.force_actors = []
+            
+            # Rebuild visualizations for all remaining force data
+            for fd in self.parent.force_data:
+                if fd.get('type') == 'force_xyz':
+                    self._rebuild_force_visualization(fd)
 
         forces = self.get_force_values()
         if not self.validate_forces(forces):
@@ -1438,6 +1487,34 @@ class StructuralLoadsWindow(QtWidgets.QDialog):
 
         self.store_force_data(selected_triangles, converted_forces)
         self.update_force(selected_triangles, [f"Resultant: {label_value:+.1f}"])
+
+    def _rebuild_force_visualization(self, force_data):
+        """Rebuild visualization for a force data entry"""
+        forces = {
+            'X': force_data['force_x'],
+            'Y': force_data['force_y'], 
+            'Z': force_data['force_z']
+        }
+        
+        force_vec = np.array([forces['X'], forces['Y'], forces['Z']])
+        nonzero = [k for k, v in forces.items() if abs(v) > 1e-12]
+        norm = np.linalg.norm(force_vec)
+        
+        if norm == 0:
+            return
+        
+        unit_direction = force_vec / norm
+        
+        # Decide label value
+        if len(nonzero) == 1:
+            label_value = forces[nonzero[0]]
+        else:
+            label_value = norm
+        
+        # Reconstruct triangle data from stored info
+        selected_triangles = force_data['triangle_data']
+        
+        self.visualize_force_arrows(selected_triangles, norm, unit_direction, "red", "Resultant", label_value)
 
     def store_force_data(self, selected_triangles, forces):
         """Store force data for analysis"""
@@ -2434,9 +2511,6 @@ class AnalysisWindow(QtWidgets.QDialog):
 
         self.parent.hex_mesh = mesher
 
-  
-        
-
         # Prepare mesh for FEA
         self.prepare_mesh_for_analysis(mesher, "structural")
 
@@ -2460,7 +2534,7 @@ class AnalysisWindow(QtWidgets.QDialog):
         mesh = self.parent.hex_mesh
         boundary_nodes = mesh.get_boundary_nodes()
         boundary_points = mesh.node_xyz[boundary_nodes]
-        tolerance = min(mesh.elem_size) * 0.9
+        tolerance = min(mesh.elem_size) * 0.5
         return boundary_nodes, boundary_points, tolerance
 
     def map_triangles_to_surface_nodes(self, triangle_indices, boundary_nodes=None, boundary_points=None, tolerance=None):
@@ -2604,7 +2678,6 @@ class AnalysisWindow(QtWidgets.QDialog):
         mesh.node_indices = np.zeros((mesh.num_nodes, 4), dtype=int)
         mesh.elemComponentId = np.zeros(mesh.num_elems, dtype=int)
       
-
         if analysis_type == "thermal":
             # Thermal: 1 DOF per node
             mesh.edofMat = np.zeros((mesh.num_elems, 8), dtype=int)
@@ -2632,30 +2705,6 @@ class AnalysisWindow(QtWidgets.QDialog):
                     dofs.extend([3*node, 3*node+1, 3*node+2])
                 mesh.edofMat[elem_id] = dofs
   
-
-        # Common element-to-node mapping
-        self.create_element_to_node_mapping(mesh)
-
-    def create_element_to_node_mapping(self, mesh):
-        """Create element to node field mapping matrix (common for both analysis types)"""
-
-        row_indices, col_indices, data = [], [], []
-        weight = 1.0 / 8.0  # Equal weight for 8 nodes per hex element
-
- 
-        for elem_id in range(mesh.num_elems):
-            element_nodes = mesh.elemArray[elem_id]
-            for node in element_nodes:
-                row_indices.append(node)
-                col_indices.append(elem_id)
-                data.append(weight)
-
-
-        mesh.elem_to_node_field_mapping = coo_matrix(
-            (data, (row_indices, col_indices)), 
-            shape=(mesh.num_nodes, mesh.num_elems)
-        ).tocsr()
-
     def create_material_properties(self):
         """Create material properties object for both analysis types"""
         material_props = self.parent.applied_material['properties']
@@ -3088,8 +3137,6 @@ class TopOptConstraintsWindow(QtWidgets.QDialog):
         apply_button.clicked.connect(self.apply_constraints)
         layout.addWidget(apply_button)
         
-        self.connect_signals()
-
         self.connect_signals()
 
         # Restore checkbox states from parent.topopt_constraints if available
@@ -3688,12 +3735,10 @@ class StructuralTopOptWindow(QtWidgets.QDialog):
         to_params = TOParams()
         to_params.Objective = (TO_QOI.COMPLIANCE, "minimize", 1.0)
         to_params.Constraints = [(TO_QOI.VOLUME_FRACTION, "<=", volume_fraction)]
-        to_params.APPLY_FILTER_TO_DENSITY = True
-        to_params.APPLY_FILTER_TO_SENSITIVITY = True
-        to_params.FILTER_RADIUS = 1.5
-        
+ 
         # Apply topopt constraints
         self.apply_topopt_constraints_to_params(to_params)
+
         
         # Create FE solver
         fe_solver = self.create_fe_solver_for_topopt()
@@ -3723,15 +3768,18 @@ class StructuralTopOptWindow(QtWidgets.QDialog):
 
         try:
             if method == "DENSITY-MMA":
+                print(to_params.KeepFixedElems)
+                print(to_params.ElemsToKeep)
+                
                 u, history, success, error_msg, n_feas = topopt_mma(
                     fe_solver=fe_solver,
                     to_params=to_params,
-                    maxMMAIterations=100,
+                    maxMMAIterations=250,
                     timeLimitSecs=3600,
                     move_limit=0.2,
-                    kkt_tol=1e-6,
-                    objective_tol=1e-4,
-                    constraint_tol=1e-4,
+                    kkt_tol=1.e-6,
+                    objective_tol=1.e-4,
+                    constraint_tol=1.e-4,
                     print_progress=True,
                     plot_progress=True,
                     binarize_topology=False,
@@ -3888,9 +3936,8 @@ class StructuralTopOptWindow(QtWidgets.QDialog):
             self.parent.message_text.append(f"Structural topology optimization failed: {error_msg}")
 
     def apply_topopt_constraints_to_params(self, to_params):
-        """Map GUI TopOpt constraints to TOParams fields"""
         constraints = self.parent.topopt_constraints
-        
+
         # Manufacturing constraints
         manufacturing = constraints.get('manufacturing', {})
         extrude = manufacturing.get('extrude', {})
@@ -3918,7 +3965,10 @@ class StructuralTopOptWindow(QtWidgets.QDialog):
             constrained_elements = analysis_window.map_triangles_to_elements(
                 list(self.parent.constrained_triangles), boundary_nodes, boundary_points, tolerance
             )
-            to_params.ElemsToKeep = list(constrained_elements)
+            to_params.ElemsToKeep = None
+            #to_params.ElemsToKeep = list(constrained_elements)
+        else:
+            to_params.ElemsToKeep = None  # <-- Explicitly clear if not enabled
 
     def create_fe_solver_for_topopt(self):
         """Create FE solver for topology optimization"""
@@ -4068,6 +4118,88 @@ class StructuralTopOptWindow(QtWidgets.QDialog):
                 event.ignore()
         else:
             event.accept()
+#----------------------------------------------------------------------------
+class TopOptResultsWindow(QtWidgets.QDialog):
+    def __init__(self, parent):
+        super().__init__(parent)
+        self.setWindowTitle("TopOpt Results")
+        self.setFixedSize(320, 180)
+        self.parent = parent
+
+        # Default values
+        self.default_resolution = 2.5
+        self.default_padding = 0.1
+
+        # Layout
+        layout = QtWidgets.QVBoxLayout(self)
+
+        # Resolution control
+        res_layout = QtWidgets.QHBoxLayout()
+        res_layout.addWidget(QtWidgets.QLabel("Resolution"))
+        self.res_spin = QtWidgets.QDoubleSpinBox()
+        self.res_spin.setRange(0.5, 10.0)
+        self.res_spin.setDecimals(2)
+        self.res_spin.setValue(self.default_resolution)
+        res_layout.addWidget(self.res_spin)
+        layout.addLayout(res_layout)
+
+        # Padding control
+        pad_layout = QtWidgets.QHBoxLayout()
+        pad_layout.addWidget(QtWidgets.QLabel("Padding"))
+        self.pad_spin = QtWidgets.QDoubleSpinBox()
+        self.pad_spin.setRange(0.0, 1.0)
+        self.pad_spin.setDecimals(3)
+        self.pad_spin.setValue(self.default_padding)
+        pad_layout.addWidget(self.pad_spin)
+        layout.addLayout(pad_layout)
+
+        # Apply button
+        apply_btn = QtWidgets.QPushButton("Apply")
+        apply_btn.clicked.connect(self.apply_recovery)
+        layout.addWidget(apply_btn)
+
+    def apply_recovery(self):
+        # Get parameters
+        resolution = self.res_spin.value()
+        padding = self.pad_spin.value()
+
+        # Get VTU and STL paths from current GUI TopOpt results
+        topopt_results = getattr(self.parent, "topopt_results", None)
+        if not topopt_results or not hasattr(self.parent, "stl_geom"):
+            QtWidgets.QMessageBox.warning(self, "No TopOpt Results", "Please run topology optimization first.")
+            return
+
+        stl_path = self.parent.stl_geom.file_path
+        vtu_path = os.path.splitext(stl_path)[0] + ".vtu"
+
+        try:
+            design_domain_stl = pv.read(stl_path).triangulate().compute_normals()
+            vtu = pv.read(vtu_path)
+        except Exception as e:
+            QtWidgets.QMessageBox.warning(self, "File Error", f"Could not load STL/VTU: {e}")
+            return
+        
+        void_region_stl = extract_isosurface(vtu, resolution=resolution)
+        optimized_topology_stl = subtract_voids_from_stl(design_domain_stl, void_region_stl)
+
+        # Remove only mesh actors, keep geometry info
+        for name in list(self.parent.plotter.actors.keys()):
+            if name != "geometry_info":
+                self.parent.plotter.remove_actor(name, reset_camera=False)
+
+        # Show optimized STL
+        self.parent.plotter.add_mesh(optimized_topology_stl, color='red', opacity=0.9, name="Optimized STL")
+        self.parent.plotter.reset_camera()
+        self.parent.plotter.render()
+        self.parent.message_text.append("Optimized STL visualized.")
+
+        #save STL
+        output_path = os.path.splitext(stl_path)[0] + "_optimized.stl"
+        try:
+            optimized_topology_stl.save(output_path)
+            self.parent.message_text.append(f"Optimized STL saved: {output_path}")
+        except Exception as e:
+            self.parent.message_text.append(f"Failed to save optimized STL: {e}")
 #----------------------------------------------------------------------------
 class DisplayOptionsWindow(QtWidgets.QDialog):
     def __init__(self, parent):
@@ -4635,34 +4767,7 @@ class DisplayOptionsWindow(QtWidgets.QDialog):
         # items = ["Initial Design"]
         # current_index = 0
 
-        # # Check for mesh
-        # has_mesh = hasattr(self.parent, "hex_mesh") and self.parent.hex_mesh is not None
-        # if has_mesh:
-        #     items.append("Mesh")
-        #     current_index = 1
 
-        # # Check for FEA results (structural or thermal)
-        # has_structural_FEA = hasattr(self.parent, "fe_solver") and self.parent.fe_solver is not None
-        # has_thermal_FEA = hasattr(self.parent, "thermal_fe_solver") and self.parent.thermal_fe_solver is not None
-        # has_FEA = has_structural_FEA or has_thermal_FEA
-        # if has_FEA:
-        #     items.append("FEA Results")
-        #     if current_index == 0:
-        #         current_index = 1
-
-        # # Check for topology optimization
-        # has_topopt = hasattr(self.parent, "topopt_results") and self.parent.topopt_results is not None
-        # if has_topopt:
-        #     items.append("TopOpt")
-        #     current_index = 2
-
-        # # Update dropdown items only if changed
-        # self.geometry_combo.blockSignals(True)
-        # self.geometry_combo.clear()
-        # self.geometry_combo.addItems(items)
-        # self.geometry_combo.setCurrentIndex(current_index)
-        # self.geometry_combo.blockSignals(False)
-        #"""Update geometry dropdown options and select current state intelligently."""
         """Show Initial Design, Mesh (if available), and TopOpt (if structural topopt done) in geometry dropdown."""
         items = ["Initial Design"]
         current_index = 0

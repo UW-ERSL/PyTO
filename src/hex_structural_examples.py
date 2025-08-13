@@ -306,8 +306,8 @@ def createTorsionBarProblem(nDOFDesired: int = 10000, L: float = [1, 0.2, 0.2], 
     return mesh, mat_prop, bc, elem_body_force
   # ----------------------------------------
 
-def createBeamBendingProblem(nDOFDesired: int = 10000, L: float = [10, 1, 1],appliedLoad = 10000):
-  """Creates a tensile problem with approximate desired DOFs.
+def createBeamBendingProblem(nDOFDesired: int = 10000, L: float = [0.5, 0.05, 0.05],appliedLoad = 1000):
+  """Creates a beam bending problem with approximate desired DOFs.
 
   Parameters:
   ----------
@@ -342,7 +342,7 @@ def createBeamBendingProblem(nDOFDesired: int = 10000, L: float = [10, 1, 1],app
 
   # Fix all DOFs at x=0 plane (cantilever)
   fixed_nodes = mesh.getNodesOnBoundingBoxPlane(0,True) # x = 0 plane
-  fixed_dofs = np.array([3 * fixed_nodes,
+  fixed_dofs = np.array([3 * fixed_nodes,3 * fixed_nodes+1,
                          3 * fixed_nodes + 2]).flatten().astype(int)
   dirichlet_values = 0*np.ones_like(fixed_dofs, dtype = float)
   mesh.node_indices[fixed_nodes, 3] = 1

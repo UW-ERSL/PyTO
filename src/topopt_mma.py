@@ -197,7 +197,7 @@ if __name__ == "__main__":
  
     print("-" * 50)
  
-    to_problem = StructuralTOExamples.MBBB# Choose the TO problem
+    to_problem = StructuralTOExamples.Mitchell_1# Choose the TO problem
     nDOFDesired = 25000
 
     if (to_problem in StructuralTOExamples):
