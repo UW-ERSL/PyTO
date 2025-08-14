@@ -17,6 +17,7 @@ from hex_mesher import HexMesher
 import deflation
 from hex_thermal_fea import HexThermalFEA
 import hex_structural_fea
+from matplotlib.colors import ListedColormap
 from topopt_mma import topopt_mma
 from topopt_common import TOParams, TO_QOI
 from topopt_ocm import topopt_optimality_criteria
@@ -1130,7 +1131,6 @@ class MaterialWindow(QtWidgets.QDialog):
     def showEvent(self, event):
         super().showEvent(event)
         self.update_units()
-
 #---------------------------------------------------------------------------
 class ScientificDoubleSpinBox(QtWidgets.QDoubleSpinBox):
     def valueFromText(self, text):
@@ -2505,10 +2505,8 @@ class AnalysisWindow(QtWidgets.QDialog):
             return
         
         # Create mesh
-
         mesher = HexMesher()
         mesher.createMeshFromSTLFile(self.parent.stl_geom.file_path, self.elements_spin.value())
-
         self.parent.hex_mesh = mesher
 
         # Prepare mesh for FEA
@@ -2538,7 +2536,7 @@ class AnalysisWindow(QtWidgets.QDialog):
         return boundary_nodes, boundary_points, tolerance
 
     def map_triangles_to_surface_nodes(self, triangle_indices, boundary_nodes=None, boundary_points=None, tolerance=None):
-        """Map triangles to surface nodes - base method for both element and thermal node mapping"""
+        """Map triangles to surface nodes - SURFACE ONLY (excludes interior nodes)"""
         if not triangle_indices:
             return set()
         
@@ -2546,15 +2544,16 @@ class AnalysisWindow(QtWidgets.QDialog):
         if boundary_nodes is None:
             boundary_nodes, boundary_points, tolerance = self.get_boundary_mapping_data()
         
+        
         surface_nodes = set()
         for tri_idx in triangle_indices:
             distances = self.parent.stl_geom.find_points_triangle_distances_vectorized(boundary_points, tri_idx)
             close_mask = distances < tolerance
             surface_nodes.update(boundary_nodes[close_mask])
         
+        
         return surface_nodes
     
-    #introduced new method to build node to element map
     def build_node_to_elem_map(self, mesh):
         """Build a mapping from node index to set of element indices."""
         from collections import defaultdict
@@ -2566,17 +2565,25 @@ class AnalysisWindow(QtWidgets.QDialog):
         return node_to_elem
 
     def map_triangles_to_elements(self, triangle_indices, boundary_nodes=None, boundary_points=None, tolerance=None, node_to_elem=None):
+        """Map triangles to elements - SURFACE ONLY"""
         surface_nodes = self.map_triangles_to_surface_nodes(triangle_indices, boundary_nodes, boundary_points, tolerance)
         if node_to_elem is None:
             node_to_elem = self.build_node_to_elem_map(self.parent.hex_mesh)
-        # Union all elements containing any of the surface nodes
+        
+        # Get boundary elements only
+        boundary_elements = set(self.parent.hex_mesh.get_boundary_elements())
+        
+        # Union all elements containing any of the surface nodes, but only boundary elements
         surface_elements = set()
         for node_id in surface_nodes:
-            surface_elements.update(node_to_elem[node_id])
+            elements_with_node = node_to_elem[node_id]
+            # Only include elements that are boundary elements
+            surface_elements.update(elements_with_node.intersection(boundary_elements))
+        
         return surface_elements
 
     def map_triangles_to_thermal_nodes(self, triangle_indices, boundary_nodes=None, boundary_points=None, tolerance=None):
-        """Map triangles to thermal nodes"""
+        """Map triangles to thermal nodes - SURFACE ONLY"""
         return list(self.map_triangles_to_surface_nodes(triangle_indices, boundary_nodes, boundary_points, tolerance))
 
     def get_element_colors(self, color_type="structural"):
@@ -2588,20 +2595,20 @@ class AnalysisWindow(QtWidgets.QDialog):
         boundary_nodes, boundary_points, tolerance = self.get_boundary_mapping_data()
 
         if color_type == "structural":
-                if self.parent.constrained_triangles:
-                    constrained_elements = self.map_triangles_to_elements(
-                        list(self.parent.constrained_triangles), boundary_nodes, boundary_points, tolerance, node_to_elem
-                    )
-                    element_colors[list(constrained_elements)] = 0.0  # Black
+            if self.parent.constrained_triangles:
+                constrained_elements = self.map_triangles_to_elements(
+                    list(self.parent.constrained_triangles), boundary_nodes, boundary_points, tolerance, node_to_elem
+                )
+                element_colors[list(constrained_elements)] = 0.0  # Black
 
-                for force_info in self.parent.force_data:
-                    force_elements = self.map_triangles_to_elements(
-                        force_info['triangles'], boundary_nodes, boundary_points, tolerance, node_to_elem
-                    )
-                    if force_info.get('type') == 'torque':
-                        element_colors[list(force_elements)] = 0.33  # Green for torque
-                    else:
-                        element_colors[list(force_elements)] = 1.0  # Red for force
+            for force_info in self.parent.force_data:
+                force_elements = self.map_triangles_to_elements(
+                    force_info['triangles'], boundary_nodes, boundary_points, tolerance, node_to_elem
+                )
+                if force_info.get('type') == 'torque':
+                    element_colors[list(force_elements)] = 0.33  # Green for torque
+                else:
+                    element_colors[list(force_elements)] = 1.0  # Red for force
 
         elif color_type == "thermal":
             if not (self.parent.thermal_loads_window and self.parent.thermal_loads_window.thermal_loads):
@@ -2668,7 +2675,7 @@ class AnalysisWindow(QtWidgets.QDialog):
         cells = cells.flatten()
         grid = pv.UnstructuredGrid(cells, [pv.CellType.HEXAHEDRON] * num_elems, mesh.node_xyz)
         grid.cell_data['element_colors'] = element_colors
-        return grid  # Do not call extract_surface()
+        return grid
 
     def prepare_mesh_for_analysis(self, mesh, analysis_type="structural"):
         """Mesh preparation for both structural and thermal FEA"""
@@ -2683,7 +2690,6 @@ class AnalysisWindow(QtWidgets.QDialog):
             mesh.edofMat = np.zeros((mesh.num_elems, 8), dtype=int)
             for elem_id in range(mesh.num_elems):
                 mesh.edofMat[elem_id] = mesh.elemArray[elem_id]
-
 
             # Create node_idx for thermal FEA
             row_indices, col_indices = [], []
@@ -2747,29 +2753,19 @@ class AnalysisWindow(QtWidgets.QDialog):
         # Get boundary mapping data
         boundary_nodes, boundary_points, tolerance = self.get_boundary_mapping_data()
         
-        # Map constrained triangles to fixed nodes
+        # Map constrained triangles to fixed nodes - SURFACE ONLY
         fixed_nodes = {'xyz': set(), 'x': set(), 'y': set(), 'z': set()}
         
         if self.parent.constrained_triangles and self.parent.constraint_data:
-            constrained_elements = self.map_triangles_to_elements(
-                list(self.parent.constrained_triangles), boundary_nodes, boundary_points, tolerance
-            )
-            
-            # Convert elements to nodes
-            constrained_nodes = set()
-            for elem_id in constrained_elements:
-                constrained_nodes.update(self.parent.hex_mesh.elemArray[elem_id])
-            
-            # Apply constraints based on constraint_data
             for constraint in self.parent.constraint_data:
                 constraint_type = constraint['type']
                 triangles = constraint.get('triangles', [])
-                constrained_elements = self.map_triangles_to_elements(
+                
+                # Use surface-only mapping
+                constrained_nodes = self.map_triangles_to_surface_nodes(
                     triangles, boundary_nodes, boundary_points, tolerance
                 )
-                constrained_nodes = set()
-                for elem_id in constrained_elements:
-                    constrained_nodes.update(self.parent.hex_mesh.elemArray[elem_id])
+                
                 if constraint_type == 'Fixed XYZ':
                     fixed_nodes['xyz'].update(constrained_nodes)
                 elif constraint_type == 'Fixed X':
@@ -2779,17 +2775,15 @@ class AnalysisWindow(QtWidgets.QDialog):
                 elif constraint_type == 'Fixed Z':
                     fixed_nodes['z'].update(constrained_nodes)
         
-        # Map force and torque triangles to load nodes
+        # Map force and torque triangles to load nodes - SURFACE ONLY
         load_nodes_groups = []
         load_forces = []
 
         for force_info in self.parent.force_data:
-            force_elements = self.map_triangles_to_elements(
+            # Use surface-only mapping
+            force_nodes = self.map_triangles_to_surface_nodes(
                 force_info['triangles'], boundary_nodes, boundary_points, tolerance
             )
-            force_nodes = set()
-            for elem_id in force_elements:
-                force_nodes.update(self.parent.hex_mesh.elemArray[elem_id])
 
             if force_info.get('type') == 'torque':
                 # Distribute torque, tangential force proportional to radius
@@ -2801,24 +2795,15 @@ class AnalysisWindow(QtWidgets.QDialog):
                     continue
  
                 node_xyz = self.parent.hex_mesh.node_xyz[nodes]
-                # Project node positions onto the plane perpendicular to the torque axis
                 direction = direction / np.linalg.norm(direction)
-                # Find face center (mean of node positions)
                 face_center = np.mean(node_xyz, axis=0)
-                # For each node, compute vector from center to node, projected onto plane
                 r_vecs = node_xyz - face_center
-                # Remove component along axis (project onto plane)
                 r_proj = r_vecs - np.outer(np.dot(r_vecs, direction), direction)
                 r_norm = np.linalg.norm(r_proj, axis=1)
-                # Avoid division by zero
                 r_norm[r_norm < 1e-12] = 1e-12
-                # Tangential direction: axis x r_proj as per (right-hand rule)
                 tangent_dirs = np.cross(direction, r_proj)
                 tangent_dirs = tangent_dirs / np.linalg.norm(tangent_dirs, axis=1)[:, None]
-                # Force magnitude proportional to radius, normalized so sum(r x F) = torque_value
-                # First, compute unscaled force vectors
                 force_vecs = tangent_dirs * r_norm[:, None]
-                # Compute scaling factor
                 torque_actual = np.sum(np.cross(r_proj, force_vecs), axis=0)
                 scale = torque_value / (np.dot(torque_actual, direction) + 1e-12)
                 force_vecs = force_vecs * scale
@@ -2851,12 +2836,10 @@ class AnalysisWindow(QtWidgets.QDialog):
 
         # Before calling fe_solver.solve(), add:
         if self.get_solver() == linear_solvers.Solvers.DPCG:
-            
             self.parent.dsolver = deflation.DeflationSolver()
             nGroups = min(self.parent.dsolver.maxGroups, max(self.parent.dsolver.minGroups, round(3*self.parent.hex_mesh.num_nodes/self.parent.dsolver.dofPerGroup)))
             self.parent.dsolver.create_deflation_groups(self.parent.hex_mesh, nGroups)
             self.parent.dsolver.create_deflation_matrix(self.parent.hex_mesh)
-            # Make sure bc is available here
             self.parent.dsolver.W = self.parent.dsolver.W[bc.free_dofs, :]
         else:
             self.parent.dsolver = None
@@ -2929,7 +2912,7 @@ class AnalysisWindow(QtWidgets.QDialog):
         # Get boundary mapping data
         boundary_nodes, boundary_points, tolerance = self.get_boundary_mapping_data()
         
-        # Process thermal boundary conditions
+        # Process thermal boundary conditions using surface-only mapping
         thermal_bc = self.process_thermal_boundary_conditions(
             self.parent.hex_mesh, thermal_loads, boundary_nodes, boundary_points, tolerance
         )
@@ -2975,12 +2958,12 @@ class AnalysisWindow(QtWidgets.QDialog):
         self.parent.message_text.append(f"Temperature range: {np.min(temperature_solution):.2f} - {np.max(temperature_solution):.2f} K")
 
     def process_thermal_boundary_conditions(self, mesh, thermal_loads, boundary_nodes, boundary_points, tolerance):
-        """Process thermal loads and create boundary conditions"""
+        """Process thermal loads and create boundary conditions using surface-only mapping"""
         thermal_force = np.zeros(mesh.num_nodes)
         fixed_temp_nodes = []
         fixed_temp_values = []
         
-        # Process fixed temperature BCs
+        # Process fixed temperature BCs - SURFACE ONLY
         for temp_load in thermal_loads.get('fixed_temps', []):
             affected_nodes = self.map_triangles_to_thermal_nodes(
                 temp_load['triangles'], boundary_nodes, boundary_points, tolerance
@@ -2988,7 +2971,7 @@ class AnalysisWindow(QtWidgets.QDialog):
             fixed_temp_nodes.extend(affected_nodes)
             fixed_temp_values.extend([temp_load['temperature']] * len(affected_nodes))
         
-        # Process heat flux BCs
+        # Process heat flux BCs - SURFACE ONLY
         for heat_load in thermal_loads.get('heat_sources', []):
             affected_nodes = self.map_triangles_to_thermal_nodes(
                 heat_load['triangles'], boundary_nodes, boundary_points, tolerance
@@ -2998,7 +2981,7 @@ class AnalysisWindow(QtWidgets.QDialog):
                 for node_id in affected_nodes:
                     thermal_force[node_id] += heat_per_node
         
-        # Process total heat BCs
+        # Process total heat BCs - SURFACE ONLY
         for total_heat_load in thermal_loads.get('total_heat_sources', []):
             affected_nodes = self.map_triangles_to_thermal_nodes(
                 total_heat_load['triangles'], boundary_nodes, boundary_points, tolerance
@@ -3025,6 +3008,7 @@ class AnalysisWindow(QtWidgets.QDialog):
         
         # Process fixed nodes
         fixed_dofs = []
+        print(len(fixed_nodes['x']))
         for node in fixed_nodes['xyz']:
             fixed_dofs.extend([3*node, 3*node + 1, 3*node + 2])
             

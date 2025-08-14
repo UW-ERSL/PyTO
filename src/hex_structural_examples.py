@@ -506,6 +506,7 @@ S. Ivvan Valdez, et al. Arch Computat Methods Eng (2017) 24:803–839, DOI 10.10
 
   node_pts = mesh.node_xyz
   left_nodes = mesh.getNodesOnBoundingBoxPlane(0,True) # x = 0 plane
+  print(len(left_nodes))
   left_dofs = np.array([3 * left_nodes]).flatten().astype(int) # fixed in x direction
 
   bottom_nodes = mesh.getNodesOnBoundingBoxPlane(1,True) # y = 0 plane
