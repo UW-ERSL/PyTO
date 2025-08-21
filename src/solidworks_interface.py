@@ -44,7 +44,7 @@ class SolidWorksInterface:
             dimensions = []
             names = []
             values = []
-            swConfig.GetParameters(parameterCount,names, values)
+            swConfig.GetParameters(names, values)
             dimensions = list(zip(names, values))
             print(dimensions)
             input("Press Enter to continue...")

@@ -14,6 +14,7 @@ import bound_cond
 import mat_lib
 import linear_solvers
 from hex_mesher import HexMesher
+from tet_mesher import TetMesher
 import deflation
 from hex_thermal_fea import HexThermalFEA
 import hex_structural_fea
@@ -2544,13 +2545,11 @@ class AnalysisWindow(QtWidgets.QDialog):
         if boundary_nodes is None:
             boundary_nodes, boundary_points, tolerance = self.get_boundary_mapping_data()
         
-        
         surface_nodes = set()
         for tri_idx in triangle_indices:
             distances = self.parent.stl_geom.find_points_triangle_distances_vectorized(boundary_points, tri_idx)
             close_mask = distances < tolerance
             surface_nodes.update(boundary_nodes[close_mask])
-        
         
         return surface_nodes
     
@@ -2630,40 +2629,65 @@ class AnalysisWindow(QtWidgets.QDialog):
         return element_colors
 
     def visualize_colored_mesh(self, visualization_type="structural"):
-        """Mesh visualization for both structural and thermal analysis"""
-        
+        """Mesh visualization showing nodes as colored spheres for boundary conditions"""
         # Clear actors except geometry info
         for name in list(self.parent.plotter.actors.keys()):
             if name != 'geometry_info':
                 self.parent.plotter.remove_actor(name, reset_camera=False)
-        
-        # Get appropriate element colors
-        element_colors = self.get_element_colors(visualization_type)
-        
-        # Create colored mesh polydata
-        mesh_polydata = self.create_mesh_polydata(element_colors)
-        
-        from matplotlib.colors import ListedColormap
-        if visualization_type == "structural":
-            custom_cmap = ListedColormap(["black", "#22cc22", "#dddddd", "red"])  # 0.0=black, 0.65=gray, 1.0=red
-            cmap = custom_cmap
-        elif visualization_type == "thermal":
-            thermal_cmap = ListedColormap(["#0074D9", "#FF851B", "#FF4136"])  # 0.0=blue, 0.5=orange, 1.0=red
-            cmap = thermal_cmap
-        else:
-            cmap = "coolwarm"
 
+        mesh = self.parent.hex_mesh
+
+        # Get constrained and loaded nodes
+        constrained_nodes = set()
+        loaded_nodes = set()
+        boundary_nodes, boundary_points, tolerance = self.get_boundary_mapping_data()
+
+        # Constrained nodes
+        if self.parent.constrained_triangles:
+            for constraint in self.parent.constraint_data:
+                triangles = constraint.get('triangles', [])
+                nodes = self.map_triangles_to_surface_nodes(triangles, boundary_nodes, boundary_points, tolerance)
+                constrained_nodes.update(nodes)
+
+        # Loaded nodes
+        for force_info in self.parent.force_data:
+            triangles = force_info.get('triangles', [])
+            nodes = self.map_triangles_to_surface_nodes(triangles, boundary_nodes, boundary_points, tolerance)
+            loaded_nodes.update(nodes)
+
+        #Plot mesh as wireframe
+        mesh_polydata = self.create_mesh_polydata(np.full(mesh.num_elems, 0.65))
         self.parent.plotter.add_mesh(
             mesh_polydata,
-            scalars='element_colors',
-            cmap=cmap,
-            clim=[0, 1],
+            color='gray',
             show_edges=True,
             edge_color='black',
             line_width=1,
             show_scalar_bar=False,
-            name="colored_mesh" if visualization_type == "structural" else "thermal_mesh"
+            name="colored_mesh"
         )
+
+        # Plot constrained nodes (black spheres)
+        if constrained_nodes:
+            pts = mesh.node_xyz[list(constrained_nodes)]
+            self.parent.plotter.add_mesh(
+                pv.PolyData(pts),
+                color='black',
+                point_size=5,
+                render_points_as_spheres=True,
+                name="constrained_nodes"
+            )
+
+        # Plot loaded nodes (red spheres)
+        if loaded_nodes:
+            pts = mesh.node_xyz[list(loaded_nodes)]
+            self.parent.plotter.add_mesh(
+                pv.PolyData(pts),
+                color='red',
+                point_size=5,
+                render_points_as_spheres=True,
+                name="loaded_nodes"
+            )
 
         self.parent.plotter.reset_camera()
 
@@ -2834,7 +2858,7 @@ class AnalysisWindow(QtWidgets.QDialog):
             self.parent.applied_material['properties']
         )
 
-        # Before calling fe_solver.solve(), add:
+        # Before calling fe_solver.solve()
         if self.get_solver() == linear_solvers.Solvers.DPCG:
             self.parent.dsolver = deflation.DeflationSolver()
             nGroups = min(self.parent.dsolver.maxGroups, max(self.parent.dsolver.minGroups, round(3*self.parent.hex_mesh.num_nodes/self.parent.dsolver.dofPerGroup)))
@@ -3008,7 +3032,6 @@ class AnalysisWindow(QtWidgets.QDialog):
         
         # Process fixed nodes
         fixed_dofs = []
-        print(len(fixed_nodes['x']))
         for node in fixed_nodes['xyz']:
             fixed_dofs.extend([3*node, 3*node + 1, 3*node + 2])
             
@@ -3050,6 +3073,276 @@ class AnalysisWindow(QtWidgets.QDialog):
         )
         
         return mesh, mat_prop, bc
+    
+    # def transfer_structural_loads_to_tetmesh(self, tetmesh=None, k_neighbors=12, rel_tol=0.02):
+    #     """
+    #     Map surface-based structural loads & constraints from STL triangles onto tet mesh surface nodes.
+    #     Results stored in parent:
+    #       parent.tet_constraint_nodes : set(node_ids)
+    #       parent.tet_force_data : list of dict entries (force or torque)
+    #     """
+    #     import numpy as np
+
+    #     if tetmesh is None:
+    #         tetmesh = getattr(self.parent, "tetmesh", None)
+    #     if tetmesh is None:
+    #         self.parent.message_text.append("Tet transfer skipped: no tet mesh.")
+    #         return
+    #     if self.parent.stl_geom is None:
+    #         self.parent.message_text.append("Tet transfer skipped: no STL geometry.")
+    #         return
+
+    #     node_xyz = getattr(tetmesh, "node_xyz", None)
+    #     if node_xyz is None:
+    #         self.parent.message_text.append("Tet transfer failed: tetmesh.node_xyz missing.")
+    #         return
+
+    #     # Surface node extraction (fallback: all nodes)
+    #     try:
+    #         if hasattr(tetmesh, "get_surface"):
+    #             surf = tetmesh.get_surface()
+    #             if isinstance(surf, dict):
+    #                 surface_nodes = np.array(list(surf.get("nodes", [])), dtype=int)
+    #             else:
+    #                 surface_nodes = np.unique(surf[1]) if len(surf) > 1 else np.arange(node_xyz.shape[0])
+    #         else:
+    #             surface_nodes = np.arange(node_xyz.shape[0])
+    #     except Exception:
+    #         surface_nodes = np.arange(node_xyz.shape[0])
+
+    #     surface_points = node_xyz[surface_nodes]
+
+    #     # KDTree if available
+    #     use_tree = False
+    #     try:
+    #         from scipy.spatial import cKDTree
+    #         tree = cKDTree(surface_points)
+    #         use_tree = True
+    #     except Exception:
+    #         tree = None
+    #         self.parent.message_text.append("Tet transfer: scipy KDTree unavailable (using brute force).")
+
+    #     bbox = self.parent.stl_geom.get_bounding_box()
+    #     if bbox:
+    #         diag = ((bbox[1]-bbox[0])**2 + (bbox[3]-bbox[2])**2 + (bbox[5]-bbox[4])**2) ** 0.5
+    #     else:
+    #         diag = 1.0
+
+    #     def map_triangle(tri_idx):
+    #         tri_vertices = self.parent.stl_geom.mesh.vectors[tri_idx]
+    #         center = np.mean(tri_vertices, axis=0)
+    #         if use_tree:
+    #             k = min(k_neighbors, len(surface_points))
+    #             idxs = tree.query(center, k=k)[1]
+    #             if np.isscalar(idxs):
+    #                 idxs = [int(idxs)]
+    #             return set(surface_nodes[np.atleast_1d(idxs)])
+    #         d = np.linalg.norm(surface_points - center, axis=1)
+    #         close = np.argsort(d)[:k_neighbors]
+    #         return set(surface_nodes[close])
+
+    #     # Constraints
+    #     tet_constrained = set()
+    #     for c in self.parent.constraint_data:
+    #         for tri in c.get("triangles", []):
+    #             tet_constrained.update(map_triangle(tri))
+    #     self.parent.tet_constraint_nodes = tet_constrained
+
+    #     # Forces / torques
+    #     tet_force_data = []
+    #     for force_info in self.parent.force_data:
+    #         tri_list = force_info.get("triangles", [])
+    #         affected = set()
+    #         for tri in tri_list:
+    #             affected.update(map_triangle(tri))
+    #         if not affected:
+    #             continue
+
+    #         if force_info.get("type") == "torque":
+    #             axis_point = np.array(force_info.get("axis_point", [0,0,0]), dtype=float)
+    #             direction = np.array(force_info.get("direction", [0,0,1]), dtype=float)
+    #             torque_value = float(force_info.get("torque", 0.0))
+    #             if torque_value == 0 or np.linalg.norm(direction) < 1e-12:
+    #                 continue
+    #             direction /= np.linalg.norm(direction)
+    #             nodes = np.array(list(affected), dtype=int)
+    #             pts = node_xyz[nodes]
+    #             face_center = np.mean(pts, axis=0)
+    #             r_vecs = pts - face_center
+    #             r_proj = r_vecs - np.outer(r_vecs @ direction, direction)
+    #             r_norm = np.linalg.norm(r_proj, axis=1)
+    #             r_norm[r_norm < 1e-12] = 1e-12
+    #             tangents = np.cross(direction, r_proj)
+    #             tangents /= np.linalg.norm(tangents, axis=1)[:, None]
+    #             raw_force = tangents * r_norm[:, None]
+    #             torque_actual = np.sum(np.cross(r_proj, raw_force), axis=0)
+    #             denom = np.dot(torque_actual, direction) + 1e-12
+    #             scale = torque_value / denom
+    #             node_forces = raw_force * scale
+    #             tet_force_data.append({
+    #                 "type": "torque",
+    #                 "nodes": nodes.tolist(),
+    #                 "node_forces": {int(n): node_forces[i].tolist() for i, n in enumerate(nodes)},
+    #                 "meta": force_info
+    #             })
+    #         else:
+    #             fx = force_info.get("force_x", 0.0)
+    #             fy = force_info.get("force_y", 0.0)
+    #             fz = force_info.get("force_z", 0.0)
+    #             if abs(fx)+abs(fy)+abs(fz) < 1e-12:
+    #                 continue
+    #             nodes = list(affected)
+    #             resultant = np.array([fx, fy, fz], dtype=float)
+    #             tet_force_data.append({
+    #                 "type": "force",
+    #                 "nodes": nodes,
+    #                 "per_node_force": (resultant / len(nodes)).tolist(),
+    #                 "meta": force_info
+    #             })
+
+    #     self.parent.tet_force_data = tet_force_data
+    #     self.parent.message_text.append(
+    #         f"Tet load transfer: {len(self.parent.tet_constraint_nodes)} constrained nodes, "
+    #         f"{len(self.parent.tet_force_data)} load groups."
+    #     )
+
+    # def visualize_tet_structural_loads(self, tetmesh=None):
+    #     """
+    #     Create PyVista actors for transferred tet mesh structural loads.
+    #     - Constraints: black spheres
+    #     - Forces: red arrows
+    #     - Torques: green curved arc + per-node force arrows (blue)
+    #     """
+    #     import numpy as np
+    #     import pyvista as pv
+
+    #     if tetmesh is None:
+    #         tetmesh = getattr(self.parent, "tetmesh", None)
+    #     if tetmesh is None or getattr(tetmesh, "node_xyz", None) is None:
+    #         self.parent.message_text.append("Tet load viz skipped: no tet mesh.")
+    #         return
+
+    #     # Init actor lists
+    #     self.parent.tet_force_actors = []
+    #     self.parent.tet_constraint_actors = []
+
+    #     pts = tetmesh.node_xyz
+    #     bounds = [
+    #         np.min(pts[:,0]), np.max(pts[:,0]),
+    #         np.min(pts[:,1]), np.max(pts[:,1]),
+    #         np.min(pts[:,2]), np.max(pts[:,2])
+    #     ]
+    #     model_size = max(bounds[1]-bounds[0], bounds[3]-bounds[2], bounds[5]-bounds[4]) if pts.size else 1.0
+
+    #     # Constraints
+    #     if getattr(self.parent, "tet_constraint_nodes", None):
+    #         c_nodes = list(self.parent.tet_constraint_nodes)
+    #         if c_nodes:
+    #             c_pts = pts[c_nodes]
+    #             c_actor = self.parent.plotter.add_mesh(
+    #                 pv.PolyData(c_pts),
+    #                 color='black',
+    #                 point_size=9,
+    #                 render_points_as_spheres=True,
+    #                 name="tet_constraints"
+    #             )
+    #             self.parent.tet_constraint_actors.append(c_actor)
+
+    #    # Gather force vectors
+    #     arrow_centers = []
+    #     arrow_vectors = []
+    #     per_node_max = 0.0
+    #     torque_groups = []
+
+    #     for entry in getattr(self.parent, "tet_force_data", []):
+    #         if entry["type"] == "force":
+    #             vec = np.array(entry["per_node_force"])
+    #             mag = np.linalg.norm(vec)
+    #             if mag < 1e-16:
+    #                 continue
+    #             for n in entry["nodes"]:
+    #                 arrow_centers.append(pts[n])
+    #                 arrow_vectors.append(vec)
+    #                 per_node_max = max(per_node_max, mag)
+    #         elif entry["type"] == "torque":
+    #             node_forces = entry["node_forces"]
+    #             torque_groups.append(entry)
+    #             for nid, fvec in node_forces.items():
+    #                 vec = np.array(fvec)
+    #                 mag = np.linalg.norm(vec)
+    #                 if mag < 1e-16:
+    #                     continue
+    #                 arrow_centers.append(pts[nid])
+    #                 arrow_vectors.append(vec)
+    #                 per_node_max = max(per_node_max, mag)
+
+    #     any_arrows = len(arrow_centers) > 0  # keep boolean before converting to ndarray
+
+    #     if any_arrows:
+    #         arrow_centers = np.array(arrow_centers)
+    #         arrow_vectors = np.array(arrow_vectors)
+    #         if per_node_max < 1e-16:
+    #             per_node_max = 1.0
+    #         base_len = 0.12 * model_size
+    #         lengths = np.linalg.norm(arrow_vectors, axis=1)
+    #         scales = (lengths / per_node_max) * base_len
+    #         unit_dirs = np.zeros_like(arrow_vectors)
+    #         nz = lengths > 1e-16
+    #         unit_dirs[nz] = (arrow_vectors[nz].T / lengths[nz]).T * scales[nz][:, None]
+
+    #         pdata = pv.PolyData(arrow_centers)
+    #         pdata['vectors'] = unit_dirs
+    #         glyphs = pdata.glyph(orient='vectors', scale='vectors', factor=1.0)
+    #         force_actor = self.parent.plotter.add_mesh(
+    #             glyphs,
+    #             color='red',
+    #             name="tet_force_arrows"
+    #         )
+    #         self.parent.tet_force_actors.append(force_actor)
+
+    #     # Torques: draw one curved arrow per torque group
+    #     for idx, tgrp in enumerate(torque_groups):
+    #         node_ids = tgrp["nodes"]
+    #         group_pts = pts[node_ids]
+    #         center = np.mean(group_pts, axis=0)
+    #         direction = np.array(tgrp["meta"].get("direction", [0,0,1]), dtype=float)
+    #         if np.linalg.norm(direction) < 1e-12:
+    #             continue
+    #         direction /= np.linalg.norm(direction)
+
+    #         perp1 = np.cross(direction, [1,0,0]) if abs(direction[0]) < 0.9 else np.cross(direction, [0,1,0])
+    #         if np.linalg.norm(perp1) < 1e-12:
+    #             perp1 = np.cross(direction, [0,0,1])
+    #         perp1 /= np.linalg.norm(perp1)
+    #         perp2 = np.cross(direction, perp1)
+    #         perp2 /= np.linalg.norm(perp2)
+
+    #         arc_deg = 270
+    #         res = 40
+    #         radius = 0.10 * model_size
+    #         arc_pts = []
+    #         for i in range(res):
+    #             ang = np.deg2rad(i * arc_deg / (res - 1))
+    #             arc_pts.append(center + radius * (np.cos(ang)*perp1 + np.sin(ang)*perp2))
+    #         arc_pts = np.array(arc_pts)
+    #         arc_poly = pv.lines_from_points(arc_pts)
+    #         arc_actor = self.parent.plotter.add_mesh(arc_poly, color="green", line_width=4, name=f"tet_torque_arc_{idx}")
+    #         self.parent.tet_force_actors.append(arc_actor)
+
+    #         tip_dir = arc_pts[-1] - arc_pts[-2]
+    #         tip_dir /= (np.linalg.norm(tip_dir) + 1e-16)
+    #         cone_height = 0.04 * model_size
+    #         cone_radius = 0.018 * model_size
+    #         cone = pv.Cone(center=arc_pts[-1] + tip_dir * (cone_height/2),
+    #                        direction=tip_dir,
+    #                        height=cone_height,
+    #                        radius=cone_radius,
+    #                        resolution=32)
+    #         tip_actor = self.parent.plotter.add_mesh(cone, color="green", name=f"tet_torque_tip_{idx}")
+    #         self.parent.tet_force_actors.append(tip_actor)
+
+    #     if any_arrows or torque_groups or getattr(self.parent, 'tet_constraint_nodes', None):
+    #         self.parent.message_text.append("Tet structural loads visualized.")
 #----------------------------------------------------------------------------
 class TopOptConstraintsWindow(QtWidgets.QDialog):
     def __init__(self, parent):
@@ -3915,6 +4208,7 @@ class StructuralTopOptWindow(QtWidgets.QDialog):
                 density_field='density',
                 file_name=vtu_path
             )
+            self.parent.message_text.append(f"VTU exported: {vtu_path}")
             
         else:
             self.parent.message_text.append(f"Structural topology optimization failed: {error_msg}")
@@ -3955,63 +4249,90 @@ class StructuralTopOptWindow(QtWidgets.QDialog):
             to_params.ElemsToKeep = None  # <-- Explicitly clear if not enabled
 
     def create_fe_solver_for_topopt(self):
-        """Create FE solver for topology optimization"""
-        import hex_structural_fea
-        
+        """Create FE solver for topology optimization (now handles torque)."""
         mesh = self.parent.hex_mesh
         analysis_window = AnalysisWindow(self.parent)
         analysis_window.prepare_mesh_for_analysis(mesh, "structural")
-        
+
         boundary_nodes, boundary_points, tolerance = analysis_window.get_boundary_mapping_data()
-        
+
         fixed_nodes = {'xyz': set(), 'x': set(), 'y': set(), 'z': set()}
-        
-        constrained_elements = analysis_window.map_triangles_to_elements(
-            list(self.parent.constrained_triangles), boundary_nodes, boundary_points, tolerance
-        )
-        
-        constrained_nodes = set()
-        for elem_id in constrained_elements:
-            constrained_nodes.update(mesh.elemArray[elem_id])
-        
+        # Map constraints to surface elements then to nodes
         for constraint in self.parent.constraint_data:
-            constraint_type = constraint['type']
-            if constraint_type == 'Fixed XYZ':
-                fixed_nodes['xyz'].update(constrained_nodes)
-            elif constraint_type == 'Fixed X':
-                fixed_nodes['x'].update(constrained_nodes)
-            elif constraint_type == 'Fixed Y':
-                fixed_nodes['y'].update(constrained_nodes)
-            elif constraint_type == 'Fixed Z':
-                fixed_nodes['z'].update(constrained_nodes)
-        
+            triangles = constraint.get('triangles', [])
+            surface_nodes = analysis_window.map_triangles_to_surface_nodes(
+                triangles, boundary_nodes, boundary_points, tolerance
+            )
+            if constraint['type'] == 'Fixed XYZ':
+                fixed_nodes['xyz'].update(surface_nodes)
+            elif constraint['type'] == 'Fixed X':
+                fixed_nodes['x'].update(surface_nodes)
+            elif constraint['type'] == 'Fixed Y':
+                fixed_nodes['y'].update(surface_nodes)
+            elif constraint['type'] == 'Fixed Z':
+                fixed_nodes['z'].update(surface_nodes)
+
         load_nodes_groups = []
         load_forces = []
-        
+
         for force_info in self.parent.force_data:
-            force_elements = analysis_window.map_triangles_to_elements(
-                force_info['triangles'], boundary_nodes, boundary_points, tolerance
+            triangles = force_info.get('triangles', [])
+            surface_nodes = analysis_window.map_triangles_to_surface_nodes(
+                triangles, boundary_nodes, boundary_points, tolerance
             )
-            
-            force_nodes = set()
-            for elem_id in force_elements:
-                force_nodes.update(mesh.elemArray[elem_id])
-            
-            if force_nodes:
-                load_nodes_groups.append(list(force_nodes))
-                load_forces.append([force_info['force_x'], force_info['force_y'], force_info['force_z']])
+            if not surface_nodes:
+                continue
+
+            if force_info.get('type') == 'torque':
+                # Distribute torque into tangential forces (same logic as run_structural_analysis)
+                axis_point = np.array(force_info.get('axis_point', [0, 0, 0]), dtype=float)
+                direction = np.array(force_info.get('direction', [0, 0, 1]), dtype=float)
+                torque_value = force_info.get('torque', 0.0)
+                if abs(torque_value) < 1e-12 or np.linalg.norm(direction) < 1e-12:
+                    continue
+                direction /= np.linalg.norm(direction)
+                nodes = list(surface_nodes)
+                node_xyz = mesh.node_xyz[nodes]
+                face_center = np.mean(node_xyz, axis=0)
+                r_vecs = node_xyz - face_center
+                # Remove axial component
+                r_proj = r_vecs - np.outer(r_vecs @ direction, direction)
+                r_norm = np.linalg.norm(r_proj, axis=1)
+                r_norm[r_norm < 1e-12] = 1e-12
+                tangent_dirs = np.cross(direction, r_proj)
+                tangent_dirs /= np.linalg.norm(tangent_dirs, axis=1)[:, None]
+                raw_force = tangent_dirs * r_norm[:, None]
+                torque_actual = np.sum(np.cross(r_proj, raw_force), axis=0)
+                scale = torque_value / (torque_actual @ direction + 1e-12)
+                force_vecs = raw_force * scale
+                # Store each node with its own force
+                for node_id, fvec in zip(nodes, force_vecs):
+                    load_nodes_groups.append([node_id])
+                    load_forces.append(fvec.tolist())
+            else:
+                # Standard force (resultant distributed evenly)
+                fx = force_info.get('force_x', 0.0)
+                fy = force_info.get('force_y', 0.0)
+                fz = force_info.get('force_z', 0.0)
+                if abs(fx) + abs(fy) + abs(fz) < 1e-12:
+                    continue
+                load_nodes_groups.append(list(surface_nodes))
+                load_forces.append([fx, fy, fz])
+
+        # Safety: ensure at least one non-zero load
+        if not load_forces:
+            self.parent.message_text.append("Warning: No effective loads (torque/forces) mapped for TopOpt.")
         
         load_data = {
             'load_nodes_groups': load_nodes_groups,
             'load_forces': load_forces
         }
-        
+
         mesh_processed, mat_prop, bc = analysis_window.process_data_for_solver(
             mesh, fixed_nodes, load_data, self.parent.applied_material['properties']
         )
-        
+
         solver = analysis_window.get_solver()
-        
         fe_solver = hex_structural_fea.HexStructuralFEA(
             mesh=mesh_processed,
             mat_prop=mat_prop,
@@ -4019,7 +4340,6 @@ class StructuralTopOptWindow(QtWidgets.QDialog):
             solver=solver,
             rtol=1e-8
         )
-        
         return fe_solver
     
     def check_prerequisites(self):
@@ -4111,8 +4431,9 @@ class TopOptResultsWindow(QtWidgets.QDialog):
         self.parent = parent
 
         # Default values
-        self.default_resolution = 2.5
+        self.default_resolution = 5.0
         self.default_padding = 0.1
+        self.default_tet_elems = 10000
 
         # Layout
         layout = QtWidgets.QVBoxLayout(self)
@@ -4137,10 +4458,25 @@ class TopOptResultsWindow(QtWidgets.QDialog):
         pad_layout.addWidget(self.pad_spin)
         layout.addLayout(pad_layout)
 
+        # TetMesh controls
+        tet_layout = QtWidgets.QHBoxLayout()
+        tet_layout.addWidget(QtWidgets.QLabel("Tet Elements"))
+        self.tet_elem_spin = QtWidgets.QSpinBox()
+        self.tet_elem_spin.setRange(1000, 1000000)
+        self.tet_elem_spin.setValue(self.default_tet_elems)
+        tet_layout.addWidget(self.tet_elem_spin)
+        self.tetmesh_btn = QtWidgets.QPushButton("Generate TetMesh")
+        self.tetmesh_btn.setEnabled(False)  # Initially disabled
+        tet_layout.addWidget(self.tetmesh_btn)
+        layout.addLayout(tet_layout)
+
         # Apply button
         apply_btn = QtWidgets.QPushButton("Apply")
         apply_btn.clicked.connect(self.apply_recovery)
         layout.addWidget(apply_btn)
+
+        # Connect TetMesh button
+        self.tetmesh_btn.clicked.connect(self.generate_tetmesh)
 
     def apply_recovery(self):
         # Get parameters
@@ -4165,14 +4501,21 @@ class TopOptResultsWindow(QtWidgets.QDialog):
         
         void_region_stl = extract_isosurface(vtu, resolution=resolution)
         optimized_topology_stl = subtract_voids_from_stl(design_domain_stl, void_region_stl)
+        self.parent.optimized_topology_stl = optimized_topology_stl
 
         # Remove only mesh actors, keep geometry info
         for name in list(self.parent.plotter.actors.keys()):
             if name != "geometry_info":
                 self.parent.plotter.remove_actor(name, reset_camera=False)
 
-        # Show optimized STL
-        self.parent.plotter.add_mesh(optimized_topology_stl, color='red', opacity=0.9, name="Optimized STL")
+        # Get color from the original STL actor if available
+        orig_actor = self.parent.plotter.actors.get("stl_geometry")
+        if orig_actor and hasattr(orig_actor, "GetProperty"):
+            color = orig_actor.GetProperty().GetColor()
+        else:
+            color = 'lightblue'  # fallback
+
+        self.parent.plotter.add_mesh(optimized_topology_stl, color=color, opacity=1.0, name="Optimized STL")
         self.parent.plotter.reset_camera()
         self.parent.plotter.render()
         self.parent.message_text.append("Optimized STL visualized.")
@@ -4184,6 +4527,50 @@ class TopOptResultsWindow(QtWidgets.QDialog):
             self.parent.message_text.append(f"Optimized STL saved: {output_path}")
         except Exception as e:
             self.parent.message_text.append(f"Failed to save optimized STL: {e}")
+
+        self.tetmesh_btn.setEnabled(True)
+
+    def generate_tetmesh(self):
+        stl_path = os.path.splitext(self.parent.stl_geom.file_path)[0] + "_optimized.stl"
+        n_elems = self.tet_elem_spin.value()
+        # Check STL manifoldness and watertightness
+        import trimesh
+        mesh = trimesh.load(stl_path)
+        if not mesh.is_watertight:
+            trimesh.repair.fill_holes(mesh)
+            mesh.update_faces(mesh.nondegenerate_faces())
+            mesh.update_faces(mesh.unique_faces())
+            mesh.remove_unreferenced_vertices()
+            mesh.export(stl_path)
+            mesh = trimesh.load(stl_path)
+
+        # Robust non-manifold edge check
+        non_manifold_edges = getattr(mesh, "edges_non_manifold", [])
+        if non_manifold_edges is None or isinstance(non_manifold_edges, bool):
+            # fallback for older trimesh
+            non_manifold_edges = mesh.edges_unique[mesh.edges_unique_length != 2]
+
+        if not mesh.is_watertight or len(non_manifold_edges) > 0:
+            QtWidgets.QMessageBox.warning(
+                self, "STL Error",
+                f"STL is not watertight or has non-manifold edges.\n"
+                f"Watertight: {mesh.is_watertight}\n"
+                f"Non-manifold edges: {len(non_manifold_edges)}"
+            )
+            return
+        tetmesh = TetMesher()
+        tetmesh.createTetMeshFromSTLFile(stl_path, nElemsDesired=n_elems)
+        self.parent.tetmesh = tetmesh
+        # Visualize tetmesh and keep geometry info
+        for name in list(self.parent.plotter.actors.keys()):
+            if name != "geometry_info":
+                self.parent.plotter.remove_actor(name, reset_camera=False)
+        tetmesh.plot(plotter=self.parent.plotter)
+        self.parent.update_geometry_info_text()
+
+        #analysis_window = AnalysisWindow(self.parent)
+        #analysis_window.transfer_structural_loads_to_tetmesh()
+        #analysis_window.visualize_tet_structural_loads()
 #----------------------------------------------------------------------------
 class DisplayOptionsWindow(QtWidgets.QDialog):
     def __init__(self, parent):
@@ -4417,7 +4804,8 @@ class DisplayOptionsWindow(QtWidgets.QDialog):
         should_plot = (
             (geometry_choice == "Initial Design" and self.parent.stl_geom) or
             (geometry_choice == "Mesh" and hasattr(self.parent, "hex_mesh") and self.parent.hex_mesh) or
-            (geometry_choice == "TopOpt" and hasattr(self.parent, "topopt_results") and self.parent.topopt_results)
+            (geometry_choice == "TopOpt" and hasattr(self.parent, "topopt_results") and self.parent.topopt_results) or
+            (geometry_choice == "Final Design" and hasattr(self.parent, "optimized_topology_stl") and self.parent.optimized_topology_stl is not None)
         )
         if should_plot:
             for name in list(self.parent.plotter.actors.keys()):
@@ -4460,6 +4848,20 @@ class DisplayOptionsWindow(QtWidgets.QDialog):
                         QtWidgets.QMessageBox.warning(self, "Thermal Results Missing", "Please solve for thermal analysis first.")
                 elif field_choice == "None":
                     fe_solver.plot_mesh(plotter=self.parent.plotter)
+        elif geometry_choice == "Final Design" and hasattr(self.parent, "optimized_topology_stl") and self.parent.optimized_topology_stl is not None:
+            # Try to get the color from the original STL actor
+            orig_actor = self.parent.plotter.actors.get("stl_geometry")
+            if orig_actor and hasattr(orig_actor, "GetProperty"):
+                color = orig_actor.GetProperty().GetColor()
+            else:
+                color = 'lightblue'  # fallback color
+
+            self.parent.plotter.add_mesh(
+                self.parent.optimized_topology_stl,
+                color=color,
+                opacity=1.0,
+                name="Optimized STL"
+            )
 
         if self.show_bounding_box_checkbox.isChecked():
             self.show_bounding_box(True)
@@ -4747,12 +5149,6 @@ class DisplayOptionsWindow(QtWidgets.QDialog):
 
         
     def update_geometry_options(self):
-        # """Update geometry dropdown options and select current state."""
-        # items = ["Initial Design"]
-        # current_index = 0
-
-
-        """Show Initial Design, Mesh (if available), and TopOpt (if structural topopt done) in geometry dropdown."""
         items = ["Initial Design"]
         current_index = 0
 
@@ -4771,6 +5167,12 @@ class DisplayOptionsWindow(QtWidgets.QDialog):
         if has_topopt:
             items.append("TopOpt")
             if self.geometry_combo.currentText() in ["TopOpt"]:
+                current_index = len(items) - 1
+
+        # Show Final Design if optimized STL exists
+        if hasattr(self.parent, "optimized_topology_stl") and self.parent.optimized_topology_stl is not None:
+            items.append("Final Design")
+            if self.geometry_combo.currentText() == "Final Design":
                 current_index = len(items) - 1
 
         self.geometry_combo.blockSignals(True)
