@@ -1,6 +1,6 @@
 {
   "version": "2025.01",
-  "stl_file_path": "C:/Users/Krishnan Suresh/Dropbox/Personal/suresh/Software/Github/ERSL-Private/PyTO/Models/HeatBlock/HeatBlock.STL",
+  "stl_file_path": "HeatBlock.STL",
   "settings": {
     "unit_system": "MKS",
     "temperature_unit": "Kelvin",
@@ -23,7 +23,18 @@
   "constraint_data": [],
   "constrained_triangles": [],
   "thermal_loads": {
-    "fixed_temps": [],
+    "fixed_temps": [
+      {
+        "triangles": [
+          176,
+          177,
+          184,
+          185
+        ],
+        "type": "fixed_temperature",
+        "temperature": 300.0
+      }
+    ],
     "heat_sources": [
       {
         "triangles": [
@@ -65,10 +76,70 @@
           169
         ],
         "type": "heat_flux",
-        "heat_flux": -1000.0
+        "heat_flux": 1000.0
       }
     ],
     "total_heat_sources": []
   },
-  "topopt_constraints": null
+  "topopt_constraints": {
+    "manufacturing": {
+      "extrude": {
+        "enabled": false,
+        "value": "XDir"
+      },
+      "am_build": {
+        "enabled": false,
+        "value": "+XDir"
+      },
+      "draw_direction": {
+        "enabled": false,
+        "value": "XDir"
+      },
+      "cyclic_symmetry": {
+        "enabled": false,
+        "value": "(2) 180 deg"
+      }
+    },
+    "patterns": {
+      "x_grid": {
+        "enabled": false,
+        "value": 2
+      },
+      "y_grid": {
+        "enabled": false,
+        "value": 2
+      },
+      "z_grid": {
+        "enabled": false,
+        "value": 2
+      }
+    },
+    "performance": {
+      "stress_safety": {
+        "enabled": false,
+        "value": 1.0
+      },
+      "max_displacement": {
+        "enabled": false,
+        "value": 160.0
+      },
+      "min_frequency": {
+        "enabled": false,
+        "value": 1000.0
+      },
+      "max_temperature": {
+        "enabled": false,
+        "value": 2000.0
+      }
+    },
+    "symmetry": {
+      "x_symmetry": true,
+      "y_symmetry": false,
+      "z_symmetry": false
+    },
+    "other": {
+      "connected_topology": true,
+      "keep_fixed_faces": false
+    }
+  }
 }

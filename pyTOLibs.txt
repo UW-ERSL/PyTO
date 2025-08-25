@@ -16,3 +16,4 @@ pip install pymeshfix
 pip install mmapy
 pip install pyvistaqt
 pip install manifold3d
+pip install cupy-cuda11x

@@ -13,6 +13,7 @@ import numpy as np
 import scipy.sparse as spy_sprs
 import scipy.linalg as spy_linalg
 from hex_mesher import HexMesher
+import cupy as cp
 # Mac does not support pypardiso, so we skip it for now
 try:
   import pypardiso # pip install pypardiso
@@ -44,12 +45,17 @@ class DeflationSolver:
 	"""
 
 
-	def __init__(self, minNodesPerGroup: int = 15):	
+	def __init__(self, minNodesPerGroup: int = 15,use_gpu: bool = False):	
 		"""Initialize the deflation solver with default parameters."""
 		self.minNodesPerGroup = minNodesPerGroup
 		self.maxGroups = 2000
 		self.minGroups = 10
 		self.dofPerGroup = 500
+		self.use_gpu = use_gpu
+		if use_gpu:
+			print("Using GPU arrays in Deflation Solver")
+		else:
+			print("Using CPU arrays in Deflation Solver")
 
 
 	def setPseudoDensity(self,rho):
@@ -669,6 +675,19 @@ class DeflationSolver:
 									rtol=1e-8,
 									maxIters=2000,
 									verbose=False):
+		if self.use_gpu:
+			return self.deflatedPCG_GPU(K, f, W, M, rtol, maxIters, verbose)
+		else:
+			return self.deflatedPCG_CPU(K, f, W, M, rtol, maxIters, verbose)
+
+	def deflatedPCG_CPU(self,
+									K: _Array,
+									f: np.ndarray,
+									W: _Array,
+									M: _Array,
+									rtol=1e-8,
+									maxIters=2000,
+									verbose=False):
 		"""Deflated Preconditioned Conjugate Gradient."""
 
 		n = f.shape[0]
@@ -739,6 +758,109 @@ class DeflationSolver:
 			p = z + beta * p - W @ mu
 			
 			rz = rz_new
+		#print("Deflated PCG iterations:", iter_num + 1)
+		if (iter_num == maxIters - 1):
+			print("Warning: Maximum iterations reached in DPCG; relative residual:", np.sqrt(rz_new/rz0))
+		return x
+
+	def deflatedPCG_GPU(self,
+									K: _Array,
+									f: np.ndarray,
+									W: _Array,
+									M: _Array,
+									rtol=1e-8,
+									maxIters=2000,
+									verbose=False):
+		"""Deflated Preconditioned Conjugate Gradient."""
+
+		n = f.shape[0]
+		WT = W.transpose(copy=True)
+		
+		# Pre-compute matrices
+		KW = K @ W
+		WKW = (WT @ KW).toarray()
+		WKW = csr_matrix((WKW + WKW.T) / 2)
+		# Add small value to diagonal for numerical stability
+		WKW += scipy.sparse.eye(WKW.shape[0]) * 1e-10
+		#L = spy_linalg.cho_factor(WKW, lower=True)
+
+		# Pre-allocate vectors
+		x = np.zeros(n)
+		r = np.zeros(n)
+		z = np.zeros(n)
+		p = np.zeros(n)
+		Kp = np.zeros(n)
+
+		# Initial solution
+		if (pypardiso is None):
+			mu = spy_linalg.spsolve(WKW,WT @ f) 
+		else:
+			mu = pypardiso.spsolve(WKW,WT @ f)# see notes on pypardiso.spsolve
+		
+		x = W @ mu
+
+		# Initial residual
+		r = f - K @ x
+		z = M @ r
+
+		# Initial search direction
+		Kz = K @ z
+		
+		if (pypardiso is None):
+			mu = spy_linalg.spsolve(WKW,WT @ Kz)
+		else:
+			mu = pypardiso.spsolve(WKW,WT @ Kz)
+		
+		p = z - W @ mu
+
+		# Initial residual norm
+		rz = r.dot(z)
+		rz0 = rz
+		
+		# Convert arrays to GPU
+		x_gpu = cp.array(x)
+		r_gpu = cp.array(r)
+		z_gpu = cp.array(z)
+		p_gpu = cp.array(p)
+		Kp_gpu = cp.array(Kp)
+		
+		K_gpu = cp.sparse.csr_matrix(K)
+		W_gpu = cp.sparse.csr_matrix(W)
+		WT_gpu = cp.sparse.csr_matrix(WT)
+		M_gpu = cp.sparse.csr_matrix(M)
+
+		for iter_num in range(maxIters):
+			Kp_gpu = K_gpu @ p_gpu
+			pKp = float(p_gpu.dot(Kp_gpu))
+			
+			alpha = rz / pKp
+			x_gpu += alpha * p_gpu
+			r_gpu -= alpha * Kp_gpu
+			
+			z_gpu = M_gpu @ r_gpu
+			rz_new = float(r_gpu.dot(z_gpu))
+			if np.sqrt(rz_new/rz0) <= rtol:
+				if verbose:
+					print(f"Converged in {iter_num + 1} iterations")
+				break
+			
+			beta = rz_new / rz
+			Kz_gpu = K_gpu @ z_gpu
+			
+			# Transfer back to CPU for direct solve
+			Kz = cp.asnumpy(Kz_gpu)
+			if (pypardiso is None):
+				mu = spy_linalg.spsolve(WKW,WT @ Kz)
+			else:
+				mu = pypardiso.spsolve(WKW,WT @ Kz)
+				mu_gpu = cp.array(mu)
+			
+			p_gpu = z_gpu + beta * p_gpu - W_gpu @ mu_gpu
+			
+			rz = rz_new
+
+		# Transfer final result back to CPU
+		x = cp.asnumpy(x_gpu)
 		#print("Deflated PCG iterations:", iter_num + 1)
 		if (iter_num == maxIters - 1):
 			print("Warning: Maximum iterations reached in DPCG; relative residual:", np.sqrt(rz_new/rz0))

@@ -1,8 +1,5 @@
-
-import code
 import os
 import win32com.client #pip install pypiwin32
-from stl_reader import STLGeom
 import numpy as np
 
 class SolidWorksInterface:
@@ -127,18 +124,16 @@ class SolidWorksInterface:
             #print(f"Error: {str(e)}")
             return False
      
-    def getSTL(self):
+    def saveSTL(self, fileName):
         try:
             self.doc = self.sw.ActiveDoc
             if self.doc is None:
                 print("No document is open in SolidWorks")
                 return False
             script_dir = os.path.dirname(os.path.abspath(__file__))
-            self.stl_file = os.path.join(script_dir, './temp.STL')
+            self.stl_file = os.path.join(script_dir, fileName)
             self.doc.SaveAs3(self.stl_file, 0, 2)
-            self.stlGeom = STLGeom(self.stl_file)
-            os.remove(self.stl_file)
-            return self.stlGeom
+            return 
         except Exception as e:
             print(f"Error: {str(e)}")
             return False

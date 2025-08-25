@@ -3,6 +3,7 @@
 *.node
 *.msh
 *.vtu
+*_optimized.stl
 /PyTOSlides
 /Results
 /__pycache__
