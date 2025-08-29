@@ -3,9 +3,7 @@ import sys
 import json
 import time
 import numpy as np
-import matplotlib.pyplot as plt
-from glob import glob
-import traceback 
+import argparse
 import linear_solvers as lin_solv
 import hex_structural_fea as fea
 import mat_lib
@@ -14,690 +12,361 @@ from stl_reader import STLGeom
 from hex_mesher import HexMesher
 import hex_thermal_fea
 
-# Add src directory to path to ensure imports work correctly
-script_dir = os.path.dirname(os.path.abspath(__file__))
-sys.path.append(script_dir)
-
-
-def validate_structural_bc(bc_data, stl_geom):
-    """
-    Validate structural boundary conditions to ensure they're properly defined
-    
-    Args:
-        bc_data: Boundary condition data from project file
-        stl_geom: STL geometry object
-        
-    Returns:
-        bool: True if boundary conditions are valid, False otherwise
-    """
-    if 'fixed_faces_indices' not in bc_data or not bc_data.get('fixed_faces_indices'):
-        return False
-        
-    if 'load_faces_indices' not in bc_data or not bc_data.get('load_faces_indices'):
-        return False
-    
-    # Check if load faces exist and have corresponding forces
-    if not 'load_forces' in bc_data or len(bc_data['load_faces_indices']) != len(bc_data['load_forces']):
-        return False
-        
-    return True
-
-
-def validate_thermal_bc(bc_data):
-    """
-    Validate thermal boundary conditions to ensure they're properly defined
-    
-    Args:
-        bc_data: Thermal boundary condition data from project file
-        
-    Returns:
-        bool: True if thermal boundary conditions are valid, False otherwise
-    """
-    # Check if fixed temperatures, heat sources, or total heat sources are defined
-    fixed_temps = bc_data.get('fixed_temps', [])
-    heat_sources = bc_data.get('heat_sources', [])
-    total_heat_sources = bc_data.get('total_heat_sources', [])
-    
-    has_bcs = len(fixed_temps) > 0 or len(heat_sources) > 0 or len(total_heat_sources) > 0
-    
-    return has_bcs
-
-
-#================================================================================================
-class BaseAnalysis:
-    """Base class for FEA analysis."""
-    
-    def __init__(self, project_file, n_elements=10000, output_dir=None):
-        """Initialize the analysis with project file and settings."""
-        self.project_file = project_file
-        self.n_elements = n_elements
-        self.start_time = time.time()
-        
-        # Set output directory
-        self.output_dir = output_dir
-        os.makedirs(self.output_dir, exist_ok=True)
-        
-        self.base_name = os.path.splitext(os.path.basename(project_file))[0]
-        self.log_file = os.path.join(self.output_dir, f"{self.analysis_type}_analysis_log.txt")
-        self.mesh = None
-        self.stl_path = None
-        self.stl_geom = None
-        self.solver = lin_solv.Solvers.PARDISO
-        
-    def log_print(self, message):
-        """Write message to both console and log file."""
-        print(message)
-        with open(self.log_file, 'a') as log:
-            log.write(message + "\n")
-            
-    def load_project_data(self):
-        """Load and validate project data."""
-        try:
-            with open(self.project_file, 'r') as f:
-                self.project_data = json.load(f)
-            
-            # Get STL file path
-            stl_file = self.project_data.get('stl_file_path', '')
-            if not os.path.isabs(stl_file):
-                self.stl_path = os.path.join("../Models/", stl_file)
-                if not os.path.exists(self.stl_path):
-                    self.stl_path = os.path.join(os.path.dirname(os.path.abspath(self.project_file)), stl_file)
-            
-            if not os.path.exists(self.stl_path):
-                self.log_print(f"STL file not found: {self.stl_path}")
-                return False
-                
-            # Get material properties
-            if 'material_data' not in self.project_data:
-                self.log_print("No material data found in project file")
-                return False
-                
-            return True
-        except Exception as e:
-            self.log_print(f"Error loading project file: {e}")
-            return False
-            
-    def generate_mesh(self):
-        """Generate mesh from STL file."""
-        try:
-            self.log_print(f"Generating mesh with target {self.n_elements} elements...")
-            self.mesh = HexMesher()
-            self.mesh.createMeshFromSTLFile(self.stl_path, nElemsDesired=self.n_elements)
-            self.mesh_type_setup()
-            
-            # Load STL geometry
-            self.stl_geom = STLGeom(self.stl_path)
-            
-            if hasattr(self.mesh, 'num_elems'):
-                if self.mesh.num_elems != self.n_elements:
-                    self.log_print(f"Note: Requested {self.n_elements} elements, but mesh was created with {self.mesh.num_elems} elements")
-                    
-            return True
-        except Exception as e:
-            self.log_print(f"Error generating mesh: {e}")
-            return False
-            
-    def mesh_type_setup(self):
+class ProjectManager:
+    def __init__(self):
         pass
-        
-    def get_boundary_nodes(self):
-        """Get boundary nodes from mesh."""
-        try:
-            self.boundary_nodes = self.mesh.get_boundary_nodes()
-            self.boundary_points = self.mesh.node_xyz[self.boundary_nodes]
-            self.tol = min(self.mesh.elem_size) * 0.9
-            return True
-        except Exception as e:
-            self.log_print(f"Error getting boundary nodes: {e}")
-            return False
-            
-    def validate_boundary_conditions(self):
-        pass
-        
-    def process_boundary_conditions(self):
-        pass
-        
-    def create_solver(self):
-        pass
-        
-    def run_analysis(self):
-        pass
-        
-    def generate_plots(self):
-        pass
-        
-    def save_results(self):
-        pass
-        
-    def execute(self):
-        """Execute the full analysis pipeline."""
-        # Initialize log file
-        with open(self.log_file, 'w') as log:
-            log.write(f"PyTO {self.analysis_type.capitalize()} Analysis Log\n")
-            log.write("=======================\n\n")
-            log.write(f"Project file: {os.path.basename(self.project_file)}\n")
-            log.write(f"Analysis started: {time.strftime('%Y-%m-%d %H:%M:%S')}\n\n")
-        
-        self.log_print(f"\n{'='*60}")
-        self.log_print(f"PROCESSING {self.analysis_type.upper()} ANALYSIS: {os.path.basename(self.project_file)}")
-        self.log_print(f"{'='*60}")
-        
-        # Run analysis pipeline
-        if not self.load_project_data():
-            return False
-            
-        if not self.validate_boundary_conditions():
-            return False
-            
-        if not self.generate_mesh():
-            return False
-            
-        if not self.get_boundary_nodes():
-            return False
-            
-        if not self.process_boundary_conditions():
-            return False
-            
-        if not self.create_solver():
-            return False
-            
-        if not self.run_analysis():
-            return False
-            
-        self.generate_plots()
-        self.save_results()
-        
-        self.log_print(f"{self.analysis_type.capitalize()} analysis completed in {time.time() - self.start_time:.2f} seconds")
-        return True
 
-#==================================================================================================================================
-class StructuralAnalysis(BaseAnalysis):
-    """Class for structural FEA analysis."""
-    
-    def __init__(self, project_file, n_elements=10000, output_dir=None):
-        self.analysis_type = "structural"
-        super().__init__(project_file, n_elements, output_dir)
-        
-    def mesh_type_setup(self):
-        """Setup mesh for structural analysis."""
-        self.mesh.createEdofMatStructural()
-        
-    def validate_boundary_conditions(self):
-        """Validate structural boundary conditions."""
-        if 'structuralBC' not in self.project_data:
-            self.log_print("No structural boundary conditions found in project file")
-            return False
-            
-        self.bc_data = self.project_data['structuralBC']
-        
-        # Use validation utility function
-        if not validate_structural_bc(self.bc_data, None):  # STL geom not needed here
-            self.log_print("Invalid structural boundary conditions")
-            return False
-            
-        # Extract validated data for processing
-        self.fixed_faces = self.bc_data.get('fixed_faces_indices', [])
-        self.load_faces_groups = self.bc_data.get('load_faces_indices', [])
-        self.load_forces = self.bc_data.get('load_forces', [])
-            
-        return True
-        
-    def process_boundary_conditions(self):
-        """Process structural boundary conditions."""
-        try:
-            self.fixed_nodes_dict = {'xyz': set(), 'x': set(), 'y': set(), 'z': set()}
-            self.load_nodes_groups = []
-            
-            # Process fixed faces
-            if self.fixed_faces:
-                batch_size = 50
-                for start_idx in range(0, len(self.fixed_faces), batch_size):
-                    batch_end = min(start_idx + batch_size, len(self.fixed_faces))
-                    batch_faces = self.fixed_faces[start_idx:batch_end]
-                    
-                    for face_idx in batch_faces:
-                        if face_idx < self.stl_geom.stl_n_triangles:
-                            distances = self.stl_geom.find_points_triangle_distances_vectorized(self.boundary_points, face_idx)
-                            close_nodes_mask = distances < self.tol
-                            nodes_for_face = self.boundary_nodes[close_nodes_mask]
-                            self.fixed_nodes_dict['xyz'].update(nodes_for_face)
-            
-            # Process load groups
-            for face_indices, force_values in zip(self.load_faces_groups, self.load_forces):
-                if not face_indices or not force_values:
-                    self.load_nodes_groups.append(set())
-                    continue
-                    
-                load_nodes = set()
-                batch_size = 50
-                for start_idx in range(0, len(face_indices), batch_size):
-                    batch_end = min(start_idx + batch_size, len(face_indices))
-                    batch_faces = face_indices[start_idx:batch_end]
-                    
-                    for face_idx in batch_faces:
-                        if face_idx < self.stl_geom.stl_n_triangles:
-                            distances = self.stl_geom.find_points_triangle_distances_vectorized(self.boundary_points, face_idx)
-                            close_nodes_mask = distances < self.tol
-                            load_nodes.update(self.boundary_nodes[close_nodes_mask])
-                
-                self.load_nodes_groups.append(load_nodes)
-            
-            # Create boundary conditions
-            self.bc = self.process_data_for_solver()
-            return True
-        except Exception as e:
-            self.log_print(f"Error processing boundary conditions: {e}")
-            return False
-            
-    def process_data_for_solver(self):
-        """Process mesh data and create boundary conditions for structural solver."""
-        # Process fixed nodes
+    def execute_structural_analysis(self, project_data, stl_path, n_elements, output_dir):
+        start_time = time.time()
+        print(f"Running structural analysis...")
+
+        mesh = HexMesher()
+        mesh.createMeshFromSTLFile(stl_path, nElemsDesired=n_elements)
+        mesh.createEdofMatStructural()
+
+        stl_geom = STLGeom(stl_path)
+
+        bc_data = project_data['structuralBC']
+        fixed_faces = bc_data.get('fixed_faces_indices', [])
+        load_faces_groups = bc_data.get('load_faces_indices', [])
+        load_forces = bc_data.get('load_forces', [])
+
+        boundary_nodes = mesh.get_boundary_nodes()
+        boundary_points = mesh.node_xyz[boundary_nodes]
+        tol = min(mesh.elem_size) * 0.9
+
+        fixed_nodes = set()
+        for face_idx in fixed_faces:
+            if face_idx < stl_geom.stl_n_triangles:
+                distances = stl_geom.find_points_triangle_distances_vectorized(boundary_points, face_idx)
+                close_nodes_mask = distances < tol
+                nodes_for_face = boundary_nodes[close_nodes_mask]
+                fixed_nodes.update(nodes_for_face)
+
+        load_nodes_groups = []
+        for face_indices in load_faces_groups:
+            load_nodes = set()
+            for face_idx in face_indices:
+                if face_idx < stl_geom.stl_n_triangles:
+                    distances = stl_geom.find_points_triangle_distances_vectorized(boundary_points, face_idx)
+                    close_nodes_mask = distances < tol
+                    load_nodes.update(boundary_nodes[close_nodes_mask])
+            load_nodes_groups.append(load_nodes)
+
         fixed_dofs = []
-        if 'xyz' in self.fixed_nodes_dict:
-            for node in self.fixed_nodes_dict['xyz']:
-                fixed_dofs.extend([3*node, 3*node + 1, 3*node + 2])
-                if hasattr(self.mesh, 'node_indices'):
-                    self.mesh.node_indices[node, 3] = 1
-        
-        if 'x' in self.fixed_nodes_dict:
-            for node in self.fixed_nodes_dict['x']:
-                fixed_dofs.append(3*node)
-                if hasattr(self.mesh, 'node_indices'):
-                    self.mesh.node_indices[node, 3] = 2
-        
-        if 'y' in self.fixed_nodes_dict:
-            for node in self.fixed_nodes_dict['y']:
-                fixed_dofs.append(3*node + 1)
-                if hasattr(self.mesh, 'node_indices'):
-                    self.mesh.node_indices[node, 3] = 3
-        
-        if 'z' in self.fixed_nodes_dict:
-            for node in self.fixed_nodes_dict['z']:
-                fixed_dofs.append(3*node + 2)
-                if hasattr(self.mesh, 'node_indices'):
-                    self.mesh.node_indices[node, 3] = 4
-        
+        for node in fixed_nodes:
+            fixed_dofs.extend([3*node, 3*node + 1, 3*node + 2])
+
         fixed_dofs = np.array(fixed_dofs).astype(int)
         dirichlet_values = np.zeros_like(fixed_dofs, dtype=float)
-        
-        # Process loads
-        force = np.zeros(3*self.mesh.num_nodes)
-        for nodes, force_vector in zip(self.load_nodes_groups, self.load_forces):
+
+        force = np.zeros(3*mesh.num_nodes)
+        for nodes, force_vector in zip(load_nodes_groups, load_forces):
             if nodes:
                 force_per_node = np.array(force_vector) / len(nodes)
                 for node in nodes:
                     force[3*node:3*node + 3] += force_per_node
-                    if hasattr(self.mesh, 'node_indices'):
-                        self.mesh.node_indices[node, 3] = 5
 
-        # Create boundary conditions
-        return bound_cond.BC(
+        bc = bound_cond.BC(
             force=force,
             fixed_dofs=fixed_dofs,
             dirichlet_values=dirichlet_values
         )
-        
-    def create_solver(self):
-        """Create structural FEA solver."""
-        try:
-            # Get material properties
-            mat_data = self.project_data['material_data']
-            self.mat_prop = mat_lib.StructuralMaterial(
+
+        mat_data = project_data['material_data']
+        if 'properties' in mat_data:
+            mat_prop = mat_lib.Material(
+                name="Applied_Material",
+                youngs_modulus=mat_data['properties'].get("Young's Modulus", 210e9),
+                poissons_ratio=mat_data['properties'].get("Poisson's Ratio", 0.3),
+                mass_density=mat_data['properties'].get('Density', 7800.0),
+                thermal_conductivity=mat_data['properties'].get('Thermal Conductivity', 50.0),
+                specific_heat=mat_data['properties'].get('Specific Heat Capacity', 450.0),
+                thermal_expansion=mat_data['properties'].get('Thermal Expansion', 12e-6),
+                cost=mat_data['properties'].get('Price', 1.0),
+                yield_strength=mat_data['properties'].get('Yield Strength', 250e6)
+            )
+        else:
+            mat_prop = mat_lib.Material(
+                name="Applied_Material",
                 youngs_modulus=mat_data.get('young_modulus', 210e9),
-                poissons_ratio=mat_data.get('poisson_ratio', 0.3)
+                poissons_ratio=mat_data.get('poisson_ratio', 0.3),
+                mass_density=mat_data.get('density', 7800.0),
+                thermal_conductivity=mat_data.get('thermal_conductivity', 50.0),
+                specific_heat=mat_data.get('specific_heat', 450.0),
+                thermal_expansion=mat_data.get('thermal_expansion', 12e-6),
+                cost=mat_data.get('price', 1.0),
+                yield_strength=mat_data.get('yield_strength', 250e6)
             )
-            
-            self.fe_solver = fea.StructFEA(
-                mesh=self.mesh,
-                mat_prop=self.mat_prop,
-                bc=self.bc,
-                solver=self.solver
-            )
-            return True
-        except Exception as e:
-            self.log_print(f"Error creating FEA solver: {e}")
-            return False
-            
-    def run_analysis(self):
-        """Run structural analysis."""
-        try:
-            solve_time_start = time.time()
-            self.u = np.asarray(self.fe_solver.solve())
-            self.solve_time = time.time() - solve_time_start
-            
-            self.delta = np.sqrt(self.u[0::3]**2 + self.u[1::3]**2 + self.u[2::3]**2)
-            self.delta_max = np.max(self.delta)
-            
-            self.log_print("\n" + "="*50)
-            self.log_print("FEA Results:")
-            self.log_print(f"Number of nodes: {self.mesh.num_nodes}")
-            self.log_print(f"Number of elements: {self.mesh.num_elems}")
-            self.log_print(f"Solution time: {self.solve_time:.2f} seconds")
-            self.log_print(f"Maximum displacement: {self.delta_max:.4e} m")
-            self.log_print("="*50)
-            return True
-        except Exception as e:
-            self.log_print(f"Error during solver execution: {e}")
-            traceback.print_exc() 
-            return False
-            
-    def generate_plots(self):
-        """Generate structural analysis plots."""
-        try:
-            plt.figure(figsize=(12, 8))
-            self.mesh.plot( bc=None, u=self.u,
-                        title=f'Maximum displacement: {self.delta_max:.3e} m')
-            plt.savefig(os.path.join(self.output_dir, f"{self.base_name}_displacement.png"), dpi=300)
-            plt.close('all')
-        except Exception as e:
-            self.log_print(f"Error generating plots: {e}")
-            
-    def save_results(self):
-        """Save structural analysis results."""
-        try:
-            np.save(os.path.join(self.output_dir, f"{self.base_name}_displacement.npy"), self.u)
-            
-            mat_data = self.project_data['material_data']
-            with open(os.path.join(self.output_dir, f"{self.base_name}_summary.txt"), 'w') as f:
-                f.write("PyTO FEA Results Summary\n")
-                f.write("=======================\n\n")
-                f.write(f"Project file: {os.path.basename(self.project_file)}\n")
-                f.write(f"STL model: {os.path.basename(self.stl_path)}\n\n")
-                f.write(f"Material: {mat_data.get('name', 'Unnamed')}\n")
-                f.write(f"Young's modulus: {self.mat_prop.youngs_modulus:.3e} Pa\n")
-                f.write(f"Poisson's ratio: {self.mat_prop.poissons_ratio:.3f}\n\n")
-                f.write(f"Mesh nodes: {self.mesh.num_nodes}\n")
-                f.write(f"Mesh elements: {self.mesh.num_elems}\n\n")
-                f.write(f"Load case: {', '.join([str(f) for f in self.load_forces])}\n\n")
-                f.write(f"Solver: {self.fe_solver.solver.name}\n")
-                f.write(f"Solution time: {self.solve_time:.2f} seconds\n\n")
-                f.write(f"Maximum displacement: {self.delta_max:.6e} m\n")
-        except Exception as e:
-            self.log_print(f"Error saving results: {e}")
-#==================================================================================================================================
 
+        solver_type = project_data.get('analysis_settings', {}).get('solver_type', 'PARDISO')
+        solver_map = {
+            "PARDISO": lin_solv.Solvers.PARDISO,
+            "DPCG": lin_solv.Solvers.DPCG,
+            "PCG": lin_solv.Solvers.PCG,
+            "PYAMG": lin_solv.Solvers.PYAMG,
+            "SPSOLVE": lin_solv.Solvers.SPSOLVE
+        }
+        solver = solver_map.get(solver_type, lin_solv.Solvers.PARDISO)
 
-#==================================================================================================================================
-class ThermalAnalysis(BaseAnalysis):
-    """Class for thermal FEA analysis."""
-    
-    def __init__(self, project_file, n_elements=10000, output_dir=None):
-        self.analysis_type = "thermal"
-        super().__init__(project_file, n_elements, output_dir)
-        
-    def mesh_type_setup(self):
-        """Setup mesh for thermal analysis."""
-        self.mesh.createEdofMatThermal()
-        
-    def validate_boundary_conditions(self):
-        """Validate thermal boundary conditions."""
-        if 'thermalBC' not in self.project_data:
-            self.log_print("No thermal boundary conditions found in project file")
-            return False
-            
-        self.thermal_bc_data = self.project_data['thermalBC']
-        
-        # Use validation utility function
-        if not validate_thermal_bc(self.thermal_bc_data):
-            self.log_print("Invalid thermal boundary conditions")
-            return False
-            
-        # Extract validated data for processing
-        self.fixed_temps_data = self.thermal_bc_data.get('fixed_temps', [])
-        self.heat_sources_data = self.thermal_bc_data.get('heat_sources', [])
-        self.total_heat_sources_data = self.thermal_bc_data.get('total_heat_sources', [])
-            
-        return True
-        
-    def process_boundary_conditions(self):
-        """Process thermal boundary conditions."""
-        try:
-            # Process fixed temperature triangles (Dirichlet BC)
-            self.fixed_temps = {}
-            
-            # Process fixed temperature boundary conditions
-            for temp_group in self.fixed_temps_data:
-                triangle_indices = temp_group.get('triangles', [])
-                temperature = temp_group.get('temperature', 300.0)
-                
-                batch_size = 50
-                for start_idx in range(0, len(triangle_indices), batch_size):
-                    batch_end = min(start_idx + batch_size, len(triangle_indices))
-                    batch_faces = triangle_indices[start_idx:batch_end]
-                    
-                    for face_idx in batch_faces:
-                        if face_idx < self.stl_geom.stl_n_triangles:
-                            distances = self.stl_geom.find_points_triangle_distances_vectorized(self.boundary_points, face_idx)
-                            close_nodes_mask = distances < self.tol
-                            nodes_for_face = self.boundary_nodes[close_nodes_mask]
-                            
-                            for node in nodes_for_face:
-                                self.fixed_temps[node] = temperature
-            
-            # Process heat flux boundary conditions
-            self.heat_flux_groups = []
-            self.heat_flux_values = []
-            
-            for flux_group in self.heat_sources_data:
-                triangle_indices = flux_group.get('triangles', [])
-                heat_flux = flux_group.get('heat_flux', 0.0)
-                
-                heat_flux_nodes = set()
-                batch_size = 50
-                for start_idx in range(0, len(triangle_indices), batch_size):
-                    batch_end = min(start_idx + batch_size, len(triangle_indices))
-                    batch_faces = triangle_indices[start_idx:batch_end]
-                    
-                    for face_idx in batch_faces:
-                        if face_idx < self.stl_geom.stl_n_triangles:
-                            distances = self.stl_geom.find_points_triangle_distances_vectorized(self.boundary_points, face_idx)
-                            close_nodes_mask = distances < self.tol
-                            heat_flux_nodes.update(self.boundary_nodes[close_nodes_mask])
-                
-                self.heat_flux_groups.append(heat_flux_nodes)
-                self.heat_flux_values.append(heat_flux)
-            
-            # Process total heat boundary conditions
-            self.total_heat_groups = []
-            self.total_heat_values = []
-            
-            for heat_group in self.total_heat_sources_data:
-                triangle_indices = heat_group.get('triangles', [])
-                total_heat = heat_group.get('total_heat', 0.0)
-                
-                total_heat_nodes = set()
-                batch_size = 50
-                for start_idx in range(0, len(triangle_indices), batch_size):
-                    batch_end = min(start_idx + batch_size, len(triangle_indices))
-                    batch_faces = triangle_indices[start_idx:batch_end]
-                    
-                    for face_idx in batch_faces:
-                        if face_idx < self.stl_geom.stl_n_triangles:
-                            distances = self.stl_geom.find_points_triangle_distances_vectorized(self.boundary_points, face_idx)
-                            close_nodes_mask = distances < self.tol
-                            total_heat_nodes.update(self.boundary_nodes[close_nodes_mask])
-                
-                self.total_heat_groups.append(total_heat_nodes)
-                self.total_heat_values.append(total_heat)
-            
-            # Create thermal boundary conditions
-            self.bc = self.process_data_for_thermal()
-            return True
-        except Exception as e:
-            self.log_print(f"Error processing thermal boundary conditions: {e}")
-            return False
-            
-    def process_data_for_thermal(self):
-        """Process mesh data and create boundary conditions for thermal solver."""
-        # Process fixed temperature nodes
-        fixed_dofs = []
-        fixed_values_list = []
-        for node, temp in self.fixed_temps.items():
-            fixed_dofs.append(node)  # one dof per node in thermal analysis
-            fixed_values_list.append(temp)
-            if hasattr(self.mesh, 'node_indices'):
-                self.mesh.node_indices[node, 3] = 1  # flag for fixed temperature
-        
-        fixed_dofs = np.array(fixed_dofs, dtype=int)
-        dirichlet_values = np.array(fixed_values_list, dtype=float)
-        
-        # Process thermal loads 
-        thermal_load = np.zeros(self.mesh.num_nodes)  # one load per node
-        
-        # Apply heat flux loads
-        for nodes, flux_value in zip(self.heat_flux_groups, self.heat_flux_values):
-            if nodes:
-                flux_per_node = float(flux_value) / len(nodes)
-                for node in nodes:
+        fe_solver = fea.HexStructuralFEA(
+            mesh=mesh,
+            mat_prop=mat_prop,
+            bc=bc,
+            solver=solver
+        )
+
+        solve_time_start = time.time()
+        u = np.asarray(fe_solver.solve())
+        solve_time = time.time() - solve_time_start
+
+        fe_solver.postprocess()  # Calculate stresses
+
+        total_time = time.time() - start_time
+
+        max_deformation = fe_solver.max_deformation
+        max_vonmises = np.max(fe_solver.vonMisesStress)
+
+        return {
+            'solution_time': solve_time,
+            'total_time': total_time,
+            'max_displacement': max_deformation,
+            'max_stress': max_vonmises
+        }
+
+    def execute_thermal_analysis(self, project_data, stl_path, n_elements, output_dir):
+        start_time = time.time()
+        print(f"Running thermal analysis...")
+
+        mesh = HexMesher()
+        mesh.createMeshFromSTLFile(stl_path, nElemsDesired=n_elements)
+        mesh.createEdofMatThermal()
+
+        stl_geom = STLGeom(stl_path)
+
+        boundary_nodes = mesh.get_boundary_nodes()
+        boundary_points = mesh.node_xyz[boundary_nodes]
+        tol = min(mesh.elem_size) * 0.9
+
+        thermal_bc_data = project_data['thermalBC']
+
+        fixed_temps = {}
+        for temp_group in thermal_bc_data.get('fixed_temps', []):
+            triangle_indices = temp_group.get('triangles', [])
+            temperature = temp_group.get('temperature', 300.0)
+
+            for face_idx in triangle_indices:
+                if face_idx < stl_geom.stl_n_triangles:
+                    distances = stl_geom.find_points_triangle_distances_vectorized(boundary_points, face_idx)
+                    close_nodes_mask = distances < tol
+                    nodes_for_face = boundary_nodes[close_nodes_mask]
+
+                    for node in nodes_for_face:
+                        fixed_temps[node] = temperature
+
+        thermal_load = np.zeros(mesh.num_nodes)
+
+        for flux_group in thermal_bc_data.get('heat_sources', []):
+            triangle_indices = flux_group.get('triangles', [])
+            heat_flux = flux_group.get('heat_flux', 0.0)
+
+            flux_nodes = set()
+            for face_idx in triangle_indices:
+                if face_idx < stl_geom.stl_n_triangles:
+                    distances = stl_geom.find_points_triangle_distances_vectorized(boundary_points, face_idx)
+                    close_nodes_mask = distances < tol
+                    flux_nodes.update(boundary_nodes[close_nodes_mask])
+
+            if flux_nodes:
+                flux_per_node = heat_flux / len(flux_nodes)
+                for node in flux_nodes:
                     thermal_load[node] += flux_per_node
-                    if hasattr(self.mesh, 'node_indices'):
-                        self.mesh.node_indices[node, 3] = 5  # flag for heat flux load
-        
-        # Apply total heat loads
-        for nodes, heat_value in zip(self.total_heat_groups, self.total_heat_values):
-            if nodes:
-                heat_per_node = float(heat_value) / len(nodes)
-                for node in nodes:
+
+        for heat_group in thermal_bc_data.get('total_heat_sources', []):
+            triangle_indices = heat_group.get('triangles', [])
+            total_heat = heat_group.get('total_heat', 0.0)
+
+            heat_nodes = set()
+            for face_idx in triangle_indices:
+                if face_idx < stl_geom.stl_n_triangles:
+                    distances = stl_geom.find_points_triangle_distances_vectorized(boundary_points, face_idx)
+                    close_nodes_mask = distances < tol
+                    heat_nodes.update(boundary_nodes[close_nodes_mask])
+
+            if heat_nodes:
+                heat_per_node = total_heat / len(heat_nodes)
+                for node in heat_nodes:
                     thermal_load[node] += heat_per_node
-                    if hasattr(self.mesh, 'node_indices'):
-                        self.mesh.node_indices[node, 3] = 6  # flag for total heat load
-        
-        # Create thermal boundary conditions
-        return bound_cond.BC(
+
+        fixed_dofs = []
+        fixed_values = []
+        for node, temp in fixed_temps.items():
+            fixed_dofs.append(node)
+            fixed_values.append(temp)
+
+        fixed_dofs = np.array(fixed_dofs, dtype=int)
+        dirichlet_values = np.array(fixed_values, dtype=float)
+
+        bc = bound_cond.BC(
             force=thermal_load,
             fixed_dofs=fixed_dofs,
             dirichlet_values=dirichlet_values
         )
-        
-    def create_solver(self):
-        """Create thermal FEA solver."""
-        try:
-            # Get material properties
-            mat_data = self.project_data['material_data']
-            
-            # Create thermal material properties
-            self.thermal_mat_prop = mat_lib.ThermalMaterial(
+
+        mat_data = project_data['material_data']
+
+        if 'properties' in mat_data:
+            thermal_mat_prop = mat_lib.Material(
+                name="Applied_Material",
+                youngs_modulus=mat_data['properties'].get("Young's Modulus", 210e9),
+                poissons_ratio=mat_data['properties'].get("Poisson's Ratio", 0.3),
+                mass_density=mat_data['properties'].get('Density', 7800.0),
+                thermal_conductivity=mat_data['properties'].get('Thermal Conductivity', 50.0),
+                specific_heat=mat_data['properties'].get('Specific Heat Capacity', 450.0),
+                thermal_expansion=mat_data['properties'].get('Thermal Expansion', 12e-6),
+                cost=mat_data['properties'].get('Price', 1.0),
+                yield_strength=mat_data['properties'].get('Yield Strength', 250e6)
+            )
+        else:
+            thermal_mat_prop = mat_lib.Material(
+                name="Applied_Material",
+                youngs_modulus=mat_data.get('young_modulus', 210e9),
+                poissons_ratio=mat_data.get('poisson_ratio', 0.3),
+                mass_density=mat_data.get('density', 7800.0),
                 thermal_conductivity=mat_data.get('thermal_conductivity', 50.0),
                 specific_heat=mat_data.get('specific_heat', 450.0),
-                mass_density=mat_data.get('density', 7800.0)
+                thermal_expansion=mat_data.get('thermal_expansion', 12e-6),
+                cost=mat_data.get('price', 1.0),
+                yield_strength=mat_data.get('yield_strength', 250e6)
             )
-            
-            self.fe_solver = hex_thermal_fea.ThermalFEA(
-                mesh=self.mesh,
-                mat_prop=self.thermal_mat_prop,
-                bc=self.bc,
-                solver=self.solver
-            )
-            return True
-        except Exception as e:
-            self.log_print(f"Error creating thermal FEA solver: {e}")
-            return False
-            
-    def run_analysis(self):
-        """Run thermal analysis."""
-        try:
-            solve_time_start = time.time()
-            self.temperatures = np.asarray(self.fe_solver.solve())
-            self.solve_time = time.time() - solve_time_start
-            
-            self.temp_min = np.min(self.temperatures)
-            self.temp_max = np.max(self.temperatures)
-            
-            self.log_print("\n" + "="*50)
-            self.log_print("Thermal FEA Results:")
-            self.log_print(f"Number of nodes: {self.mesh.num_nodes}")
-            self.log_print(f"Number of elements: {self.mesh.num_elems}")
-            self.log_print(f"Solution time: {self.solve_time:.2f} seconds")
-            self.log_print(f"Temperature range: {self.temp_min:.2f}K to {self.temp_max:.2f}K")
-            self.log_print("="*50)
-            return True
-        except Exception as e:
-            self.log_print(f"Error during thermal solver execution: {e}")
-            traceback.print_exc() 
-            return False
-            
-    def generate_plots(self):
-        """Generate thermal analysis plots."""
-        try:
-            plt.figure(figsize=(12, 8))
-            self.mesh.plot( bc=None, u=self.temperatures,
-                        title=f'Temperature Distribution (min: {self.temp_min:.2f}K, max: {self.temp_max:.2f}K)')
-            plt.savefig(os.path.join(self.output_dir, f"{self.base_name}_temperature.png"), dpi=300)
-            plt.close('all')
-        except Exception as e:
-            self.log_print(f"Error generating thermal plots: {e}")
-            
-    def save_results(self):
-        """Save thermal analysis results."""
-        try:
-            np.save(os.path.join(self.output_dir, f"{self.base_name}_temperature.npy"), self.temperatures)
-            
-            mat_data = self.project_data['material_data']
-            with open(os.path.join(self.output_dir, f"{self.base_name}_thermal_summary.txt"), 'w') as f:
-                f.write("PyTO Thermal Analysis Results Summary\n")
-                f.write("=======================\n\n")
-                f.write(f"Project file: {os.path.basename(self.project_file)}\n")
-                f.write(f"STL model: {os.path.basename(self.stl_path)}\n\n")
-                f.write(f"Material: {mat_data.get('name', 'Unnamed')}\n")
-                f.write(f"Thermal conductivity: {self.thermal_mat_prop.thermal_conductivity:.2f} W/(m·K)\n")
-                f.write(f"Specific heat: {self.thermal_mat_prop.specific_heat:.2f} J/(kg·K)\n")
-                f.write(f"Density: {self.thermal_mat_prop.mass_density:.2f} kg/m³\n\n")
-                f.write(f"Mesh nodes: {self.mesh.num_nodes}\n")
-                f.write(f"Mesh elements: {self.mesh.num_elems}\n\n")
-                f.write(f"Fixed temperature count: {len(self.fixed_temps)}\n")
-                f.write(f"Heat flux source count: {sum(len(group) for group in self.heat_flux_groups)}\n")
-                f.write(f"Total heat source count: {sum(len(group) for group in self.total_heat_groups)}\n\n")
-                f.write(f"Solver: {self.fe_solver.solver.name}\n")
-                f.write(f"Solution time: {self.solve_time:.2f} seconds\n\n")
-                f.write(f"Minimum temperature: {self.temp_min:.2f}K\n")
-                f.write(f"Maximum temperature: {self.temp_max:.2f}K\n")
-        except Exception as e:
-            self.log_print(f"Error saving thermal results: {e}")
 
+        solver_type = project_data.get('analysis_settings', {}).get('solver_type', 'PARDISO')
+        solver_map = {
+            "PARDISO": lin_solv.Solvers.PARDISO,
+            "DPCG": lin_solv.Solvers.DPCG,
+            "PCG": lin_solv.Solvers.PCG,
+            "PYAMG": lin_solv.Solvers.PYAMG,
+            "SPSOLVE": lin_solv.Solvers.SPSOLVE
+        }
+        solver = solver_map.get(solver_type, lin_solv.Solvers.PARDISO)
 
-class AnalysisManager:
-    """Class to manage analysis selection and execution."""
-    
-    @staticmethod
-    def determine_analysis_type(project_file):
-        """Determine what types of analysis are available in the project file with validation."""
+        fe_solver = hex_thermal_fea.HexThermalFEA(
+            mesh=mesh,
+            mat_prop=thermal_mat_prop,
+            bc=bc,
+            solver=solver
+        )
+
+        solve_time_start = time.time()
+        temperatures = np.asarray(fe_solver.solve())
+        solve_time = time.time() - solve_time_start
+
+        total_time = time.time() - start_time
+
+        temp_min = np.min(temperatures)
+        temp_max = np.max(temperatures)
+
+        return {
+            'solution_time': solve_time,
+            'total_time': total_time,
+            'min_temperature': temp_min,
+            'max_temperature': temp_max
+        }
+
+    def execute_project(self, project_file, output_dir=None):
         try:
             with open(project_file, 'r') as f:
                 project_data = json.load(f)
-            
-            # Check if sections exist
-            has_structural_section = 'structuralBC' in project_data
-            has_thermal_section = 'thermalBC' in project_data
-            
-            # Load STL geometry for validating boundary conditions
+
             stl_file = project_data.get('stl_file_path', '')
-            if not os.path.isabs(stl_file):
-                stl_path = os.path.join("../Models/", stl_file)
-                if not os.path.exists(stl_path):
-                    stl_path = os.path.join(os.path.dirname(os.path.abspath(project_file)), stl_file)
-            
-            if not os.path.exists(stl_path):
-                print(f"STL file not found: {stl_path}")
-                return False, False
-                
-            stl_geom = STLGeom(stl_path)
-            
-            # Validate boundary conditions
-            has_valid_structural = False
-            has_valid_thermal = False
-            
-            if has_structural_section:
-                has_valid_structural = validate_structural_bc(project_data['structuralBC'], stl_geom)
-                
-            if has_thermal_section:
-                has_valid_thermal = validate_thermal_bc(project_data['thermalBC'])
-            
-            return has_valid_structural, has_valid_thermal
+            stl_path = None
+
+            if os.path.isabs(stl_file) and os.path.exists(stl_file):
+                stl_path = stl_file
+            else:
+                project_dir = os.path.dirname(os.path.abspath(project_file))
+                candidate_path = os.path.join(project_dir, stl_file)
+                if os.path.exists(candidate_path):
+                    stl_path = candidate_path
+                else:
+                    model_name = os.path.basename(project_dir)
+                    script_dir = os.path.dirname(os.path.abspath(__file__))
+                    pyto_root = os.path.dirname(script_dir)
+                    models_path = os.path.join(pyto_root, "Models")
+                    candidate_path = os.path.join(models_path, model_name, stl_file)
+                    if os.path.exists(candidate_path):
+                        stl_path = candidate_path
+                    else:
+                        candidate_path = os.path.join(models_path, model_name, f"{model_name}.STL")
+                        if os.path.exists(candidate_path):
+                            stl_path = candidate_path
+
+            if not stl_path:
+                print(f"Error: STL file not found: {stl_file}")
+                print(f"Tried searching in project directory and in ../Models/{os.path.basename(os.path.dirname(project_file))}/")
+                return False
+
+            print(f"Using STL file: {stl_path}")
+
+            n_elements = project_data.get('analysis_settings', {}).get('n_elements', 10000)
+
+            # Check for valid structural BCs
+            has_structural = False
+            if 'structuralBC' in project_data:
+                bc = project_data['structuralBC']
+                if bc.get('fixed_faces_indices') or bc.get('load_faces_indices'):
+                    has_structural = True
+
+            # Check for valid thermal BCs
+            has_thermal = False
+            if 'thermalBC' in project_data:
+                tbc = project_data['thermalBC']
+                if tbc.get('fixed_temps') or tbc.get('heat_sources') or tbc.get('total_heat_sources'):
+                    # Only solve if at least one BC list is non-empty
+                    if (tbc.get('fixed_temps') and len(tbc.get('fixed_temps')) > 0) or \
+                    (tbc.get('heat_sources') and len(tbc.get('heat_sources')) > 0) or \
+                    (tbc.get('total_heat_sources') and len(tbc.get('total_heat_sources')) > 0):
+                        has_thermal = True
+
+            if output_dir is None:
+                output_dir = os.path.join(os.path.dirname(project_file), "results")
+
+            if has_structural:
+                results = self.execute_structural_analysis(project_data, stl_path, n_elements, output_dir)
+                print(f"Time: {results['solution_time']:.2f} s")
+                print(f"Maximum deformation: {results['max_displacement']:.4e}")
+                print(f"Maximum von Mises stress: {results['max_stress']:.4e}")
+
+            if has_thermal:
+                results = self.execute_thermal_analysis(project_data, stl_path, n_elements, output_dir)
+                print(f"Time: {results['solution_time']:.2f} s")
+                print(f"Temperature range: {results['min_temperature']:.2f}K to {results['max_temperature']:.2f}K")
+
+            if not has_structural and not has_thermal:
+                print("No valid boundary conditions found for structural or thermal analysis.")
+
+            return True
         except Exception as e:
-            print(f"Error determining analysis type: {e}")
-            return False, False
-    
+            print(f"Error executing project: {e}")
+            import traceback
+            traceback.print_exc()
+            return False
+
+    @classmethod
+    def run_from_cli(cls):
+        parser = argparse.ArgumentParser(description="Execute PyTO project file")
+        parser.add_argument("project", help="Path to .pyto project file")
+        parser.add_argument("--output", type=str, help="Output directory for results")
+
+        args = parser.parse_args()
+
+        if not os.path.exists(args.project):
+            print(f"Error: Project file not found: {args.project}")
+            sys.exit(1)
+
+        manager = cls()
+        success = manager.execute_project(args.project, args.output)
+        sys.exit(0 if success else 1)
 
 if __name__ == "__main__":
-    #example to load and execute project (no user interactions)
-    pass
+    ProjectManager.run_from_cli()

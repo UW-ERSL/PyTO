@@ -76,7 +76,7 @@ class MainWindow(QtWidgets.QMainWindow):
         {"name": "Material", "icon": "cross", "requires": "geometry_loaded", "handler": "open_material_window"},
         {"name": "Structural Loads", "icon": "cross", "requires": "material_defined", "handler": "open_structural_loads_window"},
         {"name": "Thermal Loads", "icon": "cross", "requires": "material_defined", "handler": "open_thermal_loads_window"},
-        {"name": "Body force", "icon": "cross", "requires": "material_defined", "handler": "show_coming_soon"},
+        {"name": "Body force", "icon": "cross", "requires": "material_defined", "handler": "open_body_force_window"},
         {"name": "Display Options", "icon": "arrow", "always_enabled": True, "handler": "open_display_options_window"},
         {"name": "Analysis", "icon": "cross", "requires": "loads_applied", "handler": "open_analysis_window"},
         {"name": "TopOpt Constraints", "icon": "cross", "requires": "loads_applied", "handler": "open_topopt_constraints_window"},
@@ -643,6 +643,10 @@ class MainWindow(QtWidgets.QMainWindow):
     def open_topopt_results_window(self):
         self.topopt_results_window = TopOptResultsWindow(self)
         self.topopt_results_window.show()
+
+    def open_body_force_window(self):
+        dialog = BodyForceWindow(self)
+        dialog.exec_()
 
     def show_coming_soon(self):
         QtWidgets.QMessageBox.information(self, "Coming Soon", 
@@ -2420,6 +2424,57 @@ class ThermalLoadsWindow(QtWidgets.QDialog):
         self.total_heat_value_spin.setPrefix("Total Heat (W): ")
         self.total_heat_value_spin.setSuffix(" W")
 #---------------------------------------------------------------------------
+class BodyForceWindow(QtWidgets.QDialog):
+    def __init__(self, parent):
+        super().__init__(parent)
+        self.setWindowTitle("Body Force")
+        self.setFixedSize(260, 140)
+        self.parent = parent
+
+        # Ensure parent has storage
+        if not hasattr(self.parent, "body_force"):
+            self.parent.body_force = {"X": 0.0, "Y": 0.0, "Z": 0.0}
+        if not hasattr(self.parent, "body_force_actors"):
+            self.parent.body_force_actors = []
+
+        layout = QtWidgets.QVBoxLayout(self)
+        form_layout = QtWidgets.QFormLayout()
+        self.x_edit = QtWidgets.QLineEdit(str(self.parent.body_force.get("X", 0.0)))
+        self.y_edit = QtWidgets.QLineEdit(str(self.parent.body_force.get("Y", 0.0)))
+        self.z_edit = QtWidgets.QLineEdit(str(self.parent.body_force.get("Z", 0.0)))
+        form_layout.addRow("X (m/s^2):", self.x_edit)
+        form_layout.addRow("Y (m/s^2):", self.y_edit)
+        form_layout.addRow("Z (m/s^2):", self.z_edit)
+        layout.addLayout(form_layout)
+
+        btn_layout = QtWidgets.QHBoxLayout()
+        apply_btn = QtWidgets.QPushButton("Apply")
+        apply_btn.clicked.connect(self.apply_body_force)
+        close_btn = QtWidgets.QPushButton("Close")
+        close_btn.clicked.connect(self.close)
+        btn_layout.addWidget(apply_btn)
+        btn_layout.addWidget(close_btn)
+        layout.addLayout(btn_layout)
+
+    def apply_body_force(self):
+        try:
+            ax = float(self.x_edit.text())
+            ay = float(self.y_edit.text())
+            az = float(self.z_edit.text())
+        except ValueError:
+            QtWidgets.QMessageBox.warning(self, "Input Error", "Please enter valid numbers for X, Y, Z.")
+            return
+
+        self.parent.body_force = {"X": ax, "Y": ay, "Z": az}
+        self.visualize_body_force(ax, ay, az)
+        self.parent.message_text.append(
+            f"Body force set: [{ax:.3f}, {ay:.3f}, {az:.3f}] m/s²"
+        )
+        self.parent.update_LivVar('structural_loads.body_force', True)
+        self.parent.set_sidebar_icon("Structural Loads", "check")
+        self.parent.set_sidebar_icon("Analysis", "arrow")
+        self.close()
+#--------------------------------------------------------------------------
 class AnalysisWindow(QtWidgets.QDialog):
     def __init__(self, parent):
         super().__init__(parent)
@@ -2504,6 +2559,14 @@ class AnalysisWindow(QtWidgets.QDialog):
         if not self.parent.stl_geom:
             QtWidgets.QMessageBox.warning(self, "No Geometry", "Please load geometry first.")
             return
+
+        # Use parent's stored mesh_elements count if available
+        num_elements = self.elements_spin.value()
+        if hasattr(self.parent, 'mesh_elements'):
+            num_elements = self.parent.mesh_elements
+            self.elements_spin.setValue(num_elements)
+            # Clear the stored value to avoid unexpected reuse
+            delattr(self.parent, 'mesh_elements')
         
         # Create mesh
         mesher = HexMesher()
@@ -2843,6 +2906,30 @@ class AnalysisWindow(QtWidgets.QDialog):
                         force_info.get('force_y', 0.0),
                         force_info.get('force_z', 0.0)
                     ])
+
+        body_force = getattr(self.parent, "body_force", None)
+        if body_force:
+            ax, ay, az = body_force.get("X", 0.0), body_force.get("Y", 0.0), body_force.get("Z", 0.0)
+            a_vec = np.array([ax, ay, az], dtype=float)
+            if np.linalg.norm(a_vec) > 1e-12:
+                # Get density from material
+                density = self.parent.applied_material['properties']['Density']
+                # For each node, add f = m*a = density * a
+                n_nodes = self.parent.hex_mesh.num_nodes
+                # If mesh has per-node volume, use it, else assume uniform
+                node_vol = getattr(self.parent.hex_mesh, "node_volume", None)
+                if node_vol is None:
+                    # Estimate node volume from total volume / num_nodes
+                    total_vol = np.sum(self.parent.hex_mesh.elemVolume) if hasattr(self.parent.hex_mesh, "elemVolume") else 1.0
+                    node_vol = np.full(n_nodes, total_vol / n_nodes)
+                # Add to load_nodes_groups: all nodes
+                all_nodes = list(range(n_nodes))
+                # Per-node force: density * node_vol * a_vec
+                per_node_force = (density * node_vol[:, None]) * a_vec[None, :]
+                # Add to load_nodes_groups/load_forces
+                for node_id in all_nodes:
+                    load_nodes_groups.append([node_id])
+                    load_forces.append(per_node_force[node_id].tolist())
         
         # Prepare load data for solver
         load_data = {
@@ -4052,7 +4139,7 @@ class StructuralTopOptWindow(QtWidgets.QDialog):
                     fe_solver=fe_solver,
                     to_params=to_params,
                     maxMMAIterations=250,
-                    timeLimitSecs=3600,
+                    timeLimitSecs=28800,
                     move_limit=0.2,
                     kkt_tol=1.e-6,
                     objective_tol=1.e-4,
@@ -4236,15 +4323,13 @@ class StructuralTopOptWindow(QtWidgets.QDialog):
         other = constraints.get('other', {})
         to_params.ENSURE_CONNECTED_TOPOLOGY = other.get('connected_topology', False)
 
-        # Keep fixed faces
         if other.get('keep_fixed_faces', False):
             analysis_window = AnalysisWindow(self.parent)
             boundary_nodes, boundary_points, tolerance = analysis_window.get_boundary_mapping_data()
             constrained_elements = analysis_window.map_triangles_to_elements(
                 list(self.parent.constrained_triangles), boundary_nodes, boundary_points, tolerance
             )
-            to_params.ElemsToKeep = None
-            #to_params.ElemsToKeep = list(constrained_elements)
+            to_params.ElemsToKeep = list(constrained_elements)
         else:
             to_params.ElemsToKeep = None  # <-- Explicitly clear if not enabled
 
@@ -4482,8 +4567,11 @@ class TopOptResultsWindow(QtWidgets.QDialog):
         # Get parameters
         resolution = self.res_spin.value()
         padding = self.pad_spin.value()
+        max_resolution = 50.0
+        max_padding = 0.5
+        step_resolution = 0.5
+        step_padding = 0.05
 
-        # Get VTU and STL paths from current GUI TopOpt results
         topopt_results = getattr(self.parent, "topopt_results", None)
         if not topopt_results or not hasattr(self.parent, "stl_geom"):
             QtWidgets.QMessageBox.warning(self, "No TopOpt Results", "Please run topology optimization first.")
@@ -4498,9 +4586,31 @@ class TopOptResultsWindow(QtWidgets.QDialog):
         except Exception as e:
             QtWidgets.QMessageBox.warning(self, "File Error", f"Could not load STL/VTU: {e}")
             return
-        
-        void_region_stl = extract_isosurface(vtu, resolution=resolution)
-        optimized_topology_stl = subtract_voids_from_stl(design_domain_stl, void_region_stl)
+
+        success = False
+        while resolution <= max_resolution and padding <= max_padding:
+            try:
+                void_region_stl = extract_isosurface(vtu, resolution=resolution)
+                optimized_topology_stl = subtract_voids_from_stl(design_domain_stl, void_region_stl)
+                success = True
+                self.parent.message_text.append(
+                    f"Recovery succeeded at Resolution {resolution:.2f}, Padding {padding:.2f}."
+                )
+                break  # Success!
+            except ValueError as e:
+                if "Not all meshes are volumes" in str(e):
+                    self.parent.message_text.append(
+                        f"Resolution {resolution:.2f}, Padding {padding:.2f} Iterating"
+                    )
+                    resolution += step_resolution
+                    padding += step_padding
+                else:
+                    QtWidgets.QMessageBox.warning(self, "File Error", f"Could not process STL/VTU: {e}")
+                    return
+        if not success:
+            QtWidgets.QMessageBox.warning(self, "Recovery Failed", "Could not generate a valid volume after retries.")
+            return
+
         self.parent.optimized_topology_stl = optimized_topology_stl
 
         # Remove only mesh actors, keep geometry info
@@ -4578,8 +4688,7 @@ class DisplayOptionsWindow(QtWidgets.QDialog):
         self.setWindowTitle("Display Options")
         self.setFixedSize(300, 680)
         self.parent = parent
-        
-        # Initialize display state
+
         self.display_state = {
             'geometry': 'InitialDesign',
             'field': 'None',
@@ -4599,44 +4708,39 @@ class DisplayOptionsWindow(QtWidgets.QDialog):
             'show_topopt_constraints': False,
             'show_non_design_parts': False
         }
-        
+
         self.setup_ui()
         self.connect_signals()
-        
+
     def setup_ui(self):
         layout = QtWidgets.QVBoxLayout(self)
         layout.setSpacing(8)
-        
-        # Geometry dropdown
+
         geometry_layout = QtWidgets.QHBoxLayout()
         geometry_layout.addWidget(QtWidgets.QLabel("Geometry"))
         self.geometry_combo = QtWidgets.QComboBox()
         self.geometry_combo.addItems(["InitialDesign"])
         geometry_layout.addWidget(self.geometry_combo)
         layout.addLayout(geometry_layout)
-        
-        # Field dropdown
+
         field_layout = QtWidgets.QHBoxLayout()
         field_layout.addWidget(QtWidgets.QLabel("Field"))
         self.field_combo = QtWidgets.QComboBox()
         self.field_combo.addItems(["None"])
         field_layout.addWidget(self.field_combo)
         layout.addLayout(field_layout)
-        
-        # Display On dropdown
+
         display_layout = QtWidgets.QHBoxLayout()
         display_layout.addWidget(QtWidgets.QLabel("Display On"))
         self.display_combo = QtWidgets.QComboBox()
         self.display_combo.addItems(["Geometry"])
         display_layout.addWidget(self.display_combo)
         layout.addLayout(display_layout)
-        
-        # Cutting percent controls
+
         self.x_cutting_spin = self.create_cutting_control(layout, "XCuttingPercent", 0)
         self.y_cutting_spin = self.create_cutting_control(layout, "YCuttingPercent", 0)
         self.z_cutting_spin = self.create_cutting_control(layout, "ZCuttingPercent", 0)
-        
-        # Eigen Number
+
         eigen_layout = QtWidgets.QHBoxLayout()
         eigen_layout.addWidget(QtWidgets.QLabel("EigenNumber"))
         self.eigen_spin = QtWidgets.QSpinBox()
@@ -4645,162 +4749,121 @@ class DisplayOptionsWindow(QtWidgets.QDialog):
         self.eigen_spin.setValue(1)
         eigen_layout.addWidget(self.eigen_spin)
         layout.addLayout(eigen_layout)
-        
-        # Checkboxes
+
         self.show_bounding_box_checkbox = QtWidgets.QCheckBox("Show bounding box")
         layout.addWidget(self.show_bounding_box_checkbox)
-        
+
         self.show_triangles = QtWidgets.QCheckBox("Show triangles")
-        #self.show_triangles.setChecked(True)
         layout.addWidget(self.show_triangles)
-        
+
         self.show_text = QtWidgets.QCheckBox("Show text")
         self.show_text.setChecked(True)
         layout.addWidget(self.show_text)
-        
+
         self.scale_deformation = QtWidgets.QCheckBox("Scale deformation")
         layout.addWidget(self.scale_deformation)
-        
+
         self.show_transparent_geometry = QtWidgets.QCheckBox("Show transparent geometry")
         layout.addWidget(self.show_transparent_geometry)
-        
+
         self.show_axis = QtWidgets.QCheckBox("Show axis")
         self.show_axis.setChecked(True)
         layout.addWidget(self.show_axis)
-        
+
         self.show_structural_loads_checkbox = QtWidgets.QCheckBox("Show structural loads")
         layout.addWidget(self.show_structural_loads_checkbox)
-        
+
         self.show_thermal_loads_checkbox = QtWidgets.QCheckBox("Show thermal loads")
         layout.addWidget(self.show_thermal_loads_checkbox)
-        
+
         self.show_topopt_constraints_checkbox = QtWidgets.QCheckBox("Show TopOpt Constraints")
         layout.addWidget(self.show_topopt_constraints_checkbox)
-    
-        
-        # Animation control
+
         animate_layout = QtWidgets.QHBoxLayout()
         animate_btn = QtWidgets.QPushButton("Animate for 3 cycles")
         animate_btn.clicked.connect(self.animate_view)
         animate_layout.addWidget(animate_btn)
         layout.addLayout(animate_layout)
-        
-        # Control buttons
+
         self.create_control_buttons(layout)
-        
+
     def create_cutting_control(self, layout, label, default_value):
-        """Create a cutting percentage control with spinbox"""
         cutting_layout = QtWidgets.QHBoxLayout()
         cutting_layout.addWidget(QtWidgets.QLabel(label))
-        
         cutting_spin = QtWidgets.QSpinBox()
         cutting_spin.setMinimum(0)
         cutting_spin.setMaximum(100)
         cutting_spin.setValue(default_value)
         cutting_layout.addWidget(cutting_spin)
-        
         layout.addLayout(cutting_layout)
         return cutting_spin
-        
+
     def create_control_buttons(self, layout):
-        """Create control buttons at the bottom"""
         button_layout = QtWidgets.QVBoxLayout()
-        
         hide_selected_btn = QtWidgets.QPushButton("Hide Selected Part")
         hide_selected_btn.clicked.connect(self.hide_selected_part)
         button_layout.addWidget(hide_selected_btn)
-        
         save_image_btn = QtWidgets.QPushButton("Save Image")
         save_image_btn.clicked.connect(self.save_image)
         button_layout.addWidget(save_image_btn)
-        
         reset_view_btn = QtWidgets.QPushButton("Reset View")
         reset_view_btn.clicked.connect(self.reset_view)
         button_layout.addWidget(reset_view_btn)
-        
         close_btn = QtWidgets.QPushButton("Close")
         close_btn.clicked.connect(self.close)
         button_layout.addWidget(close_btn)
-        
         layout.addLayout(button_layout)
-        
+
     def connect_signals(self):
-        """Connect all control signals to update methods"""
         self.geometry_combo.currentTextChanged.connect(self.update_display)
         self.field_combo.currentTextChanged.connect(self.update_display)
         self.display_combo.currentTextChanged.connect(self.update_display)
-        
         self.x_cutting_spin.valueChanged.connect(self.update_cutting)
         self.y_cutting_spin.valueChanged.connect(self.update_cutting)
         self.z_cutting_spin.valueChanged.connect(self.update_cutting)
-        
-        # Connect all checkboxes
         for checkbox in [self.show_bounding_box_checkbox, self.show_triangles, self.show_text,
-                 self.scale_deformation, self.show_transparent_geometry, self.show_axis,
-                 self.show_structural_loads_checkbox, self.show_thermal_loads_checkbox,
-                 self.show_topopt_constraints_checkbox]:
+                         self.scale_deformation, self.show_transparent_geometry, self.show_axis,
+                         self.show_structural_loads_checkbox, self.show_thermal_loads_checkbox,
+                         self.show_topopt_constraints_checkbox]:
             checkbox.stateChanged.connect(self.update_display)
-            
-        # Set initial states based on current data
         self.update_checkbox_states()
 
     def update_checkbox_states(self):
-        """Update checkbox states and enabled status based on current data"""
-        # Structural loads checkbox
         has_structural = (
             (hasattr(self.parent, 'force_data') and bool(self.parent.force_data)) or
             (hasattr(self.parent, 'constrained_triangles') and bool(self.parent.constrained_triangles))
         )
-
         self.show_structural_loads_checkbox.setEnabled(bool(has_structural))
-        if has_structural:
-            self.show_structural_loads_checkbox.setChecked(True)
-        else:
-            self.show_structural_loads_checkbox.setChecked(False)
-        
-        # Thermal loads checkbox
+        self.show_structural_loads_checkbox.setChecked(bool(has_structural))
+
         has_thermal = (
             hasattr(self.parent, 'thermal_loads_window') and
             self.parent.thermal_loads_window and
             getattr(self.parent.thermal_loads_window, 'thermal_loads', None) and
-            any(self.parent.thermal_loads_window.thermal_loads.get(key, []) 
+            any(self.parent.thermal_loads_window.thermal_loads.get(key, [])
                 for key in ['fixed_temps', 'heat_sources', 'total_heat_sources'])
         )
-        has_thermal = bool(has_thermal)
+        self.show_thermal_loads_checkbox.setEnabled(bool(has_thermal))
+        self.show_thermal_loads_checkbox.setChecked(bool(has_thermal))
 
-        self.show_thermal_loads_checkbox.setEnabled(has_thermal)
-        if has_thermal:
-            self.show_thermal_loads_checkbox.setChecked(True)
-        else:
-            self.show_thermal_loads_checkbox.setChecked(False)
-        
-        # TopOpt constraints checkbox
         has_constraints = (
             hasattr(self.parent, 'topopt_constraint_actors') and
             bool(self.parent.topopt_constraint_actors)
         )
-
-        self.show_topopt_constraints_checkbox.setEnabled(has_constraints)
-        if has_constraints:
-            self.show_topopt_constraints_checkbox.setChecked(True)
-        else:
-            self.show_topopt_constraints_checkbox.setChecked(False)
+        self.show_topopt_constraints_checkbox.setEnabled(bool(has_constraints))
+        self.show_topopt_constraints_checkbox.setChecked(bool(has_constraints))
 
     def showEvent(self, event):
-        """Update options when window is shown"""
         super().showEvent(event)
         self.update_geometry_options()
         self.update_field_options()
-        self.update_checkbox_states()  # Update checkbox states when window opens
-            
+        self.update_checkbox_states()
+
     def update_display(self):
         geometry_choice = self.geometry_combo.currentText()
         field_choice = self.field_combo.currentText()
-
-        # Remove old scalar bars before plotting new field
         self.remove_scalar_bar()
 
-        # Only clear actors if something will be plotted
         should_plot = (
             (geometry_choice == "Initial Design" and self.parent.stl_geom) or
             (geometry_choice == "Mesh" and hasattr(self.parent, "hex_mesh") and self.parent.hex_mesh) or
@@ -4812,7 +4875,7 @@ class DisplayOptionsWindow(QtWidgets.QDialog):
                 if name != "geometry_info":
                     self.parent.plotter.remove_actor(name, reset_camera=False)
 
-        # Visualization logic based on field selection
+        # Visualization logic
         if geometry_choice == "Mesh":
             if field_choice == "Deformation":
                 if hasattr(self.parent, "fe_solver") and self.parent.fe_solver:
@@ -4849,13 +4912,11 @@ class DisplayOptionsWindow(QtWidgets.QDialog):
                 elif field_choice == "None":
                     fe_solver.plot_mesh(plotter=self.parent.plotter)
         elif geometry_choice == "Final Design" and hasattr(self.parent, "optimized_topology_stl") and self.parent.optimized_topology_stl is not None:
-            # Try to get the color from the original STL actor
             orig_actor = self.parent.plotter.actors.get("stl_geometry")
             if orig_actor and hasattr(orig_actor, "GetProperty"):
                 color = orig_actor.GetProperty().GetColor()
             else:
-                color = 'lightblue'  # fallback color
-
+                color = 'lightblue'
             self.parent.plotter.add_mesh(
                 self.parent.optimized_topology_stl,
                 color=color,
@@ -4863,22 +4924,18 @@ class DisplayOptionsWindow(QtWidgets.QDialog):
                 name="Optimized STL"
             )
 
+        # Robust toggles for triangles and axes
+        self.toggle_mesh_edges(self.show_triangles.isChecked())
+        self.toggle_axes(self.show_axis.isChecked())
+
         if self.show_bounding_box_checkbox.isChecked():
             self.show_bounding_box(True)
         else:
             self.show_bounding_box(False)
-        if self.show_triangles.isChecked():
-            self.show_mesh_edges(True)
-        else:
-            self.show_mesh_edges(False)
         if self.show_text.isChecked():
             self.show_geometry_text(True)
         else:
             self.show_geometry_text(False)
-        if self.show_axis.isChecked():
-            self.show_axes(True)
-        else:
-            self.show_axes(False)
         if self.show_transparent_geometry.isChecked():
             self.set_geometry_transparency(0.5)
         else:
@@ -4898,77 +4955,79 @@ class DisplayOptionsWindow(QtWidgets.QDialog):
 
         self.parent.plotter.render()
 
-    def update_cutting(self):
-        """Update cutting planes based on spinbox values"""
-        x_percent = self.x_cutting_spin.value() / 100.0
-        y_percent = self.y_cutting_spin.value() / 100.0
-        z_percent = self.z_cutting_spin.value() / 100.0
-        
-        if any([x_percent > 0, y_percent > 0, z_percent > 0]):
-            self.apply_cutting_planes(x_percent, y_percent, z_percent)
-        else:
-            self.remove_cutting_planes()
-            
-    def show_mesh_edges(self, show):
-        """Show mesh wireframe for mesh, hide triangle edges for STL."""
+    def toggle_mesh_edges(self, show):
+        """Show/hide triangle edges for STL or mesh wireframe for mesh."""
         geometry_choice = self.geometry_combo.currentText()
         for name, actor in self.parent.plotter.actors.items():
-            if geometry_choice == "Mesh" and "mesh" in name.lower() and hasattr(actor, 'GetProperty'):
+            if hasattr(actor, 'GetProperty'):
                 prop = actor.GetProperty()
-                if hasattr(prop, 'EdgeVisibilityOn'):
-                    prop.EdgeVisibilityOn()
-                    prop.SetEdgeColor(0, 0, 0)
-                    prop.SetLineWidth(1)
-            elif geometry_choice == "Initial Design" and hasattr(actor, 'GetProperty'):
-                prop = actor.GetProperty()
-                if hasattr(prop, 'EdgeVisibilityOff'):
-                    prop.EdgeVisibilityOff()
+                # Only call SetEdgeVisibility if available (vtkProperty, not vtkProperty2D)
+                if hasattr(prop, "SetEdgeVisibility"):
+                    if geometry_choice == "Mesh" or geometry_choice == "Initial Design":
+                        prop.SetEdgeVisibility(show)
+                        prop.SetEdgeColor(0, 0, 0)
+                        prop.SetLineWidth(1)
+
+    def toggle_axes(self, show):
+        """Show/hide coordinate axes."""
+        if show:
+            self.parent.plotter.add_axes(interactive=False)
+        else:
+            # Remove all axes actors
+            for name in list(self.parent.plotter.actors.keys()):
+                if 'axes' in name.lower():
+                    self.parent.plotter.remove_actor(name, reset_camera=False)
 
     def show_bounding_box(self, show):
-        """Show or hide bounding box (only for STL geometry)"""
-        bbox_actor_name = "bounding_box_display"
+        # Remove any actor whose name contains "bounding_box" (case-insensitive)
+        for name in list(self.parent.plotter.actors.keys()):
+            if "bounding_box" in name.lower():
+                self.parent.plotter.remove_actor(name, reset_camera=False)
+        # Also remove any actor that is a PyVista Box (to catch unnamed bounding boxes)
+        for name, actor in list(self.parent.plotter.actors.items()):
+            try:
+                # Check if actor is a PyVista Box mesh
+                if hasattr(actor, "GetMapper") and hasattr(actor.GetMapper(), "GetInput"):
+                    mesh = actor.GetMapper().GetInput()
+                    # PyVista Box mesh has 8 points and 6 faces
+                    if hasattr(mesh, "GetNumberOfPoints") and hasattr(mesh, "GetNumberOfCells"):
+                        if mesh.GetNumberOfPoints() == 8 and mesh.GetNumberOfCells() == 6:
+                            self.parent.plotter.remove_actor(name, reset_camera=False)
+            except Exception:
+                pass
         if show:
-            if bbox_actor_name not in self.parent.plotter.actors:
-                if self.parent.stl_geom:
-                    bounds = self.parent.stl_geom.get_bounding_box()
-                    if bounds:
-                        bbox_mesh = pv.Box(bounds=bounds)
-                        self.parent.plotter.add_mesh(
-                            bbox_mesh,
-                            style='wireframe',
-                            color='black',
-                            line_width=2,
-                            name=bbox_actor_name
-                        )
-        else:
-            if bbox_actor_name in self.parent.plotter.actors:
-                self.parent.plotter.remove_actor(bbox_actor_name, reset_camera=False)
-                    
+            if self.parent.stl_geom:
+                bounds = self.parent.stl_geom.get_bounding_box()
+                if bounds:
+                    bbox_mesh = pv.Box(bounds=bounds)
+                    self.parent.plotter.add_mesh(
+                        bbox_mesh,
+                        style='wireframe',
+                        color='black',
+                        line_width=2,
+                        name="bounding_box_display"
+                    )
+
     def show_geometry_text(self, show):
-        """Show or hide geometry information text"""
         if show:
             if "geometry_info" not in self.parent.plotter.actors:
                 self.add_geometry_info_text()
         else:
             if "geometry_info" in self.parent.plotter.actors:
                 self.parent.plotter.remove_actor("geometry_info")
-                
+
     def add_geometry_info_text(self):
-        """Add geometry information text if geometry is loaded"""
         if not self.parent.stl_geom:
             return
-            
         area, volume, _, _ = self.parent.stl_geom.compute_mass_properties()
         bounds = self.parent.stl_geom.get_bounding_box()
         length_unit = self.parent.settings.get_length_unit_string()
-        
         info_lines = [
             f"Model: {os.path.basename(self.parent.stl_geom.file_path)}",
             f"Volume: {volume:.2e} {length_unit}³",
             f"Length: {bounds[1] - bounds[0]:.2e} {length_unit}" if bounds else "Length: N/A",
             f"Surface Area: {area:.2e} {length_unit}²"
         ]
-        
         self.parent.plotter.add_text(
             "\n".join(info_lines),
             position="upper_left",
@@ -4977,43 +5036,16 @@ class DisplayOptionsWindow(QtWidgets.QDialog):
             name="geometry_info",
             font="arial"
         )
-        
-    def show_axes(self, show):
-        """Show or hide coordinate axes"""
-        if show:
-            # Check if axes already exist
-            axes_exist = False
-            for name in self.parent.plotter.actors.keys():
-                if 'axes' in name.lower():
-                    axes_exist = True
-                    break
-            
-            if not axes_exist:
-                self.parent.plotter.add_axes(interactive=False)
-        else:
-            # Remove all axes-related actors
-            axes_actors = []
-            for name in list(self.parent.plotter.actors.keys()):
-                if 'axes' in name.lower():
-                    axes_actors.append(name)
-            
-            for axes_name in axes_actors:
-                self.parent.plotter.remove_actor(axes_name, reset_camera=False)
-                
+
     def set_geometry_transparency(self, opacity):
-        """Set transparency of geometry"""
         for name, actor in self.parent.plotter.actors.items():
-            # Skip text actors and other non-geometry actors
             if name == "geometry_info" or not hasattr(actor, 'GetProperty'):
                 continue
-                
-            # Check if it's a 3D actor with opacity capabilities
             prop = actor.GetProperty()
             if hasattr(prop, 'SetOpacity'):
                 prop.SetOpacity(opacity)
-                
+
     def show_structural_loads(self, show):
-        """Show or hide structural load actors"""
         if hasattr(self.parent, 'force_actors'):
             for actor in self.parent.force_actors:
                 if show:
@@ -5032,9 +5064,8 @@ class DisplayOptionsWindow(QtWidgets.QDialog):
                     self.parent.plotter.add_actor(actor)
                 else:
                     self.parent.plotter.remove_actor(actor, reset_camera=False)
-                    
+
     def show_thermal_loads(self, show):
-        """Show or hide thermal load actors"""
         if hasattr(self.parent, 'thermal_loads_window') and self.parent.thermal_loads_window:
             thermal_actor_lists = ['fixed_temp_actors', 'heat_source_actors', 'total_heat_actors']
             for actor_list_name in thermal_actor_lists:
@@ -5045,16 +5076,14 @@ class DisplayOptionsWindow(QtWidgets.QDialog):
                             self.parent.plotter.add_actor(actor)
                         else:
                             self.parent.plotter.remove_actor(actor, reset_camera=False)
-                            
+
     def show_topopt_constraints(self, show):
-        """Show or hide TopOpt constraint actors"""
         if hasattr(self.parent, 'topopt_constraint_actors'):
             for actor_key, actor in self.parent.topopt_constraint_actors.items():
                 if actor:
                     if isinstance(actor, list):
                         for a in actor:
                             if show:
-                                # Only add if not already present
                                 if a not in self.parent.plotter.actors.values():
                                     self.parent.plotter.add_actor(a)
                             else:
@@ -5065,22 +5094,25 @@ class DisplayOptionsWindow(QtWidgets.QDialog):
                                 self.parent.plotter.add_actor(actor)
                         else:
                             self.parent.plotter.remove_actor(actor, reset_camera=False)
-                            
+
+    def update_cutting(self):
+        x_percent = self.x_cutting_spin.value() / 100.0
+        y_percent = self.y_cutting_spin.value() / 100.0
+        z_percent = self.z_cutting_spin.value() / 100.0
+        if any([x_percent > 0, y_percent > 0, z_percent > 0]):
+            self.apply_cutting_planes(x_percent, y_percent, z_percent)
+        else:
+            self.remove_cutting_planes()
+
     def apply_cutting_planes(self, x_percent, y_percent, z_percent):
-        """Apply cutting planes based on percentages"""
         if not self.parent.stl_geom:
             return
-            
         bounds = self.parent.stl_geom.get_bounding_box()
         if not bounds:
             return
-            
-        # Calculate cutting positions
         x_cut = bounds[0] + (bounds[1] - bounds[0]) * x_percent
         y_cut = bounds[2] + (bounds[3] - bounds[2]) * y_percent
         z_cut = bounds[4] + (bounds[5] - bounds[4]) * z_percent
-        
-        # Apply cuts to all visible mesh actors
         for name, actor in list(self.parent.plotter.actors.items()):
             if name not in ["geometry_info"] and hasattr(actor, 'GetMapper'):
                 if x_percent > 0:
@@ -5089,40 +5121,33 @@ class DisplayOptionsWindow(QtWidgets.QDialog):
                     self.parent.plotter.add_mesh_clip_plane(actor, normal=(0, -1, 0), origin=(0, y_cut, 0))
                 if z_percent > 0:
                     self.parent.plotter.add_mesh_clip_plane(actor, normal=(0, 0, -1), origin=(0, 0, z_cut))
-                    
+
     def remove_cutting_planes(self):
-        """Remove all cutting planes"""
-        # Reset the view by reloading the current visualization
         self.update_display()
-        
+
     def animate_view(self):
-        """Animate the view for 3 cycles"""
         self.parent.plotter.orbit_on_path(n_cycles=3, progress_bar=False)
-        
+
     def hide_selected_part(self):
-        """Hide currently selected triangles"""
         if hasattr(self.parent, 'highlight_actor') and self.parent.highlight_actor:
             self.parent.plotter.remove_actor(self.parent.highlight_actor, reset_camera=False)
             self.parent.highlight_actor = None
             self.parent.plotter.render()
-            
+
     def save_image(self):
-        """Save current view as image"""
         filename, _ = QtWidgets.QFileDialog.getSaveFileName(
-            self, "Save Image", "", 
+            self, "Save Image", "",
             "PNG Files (*.png);;JPEG Files (*.jpg);;All Files (*)"
         )
         if filename:
             self.parent.plotter.screenshot(filename)
             self.parent.message_text.append(f"Image saved: {os.path.basename(filename)}")
-            
+
     def reset_view(self):
-        """Reset the camera view"""
         self.parent.plotter.reset_camera()
         self.parent.plotter.render()
 
     def on_geometry_changed(self, text):
-        """If Initial Design or TopOpt, force field to None."""
         if text in ["Initial Design", "TopOpt"]:
             self.field_combo.blockSignals(True)
             self.field_combo.setCurrentText("None")
@@ -5130,35 +5155,28 @@ class DisplayOptionsWindow(QtWidgets.QDialog):
         self.update_display()
 
     def on_field_changed(self, text):
-        """If geometry is Initial Design or TopOpt and field is not None, warn and switch to Mesh."""
         if self.geometry_combo.currentText() in ["Initial Design", "TopOpt"] and text != "None":
             QtWidgets.QMessageBox.warning(
                 self, "Invalid Selection",
                 "To display Deformation, Von Mises stress, or Temperature, switch to Mesh."
             )
-            # Switch to Mesh if available
             idx = self.geometry_combo.findText("Mesh")
             if idx != -1:
                 self.geometry_combo.setCurrentIndex(idx)
             else:
-                # No mesh available, force field to None
                 self.field_combo.blockSignals(True)
                 self.field_combo.setCurrentText("None")
                 self.field_combo.blockSignals(False)
         self.update_display()
 
-        
     def update_geometry_options(self):
         items = ["Initial Design"]
         current_index = 0
-
         has_mesh = hasattr(self.parent, "hex_mesh") and self.parent.hex_mesh is not None
         if has_mesh:
             items.append("Mesh")
             if self.geometry_combo.currentText() == "Mesh":
                 current_index = len(items) - 1
-
-        # Only show TopOpt if structural topopt has been performed and converged
         has_topopt = (
             hasattr(self.parent, "topopt_results")
             and self.parent.topopt_results is not None
@@ -5168,35 +5186,34 @@ class DisplayOptionsWindow(QtWidgets.QDialog):
             items.append("TopOpt")
             if self.geometry_combo.currentText() in ["TopOpt"]:
                 current_index = len(items) - 1
-
-        # Show Final Design if optimized STL exists
         if hasattr(self.parent, "optimized_topology_stl") and self.parent.optimized_topology_stl is not None:
             items.append("Final Design")
             if self.geometry_combo.currentText() == "Final Design":
                 current_index = len(items) - 1
-
         self.geometry_combo.blockSignals(True)
         self.geometry_combo.clear()
         self.geometry_combo.addItems(items)
         self.geometry_combo.setCurrentIndex(current_index)
         self.geometry_combo.blockSignals(False)
-        
 
     def update_field_options(self):
-        """Always show None, Deformation, Von Mises stress, Temperature."""
         self.field_combo.blockSignals(True)
         self.field_combo.clear()
         self.field_combo.addItems(["None", "Deformation", "Von Mises stress", "Temperature"])
-        # If geometry is Initial Design or TopOpt, force field to None
         if self.geometry_combo.currentText() in ["Initial Design", "TopOpt"]:
             self.field_combo.setCurrentText("None")
         self.field_combo.blockSignals(False)
 
     def remove_scalar_bar(self):
-        """Remove all scalar bars from the plotter."""
         if hasattr(self.parent.plotter, 'scalar_bars'):
             for name in list(self.parent.plotter.scalar_bars.keys()):
                 self.parent.plotter.remove_scalar_bar(name)
+
+    # def remove_scalar_bar(self):
+    #     """Remove all scalar bars from the plotter."""
+    #     if hasattr(self.parent.plotter, 'scalar_bars'):
+    #         for name in list(self.parent.plotter.scalar_bars.keys()):
+    #             self.parent.plotter.remove_scalar_bar(name)
                     
     def showEvent(self, event):
         """Update options when window is shown"""
@@ -5225,7 +5242,7 @@ class ProjectsWindow(QtWidgets.QDialog):
         if not self.parent.stl_geom:
             QtWidgets.QMessageBox.warning(self, "No Data", "No geometry loaded to save.")
             return
-            
+                
         filename, _ = QtWidgets.QFileDialog.getSaveFileName(
             self, "Save Project", "", "PyTO Files (*.pyto)")
         
@@ -5239,41 +5256,104 @@ class ProjectsWindow(QtWidgets.QDialog):
             stl_rel_path = os.path.relpath(stl_abs_path, project_dir)
         except Exception:
             stl_rel_path = self.parent.stl_geom.file_path
-            
-        # Clean thermal loads data
-        thermal_loads_data = {}
-        if getattr(self.parent, 'thermal_loads_window', None):
-            for load_type, load_list in self.parent.thermal_loads_window.thermal_loads.items():
-                thermal_loads_data[load_type] = []
-                for load_data in load_list:
-                    clean_load = {'triangles': load_data.get('triangles', []),
-                                'type': load_data.get('type', '')}
-                    # Add thermal value based on type
-                    for key in ['temperature', 'heat_flux', 'total_heat']:
-                        if key in load_data:
-                            clean_load[key] = load_data[key]
-                    thermal_loads_data[load_type].append(clean_load)
+                
+        # Get number of mesh elements - either from existing mesh or default
+        # We DO NOT load the mesh, just get the element count if it was already generated
+        mesh_elements = 10000  # Default value
+        if hasattr(self.parent, 'hex_mesh') and self.parent.hex_mesh:
+            mesh_elements = self.parent.hex_mesh.num_elems
+        elif hasattr(self.parent, 'analysis_settings') and 'n_elements' in self.parent.analysis_settings:
+            mesh_elements = self.parent.analysis_settings['n_elements']
         
-        # Clean force data
-        clean_force_data = []
+        # Get solver type from analysis window if available
+        solver_type = "PARDISO"  # Default value
+        for child in self.parent.findChildren(QtWidgets.QDialog):
+            if isinstance(child, AnalysisWindow) and child.isVisible():
+                solver_type = child.solver_combo.currentText()
+                break
+        
+        # Create analysis settings dictionary
+        analysis_settings = {
+            "n_elements": mesh_elements,
+            "solver_type": solver_type
+        }
+        
+        # Create structuralBC section
+        structuralBC = {}
+        
+        # Add fixed faces indices
+        fixed_faces_indices = []
+        if hasattr(self.parent, 'constraint_data'):
+            for constraint in self.parent.constraint_data:
+                if constraint.get('type') == 'Fixed XYZ':
+                    fixed_faces_indices.extend(constraint.get('triangles', []))
+        
+        structuralBC['fixed_faces_indices'] = fixed_faces_indices
+        
+        # Add load faces indices and forces
+        load_faces_indices = []
+        load_forces = []
+        
         for force_info in self.parent.force_data:
-            data = {
-                'triangles': force_info.get('triangles', []),
-                'force_x': force_info.get('force_x', 0.0),
-                'force_y': force_info.get('force_y', 0.0),
-                'force_z': force_info.get('force_z', 0.0),
-                'load_set': force_info.get('load_set', 0),
-                'type': force_info.get('type', ''),
-            }
-            # Save torque-specific fields if present
-            if force_info.get('type') == 'torque':
-                data['torque'] = force_info.get('torque', 0.0)
-                data['direction'] = force_info.get('direction', [0, 0, 1])
-                data['axis_point'] = force_info.get('axis_point', [0, 0, 0])
-                data['surface_type'] = force_info.get('surface_type', '')
-                data['cyl_radius'] = force_info.get('cyl_radius', None)
-            clean_force_data.append(data)
+            if force_info.get('type') == 'force_xyz':
+                load_faces_indices.append(force_info.get('triangles', []))
+                load_forces.append([
+                    force_info.get('force_x', 0.0),
+                    force_info.get('force_y', 0.0),
+                    force_info.get('force_z', 0.0)
+                ])
         
+        structuralBC['load_faces_indices'] = load_faces_indices
+        structuralBC['load_forces'] = load_forces
+        
+        # Add counts
+        structuralBC['constraint_counts'] = {
+            'fixed_triangles': len(fixed_faces_indices),
+            'loaded_triangles': sum(len(faces) for faces in load_faces_indices)
+        }
+        
+        # Create thermalBC section
+        thermalBC = {
+            'fixed_temps': [],
+            'heat_sources': [],
+            'total_heat_sources': [],
+            'thermal_counts': {
+                'fixed_temps': 0,
+                'heat_sources': 0,
+                'total_heat_sources': 0,
+                'convection': 0
+            }
+        }
+        
+        # Populate thermal loads if available
+        if getattr(self.parent, 'thermal_loads_window', None):
+            thermal_loads = self.parent.thermal_loads_window.thermal_loads
+            
+            for load_type in ['fixed_temps', 'heat_sources', 'total_heat_sources']:
+                for load in thermal_loads.get(load_type, []):
+                    cleaned_load = {
+                        'triangles': load.get('triangles', [])
+                    }
+                    
+                    # Add value based on type
+                    if load_type == 'fixed_temps' and 'temperature' in load:
+                        cleaned_load['temperature'] = load['temperature']
+                    elif load_type == 'heat_sources' and 'heat_flux' in load:
+                        cleaned_load['heat_flux'] = load['heat_flux']
+                    elif load_type == 'total_heat_sources' and 'total_heat' in load:
+                        cleaned_load['total_heat'] = load['total_heat']
+                        
+                    thermalBC[load_type].append(cleaned_load)
+                    
+            # Update counts
+            thermalBC['thermal_counts'] = {
+                'fixed_temps': sum(len(load.get('triangles', [])) for load in thermalBC['fixed_temps']),
+                'heat_sources': sum(len(load.get('triangles', [])) for load in thermalBC['heat_sources']),
+                'total_heat_sources': sum(len(load.get('triangles', [])) for load in thermalBC['total_heat_sources']),
+                'convection': 0  # Set to actual count if you add convection loads
+            }
+        
+        # Build the complete project data
         project_data = {
             'version': '2025.01',
             'stl_file_path': stl_rel_path,
@@ -5282,11 +5362,10 @@ class ProjectsWindow(QtWidgets.QDialog):
                 'temperature_unit': self.parent.settings.temperature_unit,
                 'angle_unit': self.parent.settings.angle_unit
             },
+            'analysis_settings': analysis_settings,
             'material_data': getattr(self.parent, 'applied_material', None),
-            'force_data': clean_force_data,
-            'constraint_data': self.parent.constraint_data, 
-            'constrained_triangles': list(self.parent.constrained_triangles),
-            'thermal_loads': thermal_loads_data,
+            'structuralBC': structuralBC,
+            'thermalBC': thermalBC,
             'topopt_constraints': getattr(self.parent, 'topopt_constraints', None)
         }
         
@@ -5318,6 +5397,39 @@ class ProjectsWindow(QtWidgets.QDialog):
                 s.get('unit_system', 'MKS'),
                 s.get('temperature_unit', 'Kelvin'),
                 s.get('angle_unit', 'Degree'))
+        
+        # Store mesh elements count and solver (DON'T LOAD MESH)
+        # Just save the settings for later use when the user decides to generate a mesh
+        mesh_elements = 10000  # Default
+        solver_type = "PARDISO"  # Default
+        
+        if 'analysis_settings' in project_data:
+            analysis_settings = project_data['analysis_settings']
+            mesh_elements = analysis_settings.get('n_elements', 10000)
+            solver_type = analysis_settings.get('solver_type', 'PARDISO')
+            self.parent.analysis_settings = analysis_settings
+            self.parent.message_text.append(
+                f"Loaded analysis settings: {mesh_elements} elements, solver: {solver_type}"
+            )
+        elif 'mesh_elements' in project_data:
+            # Legacy support for older projects
+            mesh_elements = project_data.get('mesh_elements', 10000)
+            self.parent.analysis_settings = {'n_elements': mesh_elements, 'solver_type': solver_type}
+            self.parent.message_text.append(f"Loaded mesh settings: {mesh_elements} elements")
+        else:
+            # If no settings found, use defaults and store them
+            self.parent.analysis_settings = {'n_elements': mesh_elements, 'solver_type': solver_type}
+        
+        # Store for later mesh generation
+        self.parent.mesh_elements = mesh_elements
+        
+        # Update Analysis Window element count if it exists
+        for child in self.parent.findChildren(QtWidgets.QDialog):
+            if isinstance(child, AnalysisWindow) and child.isVisible():
+                child.elements_spin.setValue(mesh_elements)
+                solver_idx = child.solver_combo.findText(solver_type)
+                if solver_idx >= 0:
+                    child.solver_combo.setCurrentIndex(solver_idx)
         
         # Load geometry
         stl_path = project_data.get('stl_file_path')
@@ -5365,16 +5477,21 @@ class ProjectsWindow(QtWidgets.QDialog):
                     font="arial"
                 )
         
-        # Restore structural loads
-        self.parent.force_data = project_data.get('force_data', [])
-        self.parent.constraint_data = project_data.get('constraint_data', [])
-        self.parent.constrained_triangles = set(project_data.get('constrained_triangles', []))
+        # Restore structural loads from structuralBC or legacy format
+        if 'structuralBC' in project_data:
+            self.restore_structural_loads(project_data['structuralBC'])
+        else:
+            # Legacy support for older projects
+            self.parent.force_data = project_data.get('force_data', [])
+            self.parent.constraint_data = project_data.get('constraint_data', [])
+            self.parent.constrained_triangles = set(project_data.get('constrained_triangles', []))
+            self.restore_structural_loads()
         
-        # Recreate structural visualizations
-        self.restore_structural_loads()
-        
-        # Restore thermal loads
-        if project_data.get('thermal_loads'):
+        # Restore thermal loads from thermalBC or legacy format
+        if 'thermalBC' in project_data:
+            self.restore_thermal_loads(project_data['thermalBC'])
+        elif 'thermal_loads' in project_data:
+            # Legacy support for older projects
             self.restore_thermal_loads(project_data['thermal_loads'])
         
         # Restore TopOpt constraints
@@ -5420,8 +5537,37 @@ class ProjectsWindow(QtWidgets.QDialog):
         self.parent.set_sidebar_icon("Material", "arrow")
         self.parent.message_text.append(f"Geometry loaded from project: {os.path.basename(file_path)}")
 
-    def restore_structural_loads(self):
+    def restore_structural_loads(self, structuralBC=None):
         """Restore structural loads and visualizations"""
+        # Process structuralBC data if provided (new format)
+        if structuralBC is not None:
+            # Extract constraint data
+            fixed_faces_indices = structuralBC.get('fixed_faces_indices', [])
+            if fixed_faces_indices:
+                # Create constraint data entry
+                constraint_info = {
+                    'type': 'Fixed XYZ',
+                    'triangles': fixed_faces_indices
+                }
+                self.parent.constraint_data = [constraint_info]
+                self.parent.constrained_triangles = set(fixed_faces_indices)
+            
+            # Extract force data
+            load_faces_indices = structuralBC.get('load_faces_indices', [])
+            load_forces = structuralBC.get('load_forces', [])
+            
+            self.parent.force_data = []
+            for triangles, force in zip(load_faces_indices, load_forces):
+                if len(force) >= 3:
+                    force_info = {
+                        'type': 'force_xyz',
+                        'triangles': triangles,
+                        'force_x': force[0],
+                        'force_y': force[1],
+                        'force_z': force[2]
+                    }
+                    self.parent.force_data.append(force_info)
+        
         # Create structural loads window if needed
         if not getattr(self.parent, 'structural_loads_window', None):
             self.parent.structural_loads_window = StructuralLoadsWindow(self.parent)
@@ -5432,7 +5578,10 @@ class ProjectsWindow(QtWidgets.QDialog):
         
         # Recreate force visualizations
         for force_info in self.parent.force_data:
-            force_info['triangle_data'] = self.recreate_triangle_data(force_info['triangles'])
+            # Add triangle_data if not already present
+            if 'triangle_data' not in force_info:
+                force_info['triangle_data'] = self.recreate_triangle_data(force_info['triangles'])
+                
             if force_info.get('type') == 'torque':
                 # Visualize torque
                 axis_point = force_info.get('axis_point', [0, 0, 0])
@@ -5465,12 +5614,27 @@ class ProjectsWindow(QtWidgets.QDialog):
             self.parent.set_sidebar_icon("Analysis", "arrow")
             self.parent.set_sidebar_icon("TopOpt Constraints", "arrow")
 
-    def restore_thermal_loads(self, thermal_loads):
-        """Restore thermal loads and visualizations"""
+    def restore_thermal_loads(self, thermal_data):
+        """Restore thermal loads and visualizations from either format"""
         # Create thermal loads window if needed
         if not getattr(self.parent, 'thermal_loads_window', None):
             self.parent.thermal_loads_window = ThermalLoadsWindow(self.parent)
         
+        # Initialize thermal_loads structure if needed
+        thermal_loads = {
+            'fixed_temps': [],
+            'heat_sources': [],
+            'total_heat_sources': []
+        }
+        
+        # Handle thermalBC format (new format)
+        if isinstance(thermal_data, dict) and any(key in thermal_data for key in ['fixed_temps', 'heat_sources', 'total_heat_sources']):
+            # Just copy the thermal data directly
+            for key in ['fixed_temps', 'heat_sources', 'total_heat_sources']:
+                if key in thermal_data:
+                    thermal_loads[key] = thermal_data[key]
+        
+        # Store the thermal loads in the thermal_loads_window
         self.parent.thermal_loads_window.thermal_loads = thermal_loads
         
         # Recreate visualizations for each thermal load type
@@ -5482,10 +5646,15 @@ class ProjectsWindow(QtWidgets.QDialog):
         
         for load_key, (type_name, value_key) in thermal_types.items():
             for load in thermal_loads.get(load_key, []):
-                config = self.parent.thermal_loads_window.THERMAL_TYPES[type_name]
-                load['triangle_data'] = self.recreate_triangle_data(load['triangles'])
-                self.parent.thermal_loads_window.create_thermal_visualization(
-                    load['triangle_data'], load[value_key], config)
+                # Add triangle_data if not already present
+                if 'triangle_data' not in load:
+                    load['triangle_data'] = self.recreate_triangle_data(load['triangles'])
+                
+                # Get thermal load configuration and create visualization
+                if hasattr(self.parent.thermal_loads_window, 'THERMAL_TYPES'):
+                    config = self.parent.thermal_loads_window.THERMAL_TYPES[type_name]
+                    self.parent.thermal_loads_window.create_thermal_visualization(
+                        load['triangle_data'], load[value_key], config)
         
         # Update thermal state
         if any(thermal_loads.get(key, []) for key in thermal_types.keys()):
