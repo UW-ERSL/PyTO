@@ -5,6 +5,7 @@ import pyvista as pv
 import numpy as np
 import json
 from scipy.sparse import coo_matrix
+from collections import defaultdict
 from PyQt5 import QtWidgets, QtCore
 from PyQt5.QtCore import QSize
 from PyQt5.QtGui import QIcon
@@ -2307,10 +2308,10 @@ class ThermalLoadsWindow(QtWidgets.QDialog):
             
             # Store text actor
             self.store_actor(text_actor, config)
-            print(f"Successfully created text actor for {config['label']}")
+            #print(f"Successfully created text actor for {config['label']}")
             
         except Exception as e:
-            print(f"Error creating text label for {config['label']}: {e}")
+            #print(f"Error creating text label for {config['label']}: {e}")
             # Fallback: try simpler text creation
             text_actor = self.parent.plotter.add_point_labels(
                 [text_pos], [text],
@@ -2553,6 +2554,9 @@ class AnalysisWindow(QtWidgets.QDialog):
         """Update element count based on mesh quality"""
         element_counts = {"Very Coarse": 10000, "Coarse": 25000, "Normal": 50000, "Fine": 75000, "Very Fine": 100000}
         self.elements_spin.setValue(element_counts.get(quality, 10000))
+        # Clear mesh_elements so project value doesn't override user choice
+        if hasattr(self.parent, 'mesh_elements'):
+            delattr(self.parent, 'mesh_elements')
 
     def generate_mesh(self):
         """Generate mesh and visualize with element colors"""
@@ -2596,7 +2600,7 @@ class AnalysisWindow(QtWidgets.QDialog):
         mesh = self.parent.hex_mesh
         boundary_nodes = mesh.get_boundary_nodes()
         boundary_points = mesh.node_xyz[boundary_nodes]
-        tolerance = min(mesh.elem_size) * 0.5
+        tolerance = min(mesh.elem_size) * 1.0
         return boundary_nodes, boundary_points, tolerance
 
     def map_triangles_to_surface_nodes(self, triangle_indices, boundary_nodes=None, boundary_points=None, tolerance=None):
@@ -2618,7 +2622,7 @@ class AnalysisWindow(QtWidgets.QDialog):
     
     def build_node_to_elem_map(self, mesh):
         """Build a mapping from node index to set of element indices."""
-        from collections import defaultdict
+
         node_to_elem = defaultdict(set)
         elemArray = np.asarray(mesh.elemArray)
         for elem_id, nodes in enumerate(elemArray):
@@ -3997,7 +4001,7 @@ class TopOptConstraintsWindow(QtWidgets.QDialog):
         self.parent.message_text.append(f"TopOpt constraints applied successfully. Constraints stored: {len(constraints)} categories")
         
         # ADD DEBUG: Print the LivVar state to verify
-        print(f"DEBUG: LivVar topopt state: {self.parent.LivVar.get('topopt', {})}")
+        #print(f"DEBUG: LivVar topopt state: {self.parent.LivVar.get('topopt', {})}")
 
         # Notify display options window
         self.parent.notify_display_options_update()
@@ -4132,8 +4136,8 @@ class StructuralTopOptWindow(QtWidgets.QDialog):
 
         try:
             if method == "DENSITY-MMA":
-                print(to_params.KeepFixedElems)
-                print(to_params.ElemsToKeep)
+                #print(to_params.KeepFixedElems)
+                #print(to_params.ElemsToKeep)
                 
                 u, history, success, error_msg, n_feas = topopt_mma(
                     fe_solver=fe_solver,
