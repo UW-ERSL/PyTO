@@ -10,6 +10,7 @@ from PyQt5 import QtWidgets, QtCore
 from PyQt5.QtCore import QSize
 from PyQt5.QtGui import QIcon
 from pyvistaqt import QtInteractor
+from PyQt5.QtCore import pyqtSignal, QObject
 from stl_reader import STLGeom
 import bound_cond
 import mat_lib
@@ -17,7 +18,7 @@ import linear_solvers
 from hex_mesher import HexMesher
 from tet_mesher import TetMesher
 import deflation
-from hex_thermal_fea import HexThermalFEA
+from hex_thermal_fea import HexThermalFEA 
 import hex_structural_fea
 from matplotlib.colors import ListedColormap
 from topopt_mma import topopt_mma
@@ -2600,7 +2601,7 @@ class AnalysisWindow(QtWidgets.QDialog):
         mesh = self.parent.hex_mesh
         boundary_nodes = mesh.get_boundary_nodes()
         boundary_points = mesh.node_xyz[boundary_nodes]
-        tolerance = min(mesh.elem_size) * 1.0
+        tolerance = min(mesh.elem_size) * 1.2
         return boundary_nodes, boundary_points, tolerance
 
     def map_triangles_to_surface_nodes(self, triangle_indices, boundary_nodes=None, boundary_points=None, tolerance=None):
@@ -4007,6 +4008,11 @@ class TopOptConstraintsWindow(QtWidgets.QDialog):
         self.parent.notify_display_options_update()
 #----------------------------------------------------------------------------
 class StructuralTopOptWindow(QtWidgets.QDialog):
+
+    optimization_progress = pyqtSignal(str)
+    optimization_update = pyqtSignal(object, int)
+    optimization_done = pyqtSignal(bool, str, object, object, object)
+
     def __init__(self, parent):
         super().__init__(parent)
         self.setWindowTitle("Structural TopOpt")
@@ -4016,6 +4022,10 @@ class StructuralTopOptWindow(QtWidgets.QDialog):
         
         self.optimization_running = False
         self.optimization_thread = None
+
+        self.optimization_progress.connect(self.parent.message_text.append)
+        self.optimization_update.connect(self.update_visualization)
+        self.optimization_done.connect(self.optimization_completed)
         
         self.setup_ui()
 
@@ -4117,22 +4127,9 @@ class StructuralTopOptWindow(QtWidgets.QDialog):
 
         def progress_callback(*args):
             if len(args) == 0:
-                # Called with no arguments: update plot
-                QtCore.QMetaObject.invokeMethod(
-                    self,
-                    "update_visualization",
-                    QtCore.Qt.QueuedConnection,
-                    QtCore.Q_ARG(object, fe_solver),
-                    QtCore.Q_ARG(int, len(history['objective']) if history else 0)
-                )
+                self.optimization_update.emit(fe_solver, len(history['objective']) if history else 0)
             elif len(args) == 1 and isinstance(args[0], str):
-                # Called with a string: log message
-                QtCore.QMetaObject.invokeMethod(
-                    self.parent.message_text,
-                    "append",
-                    QtCore.Qt.QueuedConnection,
-                    QtCore.Q_ARG(str, str(args[0]))
-                )
+                self.optimization_progress.emit(str(args[0]))
 
         try:
             if method == "DENSITY-MMA":
@@ -4206,17 +4203,7 @@ class StructuralTopOptWindow(QtWidgets.QDialog):
             error_msg = f"Optimization failed with error: {str(e)}"
             success = False
         
-        if self.optimization_running:
-            QtCore.QMetaObject.invokeMethod(
-                self,
-                "optimization_completed",
-                QtCore.Qt.QueuedConnection,
-                QtCore.Q_ARG(bool, success),
-                QtCore.Q_ARG(str, error_msg if not success else ""),
-                QtCore.Q_ARG(object, history),
-                QtCore.Q_ARG(object, u),
-                QtCore.Q_ARG(object, fe_solver)
-            )
+        self.optimization_done.emit(success, error_msg, history, u, fe_solver)
 
     @QtCore.pyqtSlot(object, int)
     def update_visualization(self, fe_solver, iteration):
@@ -4322,6 +4309,26 @@ class StructuralTopOptWindow(QtWidgets.QDialog):
         to_params.XSymmetry = symmetry.get('x_symmetry', False)
         to_params.YSymmetry = symmetry.get('y_symmetry', False)
         to_params.ZSymmetry = symmetry.get('z_symmetry', False)
+
+        # Cyclic symmetry constraint
+        manufacturing_cyclic = manufacturing.get('cyclic_symmetry', {})
+        if manufacturing_cyclic.get('enabled', False):
+            value = manufacturing_cyclic.get('value', None)
+            # Parse number of planes from value, e.g. "(3) 120 deg"
+            if value and "(" in value and ")" in value:
+                try:
+                    n_planes = int(value.split('(')[1].split(')')[0])
+                    to_params.CyclicSymmetry = True
+                    to_params.CyclicSymmetryPlanes = n_planes
+                except Exception:
+                    to_params.CyclicSymmetry = False
+                    to_params.CyclicSymmetryPlanes = None
+            else:
+                to_params.CyclicSymmetry = False
+                to_params.CyclicSymmetryPlanes = None
+        else:
+            to_params.CyclicSymmetry = False
+            to_params.CyclicSymmetryPlanes = None
 
         # Other constraints
         other = constraints.get('other', {})
