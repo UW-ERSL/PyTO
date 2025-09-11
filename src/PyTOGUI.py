@@ -12,6 +12,7 @@ from PyQt5.QtGui import QIcon
 from pyvistaqt import QtInteractor
 from PyQt5.QtCore import pyqtSignal, QObject
 from stl_reader import STLGeom
+from solidworks_interface import SolidWorksInterface
 import bound_cond
 import mat_lib
 import linear_solvers
@@ -847,6 +848,10 @@ class GeometryWindow(QtWidgets.QDialog):
         # self.update_btn.setEnabled(False)  # Initially disabled
         # layout.addWidget(self.update_btn)
 
+        get_stl_btn = QtWidgets.QPushButton("Get STL from SolidWorks")
+        get_stl_btn.clicked.connect(self.get_stl_from_solidworks)
+        layout.addWidget(get_stl_btn)
+
         close_btn = QtWidgets.QPushButton("Close")
         close_btn.clicked.connect(self.close)
         layout.addWidget(close_btn)
@@ -878,37 +883,11 @@ class GeometryWindow(QtWidgets.QDialog):
                 plotter=self.parent.plotter
             )
 
-            # Calculate properties
-            area, volume, _, _ = self.stl_geom.compute_mass_properties()
-            bounds = self.stl_geom.get_bounding_box()
-            length_unit = self.parent.settings.get_length_unit_string()
-
-            # Get material name or 'None'
-            material_name = "None"
-            if getattr(self.parent, "applied_material", None):
-                material_name = self.parent.applied_material.get("name", "None")
-
-            # Add geometry info text
-            info_lines = [
-                f"Model: {os.path.basename(file_path)}",
-                f"Volume: {volume:.2e} {length_unit}³",
-                f"Length: {bounds[1] - bounds[0]:.2e} {length_unit}" if bounds else "Length: N/A",
-                f"Material: {material_name}"
-            ]
-
-            # Remove old geometry info text
-            self.parent.plotter.remove_actor("geometry_info")
-
-            self.parent.plotter.add_text(
-                "\n".join(info_lines),
-                position="upper_left",
-                font_size=10,
-                color="black",
-                name="geometry_info",
-            )
-
             # Set geometry reference
             self.parent.stl_geom = self.stl_geom
+
+            # Use the shared info text update
+            self.parent.update_geometry_info_text()
 
             # Enable picking
             picker = pv._vtk.vtkCellPicker()
@@ -936,6 +915,56 @@ class GeometryWindow(QtWidgets.QDialog):
             self.parent.message_text.append(f"Geometry loaded: {os.path.basename(file_path)}")
 
             self.close()
+
+    def get_stl_from_solidworks(self):
+        """Get STL from currently open SolidWorks part using solidworks_interface.py"""
+        try:
+            sw = SolidWorksInterface()
+            stl_geom = sw.getSTL()
+            if not stl_geom:
+                QtWidgets.QMessageBox.warning(self, "SolidWorks Error", "Failed to get STL from SolidWorks.")
+                return
+            # Plot and set in parent
+            stl_geom.plotGeometry(show_edges=False, show_axes=False, show_bounding_box=False, plotter=self.parent.plotter)
+            self.parent.stl_geom = stl_geom
+
+            # Use the shared info text update
+            self.parent.update_geometry_info_text()
+
+            self.parent.plotter.disable_picking()
+            self.parent.plotter.enable_point_picking(callback=self.parent.on_left_button_press, use_picker=True, 
+                                                    picker='cell', show_message=False, left_clicking=True, show_point=False)
+            self.parent.plotter.iren.add_observer("RightButtonPressEvent", self.parent.on_right_button_press)
+            self.parent.update_LivVar('geometry_loaded', True)
+            self.parent.set_sidebar_icon("Geometry", "check")
+            self.parent.set_sidebar_icon("Material", "arrow")
+            self.parent.message_text.append("STL geometry loaded from SolidWorks.")
+        except Exception as e:
+            QtWidgets.QMessageBox.warning(self, "SolidWorks Error", f"Error: {str(e)}")
+
+    def update_geometry_info_text(self):
+        """Update the geometry info text in the upper left corner with current units and material."""
+        if not self.stl_geom:
+            return
+        area, volume, _, _ = self.stl_geom.compute_mass_properties()
+        bounds = self.stl_geom.get_bounding_box()
+        length_unit = self.settings.get_length_unit_string()
+        material_name = self.applied_material.get("name", "None") if getattr(self, "applied_material", None) else "None"
+        info_lines = [
+            f"Model: {os.path.basename(self.stl_geom.file_path)}",
+            f"Volume: {volume:.2e} {length_unit}³",
+            f"Length: {bounds[1] - bounds[0]:.2e} {length_unit}" if bounds else "Length: N/A",
+            f"Material: {material_name}"
+        ]
+        self.plotter.remove_actor("geometry_info")
+        self.plotter.add_text(
+            "\n".join(info_lines),
+            position="upper_left",
+            font_size=12,
+            color="black",
+            name="geometry_info",
+            font="arial"
+        )
 #---------------------------------------------------------------------------
 class MaterialWindow(QtWidgets.QDialog):
     """Dialog for selecting and editing material properties."""
@@ -4368,7 +4397,7 @@ class StructuralTopOptWindow(QtWidgets.QDialog):
             elif constraint['type'] == 'Fixed Z':
                 fixed_nodes['z'].update(surface_nodes)
 
-        load_nodes_groups = []
+        load_nodes_groups = [] 
         load_forces = []
 
         for force_info in self.parent.force_data:

@@ -240,7 +240,7 @@ if __name__ == "__main__":
     print("nElem: ", fe_solver.mesh.num_elems)    
     
     title = f'nNodes: {fe_solver.mesh.num_nodes}, nElem: {fe_solver.mesh.num_elems}'
-    #fe_solver.plot_mesh(title = title, save_path = None)
+    fe_solver.plot_mesh(title = title, save_path = None)
     
     startTime = time.time()
     print("OptimizationMethod: MMA")
