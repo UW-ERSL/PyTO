@@ -70,7 +70,7 @@ class TetMesher:
 
         else:
             bgmesh = None
-
+        
         if (mergeFacets):
             if (bgmesh is None):
                 nodes, elements = tet.tetrahedralize(switches=f"pq1.5a{max_tet_volume}Q")
@@ -583,8 +583,8 @@ if __name__ == "__main__":
     
     tetmesh = TetMesher()
     script_dir = os.path.dirname(os.path.abspath(__file__))
-    stlFileName = os.path.join(script_dir, '../Models/Cube/Cube.STL')
-    tetmesh.createTetMeshFromSTLFile(stlFileName, nElemsDesired=20000,mergeFacets=False, elemSizeFunction=cube_size_function_linear)
+    stlFileName = os.path.join(script_dir, '../Models/Impeller/Impeller.STL')
+    tetmesh.createTetMeshFromSTLFile(stlFileName, nElemsDesired=20000,mergeFacets=True, elemSizeFunction=cube_size_function_linear)
     tetmesh.plot()
    
 

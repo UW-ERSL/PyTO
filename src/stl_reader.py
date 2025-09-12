@@ -729,7 +729,7 @@ if __name__ == "__main__":
     #stl_file = os.path.join(script_dir, '../Models/BliskModel/BliskSectionWithBladeRotated.STL')
     #stl_file = os.path.join(script_dir, '../Models/Inverter/Inverter.STL')
     #stl_file = os.path.join(script_dir, '../Models/LBracketThick/LBracketThick.STL')
-    
+    stl_file = os.path.join(script_dir, '../Models/Comb/Comb.STL')
   
     stl_geom = STLGeom(stl_file)
 
