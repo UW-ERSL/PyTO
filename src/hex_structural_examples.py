@@ -4,6 +4,7 @@ import bound_cond
 import hex_mesher
 import os
 import enum
+import scipy.sparse as spy_sprs
 from stl_reader import STLGeom
 script_dir = os.path.dirname(os.path.abspath(__file__))
 
@@ -15,6 +16,7 @@ class StructuralExamples(enum.Enum):
 	ShearBlock = enum.auto()
 	Mitchell = enum.auto()
 	EdgeCantilever = enum.auto()
+	EdgeCantileverConstraintMatrix = enum.auto()
 	ShortCantileverTipLoad = enum.auto()
 	ShortCantileverMidLoad = enum.auto()
 	CantileverTipLoad = enum.auto()
@@ -39,8 +41,7 @@ class StructuralExamples(enum.Enum):
 	KnuckleAssembly =  enum.auto()
 	Table =  enum.auto()
 	LBracketThick = enum.auto()
-	BliskWithBlade =  enum.auto()
-	BliskWithBladeMass = enum.auto()
+	BliskSection = enum.auto()
 	BliskPressureLoading = enum.auto()
 
 
@@ -72,6 +73,8 @@ def getStructuralProblem(problem: StructuralExamples, **kwargs):
     return createMitchellProblem(**kwargs)
   elif problem == StructuralExamples.EdgeCantilever:
     return createEdgeCantileverProblem(**kwargs)
+  elif problem == StructuralExamples.EdgeCantileverConstraintMatrix:
+    return createEdgeCantileverConstraintMatrixProblem(**kwargs)
   elif problem == StructuralExamples.ShortCantileverTipLoad:
     return createShortCantileverTipLoadProblem(**kwargs)
   elif problem == StructuralExamples.ShortCantileverMidLoad:
@@ -120,8 +123,8 @@ def getStructuralProblem(problem: StructuralExamples, **kwargs):
     return createTableProblem(**kwargs)
   elif problem == StructuralExamples.ArrowHead:
     return createArrowHeadProblem(**kwargs)
-  elif problem == StructuralExamples.BliskWithBladeMass:
-    return createBliskSectionWithBlade(**kwargs)
+  elif problem == StructuralExamples.BliskSection:
+    return createBliskSectionProblem(**kwargs)
   elif problem == StructuralExamples.BliskPressureLoading:
     return createBliskPressureLoadingProblem(**kwargs)
   else:
@@ -683,7 +686,76 @@ def createEdgeCantileverProblem(nDOFDesired: int = 10000, L: float = [0.4, 0.2, 
 
   # ----------------------------------------
 
+# ----------------------------------------
+
+
+def createEdgeCantileverConstraintMatrixProblem(nDOFDesired: int = 10000, L: float = [0.4, 0.2, 0.1],totalLoad = 10000):
+  """Creates a edge loaded cantilever beam problem with approximate desired DOFs.
+
+  Parameters:
+  ----------
+  nDOFDesired : int
+    Desired number of degrees of freedom (default 10000)
+  L : list of float
+    Dimensions [Lx, Ly, Lz] of domain (default [0.1, 0.1, 0.1])
+  youngs_modulus : float
+    Young's modulus of material (default 2e11)
+  poissons_ratio : float 
+    Poisson's ratio of material (default 0.3)
+
+  Returns:
+  -------
+  tuple
+    (mesh, mat_prop, bc) containing:
+    - mesh: Mesher object with grid discretization
+    - mat_prop: Material properties object
+    - bc: Boundary conditions with fixed left face and load on right face
+  """
+  nVoxelsDesired = nDOFDesired/3    
+  # Let the number of voxels be proportional to the length in each direction
+  alpha = (nVoxelsDesired/(L[0]*L[1]*L[2]))**(1/3)
+  nelx = round(alpha*L[0])
+  nely = round(alpha*L[1])
+  nelz = round(alpha*L[2])
+  mesh = hex_mesher.HexMesher()
+  mesh.grid_mesh(num_elems = (nelx, nely, nelz),
+                  elem_size = (L[0]/nelx, L[1]/nely, L[2]/nelz))
+  mesh.createEdofMatStructural()
+
+  fixed_nodes = mesh.getNodesOnBoundingBoxPlane(0,True) # x = 0 plane
   
+  C0 = np.zeros((3*len(fixed_nodes), mesh.num_nodes * 3))
+  for i, node in enumerate(fixed_nodes):
+    C0[3*i, 3*node] = 1
+    C0[3*i+1, 3*node+1] = 1
+    C0[3*i+2, 3*node+2] = 1
+
+  constraint_matrix = spy_sprs.csr_matrix(C0)
+  constraint_rhs = np.zeros(3*len(fixed_nodes))
+
+  mesh.node_indices[fixed_nodes, 3] = 1
+  # line defined by x = xMax, and z = 0 
+  load_nodes = np.intersect1d(mesh.getNodesOnBoundingBoxPlane(0,False), mesh.getNodesOnBoundingBoxPlane(2,True))
+  load_dofs = 3 * load_nodes + 2  # z direction
+
+  mesh.node_indices[load_nodes, 3] = 2
+  load_per_dof = -totalLoad/len(load_nodes)
+
+  force = np.zeros(3*mesh.num_nodes)
+  force[load_dofs] = load_per_dof
+
+  bc = bound_cond.BC(force = force,
+            fixed_dofs = [],
+            dirichlet_values = [],
+            constraint_matrix = constraint_matrix,
+            constraint_rhs = constraint_rhs) 
+
+  mat_prop = mat_lib.get_material("Steel") 
+  elem_body_force = None
+  return mesh, mat_prop, bc, elem_body_force
+
+  # ----------------------------------------
+
 def createShortCantileverMidLoadProblem(nDOFDesired: int = 10000,totalLoad = 9e4):
   """Creates a edge loaded cantilever beam problem with approximate desired DOFs.
 
@@ -1806,12 +1878,10 @@ def createBliskQuarterProblem(nDOFDesired: int = 10000,rpm = 10000,radialForce =
 
 # ----------------------------------------
 
-def createBliskSectionWithBlade(nDOFDesired: int = 50000, youngs_modulus = 1, 
-                               poissons_ratio = 0.28, material_density = 1,rpm = 10000,radialForce =200000): #radial force zero
+def createBliskSectionProblem(nDOFDesired: int = 50000, rpm = 0, radialForce =200000): 
  
   # Read the STL model, create a mesh of desired size, and a structural problem is posed on it.
   stl_file = os.path.join(script_dir, '../Models/BliskModel/BliskSectionWithBlade.STL')
-
 
   nElemsDesired = nDOFDesired/3    # estimate
   mesh = hex_mesher.HexMesher()
@@ -1821,61 +1891,106 @@ def createBliskSectionWithBlade(nDOFDesired: int = 50000, youngs_modulus = 1,
 
   # Find nodes with x coordinate close to xMin
   xMin = np.min(mesh.node_xyz[:, 0])
-  fixed_nodes = np.where(np.abs(mesh.node_xyz[:, 0] - xMin) < mesh.elem_size[0]/2)[0]
-
+  #fixed_nodes = np.where(np.abs(mesh.node_xyz[:, 0] - xMin) < mesh.elem_size[0]/2)[0]
+  fixedTri = [1360,1361]
+  fixed_nodes = mesh.get_nodes_on_triangles(fixedTri)
   
-  fixed_dofs = np.array([3 * fixed_nodes,
-              3 * fixed_nodes + 1,
-              3 * fixed_nodes + 2]).flatten().astype(int)
-  dirichlet_values = 0*np.ones_like(fixed_dofs, dtype = float)
+  
   mesh.node_indices[fixed_nodes, 3] = 1 # for plotting
+  C0 = np.zeros((3*len(fixed_nodes), mesh.num_nodes * 3))
+  for i, node in enumerate(fixed_nodes):
+    C0[3*i, 3*node] = 1
+    C0[3*i+1, 3*node+1] = 1
+    C0[3*i+2, 3*node+2] = 1
+  
+  
+  # Nodes on these triangles are to subject to sliding boundary condition
+  # i.e. d.n = 0 where n is the normal to the surface of the triangle
+  triSet1 = [1327, 1328, 1329, 1330, 1596, 1597, 1598, 1599, 1600, 1601, 1602, 1603, 1604, 1605, 1606, 1607, 1608, 1609, 1610, 1611, 1612, 1613, 1614, 1615, 1616, 1617, 1618, 1619, 1620, 1621, 1622, 1623, 1624, 1625, 1626, 1627, 1628, 1629, 1630, 1631, 1632, 1633, 1634, 1635, 1636, 1637, 1638, 1639, 1640, 1641, 1642, 1643, 1644, 1645, 1646, 1647, 1648, 1649, 1650, 1651, 1652, 1653, 1654, 1655, 1656, 1657, 1658, 1659, 1660, 1661, 1662, 1663, 1664, 1665, 1666, 1667, 1668, 1669, 1670, 1671, 1672, 1673, 1674, 1675, 1676, 1677, 1678, 1679, 1680, 1681, 1682, 1683, 1684, 1685, 1686, 1687, 1688, 1689, 1690, 1691, 1692, 1693, 1694, 1695]
+  sliding_nodes_1 = mesh.get_nodes_on_triangles(triSet1)
+  normal_1 = mesh.stlGeom.get_triangle_normal(triSet1[0])
+  
+  udof1 = 3 * sliding_nodes_1
+  vdof1 = 3 * sliding_nodes_1 + 1
+  wdof1 = 3 * sliding_nodes_1 + 2
+  # Create constraint matrix for sliding boundary conditions
+  # First surface normal constraint
+  C1 = np.zeros((len(sliding_nodes_1), mesh.num_nodes * 3))
+  for i, node in enumerate(sliding_nodes_1):
+    C1[i, udof1[i]] = normal_1[0]
+    C1[i, vdof1[i]] = normal_1[1]  
+    C1[i, wdof1[i]] = normal_1[2]
+
+  triSet2 = [1696, 1697, 1698, 1699, 1700, 1701, 1702, 1703, 1704, 1705, 1706, 1707, 1708, 1709, 1710, 1711, 1712, 1713, 1714, 1715, 1716, 1717, 1718, 1719, 1720, 1721, 1722, 1723, 1724, 1725, 1726, 1727, 1728, 1729, 1730, 1731, 1732, 1733, 1734, 1735, 1736, 1737, 1738, 1739, 1740, 1741, 1742, 1743, 1744, 1745, 1746, 1747, 1748, 1749, 1750, 1751, 1752, 1753, 1754, 1755, 1756, 1757, 1758, 1759, 1760, 1761, 1762, 1763, 1764, 1765, 1766, 1767, 1768, 1769, 1770, 1771, 1772, 1773, 1774, 1775, 1776, 1777, 1778, 1779, 1780, 1781, 1782, 1783, 1784, 1785, 1786, 1787, 1788, 1789, 1790, 1791, 1792, 1793, 1794, 1795, 1796, 1797, 1798, 1799, 1800, 1801, 1802, 1803, 1804, 1805, 1806, 1807, 1808, 1809, 1810, 1811, 1812, 1813, 1814, 1815, 1816, 1817, 1818, 1819, 1820, 1821]
+  sliding_nodes_2 = mesh.get_nodes_on_triangles(triSet2)
+  udof2 = 3 * sliding_nodes_2
+  vdof2 = 3 * sliding_nodes_2 + 1 
+  wdof2 = 3 * sliding_nodes_2 + 2
+  # Second surface normal constraint
+  C2 = np.zeros((len(sliding_nodes_2), mesh.num_nodes * 3))
+  normal_2 = mesh.stlGeom.get_triangle_normal(triSet2[0])
+  for i, node in enumerate(sliding_nodes_2):
+    C2[i, udof2[i]] = normal_2[0]
+    C2[i, vdof2[i]] = normal_2[1]
+    C2[i, wdof2[i]] = normal_2[2]
+
+  # Combine constraints
+  constraint_matrix = spy_sprs.vstack((spy_sprs.csr_matrix(C0), 
+                       spy_sprs.csr_matrix(C1),
+                       spy_sprs.csr_matrix(C2)))
+  constraint_rhs = np.zeros(3*len(fixed_nodes) + len(sliding_nodes_1) + len(sliding_nodes_2))
 
   total_mesh_volume = np.prod(mesh.elem_size) * mesh.num_elems # * 0.0283168 # ft3 to m3
   print("total mesh volume in m3",total_mesh_volume)
-
+  mat_prop=mat_lib.get_material("Steel")
+  material_density = mat_prop.mass_density # * 16.0185 # lb/ft3 to kg/m3
   total_mass = material_density * total_mesh_volume
   print("total mass in kg",total_mass)
 
 
-  elem_body_force = np.zeros(3*mesh.num_elems)
-  omega = 2*np.pi*rpm/60
-  for e in range(mesh.num_elems):
-    center = mesh.elem_centers[e]
-    # Add centrifugal force to each element in xy plane
-    elem_body_force[3*e:3*e+2] = (material_density*np.prod(mesh.elem_size)) * omega**2 *  center[:2]
+  elem_body_force = None
+  if (abs(rpm) > 0):
+    elem_body_force = np.zeros(3*mesh.num_elems)
+    print("Applying centrifugal force at ",rpm," rpm")
+    omega = 2*np.pi*rpm/60
+    for e in range(mesh.num_elems):
+      center = mesh.elem_centers[e]
+      # Add centrifugal force to each element in xy plane
+      elem_body_force[3*e:3*e+2] = (material_density*np.prod(mesh.elem_size)) * omega**2 *  center[:2]
 
-  print("total body force ",np.linalg.norm(elem_body_force))
+    print("total body force ",np.linalg.norm(elem_body_force))
+
   axis = [0,0,1] # z-axis
   centerPt = [0,0,0] # center of the blisk section
-  outerRadius = 0.22
-  load_nodes = mesh.get_nodes_within_annular_region(centerPt,axis,outerRadius-mesh.elem_size[0]*0.707,
-                                                    outerRadius+mesh.elem_size[0]*0.707)    
+  bladeInnerRadius = 0.0565
+  bladeOuterRadius = 0.0725
+  load_nodes = mesh.get_nodes_within_annular_region(centerPt,axis,bladeInnerRadius,
+                                                    bladeOuterRadius)    
   
   mesh.node_indices[load_nodes, 3] = 2 # for plotting
   boundaryForce = np.zeros(3*mesh.num_nodes) 
-  # Apply radial force on each node on the circumference 
+  if (radialForce > 0):
+    print("Applying radial force of ",radialForce," N on ", len(load_nodes), " nodes on outer circumference")
+    # Apply radial force on each node on the circumference 
+    for node in load_nodes:
+      node_pos = mesh.node_xyz[node,:2] # get x,y coordinates
+      r = np.sqrt(np.sum(node_pos**2)) # distance from center
+      if r > 0:
+        # Unit vector in radial direction
+        radial_dir = node_pos/r
+        # Add x and y dofs with force components
+        boundaryForce[3*node] = radialForce/len(load_nodes) * radial_dir[0]  
+        boundaryForce[3*node + 1] = radialForce/len(load_nodes) * radial_dir[1]
+    print("Total applied radial force ",np.sum(boundaryForce[0::3]),np.sum(boundaryForce[1::3]))
   
-  for node in load_nodes:
-    node_pos = mesh.node_xyz[node,:2] # get x,y coordinates
-    r = np.sqrt(np.sum(node_pos**2)) # distance from center
-    if r > 0:
-      # Unit vector in radial direction
-      radial_dir = node_pos/r
-      # Add x and y dofs with force components
-      boundaryForce[3*node] = radialForce/len(load_nodes) * radial_dir[0]  
-      boundaryForce[3*node + 1] = radialForce/len(load_nodes) * radial_dir[1]
-  
-  bc = bound_cond.BC(force = boundaryForce,fixed_dofs = fixed_dofs,dirichlet_values = dirichlet_values) 
 
-  # mat_prop = mat_lib.StructuralMaterial(youngs_modulus=youngs_modulus,
-  #                     poissons_ratio=poissons_ratio)
-  mat_prop=mat_lib.create_material_with_defaults(name=f"Material_{1}", youngs_modulus=youngs_modulus,
-                      poissons_ratio=poissons_ratio)
-   
-  # elem_body_force = None
-  # print("Total body force ",elem_body_force)
-  # print("Num of elems ",mesh.num_elems)
-  # print("shape of elem_body_force ",elem_body_force.shape)
+  mesh.node_indices[sliding_nodes_1, 3] = 1 # for plotting
+  mesh.node_indices[sliding_nodes_2, 3] = 1 # for plotting
+
+  # All constraints are implemented using the constraint matrix
+  # Therefore fixed_dofs and dirichlet_values are empty
+  bc = bound_cond.BC(force = boundaryForce,fixed_dofs = [],dirichlet_values = []
+                     ,constraint_matrix=constraint_matrix,constraint_rhs=constraint_rhs) 
 
   return mesh, mat_prop, bc, elem_body_force
 

@@ -542,6 +542,11 @@ class STLGeom:
         highlighted_count = sum(1 for x in self.tri_highlight if x)
         return highlighted_count, cumulative_area
 
+    def get_triangle_normal(self, triangle_index):
+        if 0 <= triangle_index < self.stl_n_triangles:
+            return self.tri_normals[triangle_index]
+        return None
+    
     def store_selected_triangles(self):
         selected_indices = [i for i, is_highlighted in enumerate(self.tri_highlight) if is_highlighted]
         selected_triangles_data = []
@@ -726,10 +731,10 @@ if __name__ == "__main__":
 
     script_dir = os.path.dirname(os.path.abspath(__file__))
     stl_file = os.path.join(script_dir, '../Models/ThickPlate/ThickPlate.STL')
-    #stl_file = os.path.join(script_dir, '../Models/BliskModel/BliskSectionWithBladeRotated.STL')
+    stl_file = os.path.join(script_dir, '../Models/BliskModel/BliskSectionWithBladeRotated.STL')
     #stl_file = os.path.join(script_dir, '../Models/Inverter/Inverter.STL')
     #stl_file = os.path.join(script_dir, '../Models/LBracketThick/LBracketThick.STL')
-    stl_file = os.path.join(script_dir, '../Models/Comb/Comb.STL')
+    #stl_file = os.path.join(script_dir, '../Models/Comb/Comb.STL')
   
     stl_geom = STLGeom(stl_file)
 

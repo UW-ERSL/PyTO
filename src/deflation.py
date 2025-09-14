@@ -13,7 +13,10 @@ import numpy as np
 import scipy.sparse as spy_sprs
 import scipy.linalg as spy_linalg
 from hex_mesher import HexMesher
-import cupy as cp
+try:
+	import cupy as cp
+except ImportError:
+  cp = None
 # Mac does not support pypardiso, so we skip it for now
 try:
   import pypardiso # pip install pypardiso
@@ -52,11 +55,8 @@ class DeflationSolver:
 		self.minGroups = 10
 		self.dofPerGroup = 500
 		self.use_gpu = use_gpu
-		if use_gpu:
-			print("Using GPU arrays in Deflation Solver")
-		else:
-			print("Using CPU arrays in Deflation Solver")
-
+		if cp is None:
+			use_gpu = False
 
 	def setPseudoDensity(self,rho):
 		"""Set pseudo-density values for topology optimization.

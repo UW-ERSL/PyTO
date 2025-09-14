@@ -6,6 +6,7 @@ import numpy as np
 import pyvista as pv # pip install pyvista
 from scipy.sparse import coo_matrix
 import time
+from stl_reader import STLGeom
 
 
 @dataclasses.dataclass
@@ -56,6 +57,7 @@ class HexMesher:
 		self.num_nodes = 0
 		self.num_elems = 0
 		self.minVoxelsPerAxis = 2
+		self.stlGeom = None
 
 
 	def grid_mesh(self,
@@ -277,6 +279,7 @@ class HexMesher:
 
 	def createMeshFromSTLFileSingleComponent(self, stlFileName: str,nElemsDesired: int):
 		startTime = time.time()
+		self.stlGeom = STLGeom(stlFileName) # stlGeom functionality is sometimes needed
 		self.stlMesh = pv.read(stlFileName)
 
 		# Extract connected components
@@ -387,6 +390,7 @@ class HexMesher:
 	def createMeshFromSTLFile(self, stlFileName: str,nElemsDesired: int):
 		#print("Creating mesh from STL file...")
 		startTime = time.time()
+		self.stlGeom = STLGeom(stlFileName) # stlGeom functionality is sometimes needed
 		self.stlMesh = pv.read(stlFileName)
 
 		# Extract connected components
@@ -654,7 +658,36 @@ class HexMesher:
 								  (radial_distances <= r_outer))[0]
 		
 		return elems_in_region
+
+
+	def get_triangle_normal(self, tri_index: int) -> np.ndarray:
+		"""Get the normal vector of a triangle in the STL geometry.
 		
+		Args:
+			tri_index: Index of the triangle
+		Returns:
+			np.ndarray: Normal vector of the triangle
+		"""
+		return self.stlGeom.get_triangle_normal(tri_index)
+	
+	def get_nodes_on_triangles(self, tri_indices: np.ndarray) -> np.ndarray:
+		"""Find nodes that lie on given triangles.
+		
+		Args:
+			tri_indices: Array of shape (n) containing m triangles defined by triangle id
+			
+		Returns:
+			np.ndarray: Indices of nodes that lie on the triangles
+		"""
+		triangle_nodes = set()
+		tolerance = 0.707 * min(self.elem_size)
+		boundary_nodes = self.get_boundary_nodes()
+		boundary_points = self.node_xyz[boundary_nodes]
+		for tri_idx in tri_indices:
+			distances = self.stlGeom.find_points_triangle_distances_vectorized(boundary_points, tri_idx)
+			close_mask = distances < tolerance
+			triangle_nodes.update(boundary_nodes[close_mask])
+		return np.array(list(triangle_nodes))
 	
 	def get_nodes_from_locations(self, locations: np.ndarray) -> np.ndarray:
 		"""Find nodes closest to given x,y,z locations.

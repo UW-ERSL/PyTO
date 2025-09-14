@@ -19,7 +19,8 @@ class BC:
   force: np.ndarray
   fixed_dofs: np.ndarray
   dirichlet_values: np.ndarray
-
+  constraint_matrix: np.ndarray = None # for example, sliding bc
+  constraint_rhs: np.ndarray = None # for example, zeros, for sliding bc
 
   @property
   def num_dofs(self)->int:
@@ -52,17 +53,19 @@ def impose_dirichlet_bc(A: spy_sprs.csr_matrix,
 
   Returns: The modified stiffness matrix and right hand side.
   """
+  if (bc.constraint_matrix is  None):
+    A_modified = A.copy()
+    b_modified = b.copy()
 
-  A_modified = A.copy()
-  b_modified = b.copy()
+    # Modify the right hand side.
+    b_modified -= A[:, bc.fixed_dofs] * bc.dirichlet_values
 
-  # Modify the right hand side.
-  b_modified -= A[:, bc.fixed_dofs] * bc.dirichlet_values
+    # Remove rows and columns corresponding to the Dirichlet boundary conditions.
+    A_modified = (
+            A_modified[bc.free_dofs, :][:, bc.free_dofs]
+            )
+    b_modified = b_modified[bc.free_dofs]
 
-  # Remove rows and columns corresponding to the Dirichlet boundary conditions.
-  A_modified = (
-          A_modified[bc.free_dofs, :][:, bc.free_dofs]
-          )
-  b_modified = b_modified[bc.free_dofs]
-
-  return A_modified, b_modified
+    return A_modified, b_modified
+  else:
+    raise NotImplementedError("impose_dirichlet_bc not implemented for constraint_matrix BCs; see linear_solvers.solver function")

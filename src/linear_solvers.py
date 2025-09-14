@@ -85,8 +85,8 @@ class Solvers(enum.Enum):
 	PARDISO = enum.auto()
 
 
-def solve(A: spy_sprs.coo_matrix, 
-					b: np.ndarray,
+def solve(A0: spy_sprs.coo_matrix, 
+					b0: np.ndarray,
 		      solver: Solvers,
           bc: bound_cond.BC,
 					**kwargs,
@@ -103,11 +103,9 @@ def solve(A: spy_sprs.coo_matrix,
   Returns: The solution x of the system of shape (n,).
   """
 
-  def solver_wrapper(A0, b0):
- 
+  if (bc.constraint_matrix is None): # No Lagrange multipliers, eliminate fixed DOFs
     A, b = bound_cond.impose_dirichlet_bc(A0.tocsr(), b0, bc)
 
- 
     if solver == Solvers.SPSOLVE:
       x = spy_linalg.spsolve(A, b) # very slow for large problems
 
@@ -144,4 +142,24 @@ def solve(A: spy_sprs.coo_matrix,
     u[bc.fixed_dofs] = bc.dirichlet_values
     u[bc.free_dofs] = x
     return u
-  return solver_wrapper(A,b)
+  else:
+    # When using Lagrange multipliers, we do not eliminate any DOFs
+    # Use Lagrange multipliers to impose the constraints
+    num_constraints = bc.constraint_matrix.shape[0]
+    num_dofs = A0.shape[0]
+    A_modified = spy_sprs.lil_matrix((num_dofs + num_constraints, num_dofs + num_constraints))
+    # Build blocks separately and use scipy's hstack/vstack for efficiency
+    top_row = spy_sprs.hstack([A0, bc.constraint_matrix.T])
+    bottom_row = spy_sprs.hstack([bc.constraint_matrix, spy_sprs.csr_matrix((num_constraints, num_constraints))])
+    A_modified = spy_sprs.vstack([top_row, bottom_row]).tolil()
+    b_modified = np.zeros(num_dofs + num_constraints)
+    b_modified[:num_dofs] = b0
+    # We can only use Pardiso for this case
+    sol = pypardiso.spsolve(A_modified.tocsr(), np.array(b_modified))
+    pypardiso.ps.free_memory()
+    u = np.zeros(b0.shape)
+    u[:num_dofs] = sol[:num_dofs]
+    # Lagrange multipliers are in sol[num_dofs:], if needed they can be returned
+   
+    return u
+   

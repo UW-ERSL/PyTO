@@ -669,10 +669,10 @@ class HexStructuralFEA:
 if __name__ == "__main__":    
   from hex_structural_examples import StructuralExamples,getStructuralProblem
 
-  problem = StructuralExamples.EdgeCantilever
-  nDOFDesired = 10000
+  problem = StructuralExamples.EdgeCantileverConstraintMatrix
+  nDOFDesired = 100000
   mesh, mat_prop, bc,elem_body_force = getStructuralProblem(problem,nDOFDesired = nDOFDesired)
-  solver = linear_solvers.Solvers.DPCG # typically DPCG or PARDISO
+  solver = linear_solvers.Solvers.PARDISO # typically DPCG or PARDISO
   
   dsolver = deflation.DeflationSolver()
   startTime = time.time()
