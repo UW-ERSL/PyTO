@@ -669,7 +669,7 @@ class HexStructuralFEA:
 if __name__ == "__main__":    
   from hex_structural_examples import StructuralExamples,getStructuralProblem
 
-  problem = StructuralExamples.EdgeCantileverConstraintMatrix
+  problem = StructuralExamples.BliskSectionWithoutSymmetry
   nDOFDesired = 100000
   mesh, mat_prop, bc,elem_body_force = getStructuralProblem(problem,nDOFDesired = nDOFDesired)
   solver = linear_solvers.Solvers.PARDISO # typically DPCG or PARDISO
@@ -691,7 +691,7 @@ if __name__ == "__main__":
         rtol = 1e-8,
         elem_body_force = elem_body_force)
 
-  fe_solver.plot_mesh(plot_bc = True,offsetArrow = True)
+  #fe_solver.plot_mesh(plot_bc = True,offsetArrow = True)
   startTime = time.time()
 
   fe_solver.solve()

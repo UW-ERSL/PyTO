@@ -376,6 +376,7 @@ class STLGeom:
             plotter.add_point_labels([[bounds[0], bounds[2], bounds[4]]],
                                     [f'({bounds[0]:.2f}, {bounds[2]:.2f}, {bounds[4]:.2f})'])
         plotter.show()
+        return plotter
    
     def find_points_triangle_distances_loop(self, points, triangle_id):
         """

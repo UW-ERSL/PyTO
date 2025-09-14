@@ -44,7 +44,7 @@ class StructuralTOExamples(enum.Enum):
 
     # Other Examples
 	KnuckleAssembly = enum.auto()
-	BliskWithBlade = enum.auto()
+	BliskSectionWithSymmetry = enum.auto()
 	BliskWithBladeMass = enum.auto()
 	NoseCone = enum.auto()
 
@@ -111,7 +111,7 @@ def getSTLPath_TOProblem(to_problem: StructuralTOExamples):
         stl_file = "Models/GravityPlate/GravityPlate.STL"
     elif to_problem == StructuralTOExamples.KnuckleAssembly:
         stl_file = "Models/KnuckleAssembly/KnuckleAssembly.STL"
-    elif to_problem == StructuralTOExamples.BliskWithBlade:
+    elif to_problem == StructuralTOExamples.BliskSectionWithSymmetry:
         stl_file = "Models/BliskWithBlade/BliskWithBlade.STL"
     elif to_problem == StructuralTOExamples.BliskWithBladeMass:
         stl_file = "Models/BliskWithBladeMass/BliskWithBladeMass.STL"
@@ -372,8 +372,8 @@ def getStructuralTOProblem(to_problem: StructuralTOExamples,nDOFDesired = None, 
         to_params.ZSymmetry = True
         to_params.nDOFDesired = 75000 if nDOFDesired is None else nDOFDesired
         to_params.Constraints = [(TO_QOI.VOLUME_FRACTION, None, 0.25)] 
-    elif to_problem == StructuralTOExamples.BliskWithBlade:
-        structural_problem = StructuralExamples.BliskWithBlade
+    elif to_problem == StructuralTOExamples.BliskSectionWithSymmetry:
+        structural_problem = StructuralExamples.BliskSectionWithSymmetry
         to_params.Comment  = "Large DOF"
         to_params.KeepFixedElems = True
         to_params.RemoveHangingElems = False
