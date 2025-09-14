@@ -147,13 +147,13 @@ def solve(A0: spy_sprs.coo_matrix,
     # Use Lagrange multipliers to impose the constraints
     num_constraints = bc.constraint_matrix.shape[0]
     num_dofs = A0.shape[0]
-    A_modified = spy_sprs.lil_matrix((num_dofs + num_constraints, num_dofs + num_constraints))
     # Build blocks separately and use scipy's hstack/vstack for efficiency
     top_row = spy_sprs.hstack([A0, bc.constraint_matrix.T])
     bottom_row = spy_sprs.hstack([bc.constraint_matrix, spy_sprs.csr_matrix((num_constraints, num_constraints))])
     A_modified = spy_sprs.vstack([top_row, bottom_row]).tolil()
     b_modified = np.zeros(num_dofs + num_constraints)
     b_modified[:num_dofs] = b0
+    b_modified[num_dofs:] = bc.constraint_rhs
     # We can only use Pardiso for this case
     sol = pypardiso.spsolve(A_modified.tocsr(), np.array(b_modified))
     pypardiso.ps.free_memory()

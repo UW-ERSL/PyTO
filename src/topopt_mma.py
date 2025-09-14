@@ -197,7 +197,7 @@ if __name__ == "__main__":
  
     print("-" * 50)
  
-    to_problem = StructuralTOExamples.EdgeCantilever# Choose the TO problem
+    to_problem = StructuralTOExamples.EdgeCantileverConstraintMatrix# Choose the TO problem
     nDOFDesired = 10000
 
     if (to_problem in StructuralTOExamples):
