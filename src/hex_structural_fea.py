@@ -368,7 +368,7 @@ class HexStructuralFEA:
     self.camera_position = plotter.camera_position # For all future displays
     return
 ################################################################# 
-  def plot_deformation(self,auto_close = True, save_path=None, plotter=None):
+  def plot_deformation(self,show_geometry=False, auto_close = True, save_path=None, plotter=None):
     """Plot the deformed mesh with the deformation scaled by a factor."""
     # Return if no solution exists yet
     if not hasattr(self, 'sol'):
@@ -473,9 +473,12 @@ class HexStructuralFEA:
                             'width': 0.06
                             }
                   )
-
-    
-
+    if (show_geometry):
+      vertices = self.mesh.stlGeom.mesh.vectors.reshape(-1, 3)
+      faces = np.arange(len(vertices)).reshape(-1, 3)
+      faces = np.column_stack((np.full(len(faces), 3), faces))
+      geomMesh = pv.PolyData(vertices, faces)
+      plotter.add_mesh(geomMesh, color='white', show_edges=True)
 
     # Save image if path is provided
     if save_path:
@@ -669,8 +672,8 @@ class HexStructuralFEA:
 if __name__ == "__main__":    
   from hex_structural_examples import StructuralExamples,getStructuralProblem
 
-  problem = StructuralExamples.BliskSectionWithoutSymmetry
-  nDOFDesired = 100000
+  problem = StructuralExamples.BliskSectionWithSymmetry
+  nDOFDesired = 60000
   mesh, mat_prop, bc,elem_body_force = getStructuralProblem(problem,nDOFDesired = nDOFDesired)
   solver = linear_solvers.Solvers.PARDISO # typically DPCG or PARDISO
   
@@ -691,6 +694,7 @@ if __name__ == "__main__":
         rtol = 1e-8,
         elem_body_force = elem_body_force)
 
+  
   #fe_solver.plot_mesh(plot_bc = True,offsetArrow = True)
   startTime = time.time()
 
@@ -700,7 +704,8 @@ if __name__ == "__main__":
   print(f"Maximum deformation: {fe_solver.max_deformation:.4e}")
   print(f"Maximum von Mises stress: {np.max(fe_solver.vonMisesStress):.4e}")
   
-  fe_solver.plot_deformation()
+
+  fe_solver.plot_deformation(show_geometry=True)
   fe_solver.plot_vonMisesStress()
   fe_solver.plot_stress_component(0)
   
