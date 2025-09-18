@@ -569,21 +569,24 @@ if __name__ == "__main__":
 
     def cube_size_function_constant(pt):
         # Example size function that returns a constant size
-        return 0.1
+        return 0.0004
     
     def cube_size_function_linear(pt):
         # Example size function that returns a constant size
+        s_min =0.0004
+        s_max =0.002
         z_min = 0.0
-        z_max = 1.0
+        z_max = 0.0105
         z = pt[2]
-        size = 0.1 + (0.02 - 0.1) * (z - z_min) / (z_max - z_min)
-        size = np.clip(size, 0.02, 0.1)
+        size = s_max + (s_min - s_max) * (z - z_min) / (z_max - z_min)
+        size = np.clip(size, s_min, s_max)
         return size
 
     
     tetmesh = TetMesher()
     script_dir = os.path.dirname(os.path.abspath(__file__))
     stlFileName = os.path.join(script_dir, '../Models/Impeller/Impeller.STL')
+    stlFileName = os.path.join(script_dir, '../Models/Comb/Comb.STL')
     tetmesh.createTetMeshFromSTLFile(stlFileName, nElemsDesired=20000,mergeFacets=True, elemSizeFunction=cube_size_function_linear)
     tetmesh.plot()
    
