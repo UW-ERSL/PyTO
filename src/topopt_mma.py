@@ -197,8 +197,8 @@ if __name__ == "__main__":
  
     print("-" * 50)
  
-    to_problem = StructuralTOExamples.LBracketMidLoad# Choose the TO problem
-    nDOFDesired = 50000
+    to_problem = StructuralTOExamples.BliskQuarter# Choose the TO problem
+    nDOFDesired = 1000000
 
     if (to_problem in StructuralTOExamples):
         mesh, mat_prop, bc,elem_body_force, to_params = getStructuralTOProblem(to_problem,nDOFDesired=nDOFDesired)
@@ -209,7 +209,7 @@ if __name__ == "__main__":
     print(f"Running {to_problem.name}...") 
     print("-" * 50)
     solver = lin_solv.Solvers.PARDISO # default, see below
-    dsolver = deflation.DeflationSolver(use_gpu=True)
+    dsolver = deflation.DeflationSolver(use_gpu=False)
     if (to_params.nDOFDesired > DIRECT_SOLVER_DOF_CUTOFF):# Typically PARDISO, but DPCG for large DOF problems
         solver = lin_solv.Solvers.DPCG
         nGroups =  min(dsolver.maxGroups,max(dsolver.minGroups,round(3*mesh.num_nodes/dsolver.dofPerGroup)))

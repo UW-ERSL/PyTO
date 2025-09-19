@@ -2643,6 +2643,7 @@ class AnalysisWindow(QtWidgets.QDialog):
             boundary_nodes, boundary_points, tolerance = self.get_boundary_mapping_data()
         
         surface_nodes = set()
+        print("Applying boundary conditions to triangles ", triangle_indices)
         for tri_idx in triangle_indices:
             distances = self.parent.stl_geom.find_points_triangle_distances_vectorized(boundary_points, tri_idx)
             close_mask = distances < tolerance
