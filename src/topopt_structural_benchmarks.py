@@ -34,6 +34,7 @@ class StructuralTOExamples(enum.Enum):
     # Constraint Examples
 	CantileverMidLoadVolumeObjective = enum.auto()
 	LBracketTopLoadStressObjective = enum.auto()
+	LBracketMidLoadStressConstraint = enum.auto()
 	LBracketMidLoadStressObjective = enum.auto()
 	LBracketThickMidLoadStressObjective = enum.auto()
 	Inverter = enum.auto()
@@ -45,6 +46,7 @@ class StructuralTOExamples(enum.Enum):
     # Other Examples
 	KnuckleAssembly = enum.auto()
 	BliskSectionWithSymmetry = enum.auto()
+	BliskQuarter = enum.auto()
 	BliskWithBladeMass = enum.auto()
 	NoseCone = enum.auto()
 
@@ -101,6 +103,8 @@ def getSTLPath_TOProblem(to_problem: StructuralTOExamples):
         stl_file = "Models/LBracket/LBracket.STL"
     elif to_problem == StructuralTOExamples.LBracketMidLoadStressObjective:
         stl_file = "Models/LBracket/LBracket.STL"
+    elif to_problem == StructuralTOExamples.LBracketMidLoadStressConstraint:
+        stl_file = "Models/LBracket/LBracket.STL"
     elif to_problem == StructuralTOExamples.LBracketThickMidLoadStressObjective:
         stl_file = "Models/LBracketThick/LBracketThick.STL"
     elif to_problem == StructuralTOExamples.Inverter:
@@ -115,6 +119,8 @@ def getSTLPath_TOProblem(to_problem: StructuralTOExamples):
         stl_file = "Models/BliskWithBlade/BliskWithBlade.STL"
     elif to_problem == StructuralTOExamples.BliskWithBladeMass:
         stl_file = "Models/BliskWithBladeMass/BliskWithBladeMass.STL"
+    elif to_problem == StructuralTOExamples.BliskQuarter:
+        stl_file = "Models/BliskQuarter/BliskQuarterWithBlades.STL"
     elif to_problem == StructuralTOExamples.NoseCone:
         stl_file = "Models/NoseCone/NoseCone.STL"
     else:
@@ -338,6 +344,15 @@ def getStructuralTOProblem(to_problem: StructuralTOExamples,nDOFDesired = None, 
         to_params.ExtrudeZ = True
         to_params.nDOFDesired = 50000 if nDOFDesired is None else nDOFDesired
         to_params.Constraints = [(TO_QOI.VOLUME_FRACTION, None, 0.5)] 
+    elif to_problem == StructuralTOExamples.LBracketMidLoadStressConstraint:
+        structural_problem = StructuralExamples.LBracket
+        kwargs['topload'] = 0
+        kwargs['midload'] = 1.5e4
+        to_params.Comment  = "Stress Constraint"
+        to_params.Objective = (TO_QOI.VOLUME_FRACTION, None, 0.5) 
+        to_params.ExtrudeZ = True
+        to_params.nDOFDesired = 50000 if nDOFDesired is None else nDOFDesired
+        to_params.Constraints = [ (TO_QOI.PNORM_STRESS, None, 1.5e8)] 
     elif to_problem == StructuralTOExamples.LBracketThickMidLoadStressObjective:
         structural_problem = StructuralExamples.LBracketThick
         to_params.Comment  =  "Stress Minimization"
@@ -385,6 +400,13 @@ def getStructuralTOProblem(to_problem: StructuralTOExamples,nDOFDesired = None, 
         to_params.RemoveHangingElems = True
         to_params.nDOFDesired = 100000
         to_params.TargetMass = 0.6 # kg 
+    elif to_problem == StructuralTOExamples.BliskQuarter:
+        structural_problem = StructuralExamples.BliskQuarter
+        to_params.Comment  = "Large DOF"
+        to_params.KeepFixedElems = True
+        to_params.RemoveHangingElems = True
+        to_params.nDOFDesired = 100000
+        to_params.TargetMass = 0.6 # kg 
     else:
         raise ValueError(f"Unknown problem: {to_problem}")
     
@@ -393,12 +415,11 @@ def getStructuralTOProblem(to_problem: StructuralTOExamples,nDOFDesired = None, 
     # Add  elements to keep
     to_params.ElemsToKeep  = None # default value
 
-
     # Here we add additional parameters specific to the optimization problem
     if (to_params.KeepFixedElems):
         to_params.ElemsToKeep = find_elements_with_fixedDOF(mesh, bc,nDOFPerNode=3)
 
-    if to_problem == StructuralTOExamples.BliskWithBlade:
+    if to_problem == StructuralTOExamples.BliskWithBladeMass:
         centerPt = [0,0,0]
         axis = [0,0,1]
         outerRadius1 = 0.0558
@@ -415,6 +436,16 @@ def getStructuralTOProblem(to_problem: StructuralTOExamples,nDOFDesired = None, 
         bladeElements = mesh.get_elems_within_annular_region(centerPt,axis,outerRadius1,outerRadius2)
         to_params.ElemsToKeep = np.union1d(to_params.ElemsToKeep, bladeElements)
 
+    if to_problem == StructuralTOExamples.BliskQuarter:
+        # Get the elements to keep for the blade
+        centerPt = [0,0,0]
+        axis = [1,0,0]
+        outerRadius1 = 0.055
+        outerRadius2 = 0.074
+        bladeElements = mesh.get_elems_within_annular_region(centerPt,axis,outerRadius1,outerRadius2)
+        print("Number of blade elements", bladeElements.shape)
+        print("to_params.ElemsToKeep", to_params.ElemsToKeep.shape)
+        to_params.ElemsToKeep = np.union1d(to_params.ElemsToKeep, bladeElements)
 
     if to_problem == StructuralTOExamples.KnuckleAssembly:
          to_params.ElemsToKeep = np.where(mesh.elemComponentId == 2)[0]

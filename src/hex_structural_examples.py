@@ -6,6 +6,7 @@ import os
 import enum
 import scipy.sparse as spy_sprs
 from stl_reader import STLGeom
+from scipy.sparse import lil_matrix
 script_dir = os.path.dirname(os.path.abspath(__file__))
 
 
@@ -43,6 +44,7 @@ class StructuralExamples(enum.Enum):
 	LBracketThick = enum.auto()
 	BliskSectionWithoutSymmetry = enum.auto()
 	BliskSectionWithSymmetry = enum.auto()
+	BliskQuarter= enum.auto()
 	BliskPressureLoading = enum.auto()
 
 
@@ -128,6 +130,8 @@ def getStructuralProblem(problem: StructuralExamples, **kwargs):
     return createBliskSectionProblemWithoutSymmetry(**kwargs)
   elif problem == StructuralExamples.BliskSectionWithSymmetry:
     return createBliskSectionProblemWithSymmetry(**kwargs)
+  elif problem == StructuralExamples.BliskQuarter:
+    return createBliskQuarterProblem(**kwargs)
   elif problem == StructuralExamples.BliskPressureLoading:
     return createBliskPressureLoadingProblem(**kwargs)
   else:
@@ -1819,11 +1823,11 @@ def createThreeHoleBracketThickProblem(nDOFDesired: int = 10000, totalLoad =  10
 
 # ----------------------------------------
 
-def createBliskQuarterProblem(nDOFDesired: int = 10000,rpm = 10000,radialForce =10000,
+def createBliskQuarterProblem(nDOFDesired: int = 10000,rpm = 0,radialForce =10000,
 																	   downwardForce = 0):
  
   # Read the STL model, create a mesh of desired size, and a structural problem is posed on it.
-  stl_file = os.path.join(script_dir, '../Models/BliskModel/BliskQuarter.STL')
+  stl_file = os.path.join(script_dir, '../Models/BliskModel/BliskQuarterWithBlades.STL')
 
 
   nElemsDesired = nDOFDesired/3    # estimate
@@ -1834,24 +1838,40 @@ def createBliskQuarterProblem(nDOFDesired: int = 10000,rpm = 10000,radialForce =
 
   # fix inner radius
   centerPt = [0,0,0]
-  axis = [0,0,1]
+  axis = [1,0,0]
   innerRadius = 0.01085
-  fixed_nodes = mesh.get_nodes_within_annular_region(centerPt,axis,innerRadius-mesh.elem_size[0]*0.707,
+  inner_cylinder_nodes = mesh.get_nodes_within_annular_region(centerPt,axis,innerRadius-mesh.elem_size[0]*0.707,
                                                      innerRadius+mesh.elem_size[0]*0.707)  
-  fixed_dofs = np.array([3 * fixed_nodes,
-              3 * fixed_nodes + 1,
-              3 * fixed_nodes + 2]).flatten().astype(int)
+  fixed_dofs = np.array([3 * inner_cylinder_nodes,
+              3 * inner_cylinder_nodes + 1,
+              3 * inner_cylinder_nodes + 2]).flatten().astype(int)
+  
+
+  # Find nodes on z = zMax bounding box
+  zMax = np.max(mesh.node_xyz[:, 2])
+  zMax_nodes = np.where(np.abs(mesh.node_xyz[:, 2] - zMax) < mesh.elem_size[2]/2)[0]
+  zMax_dofs = np.array([ 3 * zMax_nodes + 2]).flatten().astype(int)
+  
+   # Find nodes on y = yMin bounding box
+  yMin = np.min(mesh.node_xyz[:, 1])
+  yMin_nodes = np.where(np.abs(mesh.node_xyz[:, 1] - yMin) < mesh.elem_size[1]/2)[0]
+  yMin_dofs = np.array([ 3 * yMin_nodes + 1]).flatten().astype(int)
+
+  fixed_dofs = np.union1d(fixed_dofs, yMin_dofs)
+  fixed_dofs = np.union1d(fixed_dofs, zMax_dofs)
   dirichlet_values = 0*np.ones_like(fixed_dofs, dtype = float)
-  mesh.node_indices[fixed_nodes, 3] = 1 # for plotting
+  mesh.node_indices[inner_cylinder_nodes, 3] = 1 # for plotting
 
   elem_body_force = np.zeros(3*mesh.num_elems)
-  omega = 2*np.pi*rpm/60
-  mat_prop = mat_lib.get_material("Steel")
-  for e in range(mesh.num_elems):
-    center = mesh.elem_centers[e]
-    elem_body_force[3*e:3*e+2] = (mat_prop.mass_density*np.prod(mesh.elem_size)) * omega**2 *  center[:2]
+  if (abs(rpm) > 0):
+    print("Applying centrifugal force at ",rpm," rpm")
+    omega = 2*np.pi*rpm/60
+   
+    for e in range(mesh.num_elems):
+      center = mesh.elem_centers[e]
+      elem_body_force[3*e:3*e+2] = (mat_prop.mass_density*np.prod(mesh.elem_size)) * omega**2 *  center[:2]
 
-  print("total body force ",np.sum(elem_body_force[3::3]))
+    print("total body force ",np.sum(elem_body_force[3::3]))
   # Apply centrifugal force on each node on the circumference
   # this is in addition to the body force
   outerRadius = 0.0565
@@ -1874,8 +1894,7 @@ def createBliskQuarterProblem(nDOFDesired: int = 10000,rpm = 10000,radialForce =
       boundaryForce[3*node + 2] = -downwardForce/len(load_nodes) 
   bc = bound_cond.BC(force = boundaryForce,fixed_dofs = fixed_dofs,dirichlet_values = dirichlet_values) 
 
-  
-  
+  mat_prop = mat_lib.get_material("Steel")
   return mesh, mat_prop, bc, elem_body_force
 
 
@@ -1980,14 +1999,17 @@ def createBliskSectionProblemWithSymmetry(nDOFDesired: int = 50000, rpm = 0, rad
   #fixed_nodes = np.where(np.abs(mesh.node_xyz[:, 0] - xMin) < mesh.elem_size[0]/2)[0]
   fixedTri = [1360,1361]
   fixed_nodes = mesh.get_nodes_on_triangles(fixedTri)
-  
-  
+  fixed_dofs = np.array([3 * fixed_nodes,
+              3 * fixed_nodes + 1,
+              3 * fixed_nodes + 2]).flatten() # This is needed if the dofs are being retained for TO
+  dirichlet_values = 0*np.ones_like(fixed_dofs, dtype = float)
   mesh.node_indices[fixed_nodes, 3] = 1 # for plotting
-  C0 = np.zeros((3*len(fixed_nodes), mesh.num_nodes * 3))
+  C0 = lil_matrix((3*len(fixed_nodes), mesh.num_nodes * 3))
   for i, node in enumerate(fixed_nodes):
     C0[3*i, 3*node] = 1
     C0[3*i+1, 3*node+1] = 1
     C0[3*i+2, 3*node+2] = 1
+  C0 = C0.tocsr()
   
   
   # Nodes on these triangles are to subject to sliding boundary condition
@@ -2001,11 +2023,12 @@ def createBliskSectionProblemWithSymmetry(nDOFDesired: int = 50000, rpm = 0, rad
   wdof1 = 3 * sliding_nodes_1 + 2
   # Create constraint matrix for sliding boundary conditions
   # First surface normal constraint
-  C1 = np.zeros((len(sliding_nodes_1), mesh.num_nodes * 3))
+  C1 = lil_matrix((len(sliding_nodes_1), mesh.num_nodes * 3))
   for i, node in enumerate(sliding_nodes_1):
     C1[i, udof1[i]] = normal_1[0]
-    C1[i, vdof1[i]] = normal_1[1]  
+    C1[i, vdof1[i]] = normal_1[1]
     C1[i, wdof1[i]] = normal_1[2]
+  C1 = C1.tocsr()
 
   triSet2 = [1696, 1697, 1698, 1699, 1700, 1701, 1702, 1703, 1704, 1705, 1706, 1707, 1708, 1709, 1710, 1711, 1712, 1713, 1714, 1715, 1716, 1717, 1718, 1719, 1720, 1721, 1722, 1723, 1724, 1725, 1726, 1727, 1728, 1729, 1730, 1731, 1732, 1733, 1734, 1735, 1736, 1737, 1738, 1739, 1740, 1741, 1742, 1743, 1744, 1745, 1746, 1747, 1748, 1749, 1750, 1751, 1752, 1753, 1754, 1755, 1756, 1757, 1758, 1759, 1760, 1761, 1762, 1763, 1764, 1765, 1766, 1767, 1768, 1769, 1770, 1771, 1772, 1773, 1774, 1775, 1776, 1777, 1778, 1779, 1780, 1781, 1782, 1783, 1784, 1785, 1786, 1787, 1788, 1789, 1790, 1791, 1792, 1793, 1794, 1795, 1796, 1797, 1798, 1799, 1800, 1801, 1802, 1803, 1804, 1805, 1806, 1807, 1808, 1809, 1810, 1811, 1812, 1813, 1814, 1815, 1816, 1817, 1818, 1819, 1820, 1821]
   sliding_nodes_2 = mesh.get_nodes_on_triangles(triSet2)
@@ -2013,12 +2036,13 @@ def createBliskSectionProblemWithSymmetry(nDOFDesired: int = 50000, rpm = 0, rad
   vdof2 = 3 * sliding_nodes_2 + 1 
   wdof2 = 3 * sliding_nodes_2 + 2
   # Second surface normal constraint
-  C2 = np.zeros((len(sliding_nodes_2), mesh.num_nodes * 3))
+  C2 = lil_matrix((len(sliding_nodes_2), mesh.num_nodes * 3))
   normal_2 = mesh.stlGeom.get_triangle_normal(triSet2[0])
   for i, node in enumerate(sliding_nodes_2):
     C2[i, udof2[i]] = normal_2[0]
     C2[i, vdof2[i]] = normal_2[1]
     C2[i, wdof2[i]] = normal_2[2]
+  C2 = C2.tocsr()
 
   # Combine constraints
   constraint_matrix = spy_sprs.vstack((spy_sprs.csr_matrix(C0), 
@@ -2075,12 +2099,97 @@ def createBliskSectionProblemWithSymmetry(nDOFDesired: int = 50000, rpm = 0, rad
 
   # All constraints are implemented using the constraint matrix
   # Therefore fixed_dofs and dirichlet_values are empty
-  bc = bound_cond.BC(force = boundaryForce,fixed_dofs = [],dirichlet_values = []
+  bc = bound_cond.BC(force = boundaryForce,fixed_dofs = fixed_dofs,dirichlet_values = dirichlet_values
                      ,constraint_matrix=constraint_matrix,constraint_rhs=constraint_rhs) 
 
   return mesh, mat_prop, bc, elem_body_force
 
   # ----------------------------------------
+
+def createBliskSectionProblemWithoutSymmetry(nDOFDesired: int = 50000, rpm = 0, radialForce =200000): 
+ 
+  # Read the STL model, create a mesh of desired size, and a structural problem is posed on it.
+  stl_file = os.path.join(script_dir, '../Models/BliskModel/BliskSectionWithBlade.STL')
+
+  nElemsDesired = nDOFDesired/3    # estimate
+  mesh = hex_mesher.HexMesher()
+
+  mesh.createMeshFromSTLFile(stl_file, nElemsDesired=nElemsDesired)
+  mesh.createEdofMatStructural()
+
+  # Find nodes with x coordinate close to xMin
+  xMin = np.min(mesh.node_xyz[:, 0])
+  #fixed_nodes = np.where(np.abs(mesh.node_xyz[:, 0] - xMin) < mesh.elem_size[0]/2)[0]
+  fixedTri = [1360,1361]
+  fixed_nodes = mesh.get_nodes_on_triangles(fixedTri)
+  
+  
+  mesh.node_indices[fixed_nodes, 3] = 1 # for plotting
+  C0 = np.zeros((3*len(fixed_nodes), mesh.num_nodes * 3))
+  for i, node in enumerate(fixed_nodes):
+    C0[3*i, 3*node] = 1
+    C0[3*i+1, 3*node+1] = 1
+    C0[3*i+2, 3*node+2] = 1
+  
+  
+
+  # Combine constraints
+  constraint_matrix = spy_sprs.csr_matrix(C0)
+  constraint_rhs = np.zeros(3*len(fixed_nodes))
+
+  total_mesh_volume = np.prod(mesh.elem_size) * mesh.num_elems # * 0.0283168 # ft3 to m3
+  print("total mesh volume in m3",total_mesh_volume)
+  mat_prop=mat_lib.get_material("Steel")
+  material_density = mat_prop.mass_density # * 16.0185 # lb/ft3 to kg/m3
+  total_mass = material_density * total_mesh_volume
+  print("total mass in kg",total_mass)
+
+
+  elem_body_force = None
+  if (abs(rpm) > 0):
+    elem_body_force = np.zeros(3*mesh.num_elems)
+    print("Applying centrifugal force at ",rpm," rpm")
+    omega = 2*np.pi*rpm/60
+    for e in range(mesh.num_elems):
+      center = mesh.elem_centers[e]
+      # Add centrifugal force to each element in xy plane
+      elem_body_force[3*e:3*e+2] = (material_density*np.prod(mesh.elem_size)) * omega**2 *  center[:2]
+
+    print("total body force ",np.linalg.norm(elem_body_force))
+
+  axis = [0,0,1] # z-axis
+  centerPt = [0,0,0] # center of the blisk section
+  bladeInnerRadius = 0.0565
+  bladeOuterRadius = 0.0725
+  load_nodes = mesh.get_nodes_within_annular_region(centerPt,axis,bladeInnerRadius,
+                                                    bladeOuterRadius)    
+  
+  mesh.node_indices[load_nodes, 3] = 2 # for plotting
+  boundaryForce = np.zeros(3*mesh.num_nodes) 
+  if (radialForce > 0):
+    print("Applying radial force of ",radialForce," N on ", len(load_nodes), " nodes on outer circumference")
+    # Apply radial force on each node on the circumference 
+    for node in load_nodes:
+      node_pos = mesh.node_xyz[node,:2] # get x,y coordinates
+      r = np.sqrt(np.sum(node_pos**2)) # distance from center
+      if r > 0:
+        # Unit vector in radial direction
+        radial_dir = node_pos/r
+        # Add x and y dofs with force components
+        boundaryForce[3*node] = radialForce/len(load_nodes) * radial_dir[0]  
+        boundaryForce[3*node + 1] = radialForce/len(load_nodes) * radial_dir[1]
+    print("Total applied radial force ",np.sum(boundaryForce[0::3]),np.sum(boundaryForce[1::3]))
+  
+
+  # All constraints are implemented using the constraint matrix
+  # Therefore fixed_dofs and dirichlet_values are empty
+  bc = bound_cond.BC(force = boundaryForce,fixed_dofs = [],dirichlet_values = []
+                     ,constraint_matrix=constraint_matrix,constraint_rhs=constraint_rhs) 
+
+  return mesh, mat_prop, bc, elem_body_force
+
+# ----------------------------------------
+
 
 def createBliskPressureLoadingProblem(nDOFDesired: int = 50000, pressure = 1000000, loadingMode = 2):
   # Read the STL model, create a mesh of desired size, and a structural problem is posed on it.

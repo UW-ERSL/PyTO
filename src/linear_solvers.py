@@ -15,6 +15,7 @@ except ImportError:
 
 
 import bound_cond
+from scipy.linalg import null_space
 
 class Preconditioners(enum.Enum):
   JACOBI = enum.auto()
@@ -155,11 +156,12 @@ def solve(A0: spy_sprs.coo_matrix,
     b_modified[:num_dofs] = b0
     b_modified[num_dofs:] = bc.constraint_rhs
     # We can only use Pardiso for this case
+
     sol = pypardiso.spsolve(A_modified.tocsr(), np.array(b_modified))
     pypardiso.ps.free_memory()
+
+    
     u = np.zeros(b0.shape)
     u[:num_dofs] = sol[:num_dofs]
     # Lagrange multipliers are in sol[num_dofs:], if needed they can be returned
-   
     return u
-   

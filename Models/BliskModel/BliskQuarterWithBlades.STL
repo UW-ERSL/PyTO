@@ -1,4 +1,4 @@
-solid BliskSectionWithBlade
+solid BliskQuarterWithBlades
    facet normal 1.686208e-04 -5.255576e-02 -9.986180e-01
       outer loop
          vertex -1.004947e-03 -2.981748e-03 -5.655868e-02
@@ -117585,4 +117585,4 @@ solid BliskSectionWithBlade
          vertex 6.287578e-03 -3.445756e-03 -5.722515e-02
       endloop
    endfacet
-endsolid BliskSectionWithBlade
+endsolid BliskQuarterWithBlades

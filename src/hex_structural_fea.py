@@ -672,13 +672,13 @@ class HexStructuralFEA:
 if __name__ == "__main__":    
   from hex_structural_examples import StructuralExamples,getStructuralProblem
 
-  problem = StructuralExamples.BliskSectionWithSymmetry
-  nDOFDesired = 60000
+  problem = StructuralExamples.BliskQuarter
+  nDOFDesired = 1000000
   mesh, mat_prop, bc,elem_body_force = getStructuralProblem(problem,nDOFDesired = nDOFDesired)
-  solver = linear_solvers.Solvers.PARDISO # typically DPCG or PARDISO
+  solver = linear_solvers.Solvers.DPCG # typically DPCG or PARDISO
   
   dsolver = deflation.DeflationSolver()
-  startTime = time.time()
+
   if (solver == linear_solvers.Solvers.DPCG):
     nGroups =  min(dsolver.maxGroups,max(dsolver.minGroups,round(3*mesh.num_nodes/dsolver.dofPerGroup)))
     dsolver.create_deflation_groups(mesh, nGroups)
@@ -705,7 +705,7 @@ if __name__ == "__main__":
   print(f"Maximum von Mises stress: {np.max(fe_solver.vonMisesStress):.4e}")
   
 
-  fe_solver.plot_deformation(show_geometry=True)
+  fe_solver.plot_deformation(show_geometry=False)
   fe_solver.plot_vonMisesStress()
   fe_solver.plot_stress_component(0)
   

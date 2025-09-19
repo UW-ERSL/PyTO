@@ -197,8 +197,8 @@ if __name__ == "__main__":
  
     print("-" * 50)
  
-    to_problem = StructuralTOExamples.EdgeCantileverConstraintMatrix# Choose the TO problem
-    nDOFDesired = 10000
+    to_problem = StructuralTOExamples.LBracketMidLoad# Choose the TO problem
+    nDOFDesired = 50000
 
     if (to_problem in StructuralTOExamples):
         mesh, mat_prop, bc,elem_body_force, to_params = getStructuralTOProblem(to_problem,nDOFDesired=nDOFDesired)
@@ -209,7 +209,6 @@ if __name__ == "__main__":
     print(f"Running {to_problem.name}...") 
     print("-" * 50)
     solver = lin_solv.Solvers.PARDISO # default, see below
-   
     dsolver = deflation.DeflationSolver(use_gpu=True)
     if (to_params.nDOFDesired > DIRECT_SOLVER_DOF_CUTOFF):# Typically PARDISO, but DPCG for large DOF problems
         solver = lin_solv.Solvers.DPCG
@@ -236,11 +235,12 @@ if __name__ == "__main__":
                     elem_body_force = elem_body_force)
     
     print('Solver: ', fe_solver.solver.name)
+    print("nDOF: ", 3*fe_solver.mesh.num_nodes)
     print("nNodes: ", fe_solver.mesh.num_nodes)
     print("nElem: ", fe_solver.mesh.num_elems)    
     
     title = f'nNodes: {fe_solver.mesh.num_nodes}, nElem: {fe_solver.mesh.num_elems}'
-    fe_solver.plot_mesh(title = title, save_path = None)
+    #fe_solver.plot_mesh(title = title, save_path = None)
     
     startTime = time.time()
     print("OptimizationMethod: MMA")
