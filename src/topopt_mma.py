@@ -6,7 +6,7 @@ from mmaWrapper import runMMA
 def topopt_mma(fe_solver, #hex_structural_fea.HexStructuralFEA or hex_thermal_fea.HexThermalFEA
                            to_params,
                             maxMMAIterations: int = 250, 
-                            timeLimitSecs: float =3600, #1 hour
+                            timeLimitSecs: float = 36000, #10 hour
                              move_limit: float = 0.2,
                              kkt_tol: float = 1.e-6,
                              objective_tol: float = 1.e-4,
