@@ -1019,20 +1019,21 @@ class HexMesher:
 			belonging to a connected component.
 		"""
 		
-		# Create an adjacency matrix representing connections between elements
-		adj_matrix = np.zeros((self.num_elems, self.num_elems), dtype=bool)
-		
-		# Iterate through each element and its neighbors
+		# Build adjacency as a sparse matrix directly (avoid large dense matrix)
+		row_indices = []
+		col_indices = []
 		for elem in range(self.num_elems):
 			if self.elemPseudoDensity[elem] > threshold:
 				neighbors = self.elemNeighborsArray[elem]
-				# Set adjacency to True for valid neighbors (not -1)
 				valid_neighbors = neighbors[neighbors != -1]
-				adj_matrix[elem, valid_neighbors] = True
-		
-		# Convert adjacency matrix to a sparse format for efficiency
-		adj_matrix_sparse = coo_matrix(adj_matrix)
-		
+				for n in valid_neighbors:
+					if self.elemPseudoDensity[n] > threshold:
+						row_indices.append(elem)
+						col_indices.append(n)
+		adj_matrix_sparse = coo_matrix(
+			(np.ones(len(row_indices), dtype=bool), (row_indices, col_indices)),
+			shape=(self.num_elems, self.num_elems)
+		)
 		# Find connected components using depth-first search (DFS)
 		visited = np.zeros(self.num_elems, dtype=bool)
 		components = []

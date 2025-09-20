@@ -421,7 +421,7 @@ def getStructuralTOProblem(to_problem: StructuralTOExamples,nDOFDesired = None, 
     if to_problem == StructuralTOExamples.BliskQuarter:
         # Get the elements to keep for the blade
         centerPt = [0,0,0]
-        axis = [1,0,0]
+        axis = [0,0,1]
         outerRadius1 = 0.055
         outerRadius2 = 0.074
         bladeElements = mesh.get_elems_within_annular_region(centerPt,axis,outerRadius1,outerRadius2)

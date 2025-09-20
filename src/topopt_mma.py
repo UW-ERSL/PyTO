@@ -9,11 +9,11 @@ def topopt_mma(fe_solver, #hex_structural_fea.HexStructuralFEA or hex_thermal_fe
                             timeLimitSecs: float = 36000, #10 hour
                              move_limit: float = 0.2,
                              kkt_tol: float = 1.e-6,
-                             objective_tol: float = 1.e-4,
-                             constraint_tol: float = 1.e-4,
+                             objective_tol: float = 2.e-4,
+                             constraint_tol: float = 2.e-4,
                              print_progress: bool = True,
                             plot_progress: bool = False,
-                            binarize_topology: bool = True,   
+                            binarize_topology: bool = False,   
                             progress_callback=None, 
                             plotter=None  
                              ) -> tuple[np.ndarray, dict]:
@@ -197,8 +197,8 @@ if __name__ == "__main__":
  
     print("-" * 50)
  
-    to_problem = StructuralTOExamples.BliskQuarter# Choose the TO problem
-    nDOFDesired = 1000000
+    to_problem = StructuralTOExamples.BliskSectionWithSymmetry# Choose the TO problem
+    nDOFDesired = 100000
 
     if (to_problem in StructuralTOExamples):
         mesh, mat_prop, bc,elem_body_force, to_params = getStructuralTOProblem(to_problem,nDOFDesired=nDOFDesired)

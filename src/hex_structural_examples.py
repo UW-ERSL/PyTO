@@ -1823,11 +1823,11 @@ def createThreeHoleBracketThickProblem(nDOFDesired: int = 10000, totalLoad =  10
 
 # ----------------------------------------
 
-def createBliskQuarterProblem(nDOFDesired: int = 10000,rpm = 0,radialForce =10000,
-																	   downwardForce = 0):
+def createBliskQuarterProblem(nDOFDesired: int = 10000,rpm = 0,radialForce = 0,
+																	   downwardForce = 10000):
  
   # Read the STL model, create a mesh of desired size, and a structural problem is posed on it.
-  stl_file = os.path.join(script_dir, '../Models/BliskModel/BliskQuarterWithBlades.STL')
+  stl_file = os.path.join(script_dir, '../Models/BliskModel/BliskQuarter.STL')
 
 
   nElemsDesired = nDOFDesired/3    # estimate
@@ -1838,7 +1838,7 @@ def createBliskQuarterProblem(nDOFDesired: int = 10000,rpm = 0,radialForce =1000
 
   # fix inner radius
   centerPt = [0,0,0]
-  axis = [1,0,0]
+  axis = [0,0,1]
   innerRadius = 0.01085
   inner_cylinder_nodes = mesh.get_nodes_within_annular_region(centerPt,axis,innerRadius-mesh.elem_size[0]*0.707,
                                                      innerRadius+mesh.elem_size[0]*0.707)  
@@ -1848,17 +1848,17 @@ def createBliskQuarterProblem(nDOFDesired: int = 10000,rpm = 0,radialForce =1000
   
 
   # Find nodes on z = zMax bounding box
-  zMax = np.max(mesh.node_xyz[:, 2])
-  zMax_nodes = np.where(np.abs(mesh.node_xyz[:, 2] - zMax) < mesh.elem_size[2]/2)[0]
-  zMax_dofs = np.array([ 3 * zMax_nodes + 2]).flatten().astype(int)
-  
+  xMin = np.min(mesh.node_xyz[:, 0])
+  xMin_nodes = np.where(np.abs(mesh.node_xyz[:, 2] - xMin) < mesh.elem_size[2]/2)[0]
+  xMin_dofs = np.array([ 3 * xMin_nodes]).flatten().astype(int)
+
    # Find nodes on y = yMin bounding box
   yMin = np.min(mesh.node_xyz[:, 1])
   yMin_nodes = np.where(np.abs(mesh.node_xyz[:, 1] - yMin) < mesh.elem_size[1]/2)[0]
   yMin_dofs = np.array([ 3 * yMin_nodes + 1]).flatten().astype(int)
 
   fixed_dofs = np.union1d(fixed_dofs, yMin_dofs)
-  fixed_dofs = np.union1d(fixed_dofs, zMax_dofs)
+  fixed_dofs = np.union1d(fixed_dofs, xMin_dofs)
   dirichlet_values = 0*np.ones_like(fixed_dofs, dtype = float)
   mesh.node_indices[inner_cylinder_nodes, 3] = 1 # for plotting
 
@@ -1883,15 +1883,16 @@ def createBliskQuarterProblem(nDOFDesired: int = 10000,rpm = 0,radialForce =1000
   # Apply radial force on each node on the circumference 
   
   for node in load_nodes:
-    node_pos = mesh.node_xyz[node,:2] # get x,y coordinates
+    node_pos = mesh.node_xyz[node,1:3] # get y,z coordinates
     r = np.sqrt(np.sum(node_pos**2)) # distance from center
-    if r > 0:
-      # Unit vector in radial direction
-      radial_dir = node_pos/r
+   
+    # Unit vector in radial direction
+    radial_dir = node_pos/r
       # Add x and y dofs with force components
-      boundaryForce[3*node] = radialForce/len(load_nodes) * radial_dir[0]  
-      boundaryForce[3*node + 1] = radialForce/len(load_nodes) * radial_dir[1]
-      boundaryForce[3*node + 2] = -downwardForce/len(load_nodes) 
+    boundaryForce[3*node] = radialForce/len(load_nodes)* radial_dir[1]
+    boundaryForce[3*node + 1] = radialForce/len(load_nodes) * radial_dir[0]
+    boundaryForce[3*node + 2] =  -downwardForce/len(load_nodes)  
+    
   bc = bound_cond.BC(force = boundaryForce,fixed_dofs = fixed_dofs,dirichlet_values = dirichlet_values) 
 
   mat_prop = mat_lib.get_material("Steel")
@@ -1902,7 +1903,7 @@ def createBliskQuarterProblem(nDOFDesired: int = 10000,rpm = 0,radialForce =1000
 def createBliskSectionProblemWithoutSymmetry(nDOFDesired: int = 50000, rpm = 0, radialForce =200000): 
  
   # Read the STL model, create a mesh of desired size, and a structural problem is posed on it.
-  stl_file = os.path.join(script_dir, '../Models/BliskModel/BliskSectionWithBlade.STL')
+  stl_file = os.path.join(script_dir, '../Models/BliskModel/BliskSection.STL')
 
   nElemsDesired = nDOFDesired/3    # estimate
   mesh = hex_mesher.HexMesher()
@@ -1983,10 +1984,10 @@ def createBliskSectionProblemWithoutSymmetry(nDOFDesired: int = 50000, rpm = 0, 
 
 # ----------------------------------------
 
-def createBliskSectionProblemWithSymmetry(nDOFDesired: int = 50000, rpm = 0, radialForce =200000): 
+def createBliskSectionProblemWithSymmetry(nDOFDesired: int = 50000, rpm = 0, radialForce =0, downwardForce = 10000 ): 
  
   # Read the STL model, create a mesh of desired size, and a structural problem is posed on it.
-  stl_file = os.path.join(script_dir, '../Models/BliskModel/BliskSectionWithBlade.STL')
+  stl_file = os.path.join(script_dir, '../Models/BliskModel/BliskSection.STL')
 
   nElemsDesired = nDOFDesired/3    # estimate
   mesh = hex_mesher.HexMesher()
@@ -2070,26 +2071,26 @@ def createBliskSectionProblemWithSymmetry(nDOFDesired: int = 50000, rpm = 0, rad
 
   axis = [0,0,1] # z-axis
   centerPt = [0,0,0] # center of the blisk section
-  bladeInnerRadius = 0.0565
-  bladeOuterRadius = 0.0725
-  load_nodes = mesh.get_nodes_within_annular_region(centerPt,axis,bladeInnerRadius,
-                                                    bladeOuterRadius)    
+  outerRadius = 0.0565
+  load_nodes = mesh.get_nodes_within_annular_region(centerPt,axis,outerRadius-mesh.elem_size[0]*0.707,
+                                                    outerRadius+mesh.elem_size[0]*0.707)  
   
   mesh.node_indices[load_nodes, 3] = 2 # for plotting
   boundaryForce = np.zeros(3*mesh.num_nodes) 
-  if (radialForce > 0):
-    print("Applying radial force of ",radialForce," N on ", len(load_nodes), " nodes on outer circumference")
-    # Apply radial force on each node on the circumference 
-    for node in load_nodes:
-      node_pos = mesh.node_xyz[node,:2] # get x,y coordinates
-      r = np.sqrt(np.sum(node_pos**2)) # distance from center
-      if r > 0:
-        # Unit vector in radial direction
-        radial_dir = node_pos/r
-        # Add x and y dofs with force components
-        boundaryForce[3*node] = radialForce/len(load_nodes) * radial_dir[0]  
-        boundaryForce[3*node + 1] = radialForce/len(load_nodes) * radial_dir[1]
-    print("Total applied radial force ",np.sum(boundaryForce[0::3]),np.sum(boundaryForce[1::3]))
+ 
+  print("Applying radial force of ",radialForce," N on ", len(load_nodes), " nodes on outer circumference")
+  # Apply radial force on each node on the circumference 
+  for node in load_nodes:
+    node_pos = mesh.node_xyz[node,:2] # get x,y coordinates
+    r = np.sqrt(np.sum(node_pos**2)) # distance from center
+    # Unit vector in radial direction
+    radial_dir = node_pos/r
+    # Add x and y dofs with force components
+    boundaryForce[3*node] = radialForce/len(load_nodes) * radial_dir[0]  
+    boundaryForce[3*node + 1] = radialForce/len(load_nodes) * radial_dir[1]
+    boundaryForce[3*node + 2] = downwardForce/len(load_nodes)
+  
+  print("Total applied radial force ",np.sum(boundaryForce[0::3]),np.sum(boundaryForce[1::3]))
   
 
   mesh.node_indices[sliding_nodes_1, 3] = 1 # for plotting
@@ -2107,7 +2108,7 @@ def createBliskSectionProblemWithSymmetry(nDOFDesired: int = 50000, rpm = 0, rad
 def createBliskSectionProblemWithoutSymmetry(nDOFDesired: int = 50000, rpm = 0, radialForce =200000): 
  
   # Read the STL model, create a mesh of desired size, and a structural problem is posed on it.
-  stl_file = os.path.join(script_dir, '../Models/BliskModel/BliskSectionWithBlade.STL')
+  stl_file = os.path.join(script_dir, '../Models/BliskModel/BliskSection.STL')
 
   nElemsDesired = nDOFDesired/3    # estimate
   mesh = hex_mesher.HexMesher()
@@ -2191,7 +2192,7 @@ def createBliskSectionProblemWithoutSymmetry(nDOFDesired: int = 50000, rpm = 0, 
 
 def createBliskPressureLoadingProblem(nDOFDesired: int = 50000, pressure = 1000000, loadingMode = 2):
   # Read the STL model, create a mesh of desired size, and a structural problem is posed on it.
-    stl_file = os.path.join(script_dir, '../Models/BliskModel/BliskSectionWithBladeRotated.STL')
+    stl_file = os.path.join(script_dir, '../Models/BliskModel/BliskSection.STL')
 
     stl_geom = STLGeom(stl_file)
     [area, stl_volume, cg, inertia] = stl_geom.compute_mass_properties()
