@@ -25,6 +25,7 @@ class TO_QOI(enum.Enum): # Topology optimization; Various Quantity of Interest
 	MASS = enum.auto() # Mass total
 	COMPLIANCE = enum.auto()
 	PNORM_STRESS = enum.auto()
+	MAX_VONMISES_STRESS = enum.auto()
 	GVECTOR = enum.auto() # g'* u
 	GFUNCTION = enum.auto() # g(u)
 
@@ -283,9 +284,6 @@ def compute_pnorm_stress_and_sensitivity(sol: np.ndarray, x,
 
 	return vm_pnorm,vm_pnorm_sensitivity
 
-
-
-
 def compute_solution_dotproduct_and_gradient(sol: np.ndarray, x,fe_solver,KE,material_model,g: np.ndarray,
 				) -> np.ndarray:
 	"""Compute the objective g'* sol, and its gradient.
@@ -337,6 +335,17 @@ def compute_constraint_and_gradient(to_params, sol: np.ndarray, x: np.ndarray,	f
 		elif (constraintType == TO_QOI.VOLUME_FRACTION):
 			volConstraint, volConstraint_gradient = compute_volume_constraint_and_gradient(x,to_params.Constraints[m][2])
 			c[m,0], dc[m,:] = volConstraint, volConstraint_gradient[np.newaxis]
+		elif (constraintType == TO_QOI.PNORM_STRESS):
+			pNormValue = to_params.Objective[1] or 6 # default p-norm value  of 6
+			stressObj, stress_gradient = compute_pnorm_stress_and_sensitivity(sol, x, fe_solver,KE,material_model,pNormValue)
+			c[m,0] = (stressObj/constraintUpperLimit - 1.0)
+			dc[m,:] = (stress_gradient/constraintUpperLimit)
+		elif (constraintType == TO_QOI.MAX_VONMISES_STRESS):
+			pNormValue = to_params.Objective[1] or 6 # default p-norm value  of 6
+			max_von_mises = np.max(fe_solver.vonMisesStress)
+			pnorm_stressObj, pnorm_stress_gradient = compute_pnorm_stress_and_sensitivity(sol, x, fe_solver,KE,material_model, pNormValue)
+			c[m,0] = (max_von_mises/constraintUpperLimit - 1.0)
+			dc[m,:] = (pnorm_stress_gradient/constraintUpperLimit)	
 		else:
 			raise NotImplementedError(" constraint is not implemented yet.")
 	return c, dc
@@ -354,7 +363,7 @@ def compute_objective_and_gradient(to_params, sol: np.ndarray, x: np.ndarray,	fe
 		volFrac_gradient = np.ones_like(x) / x.size
 		return volfracObj, volFrac_gradient
 	elif (objectiveType == TO_QOI.PNORM_STRESS):
-		pNormValue = to_params.Objective[1] or 6
+		pNormValue = to_params.Objective[1] or 6 # default p-norm value  of 6
 		[stressObj, stress_gradient] = compute_pnorm_stress_and_sensitivity(sol, x, fe_solver,KE,material_model,pNormValue)
 		return stressObj, stress_gradient
 	elif (objectiveType == TO_QOI.GVECTOR):

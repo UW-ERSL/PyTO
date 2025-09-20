@@ -197,8 +197,8 @@ if __name__ == "__main__":
  
     print("-" * 50)
  
-    to_problem = StructuralTOExamples.BliskSectionWithSymmetry# Choose the TO problem
-    nDOFDesired = 100000
+    to_problem = StructuralTOExamples.LBracketTopLoadStressConstraint# Choose the TO problem
+    nDOFDesired = 50000
 
     if (to_problem in StructuralTOExamples):
         mesh, mat_prop, bc,elem_body_force, to_params = getStructuralTOProblem(to_problem,nDOFDesired=nDOFDesired)
@@ -247,6 +247,7 @@ if __name__ == "__main__":
     
     u, history,success,errorMsg,nFEAs = topopt_mma(fe_solver = fe_solver,
                                 to_params = to_params,
+                                 maxMMAIterations = 100,
                                 plot_progress = True)
     timeTaken = time.time() - startTime
     
