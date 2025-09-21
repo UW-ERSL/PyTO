@@ -255,6 +255,7 @@ def compute_pnorm_stress_and_sensitivity(sol: np.ndarray, x,
     	6 * sigma12 * F[3] + 6 * sigma13 * F[4] + 6 * sigma23 * F[5]) / np.sqrt(2)
 		g_elem[e] = p * vm_elems[e] ** (p - 2) * g_e
 	
+	max_vm = np.max(vm_elems)
 	# Note that we are using the relaxed von Mises below
 	vm_pnorm = np.sum(vm_elems**p)**(1/p)
 	T1 *= (1 / p) * (np.sum(vm_elems ** p) ** (1/p - 1) ) 
@@ -282,7 +283,7 @@ def compute_pnorm_stress_and_sensitivity(sol: np.ndarray, x,
 	T2 = get_structural_material_model_sensitivity(x,material_model) * ce
 	vm_pnorm_sensitivity = T1+ T2
 
-	return vm_pnorm,vm_pnorm_sensitivity
+	return vm_pnorm,vm_pnorm_sensitivity,max_vm
 
 def compute_solution_dotproduct_and_gradient(sol: np.ndarray, x,fe_solver,KE,material_model,g: np.ndarray,
 				) -> np.ndarray:
@@ -342,10 +343,10 @@ def compute_constraint_and_gradient(to_params, sol: np.ndarray, x: np.ndarray,	f
 			dc[m,:] = (stress_gradient/constraintUpperLimit)
 		elif (constraintType == TO_QOI.MAX_VONMISES_STRESS):
 			pNormValue = to_params.Objective[1] or 6 # default p-norm value  of 6
-			max_von_mises = np.max(fe_solver.vonMisesStress)
-			pnorm_stressObj, pnorm_stress_gradient = compute_pnorm_stress_and_sensitivity(sol, x, fe_solver,KE,material_model, pNormValue)
+			pnorm_stressObj, pnorm_stress_gradient, max_von_mises = compute_pnorm_stress_and_sensitivity(sol, x, fe_solver,KE,material_model, pNormValue)
 			c[m,0] = (max_von_mises/constraintUpperLimit - 1.0)
 			dc[m,:] = (pnorm_stress_gradient/constraintUpperLimit)	
+			print(f"Max Stress: {max_von_mises}, pNorm Stress: {pnorm_stressObj}")	
 		else:
 			raise NotImplementedError(" constraint is not implemented yet.")
 	return c, dc

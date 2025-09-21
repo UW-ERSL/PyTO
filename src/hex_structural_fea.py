@@ -90,6 +90,7 @@ class HexStructuralFEA:
     if x is None:
       x = np.ones((self.mesh.num_elems,))
 
+    self.x = x # store for postprocessing
 
     elem_material_scaling = get_structural_material_model_scaling(x, material_model)
     # Handle different shapes of elem_stiff
@@ -147,7 +148,6 @@ class HexStructuralFEA:
     self.deformation = np.sqrt(sol[0::3]**2 + sol[1::3]**2 + sol[2::3]**2)
     self.max_deformation = np.max(self.deformation)
     return sol
-  
 
 #################################################################
   def postprocess(self):
@@ -219,6 +219,7 @@ class HexStructuralFEA:
         element_stress = np.einsum('ij,ej->ei', D, strain)
       self.strainComponents = strain
       self.stressComponents = element_stress
+      element_stress = element_stress * self.x[:, np.newaxis]
       self.vonMisesStress = np.sqrt(0.5*((element_stress[:,0]-element_stress[:,1])**2 +
                 (element_stress[:,1]-element_stress[:,2])**2 +
                 (element_stress[:,2]-element_stress[:,0])**2) +

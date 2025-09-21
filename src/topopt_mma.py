@@ -197,7 +197,7 @@ if __name__ == "__main__":
  
     print("-" * 50)
  
-    to_problem = StructuralTOExamples.LBracketTopLoadStressConstraint# Choose the TO problem
+    to_problem = StructuralTOExamples.LBracketMidLoadStressConstraint# Choose the TO problem
     nDOFDesired = 50000
 
     if (to_problem in StructuralTOExamples):
