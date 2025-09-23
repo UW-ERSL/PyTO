@@ -257,7 +257,7 @@ def getStructuralTOProblem(to_problem: StructuralTOExamples,nDOFDesired = None, 
         to_params.ExtrudeZ = True
         to_params.KeepFixedElems = True
         to_params.nDOFDesired = 75000 if nDOFDesired is None else nDOFDesired
-        to_params.Constraints = [(TO_QOI.VOLUME_FRACTION, None, 0.25)]
+        to_params.Constraints = [(TO_QOI.VOLUME_FRACTION, None, 0.5)]
     # 3D Examples
     elif to_problem == StructuralTOExamples.EdgeCantilever:
         structural_problem = StructuralExamples.EdgeCantilever
@@ -417,7 +417,7 @@ def getStructuralTOProblem(to_problem: StructuralTOExamples,nDOFDesired = None, 
     # Here we add additional parameters specific to the optimization problem
     if (to_params.KeepFixedElems):
         to_params.ElemsToKeep = find_elements_with_fixedDOF(mesh, bc,nDOFPerNode=3)
-        print("Number of fixed elements", to_params.ElemsToKeep.shape)
+        #print("Number of fixed elements", to_params.ElemsToKeep.shape)
 
     if to_problem == StructuralTOExamples.BliskSectionWithSymmetry:
         centerPt = [0,0,0]

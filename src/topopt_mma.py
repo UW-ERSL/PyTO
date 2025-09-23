@@ -9,8 +9,8 @@ def topopt_mma(fe_solver, #hex_structural_fea.HexStructuralFEA or hex_thermal_fe
                             timeLimitSecs: float = 36000, #10 hour
                              move_limit: float = 0.2,
                              kkt_tol: float = 1.e-6,
-                             objective_tol: float = 2.e-4,
-                             constraint_tol: float = 2.e-4,
+                             objective_tol: float = 1.e-4,
+                             constraint_tol: float = 1.e-4,
                              print_progress: bool = True,
                             plot_progress: bool = False,
                             binarize_topology: bool = True,   
@@ -197,13 +197,12 @@ if __name__ == "__main__":
  
     print("-" * 50)
  
-    to_problem = StructuralTOExamples.Bridge # Choose the TO problem
-    nDOFDesired = 50000
-
+    to_problem = StructuralTOExamples.MBBB # Choose the TO problem
+   
     if (to_problem in StructuralTOExamples):
-        mesh, mat_prop, bc,elem_body_force, to_params = getStructuralTOProblem(to_problem,nDOFDesired=nDOFDesired)
+        mesh, mat_prop, bc,elem_body_force, to_params = getStructuralTOProblem(to_problem)
     elif (to_problem in ThermalTOExamples):
-        mesh, mat_prop, bc,elem_body_force, to_params = getThermalTOProblem(to_problem,nDOFDesired=nDOFDesired)
+        mesh, mat_prop, bc,elem_body_force, to_params = getThermalTOProblem(to_problem)
 
     
     print(f"Running {to_problem.name}...") 

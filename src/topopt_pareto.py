@@ -3,8 +3,8 @@ import time
 import numpy as np
 def topopt_pareto(fe_solver,
 				  to_params,
-							rel_err: float = 0.02,
-							vol_decr_max: float = 0.05,
+							rel_err: float = 0.01,
+							vol_decr_max: float = 0.1,
 							vol_decr_min: float = 0.0025,
 							min_local_iters: int = 2,
 							max_local_iters: int = 5,
@@ -269,7 +269,7 @@ if __name__ == "__main__":
 	from topopt_thermal_benchmarks import *
 	
 	print("-" * 50)
-	to_problem = StructuralTOExamples.Bridge # Choose the TO problem
+	to_problem = StructuralTOExamples.MBBB # Choose the TO problem
 	#to_problem = ThermalTOExamples.BridgeThermal # Choose the TO problem
 
 	if (to_problem in StructuralTOExamples):

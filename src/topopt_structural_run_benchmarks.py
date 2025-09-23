@@ -45,7 +45,7 @@ def runTOMethodOnStructuralBenchmarks(optimizationMethod):
 						StructuralTOExamples.CentrifugalPlate]
 	
 	
-	for to_problem in benchmarks_3D_problems:
+	for to_problem in [StructuralTOExamples.ThreeHoleBracket]:
 		if to_problem in benchmarks_2_5D_problems:
 			subFolder = "Compliance2.5D"
 		elif to_problem in benchmarks_3D_problems:
