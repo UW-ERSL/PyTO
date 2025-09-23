@@ -32,6 +32,7 @@ from topopt_stl_recovery import extract_isosurface, subtract_voids_from_stl
 1) TopOpt results
 2) Adaptive sizing of Arrows for topopt constraints
 3) Need to Implement Help window
+4) Remove the Mesh Quality
 """
 DEFAULT_FONT_SIZE = 32
 #---------------------------------------------------------------------------
@@ -2630,7 +2631,7 @@ class AnalysisWindow(QtWidgets.QDialog):
         mesh = self.parent.hex_mesh
         boundary_nodes = mesh.get_boundary_nodes()
         boundary_points = mesh.node_xyz[boundary_nodes]
-        tolerance = min(mesh.elem_size) * 1.2
+        tolerance = min(mesh.elem_size) * 0.8
         return boundary_nodes, boundary_points, tolerance
 
     def map_triangles_to_surface_nodes(self, triangle_indices, boundary_nodes=None, boundary_points=None, tolerance=None):
@@ -2643,7 +2644,6 @@ class AnalysisWindow(QtWidgets.QDialog):
             boundary_nodes, boundary_points, tolerance = self.get_boundary_mapping_data()
         
         surface_nodes = set()
-        print("Applying boundary conditions to triangles ", triangle_indices)
         for tri_idx in triangle_indices:
             distances = self.parent.stl_geom.find_points_triangle_distances_vectorized(boundary_points, tri_idx)
             close_mask = distances < tolerance
@@ -2735,57 +2735,129 @@ class AnalysisWindow(QtWidgets.QDialog):
 
         mesh = self.parent.hex_mesh
 
-        # Get constrained and loaded nodes
-        constrained_nodes = set()
-        loaded_nodes = set()
         boundary_nodes, boundary_points, tolerance = self.get_boundary_mapping_data()
 
-        # Constrained nodes
-        if self.parent.constrained_triangles:
-            for constraint in self.parent.constraint_data:
-                triangles = constraint.get('triangles', [])
+        if visualization_type == "structural":
+            constrained_nodes = set()
+            loaded_nodes = set()
+
+            # Constrained nodes
+            if self.parent.constrained_triangles:
+                for constraint in self.parent.constraint_data:
+                    triangles = constraint.get('triangles', [])
+                    nodes = self.map_triangles_to_surface_nodes(triangles, boundary_nodes, boundary_points, tolerance)
+                    constrained_nodes.update(nodes)
+
+            # Loaded nodes
+            for force_info in self.parent.force_data:
+                triangles = force_info.get('triangles', [])
                 nodes = self.map_triangles_to_surface_nodes(triangles, boundary_nodes, boundary_points, tolerance)
-                constrained_nodes.update(nodes)
+                loaded_nodes.update(nodes)
 
-        # Loaded nodes
-        for force_info in self.parent.force_data:
-            triangles = force_info.get('triangles', [])
-            nodes = self.map_triangles_to_surface_nodes(triangles, boundary_nodes, boundary_points, tolerance)
-            loaded_nodes.update(nodes)
-
-        #Plot mesh as wireframe
-        mesh_polydata = self.create_mesh_polydata(np.full(mesh.num_elems, 0.65))
-        self.parent.plotter.add_mesh(
-            mesh_polydata,
-            color='gray',
-            show_edges=True,
-            edge_color='black',
-            line_width=1,
-            show_scalar_bar=False,
-            name="colored_mesh"
-        )
-
-        # Plot constrained nodes (black spheres)
-        if constrained_nodes:
-            pts = mesh.node_xyz[list(constrained_nodes)]
+            # Plot mesh as wireframe
+            mesh_polydata = self.create_mesh_polydata(np.full(mesh.num_elems, 0.65))
             self.parent.plotter.add_mesh(
-                pv.PolyData(pts),
-                color='black',
-                point_size=5,
-                render_points_as_spheres=True,
-                name="constrained_nodes"
+                mesh_polydata,
+                color='gray',
+                show_edges=True,
+                edge_color='black',
+                line_width=1,
+                show_scalar_bar=False,
+                name="colored_mesh"
             )
 
-        # Plot loaded nodes (red spheres)
-        if loaded_nodes:
-            pts = mesh.node_xyz[list(loaded_nodes)]
+            # Plot constrained nodes (black spheres)
+            if constrained_nodes:
+                pts = mesh.node_xyz[list(constrained_nodes)]
+                self.parent.plotter.add_mesh(
+                    pv.PolyData(pts),
+                    color='black',
+                    point_size=5,
+                    render_points_as_spheres=True,
+                    name="constrained_nodes"
+                )
+
+            # Plot loaded nodes (red spheres)
+            if loaded_nodes:
+                pts = mesh.node_xyz[list(loaded_nodes)]
+                self.parent.plotter.add_mesh(
+                    pv.PolyData(pts),
+                    color='red',
+                    point_size=5,
+                    render_points_as_spheres=True,
+                    name="loaded_nodes"
+                )
+
+        elif visualization_type == "thermal":
+            fixed_temp_nodes = set()
+            heat_flux_nodes = set()
+            total_heat_nodes = set()
+
+            if self.parent.thermal_loads_window and self.parent.thermal_loads_window.thermal_loads:
+                thermal_loads = self.parent.thermal_loads_window.thermal_loads
+                # Fixed temperature nodes (blue)
+                for temp_load in thermal_loads.get('fixed_temps', []):
+                    nodes = self.map_triangles_to_surface_nodes(
+                        temp_load['triangles'], boundary_nodes, boundary_points, tolerance
+                    )
+                    fixed_temp_nodes.update(nodes)
+                # Heat flux nodes (orange)
+                for heat_load in thermal_loads.get('heat_sources', []):
+                    nodes = self.map_triangles_to_surface_nodes(
+                        heat_load['triangles'], boundary_nodes, boundary_points, tolerance
+                    )
+                    heat_flux_nodes.update(nodes)
+                # Total heat nodes (red)
+                for total_heat_load in thermal_loads.get('total_heat_sources', []):
+                    nodes = self.map_triangles_to_surface_nodes(
+                        total_heat_load['triangles'], boundary_nodes, boundary_points, tolerance
+                    )
+                    total_heat_nodes.update(nodes)
+
+            # Plot mesh as wireframe
+            mesh_polydata = self.create_mesh_polydata(np.full(mesh.num_elems, 0.65))
             self.parent.plotter.add_mesh(
-                pv.PolyData(pts),
-                color='red',
-                point_size=5,
-                render_points_as_spheres=True,
-                name="loaded_nodes"
+                mesh_polydata,
+                color='gray',
+                show_edges=True,
+                edge_color='black',
+                line_width=1,
+                show_scalar_bar=False,
+                name="colored_mesh"
             )
+
+            # Plot fixed temperature nodes (blue spheres)
+            if fixed_temp_nodes:
+                pts = mesh.node_xyz[list(fixed_temp_nodes)]
+                self.parent.plotter.add_mesh(
+                    pv.PolyData(pts),
+                    color='blue',
+                    point_size=5,
+                    render_points_as_spheres=True,
+                    name="fixed_temp_nodes"
+                )
+
+            # Plot heat flux nodes (orange spheres)
+            if heat_flux_nodes:
+                pts = mesh.node_xyz[list(heat_flux_nodes)]
+                self.parent.plotter.add_mesh(
+                    pv.PolyData(pts),
+                    color='orange',
+                    point_size=5,
+                    render_points_as_spheres=True,
+                    name="heat_flux_nodes"
+                )
+
+            # Plot total heat nodes (red spheres)
+            if total_heat_nodes:
+                pts = mesh.node_xyz[list(total_heat_nodes)]
+                self.parent.plotter.add_mesh(
+                    pv.PolyData(pts),
+                    color='red',
+                    point_size=5,
+                    render_points_as_spheres=True,
+                    name="total_heat_nodes"
+                )
 
         self.parent.plotter.reset_camera()
 
@@ -4293,6 +4365,7 @@ class StructuralTopOptWindow(QtWidgets.QDialog):
             
             self.parent.update_LivVar('topopt.structural_performed', True)
             self.parent.set_sidebar_icon("Structural TopOpt", "check")
+            self.parent.set_sidebar_icon("TopOpt Results", "arrow")
             
             self.parent.topopt_results = {
                 'method': self.method_combo.currentText(), 
@@ -4676,6 +4749,7 @@ class TopOptResultsWindow(QtWidgets.QDialog):
         try:
             optimized_topology_stl.save(output_path)
             self.parent.message_text.append(f"Optimized STL saved: {output_path}")
+            self.parent.set_sidebar_icon("TopOpt Results", "check")
         except Exception as e:
             self.parent.message_text.append(f"Failed to save optimized STL: {e}")
 
@@ -4931,6 +5005,7 @@ class DisplayOptionsWindow(QtWidgets.QDialog):
                     QtWidgets.QMessageBox.warning(self, "Thermal Results Missing", "Please solve for thermal analysis first.")
             elif field_choice == "None":
                 AnalysisWindow(self.parent).visualize_colored_mesh("structural")
+            self.toggle_mesh_edges(self.show_triangles.isChecked())
         elif geometry_choice == "Initial Design" and self.parent.stl_geom:
             self.parent.stl_geom.plotGeometry(
                 show_edges=self.show_triangles.isChecked(),
@@ -4997,17 +5072,26 @@ class DisplayOptionsWindow(QtWidgets.QDialog):
         self.parent.plotter.render()
 
     def toggle_mesh_edges(self, show):
-        """Show/hide triangle edges for STL or mesh wireframe for mesh."""
-        geometry_choice = self.geometry_combo.currentText()
-        for name, actor in self.parent.plotter.actors.items():
-            if hasattr(actor, 'GetProperty'):
-                prop = actor.GetProperty()
-                # Only call SetEdgeVisibility if available (vtkProperty, not vtkProperty2D)
-                if hasattr(prop, "SetEdgeVisibility"):
-                    if geometry_choice == "Mesh" or geometry_choice == "Initial Design":
-                        prop.SetEdgeVisibility(show)
-                        prop.SetEdgeColor(0, 0, 0)
-                        prop.SetLineWidth(1)
+        """Show/hide triangle edges for mesh wireframe."""
+        if self.geometry_combo.currentText() != "Mesh":
+            return  # Only toggle edges if Mesh is selected
+        mesh_actor_name = "colored_mesh"
+        if mesh_actor_name in self.parent.plotter.actors:
+            self.parent.plotter.remove_actor(mesh_actor_name, reset_camera=False)
+            mesh = getattr(self.parent, "hex_mesh", None)
+            if mesh:
+                mesh_polydata = AnalysisWindow(self.parent).create_mesh_polydata(
+                    np.full(mesh.num_elems, 0.65)
+                )
+                self.parent.plotter.add_mesh(
+                    mesh_polydata,
+                    color='gray',
+                    show_edges=show,
+                    edge_color='black',
+                    line_width=1,
+                    show_scalar_bar=False,
+                    name=mesh_actor_name
+                )
 
     def toggle_axes(self, show):
         """Show/hide coordinate axes."""

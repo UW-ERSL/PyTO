@@ -21,6 +21,7 @@ class StructuralTOExamples(enum.Enum):
 	DistributedLoad = enum.auto()
 	TensilePlate = enum.auto()
 	ThreeHoleBracket = enum.auto()
+	Bridge = enum.auto()
 
     # 3D Examples
 	EdgeCantilever = enum.auto()
@@ -192,6 +193,13 @@ def getStructuralTOProblem(to_problem: StructuralTOExamples,nDOFDesired = None, 
         to_params.Comment  = "Benchmark 2.5D"
         to_params.nDOFDesired = 60000 if nDOFDesired is None else nDOFDesired
         to_params.Constraints = [(TO_QOI.VOLUME_FRACTION, None, 0.25)] 
+    elif to_problem == StructuralTOExamples.Bridge:
+        structural_problem = StructuralExamples.Bridge
+        to_params.Comment  = "Benchmark 2.5D"
+        to_params.XSymmetry = True 
+        to_params.ExtrudeZ = True
+        to_params.nDOFDesired = 50000 if nDOFDesired is None else nDOFDesired
+        to_params.Constraints = [(TO_QOI.VOLUME_FRACTION, None, 0.4)]
     elif to_problem == StructuralTOExamples.DistributedLoad:
         structural_problem = StructuralExamples.DistributedLoad
         to_params.Comment  = "Benchmark 2.5D"

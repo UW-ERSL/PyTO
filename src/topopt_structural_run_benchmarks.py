@@ -25,7 +25,8 @@ def runTOMethodOnStructuralBenchmarks(optimizationMethod):
 						StructuralTOExamples.TwoBar, 
 						StructuralTOExamples.DistributedLoad,
 						StructuralTOExamples.TorquePlate,
-						StructuralTOExamples.ThreeHoleBracket,]
+						StructuralTOExamples.ThreeHoleBracket,
+						StructuralTOExamples.Bridge,]
 
 	benchmarks_3D_problems = [StructuralTOExamples.EdgeCantilever, 
 						   StructuralTOExamples.ThreeHoleBracketThick, 

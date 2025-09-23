@@ -345,8 +345,7 @@ def compute_constraint_and_gradient(to_params, sol: np.ndarray, x: np.ndarray,	f
 			pNormValue = to_params.Objective[1] or 6 # default p-norm value  of 6
 			pnorm_stressObj, pnorm_stress_gradient, max_von_mises = compute_pnorm_stress_and_sensitivity(sol, x, fe_solver,KE,material_model, pNormValue)
 			c[m,0] = (max_von_mises/constraintUpperLimit - 1.0)
-			dc[m,:] = (pnorm_stress_gradient/constraintUpperLimit)	
-			print(f"Max Stress: {max_von_mises}, pNorm Stress: {pnorm_stressObj}")	
+			dc[m,:] = (pnorm_stress_gradient/constraintUpperLimit)
 		else:
 			raise NotImplementedError(" constraint is not implemented yet.")
 	return c, dc

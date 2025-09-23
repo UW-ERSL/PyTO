@@ -28,6 +28,7 @@ class StructuralExamples(enum.Enum):
 	ThreeHoleBracket = enum.auto()
 	ThreeHoleBracketThick = enum.auto()
 	MBBB = enum.auto()
+	Bridge = enum.auto()
 	DistributedLoad = enum.auto()
 	Multiload = enum.auto()
 	GravityBar = enum.auto() 
@@ -88,6 +89,8 @@ def getStructuralProblem(problem: StructuralExamples, **kwargs):
     return createCantileverMidLoadProblem(**kwargs)
   elif problem == StructuralExamples.MBBB:
     return createMBBBProblem(**kwargs)
+  elif problem == StructuralExamples.Bridge:
+    return createBridgeProblem(**kwargs)
   elif problem == StructuralExamples.LBracket:
     return createLBracketProblem(**kwargs)
   elif problem == StructuralExamples.TensilePlate:
@@ -1158,7 +1161,66 @@ def createDistributedLoadProblem(nDOFDesired: int = 10000, L: float = [1.0, 0.5,
   return mesh, mat_prop, bc, elem_body_force
 
   # ----------------------------------------
-  
+def createBridgeProblem(nDOFDesired: None):
+    # Define grid size and element size
+    nelx, nely, nelz = 100, 50, 1
+    Lx, Ly, Lz = nelx* 1.0, nely* 1.0, nelz * 1.0  # Example physical dimensions (adjust as needed)
+    mesh = hex_mesher.HexMesher()
+    mesh.grid_mesh(num_elems=(nelx, nely, nelz),
+                   elem_size=(Lx/nelx, Ly/nely, Lz/nelz))
+    mesh.createEdofMatStructural()
+
+    node_pts = mesh.node_xyz
+    bridge_length = np.max(node_pts[:, 0]) - np.min(node_pts[:, 0])
+
+    # Fix left bottom edge (all 3 DOFs fixed)
+    left_bottom_nodes = np.where((np.abs(node_pts[:, 0] - np.min(node_pts[:, 0])) < mesh.elem_size[0]/2) &
+                                 (np.abs(node_pts[:, 1] - np.min(node_pts[:, 1])) < mesh.elem_size[1]/2))[0]
+    left_bottom_dofs = np.array([3 * left_bottom_nodes,
+                                 3 * left_bottom_nodes + 1,
+                                 3 * left_bottom_nodes + 2]).flatten().astype(int)
+
+    # Fix right bottom edge (only y and z fixed, x free)
+    right_bottom_nodes = np.where((np.abs(node_pts[:, 0] - np.max(node_pts[:, 0])) < mesh.elem_size[0]/2) &
+                                  (np.abs(node_pts[:, 1] - np.min(node_pts[:, 1])) < mesh.elem_size[1]/2))[0]
+    right_bottom_dofs = np.array([3 * right_bottom_nodes + 1,  # y DOF
+                                  3 * right_bottom_nodes + 2]).flatten().astype(int)
+
+    # Combine fixed DOFs
+    fixed_dofs = np.union1d(left_bottom_dofs, right_bottom_dofs)
+    dirichlet_values = 0 * np.ones_like(fixed_dofs, dtype=float)
+    mesh.node_indices[left_bottom_nodes, 3] = 1  # for plotting
+    mesh.node_indices[right_bottom_nodes, 3] = 1  # for plotting
+
+    # Apply edge loads
+    force = np.zeros(3 * mesh.num_nodes)
+
+    # Load at 1/3rd the length of the bridge
+    load_nodes_1 = np.where((np.abs(node_pts[:, 0] - (np.min(node_pts[:, 0]) + bridge_length / 3)) < mesh.elem_size[0] / 2) &
+                            (np.abs(node_pts[:, 1] - np.min(node_pts[:, 1])) < mesh.elem_size[1]/2))[0]
+    force[3 * load_nodes_1 + 1] = -1 / len(load_nodes_1)  # y direction
+    mesh.node_indices[load_nodes_1, 3] = 2  # for plotting
+
+    # Load at 1/2 the length of the bridge
+    load_nodes_2 = np.where((np.abs(node_pts[:, 0] - (np.min(node_pts[:, 0]) + bridge_length / 2)) < mesh.elem_size[0] / 2) &
+                            (np.abs(node_pts[:, 1] - np.min(node_pts[:, 1])) < mesh.elem_size[1]/2))[0]
+    force[3 * load_nodes_2 + 1] = -2 / len(load_nodes_2)  # y direction
+    mesh.node_indices[load_nodes_2, 3] = 2  # for plotting
+
+    # Load at 2/3rd the length of the bridge
+    load_nodes_3 = np.where((np.abs(node_pts[:, 0] - (np.min(node_pts[:, 0]) + 2 * bridge_length / 3)) < mesh.elem_size[0] / 2) &
+                            (np.abs(node_pts[:, 1] - np.min(node_pts[:, 1])) < mesh.elem_size[1]/2))[0]
+    force[3 * load_nodes_3 + 1] = -1 / len(load_nodes_3)  # y direction
+    mesh.node_indices[load_nodes_3, 3] = 2  # for plotting
+
+    # Define material properties
+    mat_prop = mat_lib.create_material_with_defaults("CustomMaterial", youngs_modulus=1.0, poissons_ratio=0.3, mass_density=1.0)
+
+    # Create boundary conditions
+    bc = bound_cond.BC(force=force, fixed_dofs=fixed_dofs, dirichlet_values=dirichlet_values)
+    elem_body_force = None  
+    return mesh, mat_prop, bc, elem_body_force
+
 def createMultiloadProblem(nDOFDesired: int = 10000, L: float = [0.4, 0.2, 0.1]):
   # This is an example where a grid mesh is created, and a structural problem is posed on it.
   # For a perfect cube, an estimate of the number of elements is made, and a grid mesh is created.

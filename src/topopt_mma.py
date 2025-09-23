@@ -13,7 +13,7 @@ def topopt_mma(fe_solver, #hex_structural_fea.HexStructuralFEA or hex_thermal_fe
                              constraint_tol: float = 2.e-4,
                              print_progress: bool = True,
                             plot_progress: bool = False,
-                            binarize_topology: bool = False,   
+                            binarize_topology: bool = True,   
                             progress_callback=None, 
                             plotter=None  
                              ) -> tuple[np.ndarray, dict]:
@@ -197,7 +197,7 @@ if __name__ == "__main__":
  
     print("-" * 50)
  
-    to_problem = StructuralTOExamples.LBracketMidLoadStressConstraint# Choose the TO problem
+    to_problem = StructuralTOExamples.Bridge # Choose the TO problem
     nDOFDesired = 50000
 
     if (to_problem in StructuralTOExamples):
