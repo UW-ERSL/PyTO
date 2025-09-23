@@ -28,6 +28,7 @@ class TO_QOI(enum.Enum): # Topology optimization; Various Quantity of Interest
 	MAX_VONMISES_STRESS = enum.auto()
 	GVECTOR = enum.auto() # g'* u
 	GFUNCTION = enum.auto() # g(u)
+	COST = enum.auto() # Generic cost function
 
 class TOParams: # These are the default parameters
     Comment = "" # Comment for the topology optimization problem
