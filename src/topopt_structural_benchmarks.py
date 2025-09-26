@@ -32,7 +32,7 @@ class StructuralTOExamples(enum.Enum):
 	LBracketThickMidLoad = enum.auto()
 	Table = enum.auto()
 
-    # Constraint Examples
+    # Non-compliance Examples
 	CantileverMidLoadVolumeObjective = enum.auto()
 	LBracketTopLoadStressObjective = enum.auto()
 	LBracketTopLoadStressSafetyFactor = enum.auto()
@@ -412,14 +412,14 @@ def getStructuralTOProblem(to_problem: StructuralTOExamples,nDOFDesired = None, 
         to_params.nDOFDesired = 25000 if nDOFDesired is None else nDOFDesired
         to_params.Constraints = [(TO_QOI.COMPLIANCE, None, 25)] # Assuming initial compliance is around 15
 
-    # elif to_problem == StructuralTOExamples.Inverter:
-    #     structural_problem = StructuralExamples.Inverter
-    #     to_params.Comment  = "Compliant Mechanism"
-    #     to_params.Objective = (TO_QOI.GVECTOR, None) # see below for setting the GVECTOR after mesh is created
-    #     to_params.YSymmetry = True
-    #     to_params.ExtrudeZ = True
-    #     to_params.nDOFDesired = 20000 if nDOFDesired is None else nDOFDesired
-    #     to_params.Constraints = [(TO_QOI.VOLUME_FRACTION, None, 0.3), (TO_QOI.COMPLIANCE, None, 3)] 
+    elif to_problem == StructuralTOExamples.Inverter:
+        structural_problem = StructuralExamples.Inverter
+        to_params.Comment  = "Compliant Mechanism"
+        to_params.Objective = (TO_QOI.GVECTOR, None) # see below for setting the GVECTOR after mesh is created
+        to_params.YSymmetry = True
+        to_params.ExtrudeZ = True
+        to_params.nDOFDesired = 20000 if nDOFDesired is None else nDOFDesired
+        to_params.Constraints = [(TO_QOI.VOLUME_FRACTION, None, 0.3), (TO_QOI.COMPLIANCE, None, 3)] 
 
     elif to_problem == StructuralTOExamples.KnuckleAssembly:
         structural_problem = StructuralExamples.KnuckleAssembly
