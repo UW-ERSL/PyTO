@@ -82,7 +82,9 @@ def runMMA(nVariables,nConstraints,optimizationFunction,X0,lowerBound,
 	fErr = 1
 	gErr = 1
 	tStart = time.time()
-	while (kktnorm > kkttol and outit < maxoutit) :
+	print("maxoutit",maxoutit)
+	while ( kktnorm > kkttol and outit < maxoutit) :
+		
 		outit += 1
 		outeriter += 1
 		startTime = time.time()
@@ -122,6 +124,10 @@ def runMMA(nVariables,nConstraints,optimizationFunction,X0,lowerBound,
 		if (time.time() - tStart > timeLimitSecs):
 			log_message(f"Time limit of {timeLimitSecs:0.2f} reached, exiting...")
 			break	
+		if np.isnan(kktnorm):
+			log_message("kktnorm is nan, something wrong in the optimization function, exiting...")
+			break
+			
 	if(verbose):
 		log_message(f"MMA (secs):  {timeMMA:0.2f}")
 		log_message(f"FuncEval (secs): {timeFuncEval:0.2f}")
