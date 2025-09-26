@@ -5,7 +5,7 @@ import matplotlib.pyplot as plt
 from mmaWrapper import runMMA
 def topopt_mma(fe_solver, #hex_structural_fea.HexStructuralFEA or hex_thermal_fea.HexThermalFEA
                            to_params,
-                            maxMMAIterations: int = 250, 
+                            maxMMAIterations: int = 100, 
                             timeLimitSecs: float = 36000, #10 hour
                              move_limit: float = 0.2,
                              kkt_tol: float = 1.e-6,
@@ -43,7 +43,7 @@ def topopt_mma(fe_solver, #hex_structural_fea.HexStructuralFEA or hex_thermal_fe
 
     tStart = time.time()
     num_elems= fe_solver.mesh.num_elems
-    history = {'objective': [], 'volume': []}
+    history = {'objective': [], 'compliance': [], 'volume': [], 'vonMises': [] }
     if (print_progress):
         log_message("Computing Filters ...")
     [H,Hs] = createFilters(fe_solver, to_params)
@@ -95,8 +95,7 @@ def topopt_mma(fe_solver, #hex_structural_fea.HexStructuralFEA or hex_thermal_fe
         if (to_params.APPLY_FILTER_TO_DENSITY):
             x = H*x/Hs
         fe_solver.mesh.setPseudoDensity(x)
-        # if (plot_progress):
-        #     fe_solver.plot_pseudo_density(auto_close = False, title = f"Iter {len(history['objective']) + 1} - Density", save_path = None)
+     
         if (plot_progress):
            if progress_callback is not None:
                progress_callback()
@@ -109,10 +108,12 @@ def topopt_mma(fe_solver, #hex_structural_fea.HexStructuralFEA or hex_thermal_fe
         fe_solver.postprocess()
 
         obj, grad_obj = compute_objective_and_gradient(to_params,sol,x, fe_solver,KE, material_model)
+        compliance = compute_compliance(sol, x, fe_solver, KE, material_model)
+        maxVonMises = np.max(fe_solver.vonMisesStress) if hasattr(fe_solver, 'vonMisesStress') else 0.0
         history['objective'].append(obj)
         history['volume'].append(np.mean(x))
-		
-       
+        history['compliance'].append(compliance)
+        history['vonMises'].append(maxVonMises)
         if (nodal_body_force is not None): # additional body force term
             ce_body_force = (sol[fe_solver.mesh.edofMat].reshape(num_elems, 24) * nodal_body_force[fe_solver.mesh.edofMat].reshape(num_elems, 24)).sum(1)
             grad_obj +=  2*ce_body_force*get_material_model_rho_sensitivity(x,material_model)
@@ -195,10 +196,11 @@ if __name__ == "__main__":
     from topopt_structural_benchmarks import *
     from topopt_thermal_benchmarks import *
  
+    
     print("-" * 50)
- 
-    to_problem = StructuralTOExamples.MBBB # Choose the TO problem
-   
+
+    to_problem = StructuralTOExamples.LBracketTopLoadStressConstraint # Choose the TO problem
+
     if (to_problem in StructuralTOExamples):
         mesh, mat_prop, bc,elem_body_force, to_params = getStructuralTOProblem(to_problem)
     elif (to_problem in ThermalTOExamples):
@@ -246,8 +248,7 @@ if __name__ == "__main__":
     
     u, history,success,errorMsg,nFEAs = topopt_mma(fe_solver = fe_solver,
                                 to_params = to_params,
-                                 maxMMAIterations = 100,
-                                plot_progress = True)
+                                maxMMAIterations= to_params.MaxIterations,)
     timeTaken = time.time() - startTime
     
 
@@ -271,12 +272,30 @@ if __name__ == "__main__":
     ax2.yaxis.set_major_formatter(plt.FormatStrFormatter('%.2f'))
 
     plt.title('MMA: Volume and Objective vs. Iterations')
-
-
     # Add legend
     lines1, labels1 = ax1.get_legend_handles_labels()
     lines2, labels2 = ax2.get_legend_handles_labels()
     ax1.legend(lines1 + lines2, labels1 + labels2)
 
     plt.grid(True)
+    plt.show()
+
+    # Plot compliance vs iterations
+    plt.figure()
+    plt.plot(history['compliance'], label='Compliance')
+    plt.xlabel('Iterations')
+    plt.ylabel('Compliance')
+    plt.title('Compliance vs. Iterations')
+    plt.grid(True)
+    plt.legend()
+    plt.show()
+
+    # Plot max von Mises stress vs iterations
+    plt.figure()
+    plt.plot(history['vonMises'], label='Max von Mises Stress')
+    plt.xlabel('Iterations')
+    plt.ylabel('Max von Mises Stress')
+    plt.title('Max von Mises Stress vs. Iterations')
+    plt.grid(True)
+    plt.legend()
     plt.show()

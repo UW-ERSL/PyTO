@@ -35,7 +35,10 @@ class StructuralTOExamples(enum.Enum):
     # Constraint Examples
 	CantileverMidLoadVolumeObjective = enum.auto()
 	LBracketTopLoadStressObjective = enum.auto()
+	LBracketTopLoadStressSafetyFactor = enum.auto()
+	LBracketTopLoadStressConstraint = enum.auto()
 	LBracketMidLoadStressConstraint = enum.auto()
+	LBracketMidLoadStressSafetyFactor = enum.auto()
 	LBracketMidLoadStressObjective = enum.auto()
 	LBracketThickMidLoadStressObjective = enum.auto()
 	Inverter = enum.auto()
@@ -101,9 +104,15 @@ def getSTLPath_TOProblem(to_problem: StructuralTOExamples):
         stl_file = "Models/Cantilever/CantileverMidLoad.STL"
     elif to_problem == StructuralTOExamples.LBracketTopLoadStressObjective:
         stl_file = "Models/LBracket/LBracket.STL"
+    elif to_problem == StructuralTOExamples.LBracketTopLoadStressSafetyFactor:
+        stl_file = "Models/LBracket/LBracket.STL"
+    elif to_problem == StructuralTOExamples.LBracketTopLoadStressConstraint:
+        stl_file = "Models/LBracket/LBracket.STL"
     elif to_problem == StructuralTOExamples.LBracketMidLoadStressObjective:
         stl_file = "Models/LBracket/LBracket.STL"
     elif to_problem == StructuralTOExamples.LBracketMidLoadStressConstraint:
+        stl_file = "Models/LBracket/LBracket.STL"
+    elif to_problem == StructuralTOExamples.LBracketMidLoadStressSafetyFactor:
         stl_file = "Models/LBracket/LBracket.STL"
     elif to_problem == StructuralTOExamples.LBracketThickMidLoadStressObjective:
         stl_file = "Models/LBracketThick/LBracketThick.STL"
@@ -345,10 +354,28 @@ def getStructuralTOProblem(to_problem: StructuralTOExamples,nDOFDesired = None, 
         kwargs['topload'] = 0
         kwargs['midload'] = 1.5e4
         to_params.Comment  = "Stress Minimization"
-        to_params.Objective = (TO_QOI.PNORM_STRESS, 6.0) # pnorm value
+        to_params.Objective = (TO_QOI.PNORM_STRESS, None) 
         to_params.ExtrudeZ = True
         to_params.nDOFDesired = 50000 if nDOFDesired is None else nDOFDesired
         to_params.Constraints = [(TO_QOI.VOLUME_FRACTION, None, 0.5)] 
+    elif to_problem == StructuralTOExamples.LBracketTopLoadStressSafetyFactor:
+        structural_problem = StructuralExamples.LBracket
+        kwargs['topload'] = 1.5e5
+        kwargs['midload'] = 0
+        to_params.Comment  = "Stress Safety Factor"
+        to_params.Objective = (TO_QOI.VOLUME_FRACTION, None) 
+        to_params.ExtrudeZ = True
+        to_params.nDOFDesired = 50000 if nDOFDesired is None else nDOFDesired
+        to_params.Constraints = [ (TO_QOI.STRESS_SAFETY_FACTOR, None, 5/3), (TO_QOI.COMPLIANCE, None, 400)] 
+    elif to_problem == StructuralTOExamples.LBracketTopLoadStressConstraint:
+        structural_problem = StructuralExamples.LBracket
+        kwargs['topload'] = 1.5e5
+        kwargs['midload'] = 0
+        to_params.Comment  = "Stress Constraint"
+        to_params.Objective = (TO_QOI.VOLUME_FRACTION, None) 
+        to_params.ExtrudeZ = True
+        to_params.nDOFDesired = 50000 if nDOFDesired is None else nDOFDesired
+        to_params.Constraints = [ (TO_QOI.MAX_VONMISES_STRESS, None, 150e6), (TO_QOI.COMPLIANCE, None, 400)] 
     elif to_problem == StructuralTOExamples.LBracketMidLoadStressConstraint:
         structural_problem = StructuralExamples.LBracket
         kwargs['topload'] = 0
@@ -358,11 +385,19 @@ def getStructuralTOProblem(to_problem: StructuralTOExamples,nDOFDesired = None, 
         to_params.ExtrudeZ = True
         to_params.nDOFDesired = 50000 if nDOFDesired is None else nDOFDesired
         to_params.Constraints = [ (TO_QOI.MAX_VONMISES_STRESS, None, 225e6), (TO_QOI.COMPLIANCE, None, 400)] 
-        to_params.Constraints = [ (TO_QOI.COMPLIANCE, None, 400)] 
+    elif to_problem == StructuralTOExamples.LBracketMidLoadStressSafetyFactor:
+        structural_problem = StructuralExamples.LBracket
+        kwargs['topload'] = 0
+        kwargs['midload'] = 1.5e5
+        to_params.Comment  = "Stress Safety Factor"
+        to_params.Objective = (TO_QOI.VOLUME_FRACTION, None) 
+        to_params.ExtrudeZ = True
+        to_params.nDOFDesired = 50000 if nDOFDesired is None else nDOFDesired
+        to_params.Constraints = [ (TO_QOI.STRESS_SAFETY_FACTOR, None, 2.0), (TO_QOI.COMPLIANCE, None, 400)] 
     elif to_problem == StructuralTOExamples.LBracketThickMidLoadStressObjective:
         structural_problem = StructuralExamples.LBracketThick
         to_params.Comment  =  "Stress Minimization"
-        to_params.Objective = (TO_QOI.PNORM_STRESS, 6.0) # pnorm value
+        to_params.Objective = (TO_QOI.PNORM_STRESS, None) # pnorm value
         to_params.ZSymmetry = True
         kwargs['topload'] = 0
         kwargs['midload'] = 1.5e4

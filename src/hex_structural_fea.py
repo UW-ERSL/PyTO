@@ -183,7 +183,7 @@ class HexStructuralFEA:
         uGrad[2] + wGrad[0],
         vGrad[2] + wGrad[1]
       ], axis=1)  # Shape: (num_elems, 6)
-
+      q = 1 # STRESS_RELAXATION factor
       # Constitutive matrix D for each material
       if isinstance(self.mat_prop, list):
         # Create D matrix for each material
@@ -219,7 +219,7 @@ class HexStructuralFEA:
         element_stress = np.einsum('ij,ej->ei', D, strain)
       self.strainComponents = strain
       self.stressComponents = element_stress
-      element_stress = element_stress * self.x[:, np.newaxis]
+      element_stress = element_stress * (self.x[:, np.newaxis]**q) # Stress relaxation
       self.vonMisesStress = np.sqrt(0.5*((element_stress[:,0]-element_stress[:,1])**2 +
                 (element_stress[:,1]-element_stress[:,2])**2 +
                 (element_stress[:,2]-element_stress[:,0])**2) +

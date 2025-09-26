@@ -26,6 +26,7 @@ class TO_QOI(enum.Enum): # Topology optimization; Various Quantity of Interest
 	COMPLIANCE = enum.auto()
 	PNORM_STRESS = enum.auto()
 	MAX_VONMISES_STRESS = enum.auto()
+	STRESS_SAFETY_FACTOR = enum.auto()
 	GVECTOR = enum.auto() # g'* u
 	GFUNCTION = enum.auto() # g(u)
 	COST = enum.auto() # Generic cost function
@@ -51,7 +52,8 @@ class TOParams: # These are the default parameters
     RemoveHangingElems = False # Should the hanging elements be removed?
     AMBuildDir = '' # Direction of AM build, '','X','Y','Z'
     ElemsToKeep = None # List of additional elements to retain in the design
-
+    MaxIterations = 150 # Maximum number of iterations
+    PNormExponent = 12 # p-norm exponent for stress constraint/objective
 
 def find_elements_with_forces(mesh: hex_mesher.HexMesher, force,nDOFPerNode) -> np.ndarray:
 	"""Find all elements that have nodes on which force has been applied.
@@ -150,6 +152,35 @@ def compute_volume_constraint_and_gradient(x: np.ndarray,
 	volConstraint_gradient = np.ones_like(x) / volfracUpper/ x.size
 	return volConstraint, volConstraint_gradient
 
+def compute_compliance(sol: np.ndarray, x: np.ndarray,
+				fe_solver, KE,
+				material_model = None) -> np.ndarray:
+	"""Compute the  compliance objective.
+
+	Args:
+		density: Array of (num_elems,) containing the element densities.
+		fe_solver: The structural FEA solver object.
+		penal: The penalization factor for the SIMP method.
+
+	Returns: The compliance objective value.
+	"""
+	dofMat = fe_solver.mesh.edofMat
+	num_elems = fe_solver.mesh.num_elems
+	nRows = KE.shape[0]
+	ce = (np.dot(sol[dofMat].reshape(num_elems, nRows), KE) * sol[dofMat].reshape(num_elems, nRows)).sum(1)
+	
+	if (nRows == 24): # structural hex
+		materialScaling = get_structural_material_model_scaling(x, material_model)
+	elif (nRows == 8): # thermal hex
+		materialScaling = get_thermal_material_model_scaling(x, material_model)
+		
+	else:
+		raise ValueError("Invalid number of rows in element stiffness matrix.")
+	
+	compliance = np.sum(materialScaling * ce)
+
+	return compliance
+	
 
 def compute_compliance_and_gradient(sol: np.ndarray, x: np.ndarray,
 				fe_solver, KE,
@@ -177,10 +208,8 @@ def compute_compliance_and_gradient(sol: np.ndarray, x: np.ndarray,
 		compliance_grad = -get_thermal_material_model_sensitivity(x,material_model) * ce
 	else:
 		raise ValueError("Invalid number of rows in element stiffness matrix.")
-	
-	
-	compliance = np.sum(materialScaling * ce)
 
+	compliance = np.sum(materialScaling * ce)
 	return compliance, compliance_grad
 	
 def compute_pnorm_stress_and_sensitivity(sol: np.ndarray, x,
@@ -327,26 +356,33 @@ def compute_constraint_and_gradient(to_params, sol: np.ndarray, x: np.ndarray,	f
 	dc = np.zeros((nConstraints,x.size))
 	
 	for m in range(nConstraints):
-		constraintType  = to_params.Constraints[m][0]	# first entry is the type of constraint		
-		constraintUpperLimit = to_params.Constraints[m][2] # third entry is the constraint value	
+		constraintType  = to_params.Constraints[m][0]	# first entry is the type of constraint	
+		optionalParam = to_params.Constraints[m][1] # second entry is an optional parameter	
+		constraintLimit = to_params.Constraints[m][2] # third entry is the constraint value	
 		if (constraintType == TO_QOI.COMPLIANCE): 
 			compliance, compliance_grad = compute_compliance_and_gradient(sol, x, fe_solver, KE, material_model)
-			complianceConstraint =  (compliance/constraintUpperLimit - 1.0)
-			complianceConstraint_gradient =  (compliance_grad/constraintUpperLimit)
+			complianceConstraint =  (compliance/constraintLimit - 1.0)
+			complianceConstraint_gradient =  (compliance_grad/constraintLimit)
 			c[m,0],dc[m,:] = complianceConstraint, complianceConstraint_gradient[np.newaxis]
 		elif (constraintType == TO_QOI.VOLUME_FRACTION):
 			volConstraint, volConstraint_gradient = compute_volume_constraint_and_gradient(x,to_params.Constraints[m][2])
 			c[m,0], dc[m,:] = volConstraint, volConstraint_gradient[np.newaxis]
 		elif (constraintType == TO_QOI.PNORM_STRESS):
-			pNormValue = to_params.Objective[1] or 6 # default p-norm value  of 6
+			pNormValue = to_params.PNormExponent 
 			stressObj, stress_gradient = compute_pnorm_stress_and_sensitivity(sol, x, fe_solver,KE,material_model,pNormValue)
-			c[m,0] = (stressObj/constraintUpperLimit - 1.0)
-			dc[m,:] = (stress_gradient/constraintUpperLimit)
+			c[m,0] = (stressObj/constraintLimit - 1.0)
+			dc[m,:] = (stress_gradient/constraintLimit)
 		elif (constraintType == TO_QOI.MAX_VONMISES_STRESS):
-			pNormValue = to_params.Objective[1] or 6 # default p-norm value  of 6
-			pnorm_stressObj, pnorm_stress_gradient, max_von_mises = compute_pnorm_stress_and_sensitivity(sol, x, fe_solver,KE,material_model, pNormValue)
-			c[m,0] = (max_von_mises/constraintUpperLimit - 1.0)
-			dc[m,:] = (pnorm_stress_gradient/constraintUpperLimit)
+			pNormValue = to_params.PNormExponent 
+			pnorm_stress, pnorm_stress_gradient, max_von_mises = compute_pnorm_stress_and_sensitivity(sol, x, fe_solver,KE,material_model, pNormValue)
+			c[m,0] = (max_von_mises/constraintLimit - 1.0)
+			dc[m,:] = (pnorm_stress_gradient/constraintLimit)
+		elif (constraintType == TO_QOI.STRESS_SAFETY_FACTOR):
+			pNormValue = to_params.PNormExponent 
+			pnorm_stress, pnorm_stress_gradient, max_von_mises = compute_pnorm_stress_and_sensitivity(sol, x, fe_solver,KE,material_model, pNormValue)
+			yieldStrength = fe_solver.mat_prop.yield_strength
+			c[m,0] = (max_von_mises/yieldStrength - 1.0/constraintLimit)
+			dc[m,:] = (pnorm_stress_gradient/yieldStrength)
 		else:
 			raise NotImplementedError(" constraint is not implemented yet.")
 	return c, dc
@@ -356,6 +392,7 @@ def compute_objective_and_gradient(to_params, sol: np.ndarray, x: np.ndarray,	fe
 				material_model = None) -> tuple:
 							
 	objectiveType  = to_params.Objective[0]	# first entry is the type of objective
+	optionalParam = to_params.Objective[1] # second entry is an optional parameter	
 	if (objectiveType == TO_QOI.COMPLIANCE): 
 		compliance, compliance_grad = compute_compliance_and_gradient(sol, x, fe_solver, KE, material_model)
 		return compliance, compliance_grad
@@ -364,11 +401,11 @@ def compute_objective_and_gradient(to_params, sol: np.ndarray, x: np.ndarray,	fe
 		volFrac_gradient = np.ones_like(x) / x.size
 		return volfracObj, volFrac_gradient
 	elif (objectiveType == TO_QOI.PNORM_STRESS):
-		pNormValue = to_params.Objective[1] or 6 # default p-norm value  of 6
+		pNormValue = to_params.PNormExponent 
 		[stressObj, stress_gradient] = compute_pnorm_stress_and_sensitivity(sol, x, fe_solver,KE,material_model,pNormValue)
 		return stressObj, stress_gradient
 	elif (objectiveType == TO_QOI.GVECTOR):
-		g = to_params.Objective[1]
+		g = optionalParam
 		compliance, compliance_grad = compute_solution_dotproduct_and_gradient(sol, x, fe_solver, KE,material_model,g)
 		return compliance, compliance_grad
 	else:
@@ -404,7 +441,7 @@ def compute_objective_topological_sensitivity_compliance(to_params, sol: np.ndar
 		obj = compliance
 		return obj,T,compliance
 	elif (objectiveType == TO_QOI.PNORM_STRESS):
-		pNormValue = to_params.Objective[1] or 6
+		pNormValue = to_params.Objective[1] or 16
 		[stressObj, T] = compute_pnorm_stress_and_TS(sol, x, fe_solver,KE,material_model,pNormValue)
 		return stressObj, T, compliance
 	elif (objectiveType == TO_QOI.GVECTOR):

@@ -17,7 +17,8 @@ import time
 
 def runMMA(nVariables,nConstraints,optimizationFunction,X0,lowerBound,
 			 upperBound, fTolerance = 1e-4,gTolerance = 1e-4,
-			 maxIterations = 250,timeLimitSecs = 3600,move_limit = 0.2,kktTol = 1e-6,verbose = False, progress_callback=None):
+			 maxIterations = 250,timeLimitSecs = 3600,move_limit = 0.2,
+			 kktTol = 1e-6,verbose = False, progress_callback=None):
 	
 
 	'''
