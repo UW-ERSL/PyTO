@@ -199,14 +199,13 @@ if __name__ == "__main__":
     
     print("-" * 50)
 
-    to_problem = StructuralTOExamples.LBracketTopLoadStressConstraint # Choose the TO problem
+    to_problem = StructuralTOExamples.LBracketTopLoadStressSafetyFactor # Choose the TO problem
 
     if (to_problem in StructuralTOExamples):
         mesh, mat_prop, bc,elem_body_force, to_params = getStructuralTOProblem(to_problem)
     elif (to_problem in ThermalTOExamples):
         mesh, mat_prop, bc,elem_body_force, to_params = getThermalTOProblem(to_problem)
 
-    
     print(f"Running {to_problem.name}...") 
     print("-" * 50)
     solver = lin_solv.Solvers.PARDISO # default, see below

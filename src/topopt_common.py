@@ -369,19 +369,19 @@ def compute_constraint_and_gradient(to_params, sol: np.ndarray, x: np.ndarray,	f
 			c[m,0], dc[m,:] = volConstraint, volConstraint_gradient[np.newaxis]
 		elif (constraintType == TO_QOI.PNORM_STRESS):
 			pNormValue = to_params.PNormExponent 
-			stressObj, stress_gradient = compute_pnorm_stress_and_sensitivity(sol, x, fe_solver,KE,material_model,pNormValue)
-			c[m,0] = (stressObj/constraintLimit - 1.0)
-			dc[m,:] = (stress_gradient/constraintLimit)
+			pnorm_stress, pnorm_stress_gradient, max_von_mises= compute_pnorm_stress_and_sensitivity(sol, x, fe_solver,KE,material_model,pNormValue)
+			c[m,0] = (pnorm_stress/constraintLimit - 1.0)
+			dc[m,:] = (pnorm_stress_gradient/constraintLimit)
 		elif (constraintType == TO_QOI.MAX_VONMISES_STRESS):
 			pNormValue = to_params.PNormExponent 
 			pnorm_stress, pnorm_stress_gradient, max_von_mises = compute_pnorm_stress_and_sensitivity(sol, x, fe_solver,KE,material_model, pNormValue)
-			c[m,0] = (max_von_mises/constraintLimit - 1.0)
+			c[m,0] = (pnorm_stress/constraintLimit - 1.0)
 			dc[m,:] = (pnorm_stress_gradient/constraintLimit)
 		elif (constraintType == TO_QOI.STRESS_SAFETY_FACTOR):
 			pNormValue = to_params.PNormExponent 
 			pnorm_stress, pnorm_stress_gradient, max_von_mises = compute_pnorm_stress_and_sensitivity(sol, x, fe_solver,KE,material_model, pNormValue)
 			yieldStrength = fe_solver.mat_prop.yield_strength
-			c[m,0] = (max_von_mises/yieldStrength - 1.0/constraintLimit)
+			c[m,0] = (pnorm_stress/yieldStrength - 1.0/constraintLimit)
 			dc[m,:] = (pnorm_stress_gradient/yieldStrength)
 		else:
 			raise NotImplementedError(" constraint is not implemented yet.")
