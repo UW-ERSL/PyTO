@@ -82,7 +82,6 @@ def runMMA(nVariables,nConstraints,optimizationFunction,X0,lowerBound,
 	fErr = 1
 	gErr = 1
 	tStart = time.time()
-	print("maxoutit",maxoutit)
 	while ( kktnorm > kkttol and outit < maxoutit) :
 		
 		outit += 1
