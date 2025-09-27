@@ -188,35 +188,23 @@ class HexStructuralFEA:
       if isinstance(self.mat_prop, list):
         # Create D matrix for each material
         D_list = []
+      
         for mp in self.mat_prop:
           E = mp.youngs_modulus
           nu = mp.poissons_ratio
-          D = E / ((1 + nu) * (1 - 2*nu)) * np.array([
-        [1-nu, nu, nu, 0, 0, 0],
-        [nu, 1-nu, nu, 0, 0, 0],
-        [nu, nu, 1-nu, 0, 0, 0],
-        [0, 0, 0, (1-2*nu)/2, 0, 0],
-        [0, 0, 0, 0, (1-2*nu)/2, 0],
-        [0, 0, 0, 0, 0, (1-2*nu)/2]
-          ])
+          D = hex_element_stiffness.isotropic_constitutive_matrix ( E, nu)
           D_list.append(D)
         D_stack = np.stack(D_list)
-        # Use elem_mat_id to select correct D matrix for each element
-        element_stress = np.einsum('mij,ej,em->ei', D_stack, strain, 
-                  np.eye(len(self.mat_prop))[self.mesh.elemComponentId])
+        element_stress =  np.einsum('eij, ej -> ei', D_stack, strain)
+        # element_stress = np.einsum('mij,ej,em->ei', D_stack, strain, 
+        #           np.eye(len(self.mat_prop))[self.mesh.elemComponentId])
       else:
         # Single material case
         E = self.mat_prop.youngs_modulus 
         nu = self.mat_prop.poissons_ratio
-        D = E / ((1 + nu) * (1 - 2*nu)) * np.array([
-          [1-nu, nu, nu, 0, 0, 0],
-          [nu, 1-nu, nu, 0, 0, 0],
-          [nu, nu, 1-nu, 0, 0, 0],
-          [0, 0, 0, (1-2*nu)/2, 0, 0],
-          [0, 0, 0, 0, (1-2*nu)/2, 0],
-          [0, 0, 0, 0, 0, (1-2*nu)/2]
-        ])
+        D = hex_element_stiffness.isotropic_constitutive_matrix ( E, nu)
         element_stress = np.einsum('ij,ej->ei', D, strain)
+
       self.strainComponents = strain
       self.stressComponents = element_stress
       element_stress = element_stress * (self.x[:, np.newaxis]**q) # Stress relaxation
@@ -226,6 +214,7 @@ class HexStructuralFEA:
                 3*(element_stress[:,3]**2 + element_stress[:,4]**2 +
                    element_stress[:,5]**2))
       self.elemStrainEnergy = 0.5 * np.sum(strain * element_stress, axis=1)  # Element-wise strain energy
+      #print(f"Maximum von Mises stress: {np.max(self.vonMisesStress):.4e}")
       return 
 #################################################################
   def plot_mesh(self, title = None,plot_bc = True,rel_arrow_scale = 0.5, 
@@ -673,8 +662,8 @@ class HexStructuralFEA:
 if __name__ == "__main__":    
   from hex_structural_examples import StructuralExamples,getStructuralProblem
 
-  problem = StructuralExamples.BliskSectionWithSymmetry
-  nDOFDesired = 100000
+  problem = StructuralExamples.LBracket
+  nDOFDesired = 10000
   mesh, mat_prop, bc,elem_body_force = getStructuralProblem(problem,nDOFDesired = nDOFDesired)
   solver = linear_solvers.Solvers.DPCG # typically DPCG or PARDISO
   
