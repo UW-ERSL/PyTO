@@ -271,7 +271,7 @@ class HexThermalFEA:
     return
 
 #################################################################
-  def plot_mesh(self, title = None,plot_bc = True,auto_close = True, save_path=None):
+  def plot_mesh(self, title = None,plot_bc = True,auto_close = True, save_path=None, plotter=None):
     
     self.pyVistaPlotter.clear()
     if (title is None):
@@ -322,17 +322,19 @@ class HexThermalFEA:
     pv_mesh.cell_data['density'] = face_densities
 
     # Create plotter
-
-    if save_path is  None:
-      plotter = self.pyVistaPlotter 
-      if plotter.iren is None:
-        self.create_pyvista_plotter()
+    externalPlotter = False # assume that a plotter is provided
+    if (plotter is None):
+      externalPlotter = True
+      if save_path is  None:
         plotter = self.pyVistaPlotter 
-        plotter.show(interactive_update=True, auto_close=False)
-    else:
-      plotter = pv.Plotter(off_screen=True) # for saving images
-      plotter.camera_position =self.camera_position
-      plotter.enable_anti_aliasing()
+        if plotter.iren is None:
+          self.create_pyvista_plotter()
+          plotter = self.pyVistaPlotter 
+          plotter.show(interactive_update=True, auto_close=False)
+      else:
+        plotter = pv.Plotter(off_screen=True) # for saving images
+        plotter.camera_position =self.camera_position
+        plotter.enable_anti_aliasing()
     
     plotter.add_title(title, font_size=8)
   
@@ -400,7 +402,11 @@ class HexThermalFEA:
       plotter.screenshot(save_path)
       plotter.close()
     else:
-      plotter.show(interactive_update=not auto_close, auto_close=auto_close) 
+      if (externalPlotter):
+        # Show plot interactively if not saving
+        plotter.show(interactive_update=not auto_close, auto_close=auto_close)
+      else:
+        plotter.show()
     self.camera_position = plotter.camera_position # For all future displays
     return
 
@@ -413,7 +419,8 @@ class HexThermalFEA:
             colormap = 'jet',
             auto_close = True,
             fontsize=10,
-            cross_section=None):  # New parameter for cross-section
+            cross_section=None,
+            plotter=None):  # New parameter for cross-section
     """Plot element field on the mesh.
     
     Args:
@@ -457,15 +464,19 @@ class HexThermalFEA:
     # Add field data to cell data
     pv_mesh.cell_data['field'] = filtered_field
 
-    # Create plotter
-    if save_path is None:
-      plotter = self.pyVistaPlotter 
-      if plotter.iren is None:
-        self.create_pyvista_plotter()
-        plotter = self.pyVistaPlotter
+    externalPlotter = False # assume that a plotter is provided
+    if plotter is None:
+      externalPlotter = True 
+        # Create plotter
+      # Create plotter
+      if save_path is None:
+        plotter = self.pyVistaPlotter 
+        if plotter.iren is None:
+          self.create_pyvista_plotter()
+          plotter = self.pyVistaPlotter
 
-    else:
-      plotter = pv.Plotter(off_screen=True)
+      else:
+        plotter = pv.Plotter(off_screen=True)
 
     # If cross-section is specified, create a clipped mesh
     if cross_section is not None:
@@ -538,7 +549,11 @@ class HexThermalFEA:
       plotter.screenshot(save_path)
       plotter.close()
     else:
-      plotter.show(interactive_update=not auto_close, auto_close=auto_close)
+      if (externalPlotter):
+        # Show plot interactively if not saving
+        plotter.show(interactive_update=not auto_close, auto_close=auto_close)
+      else:
+        plotter.show()
     self.camera_position = plotter.camera_position # For all future displays
     return 
 
@@ -547,11 +562,12 @@ class HexThermalFEA:
             save_path=None,
             auto_close = True,
             title = 'Pseudo density',
+            plotter = None,
             fontsize=10):
     self.pyVistaPlotter.clear()
     self.plot_elem_field(self.mesh.elemPseudoDensity, colormap='gray_r', auto_close = auto_close,
                          mask_low_pseudodensity=False, title= title,
-                save_path=save_path, fontsize=fontsize)
+                save_path=save_path, plotter = plotter, fontsize=fontsize)
 #################################################################   
 def runDOFTest():
     from hex_thermal_examples import getThermalProblem, ThermalExamples

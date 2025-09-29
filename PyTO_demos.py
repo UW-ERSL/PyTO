@@ -405,7 +405,7 @@ while True:
         plt.show()
         if not success:
             print(f"Error: {errorMsg}")
-        fe_solver.plot_mesh(title = title)
+        fe_solver.plot_mesh()
     elif demo == pyTODemos.TetCreateMesh:
         # Create a tet mesh from an STL file and display it
         tetmesh = TetMesher()
