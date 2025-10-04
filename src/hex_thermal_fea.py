@@ -629,7 +629,7 @@ if __name__ == "__main__":
     import time	
     from hex_thermal_examples import *
 
-    problem = HexThermalExamples.BridgeThermal
+    problem = HexThermalExamples.LBracket
     nDOFDesired = 25000
 
    

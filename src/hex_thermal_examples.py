@@ -239,7 +239,8 @@ def createThickPlateThermalProblem(nDOFDesired: int = 10000, heat_load = 1000, T
     bc = bound_cond.BC(force = force,fixed_dofs = fixed_dofs,dirichlet_values = dirichlet_values) 
 
     mat_prop = mat_lib.get_material("Steel")
-    return mesh, mat_prop, bc
+    elem_body_force = None
+    return mesh, mat_prop, bc, elem_body_force
 
 
 def createAnnularPlateThermalProblem(nDOFDesired: int = 10000, heat_load = 100, T0 = 23):
@@ -296,7 +297,8 @@ def createAnnularPlateThermalProblem(nDOFDesired: int = 10000, heat_load = 100, 
     bc = bound_cond.BC(force = force,fixed_dofs = fixed_dofs,dirichlet_values = dirichlet_values) 
 
     mat_prop = mat_lib.get_material("Steel")
-    return mesh, mat_prop, bc
+    elem_body_force = None
+    return mesh, mat_prop, bc, elem_body_force
 
 
 def createLBracketThermalProblem(nDOFDesired: int = 10000, heat_load = 10, T0 = 23):
@@ -351,7 +353,8 @@ def createLBracketThermalProblem(nDOFDesired: int = 10000, heat_load = 10, T0 = 
     bc = bound_cond.BC(force = force,fixed_dofs = fixed_dofs,dirichlet_values = dirichlet_values) 
 
     mat_prop = mat_lib.get_material("Steel")
-    return mesh, mat_prop, bc
+    elem_body_force = None
+    return mesh, mat_prop, bc, elem_body_force
 
 def createBliskWithBladeProblem(nDOFDesired: int = 10000, heat_load = 10, T0 = 23):
    # Read the STL model, create a mesh of desired size, and a structural problem is posed on it.
@@ -385,7 +388,8 @@ def createBliskWithBladeProblem(nDOFDesired: int = 10000, heat_load = 10, T0 = 2
   bc = bound_cond.BC(force = force,fixed_dofs = fixed_dofs,dirichlet_values = dirichlet_values) 
 
   mat_prop = mat_lib.get_material("Steel")
-  return mesh, mat_prop, bc
+  elem_body_force = None
+  return mesh, mat_prop, bc, elem_body_force
 
 def createMoranBenchMark(nDOFDesired: int = 10000,T0 = 23):
 	# See Paper: "Utility of superposition-based finite element ..."  by Moran, at. al., Additive Manuf, 2018
@@ -439,4 +443,5 @@ def createMoranBenchMark(nDOFDesired: int = 10000,T0 = 23):
 	mesh.translate(0, 0, -0.002)
     # see Table 1 in Paper 
 	mat_prop = mat_lib.get_material("Steel")
-	return mesh, mat_prop, bc
+	elem_body_force = None
+	return mesh, mat_prop, bc, elem_body_force

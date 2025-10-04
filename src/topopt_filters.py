@@ -227,6 +227,8 @@ def createZDerivativeFilter(mesh: hex_mesher.HexMesher) -> tuple[coo_matrix, np.
 	HZD = coo_matrix((data, (rows, cols)), shape=(num_elems, num_elems)).tocsc()
 
 	return HZD
+
+
 def createXSymmetryFilter(mesh: hex_mesher.HexMesher) -> tuple[coo_matrix, np.ndarray]:
 	"""Create a symmetry filter matrix about X mid-plane.
 	
