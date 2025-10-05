@@ -7,11 +7,11 @@ def topopt_mma(fe_solver, #hex_structural_fea.HexStructuralFEA or hex_thermal_fe
                            to_params,
                             maxMMAIterations: int = 100, 
                             timeLimitSecs: float = 36000, #10 hour
-                             move_limit: float = 0.2,
-                             kkt_tol: float = 1.e-6,
-                             objective_tol: float = 1.e-4,
-                             constraint_tol: float = 1.e-4,
-                             print_progress: bool = True,
+                            move_limit: float = 0.2,
+                            kkt_tol: float = 1.e-6,
+                            objective_tol: float = 1.e-4,
+                            constraint_tol: float = 1.e-4,
+                            print_progress: bool = True,
                             plot_progress: bool = False,
                             binarize_topology: bool = True,   
                             progress_callback=None, 
@@ -74,7 +74,7 @@ def topopt_mma(fe_solver, #hex_structural_fea.HexStructuralFEA or hex_thermal_fe
     if (constraintType == TO_QOI.VOLUME_FRACTION):
         volFractionConstraint = to_params.Constraints[0][2]
     else:
-        volFractionConstraint =1 # default value
+        volFractionConstraint = 0.5 # default value
 
     if (fe_solver.elem_body_force is not None):
         elem_force = fe_solver.elem_body_force.copy()
@@ -89,8 +89,12 @@ def topopt_mma(fe_solver, #hex_structural_fea.HexStructuralFEA or hex_thermal_fe
     success = True
     errorMsg = "None"
     nFEAs = 0
-  
+    obj0 = None
+    mmaIterations = 0
     def optimizationFunction(x):
+        nonlocal nFEAs, obj0,mmaIterations
+        print(50* '-')
+        print(f"Iteration: {mmaIterations}")
         x = np.asarray(x).flatten()
         if (to_params.APPLY_FILTER_TO_DENSITY):
             x = H*x/Hs
@@ -109,6 +113,13 @@ def topopt_mma(fe_solver, #hex_structural_fea.HexStructuralFEA or hex_thermal_fe
 
         obj, grad_obj = compute_objective_and_gradient(to_params,sol,x, fe_solver,KE, material_model)
         compliance = compute_compliance(sol, x, fe_solver, KE, material_model)
+
+        if (obj0 is None):
+            obj0 = obj
+        
+        obj = obj/obj0 # normalize objective
+        grad_obj = grad_obj/obj0 # normalize gradient
+
         maxVonMises = np.max(fe_solver.vonMisesStress) if hasattr(fe_solver, 'vonMisesStress') else 0.0
         history['objective'].append(obj)
         history['volume'].append(np.mean(x))
@@ -137,6 +148,17 @@ def topopt_mma(fe_solver, #hex_structural_fea.HexStructuralFEA or hex_thermal_fe
                     dcdx[m] = ((H * dcdx[m])/Hs)# apply regular filter
     
         grad_obj = grad_obj.reshape(-1, 1)
+
+        # Extract names for printing
+        objective_name = getattr(to_params.Objective[0], 'name', str(to_params.Objective[0]))
+        constraint_names = [getattr(c[0], 'name', str(c[0])) for c in to_params.Constraints]
+
+        # Print objective and constraints for this iteration
+        print(f"Min. Objective ({objective_name}): {obj*obj0:.3g}")
+        for idx, val in enumerate(c.flatten()):
+            print(f"Constraint {idx+1} ({constraint_names[idx]}): {(val+1)*to_params.Constraints[idx][2]:.3g} <= {to_params.Constraints[idx][2]:.3g}?")
+
+        mmaIterations += 1
         return obj, grad_obj, c, dcdx
 
     x0 = volFractionConstraint * np.ones(num_elems, dtype = float).reshape(-1, 1)
@@ -148,7 +170,7 @@ def topopt_mma(fe_solver, #hex_structural_fea.HexStructuralFEA or hex_thermal_fe
 
     [xOptimal,f0val, df0dx, gval, dgdx,nFEAs] = runMMA(nVariables,nConstraints,optimizationFunction,x0,lowerBound,
 			 upperBound, maxIterations = maxMMAIterations,timeLimitSecs= timeLimitSecs, move_limit = move_limit,
-             fTolerance= objective_tol,gTolerance= constraint_tol,kktTol = kkt_tol, verbose = print_progress, 
+             fTolerance= objective_tol,gTolerance= constraint_tol,kktTol = kkt_tol, verbose = False, 
              progress_callback= progress_callback)
 
     x = np.asarray(xOptimal).flatten()
@@ -185,8 +207,9 @@ def topopt_mma(fe_solver, #hex_structural_fea.HexStructuralFEA or hex_thermal_fe
         success = False 
     grey_elements = np.sum((x > 0.1) & (x < 0.9))
     fraction_grey = (grey_elements / num_elems) 
+    print(50* '-')
 
-    log_message(f"Final objective: {obj:.4g}, vf: {np.mean(x):.3f}, grey: {fraction_grey:.3f}")
+    log_message(f"Final objective: {obj0*obj:.4g}, vf: {np.mean(x):.3f}, grey: {fraction_grey:.3f}")
    
     log_message(f"Total Time: {time.time() - tStart:.2f} s")
     log_message(f"Error: {errorMsg}")
@@ -199,7 +222,7 @@ if __name__ == "__main__":
     
     print("-" * 50)
 
-    to_problem = StructuralTOExamples.LBracketMidLoad # Choose the TO problem
+    to_problem = StructuralTOExamples.LBracketTopLoadStressObjective # Choose the TO problem
 
     if (to_problem in StructuralTOExamples):
         mesh, mat_prop, bc,elem_body_force, to_params = getStructuralTOProblem(to_problem)

@@ -357,7 +357,7 @@ def getStructuralTOProblem(to_problem: StructuralTOExamples,nDOFDesired = None, 
         to_params.Objective = (TO_QOI.PNORM_STRESS, None) 
         to_params.ExtrudeZ = True
         to_params.nDOFDesired = 50000 if nDOFDesired is None else nDOFDesired
-        to_params.Constraints = [(TO_QOI.VOLUME_FRACTION, None, 0.5)] 
+        to_params.Constraints = [(TO_QOI.VOLUME_FRACTION, None, 0.4)] 
     elif to_problem == StructuralTOExamples.LBracketTopLoadStressSafetyFactor:
         structural_problem = StructuralExamples.LBracket
         kwargs['topload'] = 1.5e5
@@ -365,7 +365,7 @@ def getStructuralTOProblem(to_problem: StructuralTOExamples,nDOFDesired = None, 
         to_params.Comment  = "Stress Safety Factor"
         to_params.Objective = (TO_QOI.VOLUME_FRACTION, None) 
         to_params.ExtrudeZ = True
-        to_params.nDOFDesired = 50000 if nDOFDesired is None else nDOFDesired
+        to_params.nDOFDesired = 20000 if nDOFDesired is None else nDOFDesired
         to_params.Constraints = [ (TO_QOI.STRESS_SAFETY_FACTOR, None, 3), (TO_QOI.COMPLIANCE, None, 400)] 
     elif to_problem == StructuralTOExamples.LBracketTopLoadStressConstraint:
         structural_problem = StructuralExamples.LBracket
@@ -375,7 +375,7 @@ def getStructuralTOProblem(to_problem: StructuralTOExamples,nDOFDesired = None, 
         to_params.Objective = (TO_QOI.VOLUME_FRACTION, None) 
         to_params.ExtrudeZ = True
         to_params.nDOFDesired = 50000 if nDOFDesired is None else nDOFDesired
-        to_params.Constraints = [ (TO_QOI.MAX_VONMISES_STRESS, None, 150e6), (TO_QOI.COMPLIANCE, None, 400)] 
+        to_params.Constraints = [ (TO_QOI.MAX_VONMISES_STRESS, None, 100e6), (TO_QOI.COMPLIANCE, None, 600)] 
     elif to_problem == StructuralTOExamples.LBracketMidLoadStressConstraint:
         structural_problem = StructuralExamples.LBracket
         kwargs['topload'] = 0
