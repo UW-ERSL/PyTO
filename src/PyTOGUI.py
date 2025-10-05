@@ -29,10 +29,16 @@ from topopt_pareto import topopt_pareto
 from topopt_levelset import topopt_levelset
 from topopt_stl_recovery import extract_isosurface, subtract_voids_from_stl 
 """
-1) TopOpt results
+1) setup.py - PyTO.exe
 2) Adaptive sizing of Arrows for topopt constraints
 3) Need to Implement Help window
 4) Remove the Mesh Quality
+5) Default for TopOpt results resolution should be 15 or more.
+6) Add a progress bar for long operations
+7) once done with topopt constraints and if you open the display options window it adds solid colour to the planes
+8) display options - most bugs
+9) check arrow signs after each operation completed
+
 """
 DEFAULT_FONT_SIZE = 32
 #---------------------------------------------------------------------------
