@@ -159,6 +159,7 @@ def topopt_mma(fe_solver, #hex_structural_fea.HexStructuralFEA or hex_thermal_fe
             print(f"Constraint {idx+1} ({constraint_names[idx]}): {(val+1)*to_params.Constraints[idx][2]:.3g} <= {to_params.Constraints[idx][2]:.3g}?")
 
         mmaIterations += 1
+        
         return obj, grad_obj, c, dcdx
 
     x0 = volFractionConstraint * np.ones(num_elems, dtype = float).reshape(-1, 1)
@@ -222,7 +223,7 @@ if __name__ == "__main__":
     
     print("-" * 50)
 
-    to_problem = StructuralTOExamples.LBracketTopLoadStressObjective # Choose the TO problem
+    to_problem = StructuralTOExamples.LBracketTopLoadStressConstraint # Choose the TO problem
 
     if (to_problem in StructuralTOExamples):
         mesh, mat_prop, bc,elem_body_force, to_params = getStructuralTOProblem(to_problem)

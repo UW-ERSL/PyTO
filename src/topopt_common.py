@@ -224,8 +224,8 @@ def compute_pnorm_stress_and_sensitivity(sol: np.ndarray, x,fe_solver,KE,materia
 	# T2 arises indirectly via the solution sensitivity via the adjoint
 	mesh = fe_solver.mesh
 	nelems = mesh.num_elems
-	q = 1 # STRESS_RELAXATION factor
-	pSIMP = 6
+	q = 2 # STRESS_RELAXATION factor
+	pSIMP = 3
 	
 	E = fe_solver.mat_prop.youngs_modulus 
 	nu = fe_solver.mat_prop.poissons_ratio
@@ -271,10 +271,10 @@ def compute_pnorm_stress_and_sensitivity(sol: np.ndarray, x,fe_solver,KE,materia
 		vm = np.sqrt(0.5*((sigma11 - sigma22)**2 +(sigma22-sigma33)**2 + (sigma33-sigma11)**2) +
                 3*(sigma12**2 + sigma13**2 + sigma23**2))
 
-		T1[e] = pSIMP*(x[e]**(pSIMP-1)) * vm
+		T1[e] = pSIMP*q*(x[e]**(pSIMP*q-1)) * vm
 
 		# Now compute the stress with relaxation for sensitivity term T2 and pnorm stress
-		stress_elem = (x[e]**q)* fe_solver.stressComponents[e]
+		stress_elem = (x[e])* fe_solver.stressComponents[e]
 		sigma11, sigma22, sigma33, sigma12, sigma13, sigma23 = stress_elem
 		vm_elems[e] = np.sqrt(0.5*((sigma11 - sigma22)**2 +(sigma22-sigma33)**2 + (sigma33-sigma11)**2) +
                 3*(sigma12**2 + sigma13**2 + sigma23**2))
@@ -376,9 +376,8 @@ def compute_constraint_and_gradient(to_params, sol: np.ndarray, x: np.ndarray,	f
 		elif (constraintType == TO_QOI.MAX_VONMISES_STRESS):
 			pNormValue = to_params.PNormExponent 
 			pnorm_stress, pnorm_stress_gradient, max_von_mises = compute_pnorm_stress_and_sensitivity(sol, x, fe_solver,KE,material_model)
+			scaling = pnorm_stress/max_von_mises	
 			c[m,0] = (max_von_mises/constraintLimit - 1.0)
-			scaling = pnorm_stress/max_von_mises
-	
 			dc[m,:] = (pnorm_stress_gradient/constraintLimit)
 		elif (constraintType == TO_QOI.STRESS_SAFETY_FACTOR):
 			pNormValue = to_params.PNormExponent 
