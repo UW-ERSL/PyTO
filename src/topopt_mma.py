@@ -120,6 +120,7 @@ def topopt_mma(fe_solver, #hex_structural_fea.HexStructuralFEA or hex_thermal_fe
         obj = obj/obj0 # normalize objective
         grad_obj = grad_obj/obj0 # normalize gradient
 
+        
         maxVonMises = np.max(fe_solver.vonMisesStress) if hasattr(fe_solver, 'vonMisesStress') else 0.0
         history['objective'].append(obj)
         history['volume'].append(np.mean(x))
@@ -147,6 +148,13 @@ def topopt_mma(fe_solver, #hex_structural_fea.HexStructuralFEA or hex_thermal_fe
                 elif (to_params.Constraints[m][0] is not TO_QOI.VOLUME_FRACTION):
                     dcdx[m] = ((H * dcdx[m])/Hs)# apply regular filter
     
+        if (mmaIterations == 0):
+            # Check if any constraints are violated (>0) and print a warning
+            if np.any(c > 0):
+                print("Warning: Constraint(s) violated at start of optimization!")
+                print("GCMMA may not converge for this problem. Consider changing constraints if convergence issues occur.")
+   
+
         grad_obj = grad_obj.reshape(-1, 1)
 
         # Extract names for printing
