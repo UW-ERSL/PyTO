@@ -1,0 +1,89 @@
+{
+  "version": "2025.01",
+  "stl_file_path": "LBracket.STL",
+  "settings": {
+    "unit_system": "MKS",
+    "temperature_unit": "Kelvin",
+    "angle_unit": "Degree"
+  },
+  "analysis_settings": {
+    "n_elements": 10000,
+    "solver_type": "PARDISO"
+  },
+  "material_data": {
+    "name": "Steel",
+    "properties": {
+      "Young's Modulus": 210000000000.0,
+      "Poisson's Ratio": 0.3,
+      "Yield Strength": 250000000.0,
+      "Density": 7850,
+      "Thermal Conductivity": 50,
+      "Thermal Expansion": 1.2e-05,
+      "Specific Heat Capacity": 500,
+      "Price": 0.8
+    }
+  },
+  "structuralBC": {
+    "fixed_faces_indices": [
+      188,
+      189,
+      190,
+      191,
+      192,
+      193,
+      194,
+      195,
+      196,
+      197,
+      198,
+      199,
+      200,
+      201,
+      202,
+      203,
+      204,
+      205,
+      206,
+      207,
+      208,
+      209,
+      210,
+      211,
+      212,
+      213,
+      214,
+      215,
+      216,
+      217
+    ],
+    "load_faces_indices": [
+      [
+        128,
+        129
+      ]
+    ],
+    "load_forces": [
+      [
+        0.0,
+        -1000.0,
+        0.0
+      ]
+    ],
+    "constraint_counts": {
+      "fixed_triangles": 30,
+      "loaded_triangles": 2
+    }
+  },
+  "thermalBC": {
+    "fixed_temps": [],
+    "heat_sources": [],
+    "total_heat_sources": [],
+    "thermal_counts": {
+      "fixed_temps": 0,
+      "heat_sources": 0,
+      "total_heat_sources": 0,
+      "convection": 0
+    }
+  },
+  "topopt_constraints": null
+}
