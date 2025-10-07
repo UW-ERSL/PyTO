@@ -93,8 +93,7 @@ def topopt_mma(fe_solver, #hex_structural_fea.HexStructuralFEA or hex_thermal_fe
     mmaIterations = 0
     def optimizationFunction(x):
         nonlocal nFEAs, obj0,mmaIterations
-        print(50* '-')
-        print(f"Iteration: {mmaIterations}")
+        
         x = np.asarray(x).flatten()
         if (to_params.APPLY_FILTER_TO_DENSITY):
             x = H*x/Hs
@@ -162,10 +161,13 @@ def topopt_mma(fe_solver, #hex_structural_fea.HexStructuralFEA or hex_thermal_fe
         constraint_names = [getattr(c[0], 'name', str(c[0])) for c in to_params.Constraints]
 
         # Print objective and constraints for this iteration
-        print(f"Min. Objective ({objective_name}): {obj*obj0:.3g}")
-        for idx, val in enumerate(c.flatten()):
-            print(f"Constraint {idx+1} ({constraint_names[idx]}): {(val+1)*to_params.Constraints[idx][2]:.3g} <= {to_params.Constraints[idx][2]:.3g}?")
-
+        if (print_progress):
+            print(50* '-')
+            print(f"Iteration: {mmaIterations}")
+            print(f"Min. Objective ({objective_name}): {obj*obj0:.3g}")
+            for idx, val in enumerate(c.flatten()):
+                print(f"Constraint {idx+1} ({constraint_names[idx]}): {(val+1)*to_params.Constraints[idx][2]:.3g} <= {to_params.Constraints[idx][2]:.3g}?")
+            print(50* '-')
         mmaIterations += 1
         
         return obj, grad_obj, c, dcdx
@@ -216,7 +218,7 @@ def topopt_mma(fe_solver, #hex_structural_fea.HexStructuralFEA or hex_thermal_fe
         success = False 
     grey_elements = np.sum((x > 0.1) & (x < 0.9))
     fraction_grey = (grey_elements / num_elems) 
-    print(50* '-')
+    
 
     log_message(f"Final objective: {obj0*obj:.4g}, vf: {np.mean(x):.3f}, grey: {fraction_grey:.3f}")
    

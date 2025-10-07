@@ -339,7 +339,7 @@ def hex8_mass_matrix_structural(mass_density,
 @njit(cache=True)
 def hex8_stiffness_matrix_thermal(thermal_conductivity,
               elem_size: tuple[float, float, float],
-              gauss_order: int = 6,
+              gauss_order: int = 2,
             ) -> np.ndarray:
   """Computes the element stiffness matrix of a hexahedral element in 3D.
     The stiffness matrix for linear thermal is derived as:

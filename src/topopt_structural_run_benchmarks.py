@@ -16,24 +16,28 @@ def runTOMethodOnStructuralBenchmarks(optimizationMethod):
 	results_list = []
 	dsolver = deflation.DeflationSolver()
 
-	benchmarks_2_5D_problems = [StructuralTOExamples.Mitchell_1, StructuralTOExamples.Mitchell_2,
-						StructuralTOExamples.Mitchell_3, 
-						StructuralTOExamples.ShortCantileverTipLoad, StructuralTOExamples.ShortCantileverMidLoad,
-						StructuralTOExamples.CantileverTipLoad, StructuralTOExamples.CantileverMidLoad,
-						StructuralTOExamples.MBBB,
-						StructuralTOExamples.LBracketTopLoad, StructuralTOExamples.LBracketMidLoad,
-						StructuralTOExamples.TwoBar, 
-						StructuralTOExamples.DistributedLoad,
-						StructuralTOExamples.TorquePlate,
-						StructuralTOExamples.ThreeHoleBracket,
-						StructuralTOExamples.Bridge,]
+	benchmarks_2_5D_problems = [StructuralTOExamples.Mitchell_1, 
+							StructuralTOExamples.Mitchell_2,
+							StructuralTOExamples.Mitchell_3, 
+							StructuralTOExamples.ShortCantileverTipLoad, 
+							StructuralTOExamples.ShortCantileverMidLoad,
+							StructuralTOExamples.CantileverTipLoad, 
+							StructuralTOExamples.CantileverMidLoad,
+							StructuralTOExamples.MBBB,
+							StructuralTOExamples.LBracketTopLoad, 
+							StructuralTOExamples.LBracketMidLoad,
+							StructuralTOExamples.TwoBar, 
+							StructuralTOExamples.DistributedLoad,
+							StructuralTOExamples.TorquePlate,
+							StructuralTOExamples.ThreeHoleBracket,
+							StructuralTOExamples.Bridge,]
 
 	benchmarks_3D_problems = [StructuralTOExamples.EdgeCantilever, 
-						   StructuralTOExamples.ThreeHoleBracketThick, 
-						 StructuralTOExamples.Multiload,
-						   StructuralTOExamples.LBracketThickTopLoad,
-						StructuralTOExamples.LBracketThickMidLoad,
-						StructuralTOExamples.Table]
+							StructuralTOExamples.ThreeHoleBracketThick, 
+							StructuralTOExamples.Multiload,
+							StructuralTOExamples.LBracketThickTopLoad,
+							StructuralTOExamples.LBracketThickMidLoad,
+							StructuralTOExamples.Table]
 	
 	benchmarks_noncompliance_problems = [StructuralTOExamples.CantileverMidLoadVolumeObjective,
 						StructuralTOExamples.LBracketTopLoadStressObjective, 
@@ -46,7 +50,7 @@ def runTOMethodOnStructuralBenchmarks(optimizationMethod):
 						StructuralTOExamples.CentrifugalPlate]
 	
 	
-	for to_problem in benchmarks_2_5D_problems:
+	for to_problem in benchmarks_3D_problems:
 		if to_problem in benchmarks_2_5D_problems:
 			subFolder = "Compliance2.5D"
 		elif to_problem in benchmarks_3D_problems:
@@ -74,6 +78,10 @@ def runTOMethodOnStructuralBenchmarks(optimizationMethod):
 		print("-" * 50)
 		print(f"Running {to_problem.name} problem using {optimizationMethod.name} method and {solver.name} solver")
 		print("-" * 50)
+		# Create the directory if it does not exist
+		output_dir = f"./Results/Results_{time.strftime('%Y-%m-%d')}/Structural/{subFolder}/{optimizationMethod.name}"
+		if not os.path.exists(output_dir):
+			os.makedirs(output_dir)
 		fe_solver = hex_structural_fea.HexStructuralFEA(mesh = mesh,
 					mat_prop = mat_prop,
 					bc = bc,
@@ -102,10 +110,7 @@ def runTOMethodOnStructuralBenchmarks(optimizationMethod):
 													to_params = to_params)
 		timeTaken = time.time() - startTime
 
-		# Create the directory if it does not exist
-		output_dir = f"./Results/Results_{time.strftime('%Y-%m-%d')}/Structural/{subFolder}/{optimizationMethod.name}"
-		if not os.path.exists(output_dir):
-			os.makedirs(output_dir)
+		
 
 		image_path = f"{output_dir}/{to_problem.name}.png"
 		title = f"{optimizationMethod.name}: vol: {history['volume'][-1]:0.2f}, J: {history['objective'][-1]:.3g}, nFEA: {len(history['objective']):3d}, time: {timeTaken:.0f} s"
@@ -157,12 +162,14 @@ def runTOMethodOnStructuralBenchmarks(optimizationMethod):
 	# Convert results_list to a DataFrame for better visualization
 
 	# Read the results from the existing CSV file if it exists, otherwise create a new DataFrame
+
 	result_csv_file = f"{output_dir}/{optimizationMethod.name}_summary.csv"
 	if os.path.exists(result_csv_file):
 		results_df = pd.read_csv(result_csv_file)
 	else:
 		results_df = pd.DataFrame(results_list)
-
+	if (results_df.empty):
+		return
 	# Format
 	results_df['volume'] = results_df['volume'].map(lambda x: f"{x:.2g}")
 	results_df['objective'] = results_df['objective'].map(lambda x: f"{x:.3g}")

@@ -72,6 +72,7 @@ class HexThermalFEA:
       elem_stiff_list = [elem_stiff.hex8_stiffness_matrix_thermal(mp.thermal_conductivity, self.mesh.elem_size)
                          for mp in mat_prop]
       self.elem_stiff = np.stack(elem_stiff_list)
+
     else:
       self.elem_stiff = np.expand_dims(
         elem_stiff.hex8_stiffness_matrix_thermal(mat_prop.thermal_conductivity, self.mesh.elem_size), axis=0)   
@@ -98,11 +99,14 @@ class HexThermalFEA:
     else:
         # Multi-material case: select correct stiffness for each element
         # elem_mat_id: array of shape (num_elems,) with values in [0, num_materials-1]
-        elem_stiff_mtrx = np.zeros((self.mesh.num_elems, 8, 8))
-        for e in range(self.mesh.num_elems):
-          mat_idx = elem_mat_id[e]
-          elem_stiff_mtrx[e] = self.elem_stiff[mat_idx] * elem_material_scaling[e]
-        elem_stiff_mtrx = elem_stiff_mtrx.flatten(order='C')
+        # elem_stiff_mtrx = np.zeros((self.mesh.num_elems, 8, 8))
+        # for e in range(self.mesh.num_elems):
+        #   mat_idx = elem_mat_id[e]
+        #   elem_stiff_mtrx[e] = self.elem_stiff[mat_idx] * elem_material_scaling[e]
+        # elem_stiff_mtrx = elem_stiff_mtrx.flatten(order='C')
+        elem_stiff_mtrx = np.einsum('mij, m -> mij',
+                    self.elem_stiff,
+                    elem_material_scaling).flatten(order = 'C')
 
 
     stiff_mtrx = sp.coo_matrix((elem_stiff_mtrx, (self.node_idx[:, 0], self.node_idx[:, 1])),
