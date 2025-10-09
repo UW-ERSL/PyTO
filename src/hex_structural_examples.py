@@ -1677,7 +1677,7 @@ def createFilletedBeamProblem(nDOFDesired=50000, totalLoad = 1):
   # ----------------------------------------
   
 def createCentrifugalPlateProblem(nDOFDesired: int = 10000,
-                               rpm = 10000, verticalLoad = 100):
+                               rpm = 0, verticalLoad = 100):
  
   # Read the STL model, create a mesh of desired size, and a structural problem is posed on it.
   stl_file = os.path.join(script_dir, '../Models/CircularPlateHole/CircularPlateHole.STL')
