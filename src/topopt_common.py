@@ -213,6 +213,104 @@ def compute_compliance_and_gradient(sol: np.ndarray, x: np.ndarray,
 	compliance = np.sum(materialScaling * ce)
 	return compliance, compliance_grad
 	
+# def compute_pnorm_stress_and_sensitivity_new(sol: np.ndarray, x,fe_solver,KE,material_model):
+# 	"""
+#     Compute von Mises stress and sensitivity with respect to x for p-norm stress.
+#     """
+# 	mesh = fe_solver.mesh
+# 	nelems = mesh.num_elems
+# 	psigma = SIMP_STRESS_RELAXATION
+# 	pSIMP = SIMP_PENALTY
+# 	pNORM = 6
+# 	E = fe_solver.mat_prop.youngs_modulus
+
+# 	vm_elems = fe_solver.vonMisesStress.copy()
+# 	vm_elems_solid = fe_solver.vonMisesStressSolid.copy() # this is only used for sensitivity
+	
+# 	vm_pnorm = (np.sum(vm_elems**pNORM)**(1/pNORM))
+# 	vm_solid_pnorm = (np.sum(vm_elems_solid**pNORM)**(1/pNORM))
+	
+	
+# 	# STRESS_RELAXATION method;
+#     # See Efficient stress-constrained topology optimizationusing inexact design sensitivities
+#     # by Oded Amir, 2021
+# 	A = (1 / pNORM) * (np.sum(vm_elems ** pNORM) ** (1 / pNORM - 1))
+# 	B = E*(1 - EVOID_RELATIVE)*psigma*(x**(psigma-1))*vm_elems_solid
+# 	C = pNORM * (vm_elems ** (pNORM - 1))
+
+# 	# This is the first term of the sensitivity
+# 	T1 = A*B*C
+
+# 	D = E*( EVOID_RELATIVE + (1 - EVOID_RELATIVE)*(x**psigma))
+# 	# V matrix for von Mises stress (6x6)
+# 	V = np.array([
+#     [ 1, -1/2, -1/2,   0,   0,   0],
+#     [-1/2,  1, -1/2,   0,   0,   0],
+#     [-1/2, -1/2,  1,   0,   0,   0],
+#     [   0,    0,    0,   3,   0,   0],
+#     [   0,    0,    0,   0,   3,   0],
+#     [   0,    0,    0,   0,   0,   3]], dtype=float)
+
+# 	E0 = 1 # See paper by Oded Amir, 2021
+# 	nu = fe_solver.mat_prop.poissons_ratio
+# 	CMatrix = hex_element_stiffness.isotropic_constitutive_matrix (E0,nu)
+
+# 	# Define the B matrix (strain-displacement matrix) for a hexahedral element at the center (xi=0, eta=0, zeta=0)
+# 	gradN = (1 / 8) * np.array([
+# 		[-1, 1, 1, -1, -1, 1, 1, -1],
+# 		[-1, -1, 1, 1, -1, -1, 1, 1],
+# 		[-1, -1, -1, -1, 1, 1, 1, 1]
+# 	])
+# 	# Vectorized construction of B matrix for all 8 nodes at once
+# 	Bi = np.zeros((6, 3, 8))
+# 	Bi[0, 0, :] = gradN[0, :]
+# 	Bi[1, 1, :] = gradN[1, :]
+# 	Bi[2, 2, :] = gradN[2, :]
+# 	Bi[3, 0, :] = gradN[1, :]
+# 	Bi[3, 1, :] = gradN[0, :]
+# 	Bi[4, 0, :] = gradN[2, :]
+# 	Bi[4, 2, :] = gradN[0, :]
+# 	Bi[5, 1, :] = gradN[2, :]
+# 	Bi[5, 2, :] = gradN[1, :]
+# 	# Vectorized assignment to B
+# 	idx = np.arange(8)
+# 	BMatrix = np.zeros((6, 24))
+# 	BMatrix[:, (3 * idx)[:, None] + np.arange(3)] = Bi.transpose(0, 2, 1)
+
+
+# 	# Computing the second term
+# 	es_solid = fe_solver.element_stress_solid.copy()
+# 	ACD = A*C*D
+# 	VCBMatrix =  V @ CMatrix @ BMatrix
+# 	temp = (ACD[:, np.newaxis] * es_solid)  # Reshape ACD to match es_solid's shape
+# 	g_elem = (temp@VCBMatrix)/vm_solid_pnorm
+# 	max_vm = np.max(vm_elems)
+
+# 	# Now compute the rhs of adjoint eqn 
+# 	g = np.zeros(fe_solver.bc.num_dofs)
+# 	for e in range(nelems): # assemble  g vector
+# 		edof = mesh.edofMat[e]
+# 		g[edof] += g_elem[e]
+
+#     # Solve the adjoint	
+# 	adjointSol =  linear_solvers.solve(fe_solver.stiff_mtrx,
+#                       g,
+#                       fe_solver.solver,
+#                       fe_solver.bc,
+#                       dsolver = fe_solver.dsolver,
+#                       **fe_solver.kwargs)
+	
+# 	dofMat = fe_solver.mesh.edofMat
+# 	num_elems = fe_solver.mesh.num_elems
+# 	nRows = KE.shape[0]
+# 	ce = (np.dot(adjointSol[dofMat].reshape(num_elems, nRows), KE) * sol[dofMat].reshape(num_elems, nRows)).sum(1)
+
+# 	T2 = get_structural_material_model_sensitivity(x,material_model) * ce
+# 	vm_pnorm_sensitivity = -T1-T2
+
+# 	return vm_pnorm,vm_pnorm_sensitivity,max_vm
+
+
 def compute_pnorm_stress_and_sensitivity(sol: np.ndarray, x,fe_solver,KE,material_model):
 	"""
     Compute von Mises stress and sensitivity with respect to x for p-norm stress.
@@ -225,7 +323,8 @@ def compute_pnorm_stress_and_sensitivity(sol: np.ndarray, x,fe_solver,KE,materia
 	# T2 arises indirectly via the solution sensitivity via the adjoint
 	mesh = fe_solver.mesh
 	nelems = mesh.num_elems
-	q = 2 # STRESS_RELAXATION factor
+
+	qStress = 2 # STRESS factor for sensitivity
 	pSIMP = 3
 	
 	E = fe_solver.mat_prop.youngs_modulus 
@@ -266,25 +365,17 @@ def compute_pnorm_stress_and_sensitivity(sol: np.ndarray, x,fe_solver,KE,materia
 	T2 = np.zeros(nelems)
 
 	for e in range(nelems):
-		# First compute the stress without relaxation for sensitivity term T1
+		vm_elems[e] = fe_solver.vonMisesStress[e]
+		T1[e] = pSIMP*(x[e]**(pSIMP-1)) * vm_elems[e]
+
 		stress_elem = fe_solver.stressComponents[e]
 		sigma11, sigma22, sigma33, sigma12, sigma13, sigma23 = stress_elem
-		vm = np.sqrt(0.5*((sigma11 - sigma22)**2 +(sigma22-sigma33)**2 + (sigma33-sigma11)**2) +
-                3*(sigma12**2 + sigma13**2 + sigma23**2))
-
-		T1[e] = pSIMP*q*(x[e]**(pSIMP*q-1)) * vm
-
-		# Now compute the stress with relaxation for sensitivity term T2 and pnorm stress
-		stress_elem = (x[e])* fe_solver.stressComponents[e]
-		sigma11, sigma22, sigma33, sigma12, sigma13, sigma23 = stress_elem
-		vm_elems[e] = np.sqrt(0.5*((sigma11 - sigma22)**2 +(sigma22-sigma33)**2 + (sigma33-sigma11)**2) +
-                3*(sigma12**2 + sigma13**2 + sigma23**2))
 
 		g_e = ((sigma11 - sigma22) * (F[0] - F[1]) +
     	(sigma11 - sigma33) * (F[0] - F[2]) +
     	(sigma22 - sigma33) * (F[1] - F[2]) +
     	6 * sigma12 * F[3] + 6 * sigma13 * F[4] + 6 * sigma23 * F[5]) / np.sqrt(2)
-		g_elem[e] = pSIMP*q * vm_elems[e] ** (pSIMP*q - 2) * g_e
+		g_elem[e] = pSIMP*qStress * vm_elems[e] ** (pSIMP*qStress - 2) * g_e
 	
 	max_vm = np.max(vm_elems)
 	# Note that we are using the relaxed von Mises below
@@ -372,12 +463,15 @@ def compute_constraint_and_gradient(to_params, sol: np.ndarray, x: np.ndarray,	f
 		elif (constraintType == TO_QOI.PNORM_STRESS):
 			pNormValue = to_params.PNormExponent 
 			pnorm_stress, pnorm_stress_gradient, max_von_mises= compute_pnorm_stress_and_sensitivity(sol, x, fe_solver,KE,material_model)
+			
 			c[m,0] = (max_von_mises/constraintLimit - 1.0)
 			dc[m,:] = (pnorm_stress_gradient/constraintLimit)
 		elif (constraintType == TO_QOI.MAX_VONMISES_STRESS):
 			pNormValue = to_params.PNormExponent 
 			pnorm_stress, pnorm_stress_gradient, max_von_mises = compute_pnorm_stress_and_sensitivity(sol, x, fe_solver,KE,material_model)
 			scaling = pnorm_stress/max_von_mises	
+			#print(pnorm_stress, pnorm_stress_gradient, max_von_mises)
+			#input('check')
 			c[m,0] = (max_von_mises/constraintLimit - 1.0)
 			dc[m,:] = (pnorm_stress_gradient/constraintLimit)
 		elif (constraintType == TO_QOI.STRESS_SAFETY_FACTOR):

@@ -183,37 +183,29 @@ class HexStructuralFEA:
         uGrad[2] + wGrad[0],
         vGrad[2] + wGrad[1]
       ], axis=1)  # Shape: (num_elems, 6)
-      q = 1 # STRESS_RELAXATION factor
-      # Constitutive matrix D for each material
-      if isinstance(self.mat_prop, list):
-        # Create D matrix for each material
-        D_list = []
-      
-        for mp in self.mat_prop:
-          E = mp.youngs_modulus
-          nu = mp.poissons_ratio
-          D = hex_element_stiffness.isotropic_constitutive_matrix ( E, nu)
-          D_list.append(D)
-        D_stack = np.stack(D_list)
-        element_stress =  np.einsum('eij, ej -> ei', D_stack, strain)
-        # element_stress = np.einsum('mij,ej,em->ei', D_stack, strain, 
-        #           np.eye(len(self.mat_prop))[self.mesh.elemComponentId])
-      else:
-        # Single material case
-        E = self.mat_prop.youngs_modulus 
-        nu = self.mat_prop.poissons_ratio
-        D = hex_element_stiffness.isotropic_constitutive_matrix ( E, nu)
-        element_stress = np.einsum('ij,ej->ei', D, strain)
 
+    
+      # STRESS_RELAXATION method;
+      # See Efficient stress-constrained topology optimizationusing inexact design sensitivities
+      # by Oded Amir, 2021
+      # Constitutive matrix D for each material
+      q = 0.5  # SIMP like penalization for stress
+     
+      #  assume all are solid elements with E = 1. We will scale later
+      E = self.mat_prop.youngs_modulus
+      nu = self.mat_prop.poissons_ratio
+      D = hex_element_stiffness.isotropic_constitutive_matrix ( E, nu)
+      self.stressComponents = np.einsum('ij,ej->ei', D, strain)
+      correction = (EVOID_RELATIVE + (1-EVOID_RELATIVE) * (self.x**q)).reshape((-1,1))
+      eStress = correction * self.stressComponents
+      self.vonMisesStress = np.sqrt(0.5*((eStress[:,0]-eStress[:,1])**2 +
+                (eStress[:,1]-eStress[:,2])**2 +
+                (eStress[:,2]-eStress[:,0])**2) +
+                3*(eStress[:,3]**2 + eStress[:,4]**2 +
+                   eStress[:,5]**2))
       self.strainComponents = strain
-      self.stressComponents = element_stress
-      element_stress = element_stress * (self.x[:, np.newaxis]**q) # Stress relaxation
-      self.vonMisesStress = np.sqrt(0.5*((element_stress[:,0]-element_stress[:,1])**2 +
-                (element_stress[:,1]-element_stress[:,2])**2 +
-                (element_stress[:,2]-element_stress[:,0])**2) +
-                3*(element_stress[:,3]**2 + element_stress[:,4]**2 +
-                   element_stress[:,5]**2))
-      self.elemStrainEnergy = 0.5 * np.sum(strain * element_stress, axis=1)  # Element-wise strain energy
+
+      self.elemStrainEnergy = 0.5 * np.sum(strain * eStress, axis=1)  # Element-wise strain energy
       #print(f"Maximum von Mises stress: {np.max(self.vonMisesStress):.4e}")
       return 
 #################################################################
