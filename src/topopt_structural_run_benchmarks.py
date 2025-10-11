@@ -39,7 +39,7 @@ def runTOMethodOnStructuralBenchmarks(optimizationMethod):
 							StructuralTOExamples.LBracketThickMidLoad,
 							StructuralTOExamples.Table]
 	
-	benchmarks_noncompliance_problems = [StructuralTOExamples.CantileverMidLoadVolumeObjective,
+	benchmarks_noncompliance_problems = [StructuralTOExamples.CantileverMidLoadVolumeCompliance,
 						StructuralTOExamples.LBracketTopLoadStressObjective, 
 						StructuralTOExamples.LBracketTopLoadStressConstraint, 
 						StructuralTOExamples.LBracketTopLoadStressSafetyFactor,

@@ -191,11 +191,22 @@ class HexStructuralFEA:
       # Constitutive matrix D for each material
       q = 0.5  # SIMP like penalization for stress
      
-      #  assume all are solid elements with E = 1. We will scale later
-      E = self.mat_prop.youngs_modulus
-      nu = self.mat_prop.poissons_ratio
-      D = hex_element_stiffness.isotropic_constitutive_matrix ( E, nu)
-      self.stressComponents = np.einsum('ij,ej->ei', D, strain)
+      if isinstance(self.mat_prop, list):
+        # Create D matrix for each material
+        D_list = []
+      
+        for mp in self.mat_prop:
+          E = mp.youngs_modulus
+          nu = mp.poissons_ratio
+          D = hex_element_stiffness.isotropic_constitutive_matrix ( E, nu)
+          D_list.append(D)
+        D_stack = np.stack(D_list)
+        self.stressComponents =  np.einsum('eij, ej -> ei', D_stack, strain)
+      else:
+        E = self.mat_prop.youngs_modulus
+        nu = self.mat_prop.poissons_ratio
+        D = hex_element_stiffness.isotropic_constitutive_matrix ( E, nu)
+        self.stressComponents = np.einsum('ij,ej->ei', D, strain)
       correction = (EVOID_RELATIVE + (1-EVOID_RELATIVE) * (self.x**q)).reshape((-1,1))
       eStress = correction * self.stressComponents
       self.vonMisesStress = np.sqrt(0.5*((eStress[:,0]-eStress[:,1])**2 +

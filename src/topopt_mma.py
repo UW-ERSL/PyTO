@@ -72,9 +72,9 @@ def topopt_mma(fe_solver, #hex_structural_fea.HexStructuralFEA or hex_thermal_fe
     
     constraintType = to_params.Constraints[0][0] # assume this is the first constraint
     if (constraintType == TO_QOI.VOLUME_FRACTION):
-        volFractionConstraint = to_params.Constraints[0][2]
+        initialDensity = to_params.Constraints[0][2]
     else:
-        volFractionConstraint = 0.5 # default value
+        initialDensity = 0.5 # default value
 
     if (fe_solver.elem_body_force is not None):
         elem_force = fe_solver.elem_body_force.copy()
@@ -171,7 +171,7 @@ def topopt_mma(fe_solver, #hex_structural_fea.HexStructuralFEA or hex_thermal_fe
         
         return obj, grad_obj, c, dcdx
 
-    x0 = volFractionConstraint * np.ones(num_elems, dtype = float).reshape(-1, 1)
+    x0 = initialDensity * np.ones(num_elems, dtype = float).reshape(-1, 1)
     lowerBound = np.zeros(num_elems, dtype = float).reshape(-1, 1)
     upperBound = np.ones(num_elems, dtype = float).reshape(-1, 1)
     nVariables = num_elems
@@ -211,10 +211,6 @@ def topopt_mma(fe_solver, #hex_structural_fea.HexStructuralFEA or hex_thermal_fe
         history['objective'].append(obj)
         history['volume'].append(volfrac)
 
-    
-    if (volfrac > 1.1*volFractionConstraint):
-        errorMsg = f"vf {volFractionConstraint:0.3f} not reached"
-        success = False 
     grey_elements = np.sum((x > 0.1) & (x < 0.9))
     fraction_grey = (grey_elements / num_elems) 
     
@@ -232,7 +228,7 @@ if __name__ == "__main__":
     
     print("-" * 50)
 
-    to_problem = StructuralTOExamples.LBracketMidLoadStressObjective # Choose the TO problem
+    to_problem = StructuralTOExamples.LBracketTopLoadStressObjective # Choose the TO problem
 
     if (to_problem in StructuralTOExamples):
         mesh, mat_prop, bc,elem_body_force, to_params = getStructuralTOProblem(to_problem)
