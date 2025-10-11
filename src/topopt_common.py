@@ -55,6 +55,7 @@ class TOParams: # These are the default parameters
     ElemsToKeep = None # List of additional elements to retain in the design
     MaxIterations = 150 # Maximum number of iterations
     PNormExponent = 12 # p-norm exponent for stress constraint/objective
+    ENFORCE_CONSTRAINTS = False # Should the constraints be enforced more strongly?
 
 def find_elements_with_forces(mesh: hex_mesher.HexMesher, force,nDOFPerNode) -> np.ndarray:
 	"""Find all elements that have nodes on which force has been applied.

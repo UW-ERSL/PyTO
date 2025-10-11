@@ -366,10 +366,10 @@ def getStructuralTOProblem(to_problem: StructuralTOExamples,nDOFDesired = None, 
         kwargs['topload'] = 1.5e5
         kwargs['midload'] = 0
         to_params.Comment  = "Stress Constraint"
-        to_params.Objective = (TO_QOI.COMPLIANCE, None) 
+        to_params.Objective = (TO_QOI.VOLUME_FRACTION, None) 
         to_params.ExtrudeZ = True
         to_params.nDOFDesired = 25000 if nDOFDesired is None else nDOFDesired
-        to_params.Constraints = [ (TO_QOI.MAX_VONMISES_STRESS, None, 150e6), (TO_QOI.VOLUME_FRACTION, None, 0.4) ] 
+        to_params.Constraints = [ (TO_QOI.MAX_VONMISES_STRESS, None, 140e6)] 
     
     elif to_problem == StructuralTOExamples.LBracketMidLoadStressObjective:
         structural_problem = StructuralExamples.LBracket

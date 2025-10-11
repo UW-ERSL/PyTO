@@ -13,7 +13,7 @@ def topopt_mma(fe_solver, #hex_structural_fea.HexStructuralFEA or hex_thermal_fe
                             constraint_tol: float = 1.e-4,
                             print_progress: bool = True,
                             plot_progress: bool = False,
-                            binarize_topology: bool = True,   
+                            binarize_topology: bool = False,   
                             progress_callback=None, 
                             plotter=None  
                              ) -> tuple[np.ndarray, dict]:
@@ -168,7 +168,13 @@ def topopt_mma(fe_solver, #hex_structural_fea.HexStructuralFEA or hex_thermal_fe
             for idx, val in enumerate(c.flatten()):
                 print(f"Constraint {idx+1} ({constraint_names[idx]}): {(val+1)*to_params.Constraints[idx][2]:.3g} <= {to_params.Constraints[idx][2]:.3g}?")
         mmaIterations += 1
-        
+
+        nFEAs += 1
+        if (to_params.ENFORCE_CONSTRAINTS): # GCMMA does not enforce constraints strongly enough sometimes
+            for m in range(len(to_params.Constraints)):
+                scaling = max(0.1,min(10, np.exp(3*c[m]))) # heuristic scaling based on constraint violation
+                dcdx[m,:] /= scaling # scale constraint gradient to enforce constraints more strongly
+                print(c[m], scaling)
         return obj, grad_obj, c, dcdx
 
     x0 = initialDensity * np.ones(num_elems, dtype = float).reshape(-1, 1)
