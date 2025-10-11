@@ -11,7 +11,7 @@ def topopt_levelset(fe_solver,
                     maxIterations: int = 250,
                     numReinit: int = 10000,
                     plot_progress: bool = False,
-                    print_progress : bool = True,
+                    print_progress : bool = False,
                     debug: bool = False) -> tuple[np.ndarray, dict]:
     """Level Set Method for Topology Optimization using Hamilton-Jacobi equation in 3D.
 
@@ -56,7 +56,7 @@ def topopt_levelset(fe_solver,
 
     shapeSens = np.zeros((fe_solver.mesh.num_elems))
    
-    history = {'compliance': [], 'volume': []}
+    history = {'objective': [], 'volume': []}
 
     # Material properties
     mat_prop = fe_solver.mat_prop
@@ -114,7 +114,7 @@ def topopt_levelset(fe_solver,
 
 
         volCurr = np.mean(rho)
-        history['compliance'].append(obj)
+        history['objective'].append(obj)
         history['volume'].append(volCurr)
         
        
@@ -147,13 +147,13 @@ def topopt_levelset(fe_solver,
     sol = fe_solver.solve(rho, material_model)
     obj, _ = compute_objective_and_gradient(to_params,sol,rho, fe_solver,KE, material_model)
 		
-    history['compliance'].append(obj)
+    history['objective'].append(obj)
     history['volume'].append(volCurr)
     if iterNum == maxIterations - 1:
         errorMsg = "Maximum iterations reached"
         print(errorMsg)
         success = False
-    if (obj > 2*history['compliance'][-2]):
+    if (obj > 2*history['objective'][-2]):
         errorMsg = "Disconnected topology"
         success = False
     volfrac = history['volume'][-1]  # Define volfrac based on the last volume in history
@@ -163,7 +163,7 @@ def topopt_levelset(fe_solver,
 
     nFEAs = iterNum + 1
     totalTime = time.time() - tStart
-    print(f"Final Compliance: {history['compliance'][-1]:.4f}, Final Volume: {history['volume'][-1]:.3f}")
+    print(f"Final Compliance: {history['objective'][-1]:.4f}, Final Volume: {history['volume'][-1]:.3f}")
     print(f"Total Time: {totalTime:.2f} s")
 
     return sol, history, success, errorMsg, nFEAs
@@ -249,7 +249,7 @@ if __name__ == "__main__":
                                                     plot_progress = True,
                                                     debug = False)
 	timeTaken = time.time() - startTime
-	title = f"Level Set: nDOF: {3*fe_solver.mesh.num_nodes}, vol: {history['volume'][-1]:0.2f}, J: {history['compliance'][-1]:.3g}, time: {timeTaken:.0f} s"	
+	title = f"Level Set: nDOF: {3*fe_solver.mesh.num_nodes}, vol: {history['volume'][-1]:0.2f}, J: {history['objective'][-1]:.3g}, time: {timeTaken:.0f} s"	
 
 	print(f"Time taken: {timeTaken:.0f} s")
 	# if not success:

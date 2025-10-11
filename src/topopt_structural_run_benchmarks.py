@@ -244,7 +244,7 @@ def combine_results():
 		# Calculate normalized compliance, time and get #FEAs for each method
 		for method, df in dataframes.items():
 			compliance_data[method] = [
-				row['objective'] / reference_compliance[row['name']]
+				min(row['objective'] / reference_compliance[row['name']], 5)
 				for _, row in df.iterrows()
 			]
 			time_data[method] = [
@@ -333,7 +333,7 @@ def combine_results():
 if __name__ == "__main__":    
 	
 	optimizationMethods = [TO_METHODS.DENSITYMMA, TO_METHODS.DENSITYOCM,TO_METHODS.PARETO]
-	for optimizationMethod in optimizationMethods:
+	for optimizationMethod in [TO_METHODS.LEVELSET]:
 		runTOMethodOnStructuralBenchmarks(optimizationMethod)
 		print(f"Finished {optimizationMethod.name} tests.")
 		print("-" * 50)
