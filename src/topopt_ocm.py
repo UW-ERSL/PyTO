@@ -1,6 +1,7 @@
 
 from topopt_common import *
 from topopt_material_model import *
+from topopt_obj_cons_sensitivities import *
 import time
 
 def topopt_optimality_criteria(
@@ -67,7 +68,7 @@ def topopt_optimality_criteria(
 	else:
 		nodal_body_force = None
 	# Initialize history
-	history = {'objective': [], 'volume': [], 'change': []}
+	history = {'objective': [], 'volfrac': [], 'change': []}
 	# OC parameters
 	xmin = 0.001  # Minimum density
 	xmax = 1.0    # Maximum density
@@ -157,7 +158,7 @@ def topopt_optimality_criteria(
 		fe_solver.mesh.setPseudoDensity(np.asarray(xPhys))
 	
 		history['objective'].append(obj*objScaling)
-		history['volume'].append(np.mean(xPhys))
+		history['volfrac'].append(np.mean(xPhys))
 		history['change'].append(change)
 		# Estimate the percentage of grey elements
 		grey_elements = np.sum((x > 0.05) & (x < 0.95))
@@ -211,7 +212,7 @@ def topopt_optimality_criteria(
 	obj, grad_obj = compute_objective_and_gradient(to_params,sol,x, fe_solver,KE, material_model)
 
 	history['objective'].append(obj)
-	history['volume'].append(volfrac)
+	history['volfrac'].append(volfrac)
 	history['change'].append(change)
 
 	if (volfrac > 1.1*volFractionConstraint):
@@ -288,7 +289,7 @@ if __name__ == "__main__":
 	if not success:
 		print(f"Error: {errorMsg}")
 
-	title = f"OC: vol: {history['volume'][-1]:0.2f}, J: {history['objective'][-1]:.3g}, nFEA: {len(history['objective']):3d}, time: {timeTaken:.0f} s"
+	title = f"OC: vol: {history['volfrac'][-1]:0.2f}, J: {history['objective'][-1]:.3g}, nFEA: {len(history['objective']):3d}, time: {timeTaken:.0f} s"
 
 	
 	# plot the optimized mesh
@@ -305,7 +306,7 @@ if __name__ == "__main__":
 	# Plot volume fraction on right y-axis with dotted line
 	ax2 = ax1.twinx()
 	ax2.set_ylabel('Volume Fraction', color='tab:orange')
-	ax2.plot(history['volume'], color='tab:orange', linestyle=':', label='Volume Fraction')
+	ax2.plot(history['volfrac'], color='tab:orange', linestyle=':', label='Volume Fraction')
 	ax2.tick_params(axis='y', labelcolor='tab:orange')
 	ax2.yaxis.set_major_formatter(plt.FormatStrFormatter('%.2f'))
 

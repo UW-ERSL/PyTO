@@ -1,6 +1,8 @@
 from topopt_common import *
 import time
 import numpy as np
+from topopt_obj_cons_sensitivities import *
+
 def topopt_pareto(fe_solver,
 				  to_params,
 							rel_err: float = 0.01,
@@ -50,7 +52,7 @@ def topopt_pareto(fe_solver,
 	x = np.ones((fe_solver.mesh.num_elems))
 	volfrac = 1.0
 	
-	history = {'objective': [],'compliance':[], 'volume': []}
+	history = {'objective': [],'compliance':[], 'volfrac': []}
 	if (print_progress):
 		log_message("Computing Filters ...")
 	[H,Hs] = createFilters(fe_solver, to_params)
@@ -95,7 +97,7 @@ def topopt_pareto(fe_solver,
 
 	history['objective'].append( obj)# may be the same as compliance
 	history['compliance'].append(compliance) 
-	history['volume'].append(volfrac)
+	history['volfrac'].append(volfrac)
 	
 	# Add contribution from body force to topological sensitivity if present
 	if (nodal_body_force is not None):
@@ -114,7 +116,7 @@ def topopt_pareto(fe_solver,
 	T /= np.max(np.abs(T))  # Normalize sensitivity
 
 	if (print_progress):
-		log_message(f"vf={history['volume'][-1]:.3f}, obj={history['objective'][-1]:.3g}, compliance={history['compliance'][-1]:.3g}, #FEA={nFEAs:2d}")
+		log_message(f"vf={history['volfrac'][-1]:.3f}, obj={history['objective'][-1]:.3g}, compliance={history['compliance'][-1]:.3g}, #FEA={nFEAs:2d}")
 	vol_decr = vol_decr_max
 	
 	success = True
@@ -248,17 +250,17 @@ def topopt_pareto(fe_solver,
 				volfrac = np.mean(x)
 			history['objective'].append(obj)
 			history['compliance'].append(compliance)
-			history['volume'].append(volfrac)
+			history['volfrac'].append(volfrac)
 			scale = history['objective'][-1] / history['objective'][0]
 			vol_decr = max(vol_decr_min,min(vol_decr,vol_decr_max/scale)) # Reduce volume increment for steep increase in compliance
 			if (print_progress):
-				log_message(f"vf={history['volume'][-1]:.3f}, obj={history['objective'][-1]:.3g}, compliance={history['compliance'][-1]:.3g}, #FEA={nFEAs:2d}")
+				log_message(f"vf={history['volfrac'][-1]:.3f}, obj={history['objective'][-1]:.3g}, compliance={history['compliance'][-1]:.3g}, #FEA={nFEAs:2d}")
 			fe_solver.mesh.setPseudoDensity(x.flatten())
 
 
 	totalTime = time.time() - tStart
 
-	log_message(f"Final: vf={history['volume'][-1]:.3f}, obj={history['objective'][-1]:.3g}, compliance={history['compliance'][-1]:.3g}, #FEA={nFEAs:2d}")
+	log_message(f"Final: vf={history['volfrac'][-1]:.3f}, obj={history['objective'][-1]:.3g}, compliance={history['compliance'][-1]:.3g}, #FEA={nFEAs:2d}")
 	log_message(f"Total Time: {totalTime:.2f} s")
 	log_message(f"Error: {errorMsg}")
 	return sol, history, success,errorMsg,nFEAs
@@ -331,13 +333,13 @@ if __name__ == "__main__":
 	if not success:
 		print(f"Error: {errorMsg}")
 
-	title = f"Pareto: vol: {history['volume'][-1]:0.2f}, J: {history['objective'][-1]:.3g}, nFEA: {nFEAs:3d}, time: {timeTaken:.0f} s"
+	title = f"Pareto: vol: {history['volfrac'][-1]:0.2f}, J: {history['objective'][-1]:.3g}, nFEA: {nFEAs:3d}, time: {timeTaken:.0f} s"
 	fe_solver.plot_mesh(title = title, save_path = None)
 
 		
 	# Plot volume vs compliance history
 	plt.figure()
-	plt.plot(history['volume'], history['objective'], marker='o')
+	plt.plot(history['volfrac'], history['objective'], marker='o')
 	plt.xlabel('Volume Fraction')
 	plt.ylabel('objective')
 	plt.title('Pareto: Volume vs Compliance History')

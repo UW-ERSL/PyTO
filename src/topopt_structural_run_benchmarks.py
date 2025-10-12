@@ -12,7 +12,7 @@ def runTOMethodOnStructuralBenchmarks(optimizationMethod):
 	# Create a list to store results
 
 	saveVTU = False  # Set to True if you want to save the VTU files for MMA method
-	binarize_topology = True  # Set to True if you want to binarize the topology for MMA/OCM method
+	binarize_topology = False  # Set to True if you want to binarize the topology for MMA/OCM method
 	results_list = []
 	dsolver = deflation.DeflationSolver()
 
@@ -42,15 +42,15 @@ def runTOMethodOnStructuralBenchmarks(optimizationMethod):
 	benchmarks_noncompliance_problems = [StructuralTOExamples.CantileverMidLoadVolumeCompliance,
 						StructuralTOExamples.LBracketTopLoadStressObjective, 
 						StructuralTOExamples.LBracketTopLoadStressConstraint, 
-						StructuralTOExamples.LBracketTopLoadStressSafetyFactor,
-						StructuralTOExamples.LBracketThickMidLoadStressObjective,
-						StructuralTOExamples.Inverter]
+						StructuralTOExamples.LBracketTopLoadStressSafetyFactor]
 		
 	benchmarks_bodyforce_problems = [StructuralTOExamples.GravityPlate,
 						StructuralTOExamples.CentrifugalPlate]
+
+	benchmarks_misc_problems = [StructuralTOExamples.Inverter]
+
 	
-	
-	for to_problem in benchmarks_2_5D_problems:
+	for to_problem in benchmarks_noncompliance_problems:
 		if to_problem in benchmarks_2_5D_problems:
 			subFolder = "Compliance2.5D"
 		elif to_problem in benchmarks_3D_problems:
@@ -113,7 +113,7 @@ def runTOMethodOnStructuralBenchmarks(optimizationMethod):
 		
 
 		image_path = f"{output_dir}/{to_problem.name}.png"
-		title = f"{optimizationMethod.name}: vol: {history['volume'][-1]:0.2f}, J: {history['objective'][-1]:.3g}, nFEA: {len(history['objective']):3d}, time: {timeTaken:.0f} s"
+		title = f"{optimizationMethod.name}: vol: {history['volfrac'][-1]:0.2f}, J: {history['objective'][-1]:.3g}, nFEA: {len(history['objective']):3d}, time: {timeTaken:.0f} s"
 	
 		fe_solver.plot_mesh(save_path=image_path, plot_bc = None, title=title)
 	
@@ -121,7 +121,7 @@ def runTOMethodOnStructuralBenchmarks(optimizationMethod):
 			'name': to_problem.name,
 			'comment': to_params.Comment,  
 			'ndof': 3*fe_solver.mesh.num_nodes,
-			'volume': history['volume'][-1],
+			'volfrac': history['volfrac'][-1],
 			'objective': history['objective'][-1],
 			'#FEAs': nFEAs,
 			'time (s)': timeTaken,
@@ -171,7 +171,7 @@ def runTOMethodOnStructuralBenchmarks(optimizationMethod):
 	if (results_df.empty):
 		return
 	# Format
-	results_df['volume'] = results_df['volume'].map(lambda x: f"{x:.2g}")
+	results_df['volfrac'] = results_df['volfrac'].map(lambda x: f"{x:.2g}")
 	results_df['objective'] = results_df['objective'].map(lambda x: f"{x:.3g}")
 	results_df['time (s)'] = results_df['time (s)'].map(lambda x: f"{x:.3g}")
 
@@ -315,7 +315,7 @@ def combine_results():
 		# Create and plot normalized volume fraction summary
 		volume_data = {}
 		for method, df in dataframes.items():
-			volume_data[method] = [float(vol) for vol in df['volume']]
+			volume_data[method] = [float(vol) for vol in df['volfrac']]
 		
 		volume_df = pd.DataFrame(volume_data, index=problems)
 		
@@ -333,7 +333,7 @@ def combine_results():
 if __name__ == "__main__":    
 	
 	optimizationMethods = [TO_METHODS.DENSITYMMA, TO_METHODS.DENSITYOCM,TO_METHODS.PARETO]
-	for optimizationMethod in [TO_METHODS.DENSITYMMA]:
+	for optimizationMethod in  [TO_METHODS.DENSITYMMA]:
 		runTOMethodOnStructuralBenchmarks(optimizationMethod)
 		print(f"Finished {optimizationMethod.name} tests.")
 		print("-" * 50)

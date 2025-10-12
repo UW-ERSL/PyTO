@@ -1677,7 +1677,7 @@ def createFilletedBeamProblem(nDOFDesired=50000, totalLoad = 1):
   # ----------------------------------------
   
 def createCentrifugalPlateProblem(nDOFDesired: int = 10000,
-                               rpm = 0, verticalLoad = 100):
+                               rpm = 10000, verticalLoad = 100):
  
   # Read the STL model, create a mesh of desired size, and a structural problem is posed on it.
   stl_file = os.path.join(script_dir, '../Models/CircularPlateHole/CircularPlateHole.STL')
@@ -2468,9 +2468,10 @@ def createLBracketThickProblem(nDOFDesired: int = 80000,topload = 1000,midload =
   force = np.zeros(3*mesh.num_nodes)
   node_pts = mesh.node_xyz
   if(abs(topload) > 0):
-    topload_nodes = np.intersect1d(mesh.getNodesOnBoundingBoxPlane(0,False) , np.where((node_pts[:, 1] >= 0.35))[0]) # hard coded  
-    topload_nodes = topload_nodes[(node_pts[topload_nodes, 2] >= 0.23) & (node_pts[topload_nodes, 2] <= 0.27)]
-    
+    topload_nodes = np.where(
+      (node_pts[:, 0] >= 0.9) & (node_pts[:, 0] <= 1.0) &
+      (node_pts[:, 1] > 0.39) 
+    )[0]
     topload_dofs = 3 * topload_nodes + 1  
    
     mesh.node_indices[topload_nodes, 3] = 2 # for plotting
@@ -2478,7 +2479,7 @@ def createLBracketThickProblem(nDOFDesired: int = 80000,topload = 1000,midload =
 
   if(abs(midload) > 0):
     midload_nodes = np.intersect1d(mesh.getNodesOnBoundingBoxPlane(0,False), np.where((node_pts[:, 1] >= 0.18) & (node_pts[:, 1] <= 0.22))[0]) # hard coded    
-    midload_nodes = midload_nodes[(node_pts[midload_nodes, 2] >= 0.23) & (node_pts[midload_nodes, 2] <= 0.27)]
+    #midload_nodes = midload_nodes[(node_pts[midload_nodes, 2] >= 0.23) & (node_pts[midload_nodes, 2] <= 0.27)]
     
     midload_dofs = 3 * midload_nodes + 1  
     mesh.node_indices[midload_nodes, 3] = 2 # for plotting

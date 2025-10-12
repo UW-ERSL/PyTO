@@ -734,6 +734,7 @@ if __name__ == "__main__":
     stl_file = os.path.join(script_dir, '../Models/ThickPlate/ThickPlate.STL')
     stl_file = os.path.join(script_dir, '../Models/BliskModel/BliskSection.STL')
     stl_file = os.path.join(script_dir, '../Models/BliskModel/BliskQuarter.STL')
+    stl_file = os.path.join(script_dir, '../Models/LBracketThick/LBracketThick.STL')
     #stl_file = os.path.join(script_dir, '../Models/Inverter/Inverter.STL')
     #stl_file = os.path.join(script_dir, '../Models/LBracketThick/LBracketThick.STL')
     #stl_file = os.path.join(script_dir, '../Models/Comb/Comb.STL')

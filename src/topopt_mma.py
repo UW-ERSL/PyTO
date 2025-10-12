@@ -161,8 +161,11 @@ def topopt_mma(fe_solver, #hex_structural_fea.HexStructuralFEA or hex_thermal_fe
             print(50* '-')
             print(f"Iteration: {mmaIterations}")
             print(f"Min. Objective ({objective_name}): {obj*obj0:.3g}")
+            inequality = '<='
+            if constraint_names[idx] == "STRESS_SAFETY_FACTOR":
+                inequality = '>='
             for idx, val in enumerate(c.flatten()):
-                print(f"Constraint {idx+1} ({constraint_names[idx]}): {(val+1)*to_params.Constraints[idx][2]:.3g} <= {to_params.Constraints[idx][2]:.3g}?")
+                print(f"Constraint {idx+1} ({constraint_names[idx]}): {(val+1)*to_params.Constraints[idx][2]:.3g} {inequality} {to_params.Constraints[idx][2]:.3g}?")
         mmaIterations += 1
 
         nFEAs += 1
@@ -191,7 +194,10 @@ def topopt_mma(fe_solver, #hex_structural_fea.HexStructuralFEA or hex_thermal_fe
     obj, grad_obj = compute_objective_and_gradient(to_params,sol,x, fe_solver,KE, material_model)
     volfrac = np.mean(x)
     # Find threshold that preserves volume fraction
-    if (binarize_topology):
+    
+    grey_elements = np.sum((x > 0.1) & (x < 0.9))
+    fraction_grey = (grey_elements / num_elems) 
+    if (fraction_grey < 0.1) and (binarize_topology):
         x_sorted = np.sort(x)
         threshold = x_sorted[int((1-np.mean(x))*len(x))]
         x = np.where(x < threshold, 0.0, 1.0)
@@ -214,20 +220,19 @@ def topopt_mma(fe_solver, #hex_structural_fea.HexStructuralFEA or hex_thermal_fe
             x[:] = 0.0
             x[list(largest_component)] = 1.0
             fe_solver.mesh.setPseudoDensity(x.flatten())
-            sol = fe_solver.solve(x, material_model)
-            obj, grad_obj = compute_objective_and_gradient(to_params,sol,x, fe_solver,KE, material_model)
-            c, dcdx = compute_constraint_and_gradient(to_params,sol,x, fe_solver,KE, material_model)
-            history['objective'].append(obj)
-            history['volfrac'].append(np.mean(x))
-            for idx, val in enumerate(c.flatten()):
-                history[f'constraint_{idx+1}'].append(val)
+    sol = fe_solver.solve(x, material_model)
+    obj, grad_obj = compute_objective_and_gradient(to_params,sol,x, fe_solver,KE, material_model)
+    c, dcdx = compute_constraint_and_gradient(to_params,sol,x, fe_solver,KE, material_model)
+    history['objective'].append(obj)
+    history['volfrac'].append(np.mean(x))
+    for idx, val in enumerate(c.flatten()):
+        history[f'constraint_{idx+1}'].append(val)
 
     grey_elements = np.sum((x > 0.1) & (x < 0.9))
     fraction_grey = (grey_elements / num_elems) 
-    
+    print("-" * 50)
+    log_message(f"Final objective: {obj:.4g}, vf: {np.mean(x):.3f}, grey: {fraction_grey:.3f}")
 
-    log_message(f"Final objective: {obj0*obj:.4g}, vf: {np.mean(x):.3f}, grey: {fraction_grey:.3f}")
-   
     log_message(f"Total Time: {time.time() - tStart:.2f} s")
     log_message(f"Error: {errorMsg}")
     return np.asarray(sol), history,success,errorMsg,nFEAs
@@ -236,10 +241,9 @@ if __name__ == "__main__":
     from topopt_structural_benchmarks import *
     from topopt_thermal_benchmarks import *
  
-    
     print("-" * 50)
 
-    to_problem = StructuralTOExamples.CantileverMidLoadVolumeCompliance # Choose the TO problem
+    to_problem = StructuralTOExamples.GravityPlate # Choose the TO problem
 
     if (to_problem in StructuralTOExamples):
         mesh, mat_prop, bc,elem_body_force, to_params = getStructuralTOProblem(to_problem)
