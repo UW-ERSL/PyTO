@@ -1,4 +1,5 @@
 from topopt_common import *
+from topopt_obj_cons_sensitivities import *
 from topopt_material_model import *
 import time
 import matplotlib.pyplot as plt
@@ -43,7 +44,12 @@ def topopt_mma(fe_solver, #hex_structural_fea.HexStructuralFEA or hex_thermal_fe
 
     tStart = time.time()
     num_elems= fe_solver.mesh.num_elems
-    history = {'objective': [], 'compliance': [], 'volume': [], 'vonMises': [] }
+    
+    history = {'objective': [] }
+    for idx, constraint in enumerate(to_params.Constraints):
+        history[f'constraint_{idx+1}'] = []
+
+    history['volfrac'] = []
     if (print_progress):
         log_message("Computing Filters ...")
     [H,Hs] = createFilters(fe_solver, to_params)
@@ -69,13 +75,6 @@ def topopt_mma(fe_solver, #hex_structural_fea.HexStructuralFEA or hex_thermal_fe
         elif isinstance(fe_solver, hex_thermal_fea.HexThermalFEA):
             KE = hex_element_stiffness.hex8_stiffness_matrix_thermal( fe_solver.mat_prop.thermal_conductivity,fe_solver.mesh.elem_size)
     
-    
-    constraintType = to_params.Constraints[0][0] # assume this is the first constraint
-    if (constraintType == TO_QOI.VOLUME_FRACTION):
-        initialDensity = to_params.Constraints[0][2]
-    else:
-        initialDensity = 0.5 # default value
-
     if (fe_solver.elem_body_force is not None):
         elem_force = fe_solver.elem_body_force.copy()
         nNodes = fe_solver.mesh.num_nodes
@@ -119,12 +118,6 @@ def topopt_mma(fe_solver, #hex_structural_fea.HexStructuralFEA or hex_thermal_fe
         obj = obj/obj0 # normalize objective
         grad_obj = grad_obj/obj0 # normalize gradient
 
-        
-        maxVonMises = np.max(fe_solver.vonMisesStress) if hasattr(fe_solver, 'vonMisesStress') else 0.0
-        history['objective'].append(obj)
-        history['volume'].append(np.mean(x))
-        history['compliance'].append(compliance)
-        history['vonMises'].append(maxVonMises)
         if (nodal_body_force is not None): # additional body force term
             ce_body_force = (sol[fe_solver.mesh.edofMat].reshape(num_elems, 24) * nodal_body_force[fe_solver.mesh.edofMat].reshape(num_elems, 24)).sum(1)
             grad_obj +=  2*ce_body_force*get_material_model_rho_sensitivity(x,material_model)
@@ -147,13 +140,16 @@ def topopt_mma(fe_solver, #hex_structural_fea.HexStructuralFEA or hex_thermal_fe
                 elif (to_params.Constraints[m][0] is not TO_QOI.VOLUME_FRACTION):
                     dcdx[m] = ((H * dcdx[m])/Hs)# apply regular filter
     
+        history['objective'].append(obj*obj0)
+        history['volfrac'].append(np.mean(x))
+        for idx, val in enumerate(c.flatten()):
+            history[f'constraint_{idx+1}'].append(val)
         if (mmaIterations == 0):
             # Check if any constraints are violated (>0) and print a warning
             if np.any(c > 0):
                 print("Warning: Constraint(s) violated at start of optimization!")
                 print("GCMMA may not converge for this problem. Consider changing constraints if convergence issues occur.")
    
-
         grad_obj = grad_obj.reshape(-1, 1)
 
         # Extract names for printing
@@ -170,13 +166,13 @@ def topopt_mma(fe_solver, #hex_structural_fea.HexStructuralFEA or hex_thermal_fe
         mmaIterations += 1
 
         nFEAs += 1
-        if (to_params.ENFORCE_CONSTRAINTS): # GCMMA does not enforce constraints strongly enough sometimes
+        if (to_params.Enforce_Constraints_MMA): # GCMMA does not enforce constraints strongly enough. This heuristic enforces them more strongly    
             for m in range(len(to_params.Constraints)):
-                scaling = max(0.1,min(10, np.exp(3*c[m]))) # heuristic scaling based on constraint violation
+                scaling = max(0.1,min(10, 10**c[m])) # heuristic scaling based on constraint violation
                 dcdx[m,:] /= scaling # scale constraint gradient to enforce constraints more strongly
-                print(c[m], scaling)
         return obj, grad_obj, c, dcdx
 
+    initialDensity = 0.5
     x0 = initialDensity * np.ones(num_elems, dtype = float).reshape(-1, 1)
     lowerBound = np.zeros(num_elems, dtype = float).reshape(-1, 1)
     upperBound = np.ones(num_elems, dtype = float).reshape(-1, 1)
@@ -199,23 +195,32 @@ def topopt_mma(fe_solver, #hex_structural_fea.HexStructuralFEA or hex_thermal_fe
         x_sorted = np.sort(x)
         threshold = x_sorted[int((1-np.mean(x))*len(x))]
         x = np.where(x < threshold, 0.0, 1.0)
-        volfrac = np.mean(x)
+
+    fe_solver.mesh.setPseudoDensity(x)
+    if (to_params.Eliminate_Hanging_Elements):
+        # we must binarize for hanging element removal
+        x_sorted = np.sort(x)
+        threshold = x_sorted[int((1-np.mean(x))*len(x))]
+        x = np.where(x < threshold, 0.0, 1.0)
         fe_solver.mesh.setPseudoDensity(x)
         meshComponents = fe_solver.mesh.find_connected_components()
         if (len(meshComponents) > 1):
             if (print_progress):
-                log_message("Disconnected topology detected. Removing hanging elements.")
+                log_message(50* '-')
+                log_message("Removing hanging elements.")
             # Find the largest connected component and its size
             largest_component = max(meshComponents, key=len)
             # Set density to 1 for elements in largest component
             x[:] = 0.0
             x[list(largest_component)] = 1.0
             fe_solver.mesh.setPseudoDensity(x.flatten())
-            volfrac = np.mean(x)
-        sol = fe_solver.solve(x, material_model)
-        obj, grad_obj = compute_objective_and_gradient(to_params,sol,x, fe_solver,KE, material_model)
-        history['objective'].append(obj)
-        history['volume'].append(volfrac)
+            sol = fe_solver.solve(x, material_model)
+            obj, grad_obj = compute_objective_and_gradient(to_params,sol,x, fe_solver,KE, material_model)
+            c, dcdx = compute_constraint_and_gradient(to_params,sol,x, fe_solver,KE, material_model)
+            history['objective'].append(obj)
+            history['volfrac'].append(np.mean(x))
+            for idx, val in enumerate(c.flatten()):
+                history[f'constraint_{idx+1}'].append(val)
 
     grey_elements = np.sum((x > 0.1) & (x < 0.9))
     fraction_grey = (grey_elements / num_elems) 
@@ -234,7 +239,7 @@ if __name__ == "__main__":
     
     print("-" * 50)
 
-    to_problem = StructuralTOExamples.LBracketTopLoadStressObjective # Choose the TO problem
+    to_problem = StructuralTOExamples.CantileverMidLoadVolumeCompliance # Choose the TO problem
 
     if (to_problem in StructuralTOExamples):
         mesh, mat_prop, bc,elem_body_force, to_params = getStructuralTOProblem(to_problem)
@@ -286,50 +291,26 @@ if __name__ == "__main__":
     timeTaken = time.time() - startTime
     
 
-    title = f"MMA: vol: {history['volume'][-1]:0.2f}, J: {history['objective'][-1]:.3g}, nFEA: {len(history['objective']):3d}, time: {timeTaken:.0f} s"
+    title = f"MMA: vol: {history['volfrac'][-1]:0.2f}, J: {history['objective'][-1]:.3g}, nFEA: {len(history['objective']):3d}, time: {timeTaken:.0f} s"
     fe_solver.plot_mesh(title = title, plot_bc = False, save_path = None)
     fe_solver.postprocess()
     fe_solver.plot_vonMisesStress()
-    fig, ax1 = plt.subplots()
-
-    # Plot compliance on left y-axis
-    ax1.set_xlabel('Iterations')
-    ax1.set_ylabel('objective', color='tab:blue')
-    ax1.plot(history['objective'], color='tab:blue', label='objective')
-    ax1.tick_params(axis='y', labelcolor='tab:blue')
-
-    # Plot volume fraction on right y-axis with dotted line
-    ax2 = ax1.twinx()
-    ax2.set_ylabel('Volume Fraction', color='tab:orange')
-    ax2.plot(history['volume'], color='tab:orange', linestyle=':', label='Volume Fraction')
-    ax2.tick_params(axis='y', labelcolor='tab:orange')
-    ax2.yaxis.set_major_formatter(plt.FormatStrFormatter('%.2f'))
-
-    plt.title('MMA: Volume and Objective vs. Iterations')
-    # Add legend
-    lines1, labels1 = ax1.get_legend_handles_labels()
-    lines2, labels2 = ax2.get_legend_handles_labels()
-    ax1.legend(lines1 + lines2, labels1 + labels2)
-
-    plt.grid(True)
-    plt.show()
-
-    # Plot compliance vs iterations
+   
     plt.figure()
-    plt.plot(history['compliance'], label='Compliance')
+    plt.plot(history['objective'], label='Objective')
     plt.xlabel('Iterations')
-    plt.ylabel('Compliance')
-    plt.title('Compliance vs. Iterations')
+    plt.ylabel(f'Objective ({to_params.Objective[0].name})')
     plt.grid(True)
-    plt.legend()
     plt.show()
 
-    # Plot max von Mises stress vs iterations
-    plt.figure()
-    plt.plot(history['vonMises'], label='Max von Mises Stress')
-    plt.xlabel('Iterations')
-    plt.ylabel('Max von Mises Stress')
-    plt.title('Max von Mises Stress vs. Iterations')
-    plt.grid(True)
-    plt.legend()
-    plt.show()
+    for idx, constraint_name in enumerate([getattr(c[0], 'name', str(c[0])) for c in to_params.Constraints]):
+        plt.figure()
+        val = np.array(history[f'constraint_{idx+1}'])
+        constraint_val = (val+1)*to_params.Constraints[idx][2]
+        plt.plot(constraint_val, label=f'Constraint {idx+1} ({constraint_name})')
+        plt.xlabel('Iterations')
+        plt.ylabel(f'Constraint {idx+1} ({constraint_name})')
+        plt.axhline(y=to_params.Constraints[idx][2], color='r', linestyle='--')
+        plt.grid(True)
+        plt.show()
+    

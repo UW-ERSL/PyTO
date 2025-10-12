@@ -348,10 +348,13 @@ def getStructuralTOProblem(to_problem: StructuralTOExamples,nDOFDesired = None, 
         kwargs['topload'] = 1.5e5
         kwargs['midload'] = 0
         to_params.Comment  = "Stress Minimization"
-        to_params.Objective = (TO_QOI.PNORM_STRESS, 6.0) # pnorm value
+        to_params.Objective = (TO_QOI.MAX_VONMISES_STRESS, None) 
         to_params.ExtrudeZ = True
-        to_params.nDOFDesired = 30000 if nDOFDesired is None else nDOFDesired
-        to_params.Constraints = [(TO_QOI.VOLUME_FRACTION, None, 0.4)] 
+        to_params.nDOFDesired = 25000 if nDOFDesired is None else nDOFDesired
+        to_params.Constraints = [(TO_QOI.VOLUME_FRACTION, None, 0.4)]
+        to_params.Enforce_Constraints_MMA = True 
+        to_params.Eliminate_Hanging_Elements = True
+        
     elif to_problem == StructuralTOExamples.LBracketTopLoadStressSafetyFactor:
         structural_problem = StructuralExamples.LBracket
         kwargs['topload'] = 1.5e5
@@ -410,11 +413,13 @@ def getStructuralTOProblem(to_problem: StructuralTOExamples,nDOFDesired = None, 
     elif to_problem == StructuralTOExamples.CantileverMidLoadVolumeCompliance:
         structural_problem = StructuralExamples.CantileverMidLoad
         to_params.Comment = "Compliance Constraint"
-        to_params.Objective = (TO_QOI.VOLUME_FRACTION, None) # see below for setting the GVECTOR after mesh is created
+        to_params.Objective = (TO_QOI.VOLUME_FRACTION, None) 
         to_params.YSymmetry = True  # Symmetry about the Y-axis
         to_params.ExtrudeZ = True
+        to_params.ENFORCE_MMA_CONSTRAINTS = True
         to_params.nDOFDesired = 25000 if nDOFDesired is None else nDOFDesired
-        to_params.Constraints = [(TO_QOI.COMPLIANCE, None, 25)] # Assuming initial compliance is around 15
+        to_params.Constraints = [(TO_QOI.COMPLIANCE, None, 25)]
+        to_params.Enforce_Constraints_MMA = True
 
     elif to_problem == StructuralTOExamples.Inverter:
         structural_problem = StructuralExamples.Inverter
