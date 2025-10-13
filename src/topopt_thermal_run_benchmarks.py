@@ -67,7 +67,7 @@ def runTOMethodOnThermalBenchmarks(optimizationMethod):
 			os.makedirs(output_dir)
 
 		image_path = f"{output_dir}/{to_problem.name}.png"
-		title = f"{optimizationMethod.name}:  vol: {history['volume'][-1]:0.2f}, J: {history['objective'][-1]:.3g}, nFEA: {len(history['objective']):3d}, time: {timeTaken:.0f} s"
+		title = f"{optimizationMethod.name}:  vol: {history['volfrac'][-1]:0.2f}, J: {history['objective'][-1]:.3g}, nFEA: {len(history['objective']):3d}, time: {timeTaken:.0f} s"
 	
 		fe_solver.plot_mesh(save_path=image_path, plot_bc = None, title=title)
 		
@@ -75,7 +75,7 @@ def runTOMethodOnThermalBenchmarks(optimizationMethod):
 			'name': to_problem.name,
 			'comment': to_params.Comment,  
 			'ndof': fe_solver.mesh.num_nodes,
-			'volume': history['volume'][-1],
+			'volfrac': history['volfrac'][-1],
 			'objective': history['objective'][-1],
 			'#FEAs': nFEAs,
 			'time (s)': timeTaken,
@@ -116,7 +116,7 @@ def runTOMethodOnThermalBenchmarks(optimizationMethod):
 		results_df = pd.DataFrame(results_list)
 
 	# Format
-	results_df['volume'] = results_df['volume'].map(lambda x: f"{x:.2g}")
+	results_df['volfrac'] = results_df['volfrac'].map(lambda x: f"{x:.2g}")
 	results_df['objective'] = results_df['objective'].map(lambda x: f"{x:.3g}")
 	results_df['time (s)'] = results_df['time (s)'].map(lambda x: f"{x:.3g}")
 
@@ -258,7 +258,7 @@ def combine_results():
 		# Create and plot normalized volume fraction summary
 		volume_data = {}
 		for method, df in dataframes.items():
-			volume_data[method] = [float(vol) for vol in df['volume']]
+			volume_data[method] = [float(vol) for vol in df['volfrac']]
 		
 		volume_df = pd.DataFrame(volume_data, index=problems)
 		
