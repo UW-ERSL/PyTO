@@ -152,16 +152,16 @@ def compute_pnorm_stress_and_sensitivity(sol: np.ndarray, x,fe_solver,KE,materia
 	
 	max_vm = np.max(vm_elems)
 	# Note that we are using the relaxed von Mises below
-	pNormMax = 6
-	vm_pnorm = np.sum(vm_elems**pNormMax)**(1/pNormMax)
-	T1 *= (1 / pNormMax) * (np.sum(vm_elems ** pNormMax) ** (1/pNormMax - 1) ) 
+	pNormExponent = 6
+	vm_pnorm = np.sum(vm_elems**pNormExponent)**(1/pNormExponent)
+	T1 *= (1 / pNormExponent) * (np.sum(vm_elems ** pNormExponent) ** (1/pNormExponent - 1) ) 
 
 	# Now compute the rhs of adjoint eqn 
 	g = np.zeros(fe_solver.bc.num_dofs)
 	for e in range(nelems): # assemble  g vector
 		edof = mesh.edofMat[e]
 		g[edof] += g_elem[e]
-	g *= -(1 / pNormMax) * (np.sum(vm_elems ** pNormMax) ** (1/pNormMax - 1) )
+	g *= -(1 / pNormExponent) * (np.sum(vm_elems ** pNormExponent) ** (1/pNormExponent - 1) )
 
     # Solve the adjoint	
 	adjointSol =  linear_solvers.solve(fe_solver.stiff_mtrx,
