@@ -63,6 +63,7 @@ class TOParams: # These are the default parameters
     PNormExponent: int = 6 # p-norm exponent for stress constraint/objective
     Enforce_Constraints_MMA: bool = False # Should the constraints be enforced more strongly in GCMMA?
     Eliminate_Hanging_Elements: bool = True # Should the hanging elements be eliminated after optimization?
+    MaterialsExcelFile: str = '' # Path to the Excel file containing material properties for MMTO problems
 
 def find_elements_with_forces(mesh: hex_mesher.HexMesher, force,nDOFPerNode) -> np.ndarray:
 	"""Find all elements that have nodes on which force has been applied.
