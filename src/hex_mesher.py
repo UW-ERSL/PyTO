@@ -804,6 +804,7 @@ class HexMesher:
 
 		# Identify boundary elements (elements with both 0 and 1 density neighbors)
 		boundary_elems = []
+
 		for i in range(self.num_elems):
 			# Check if the element is inside the shape and has outside neighbors
 			if density_field[i] == 1:
@@ -815,6 +816,7 @@ class HexMesher:
 				if any(self.elemNeighborsArray[i] == -1):
 					boundary_elems.append(i)
 			
+
 		# Remove duplicates
 		boundary_elems = list(set(boundary_elems))
 		# If no boundary elements are found, return zeros
@@ -823,25 +825,20 @@ class HexMesher:
 			return sdf
 
 		# Compute distances from each element to the nearest boundary element
-		for i in range(self.num_elems):
-			min_dist = float('inf')
-			# Calculate all distances at once using broadcasting and find minimum
-			distances = np.linalg.norm(elem_centers[i] - elem_centers[boundary_elems], axis=1)
-			min_dist = np.min(distances)
-			# Handle potential inf values and assign appropriate sign
-			if np.isinf(min_dist):
-				sdf[i] = 0  # Default to zero if no boundary elements exist
-			else:
-				# Determine the direction of the minimum distance
-				direction = np.argmin(np.abs(self.elem_centers[i] - elem_centers[boundary_elems]), axis=1)
-				# print("Direction:", direction)
-				correction = 0.5 * self.elem_size[0]
-				# print("Self.elem_size:", self.elem_size)
-				# Inside elements get positive distances, outside get negative
-				sdf[i] = -min_dist-correction if density_field[i] == 1 else min_dist+correction
 
-
+		# Calculate distances from all element centers to all boundary element centers
+		distances = np.linalg.norm(elem_centers[:, np.newaxis, :] - elem_centers[boundary_elems], axis=2)
 		
+		# Find the minimum distance for each element
+		min_distances = np.min(distances, axis=1)
+		
+		# Handle potential inf values and assign appropriate sign
+		correction = 0.5 * self.elem_size[0]
+		sdf = np.where(density_field == 1, -min_distances - correction, min_distances + correction)
+		
+		# Replace inf values with 0 (if no boundary elements exist)
+		sdf[np.isinf(min_distances)] = 0
+
 		# Normalize SDF by element size for better scaling
 		avg_elem_size = np.mean(self.elem_size)
 		sdf /= avg_elem_size

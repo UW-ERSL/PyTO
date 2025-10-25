@@ -92,7 +92,7 @@ def topopt_optimality_criteria(
 			KE = hex_element_stiffness.hex8_stiffness_matrix_thermal( fe_solver.mat_prop.thermal_conductivity,fe_solver.mesh.elem_size)
 	
 	success = True
-	errorMsg = "None"
+	errorMsg = "No errors."
 	
 	for iter in range(maxIterations):
 		x = np.array(x)

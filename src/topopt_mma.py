@@ -86,7 +86,7 @@ def topopt_mma(fe_solver, #hex_structural_fea.HexStructuralFEA or hex_thermal_fe
         nodal_body_force = None
 
     success = True
-    errorMsg = "None"
+    errorMsg = "No errors."
     nFEAs = 0
     obj0 = None
     mmaIterations = 0
@@ -148,7 +148,8 @@ def topopt_mma(fe_solver, #hex_structural_fea.HexStructuralFEA or hex_thermal_fe
             # Check if any constraints are violated (>0) and print a warning
             if np.any(c > 0):
                 print("Warning: Constraint(s) violated at start of optimization!")
-                print("GCMMA may not converge for this problem. Consider changing constraints if convergence issues occur.")
+                print("GCMMA may not converge for this problem.")
+                print("Consider changing constraints if convergence issues occur.")
    
         grad_obj = grad_obj.reshape(-1, 1)
 
@@ -162,9 +163,10 @@ def topopt_mma(fe_solver, #hex_structural_fea.HexStructuralFEA or hex_thermal_fe
             print(f"Iteration: {mmaIterations}")
             print(f"Min. Objective ({objective_name}): {obj*obj0:.3g}")
             inequality = '<='
-            if constraint_names[idx] == "STRESS_SAFETY_FACTOR":
-                inequality = '>='
+           
             for idx, val in enumerate(c.flatten()):
+                if constraint_names[idx] == "STRESS_SAFETY_FACTOR":
+                    inequality = '>='
                 print(f"Constraint {idx+1} ({constraint_names[idx]}): {(val+1)*to_params.Constraints[idx][2]:.3g} {inequality} {to_params.Constraints[idx][2]:.3g}?")
         mmaIterations += 1
 
@@ -243,7 +245,7 @@ if __name__ == "__main__":
  
     print("-" * 50)
 
-    to_problem = StructuralTOExamples.LBracketTopLoadStressObjective # Choose the TO problem
+    to_problem = StructuralTOExamples.MBBB # Choose the TO problem
 
     if (to_problem in StructuralTOExamples):
         mesh, mat_prop, bc,elem_body_force, to_params = getStructuralTOProblem(to_problem)

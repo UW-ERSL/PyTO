@@ -8,6 +8,8 @@ import hex_mesher
 import hex_structural_fea 
 import hex_element_stiffness
 from topopt_material_model import *
+from dataclasses import dataclass, field
+from typing import Tuple
 import hex_thermal_fea 
 import deflation
 import linear_solvers
@@ -33,31 +35,34 @@ class TO_QOI(enum.Enum): # Topology optimization; Various Quantity of Interest
 	MAX_CRITICALITY = enum.auto() # Captures availability of material
 	MEAN_CRITICALITY = enum.auto() # Captures availability of material
 
+@dataclass(slots=True) # avoid accidental modification
 class TOParams: # These are the default parameters
-    Comment = "" # Comment for the topology optimization problem
-    Objective = (TO_QOI.COMPLIANCE,None) # Tuple of objective type and auxiliary scalar/vector/function	
-    Constraints = [(TO_QOI.VOLUME_FRACTION, None, 0.5)] # Collection of tuples of constraint type, auxiliary scalar/vector/function, and upper bound
-    nDOFDesired = 25000 # Desired number of degrees of freedom in the finite element problem
-    APPLY_FILTER_TO_SENSITIVITY = True # Apply filter to density
-    APPLY_FILTER_TO_DENSITY = False # Apply filter to density
-    RelativeFilterRadius = 1.5 #relative to the element size
-    XSymmetry = False # Desired symmetry in YZ plane
-    YSymmetry = False
-    ZSymmetry = False
-    XAxisAngularSymmetry = 0 # Desired symmetry sectors about X axis
-    YAxisAngularSymmetry = 0
-    ZAxisAngularSymmetry = 0
-    ExtrudeX = False # Should the design be extrudable in X direction
-    ExtrudeY = False
-    ExtrudeZ = False
-    KeepFixedElems = False # Should the elements with Dirichlet dof be retained?
-    RemoveHangingElems = False # Should the hanging elements be removed?
-    AMBuildDir = '' # Direction of AM build, '','X','Y','Z'
-    ElemsToKeep = None # List of additional elements to retain in the design
-    MaxIterations = 150 # Maximum number of iterations
-    PNormExponent = 6 # p-norm exponent for stress constraint/objective
-    Enforce_Constraints_MMA = False # Should the constraints be enforced more strongly in GCMMA?
-    Eliminate_Hanging_Elements = True # Should the hanging elements be eliminated after optimization?
+    Comment: str = "" # Comment for the topology optimization problem
+    Objective: Tuple[TO_QOI, None] = (TO_QOI.COMPLIANCE,None) # Tuple of objective type and auxiliary scalar/vector/function	
+    Constraints: list[Tuple[TO_QOI, None, float]] = field(
+        default_factory=lambda: [(TO_QOI.VOLUME_FRACTION, None, 0.5)]
+    )# Collection of tuples of constraint type, auxiliary scalar/vector/function, and upper bound
+    nDOFDesired: int = 25000 # Desired number of degrees of freedom in the finite element problem
+    APPLY_FILTER_TO_SENSITIVITY: bool = True # Apply filter to density
+    APPLY_FILTER_TO_DENSITY: bool = False # Apply filter to density
+    RelativeFilterRadius: float = 1.5 #relative to the element size
+    XSymmetry: bool = False # Desired symmetry in YZ plane
+    YSymmetry: bool = False
+    ZSymmetry: bool = False
+    XAxisAngularSymmetry: int = 0 # Desired symmetry sectors about X axis
+    YAxisAngularSymmetry: int = 0
+    ZAxisAngularSymmetry: int = 0
+    ExtrudeX: bool = False # Should the design be extrudable in X direction
+    ExtrudeY: bool = False
+    ExtrudeZ: bool = False
+    KeepFixedElems: bool = False # Should the elements with Dirichlet dof be retained?
+    RemoveHangingElems: bool = False # Should the hanging elements be removed?
+    AMBuildDir: str = '' # Direction of AM build, '','X','Y','Z'
+    ElemsToKeep: list[int] = None # List of additional elements to retain in the design
+    MaxIterations: int = 150 # Maximum number of iterations
+    PNormExponent: int = 6 # p-norm exponent for stress constraint/objective
+    Enforce_Constraints_MMA: bool = False # Should the constraints be enforced more strongly in GCMMA?
+    Eliminate_Hanging_Elements: bool = True # Should the hanging elements be eliminated after optimization?
 
 def find_elements_with_forces(mesh: hex_mesher.HexMesher, force,nDOFPerNode) -> np.ndarray:
 	"""Find all elements that have nodes on which force has been applied.

@@ -121,7 +121,7 @@ def topopt_pareto(fe_solver,
 	
 	success = True
 	terminatePareto = False
-	errorMsg = "None"
+	errorMsg = "No errors."
 	# Observation: Damping using the previous sensitivity values avoids getting trapped in local minima
 	wtDamping = 0.5 # 0 means full wt to current T values, else previous T values are damped in
 	nSmoothSteps = 2 # Number of smoothing steps to apply
