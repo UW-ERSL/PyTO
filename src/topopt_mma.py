@@ -110,8 +110,7 @@ def topopt_mma(fe_solver, #hex_structural_fea.HexStructuralFEA or hex_thermal_fe
         fe_solver.postprocess()
 
         obj, grad_obj = compute_objective_and_gradient(to_params,sol,x, fe_solver,KE, material_model)
-        compliance = compute_compliance(sol, x, fe_solver, KE, material_model)
-
+      
         if (obj0 is None):
             obj0 = obj
         
@@ -144,7 +143,7 @@ def topopt_mma(fe_solver, #hex_structural_fea.HexStructuralFEA or hex_thermal_fe
         history['volfrac'].append(np.mean(x))
         for idx, val in enumerate(c.flatten()):
             history[f'constraint_{idx+1}'].append(val)
-        if (mmaIterations == 0):
+        if (mmaIterations == 0) and (print_progress):
             # Check if any constraints are violated (>0) and print a warning
             if np.any(c > 0):
                 print("Warning: Constraint(s) violated at start of optimization!")
@@ -245,7 +244,7 @@ if __name__ == "__main__":
  
     print("-" * 50)
 
-    to_problem = StructuralTOExamples.MBBB # Choose the TO problem
+    to_problem = StructuralTOExamples.Mitchell_1 # Choose the TO problem
 
     if (to_problem in StructuralTOExamples):
         mesh, mat_prop, bc,elem_body_force, to_params = getStructuralTOProblem(to_problem)

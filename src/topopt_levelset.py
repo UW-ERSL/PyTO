@@ -39,11 +39,12 @@ def topopt_levelset(fe_solver,
     material_model = MaterialModel.SIMP 
     mesh=fe_solver.mesh
 
-
+    print("Creating Derivative filters...")
     HXD = createXDerivativeFilter(mesh)
     HYD = createYDerivativeFilter(mesh)
     HZD = createZDerivativeFilter(mesh)
 
+    print("Creating Smoothing filters...")
     [H,Hs] = createFilters(fe_solver, to_params)
 
     # Initialize level set function and design variables
@@ -83,6 +84,30 @@ def topopt_levelset(fe_solver,
     void = 1e-10
     success = True
     errorMsg = "No errors."    
+
+    def bisection_find_radius(mesh, target_volfrac: float, radius_min: float = 0.01, radius_max: float = 1.0, tol: float = 1e-3) -> float:
+        """Find radius via bisection that matches target volume fraction."""
+        iterations = 0
+        max_iterations = 50
+        volfrac = 10.0  # Initialize to a large value
+        while abs(target_volfrac - volfrac) > tol and iterations < max_iterations:
+            radius_mid = (radius_min + radius_max) / 2
+            rho_test = np.ones(mesh.num_elems)
+            rho_test = fe_solver.mesh.create_custom_hole_pattern(rho_test, radius=radius_mid)
+            volfrac = np.mean(rho_test)
+            
+            if volfrac > target_volfrac:
+                radius_min = radius_mid  # Need larger hole to reduce volfrac
+            else:
+                radius_max = radius_mid  # Need smaller hole to increase volfrac
+            iterations += 1
+        
+        print("target_volfrac", target_volfrac)
+        print("volfrac", volfrac)
+        
+        final_radius = (radius_min + radius_max) / 2
+        return final_radius
+
     constraintType = to_params.Constraints[0][0] # assume this is the first constraint
     if (constraintType == TO_QOI.VOLUME_FRACTION):
         volFractionConstraint = to_params.Constraints[0][2]
@@ -91,6 +116,8 @@ def topopt_levelset(fe_solver,
     beta = 0  # for stable updates
 
     obj0 = None
+    fe_solver.mesh.setPseudoDensity(np.asarray(rho))
+    volCurr = np.mean(rho)
     for iterNum in range(maxIterations):
         if (plot_progress):
             fe_solver.plot_mesh(plot_bc = False,auto_close = False, title = f'Volfrac: {volCurr:0.3f}')
@@ -150,7 +177,7 @@ def topopt_levelset(fe_solver,
         if(volCurr - volFractionConstraint > 0.001):
             volDecrementWeight += 0.0025
         else:
-            volDecrementWeight -= 0.005
+            volDecrementWeight -= 0.0025
         
     sol = fe_solver.solve(rho, material_model)
     obj, _ = compute_objective_and_gradient(to_params,sol,rho, fe_solver,KE, material_model)
@@ -200,7 +227,7 @@ if __name__ == "__main__":
 	from topopt_thermal_benchmarks import *
 	
 	print("-" * 50)
-	to_problem = StructuralTOExamples.TorquePlate # Choose the TO problem
+	to_problem = StructuralTOExamples.MBBB # Choose the TO problem
 	#to_problem = ThermalTOExamples.BridgeThermal # Choose the TO problem
      
 

@@ -1004,7 +1004,50 @@ class HexMesher:
 								closest_elem = elem_idx
 								
 		return closest_elem
-
+	
+	def create_custom_hole_pattern(self, rho: np.ndarray, radius: float = 0.2) -> np.ndarray:
+		"""Creates a custom hole pattern.
+ 
+        The expression defines a level-set function, where phi < 0 is solid
+        and phi >= 0 is void.
+ 
+        Args:
+            rho: The input density field array. This is used to get the shape,
+                    but its values are overwritten.
+ 
+        Returns:
+            np.ndarray: The density field with the custom pattern.
+        """
+		lx = self.bbox.x.range
+		ly = self.bbox.y.range
+ 
+        # Get element centers
+		x = self.elem_centers[:, 0]
+		y = self.elem_centers[:, 1]
+ 
+        # Wave numbers
+		kx = 6 * np.pi / lx
+		ky = 4 * np.pi / ly
+ 
+        # Define phi_expr with elementwise max (np.maximum)
+		phi_expr = (
+            -np.cos(kx * x) * np.cos(ky * y)
+            - 0.6
+            + np.maximum(200.0 * (0.001 - x**2 - (y - ly / 2)**2), 0.0)
+            + np.maximum(100.0 * (x + y - lx - ly + 0.01), 0.0)
+            + np.maximum(100.0 * (x - y - lx + 0.01), 0.0)
+        )
+ 
+        # Normalize for visualization
+		phi_expr = (phi_expr - np.min(phi_expr)) / (np.max(phi_expr) - np.min(phi_expr))
+ 
+        # Create rho based on threshold
+		rho = np.zeros_like(phi_expr)
+        # threshold = np.max(phi_expr)* radius # use radius or scaling factor here if desired
+		rho[phi_expr > radius] = 1.0
+ 
+		return rho
+	
 	def find_connected_components(self, threshold: float = 0.01) -> list[np.ndarray]:
 		"""Find connected components of the mesh based on elemPseudoDensity.
 		

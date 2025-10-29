@@ -495,30 +495,36 @@ class HexStructuralFEA:
             colormap = 'jet',
             auto_close = True,
             fontsize=10,
-            cross_section=None, plotter = None):  # New parameter for cross-section
-    """Plot element field on the mesh.
-    
+            cross_section=None,
+            plotter = None,
+            colors=None):  # New parameter for custom colors
+    """
+    Plot element field on the mesh, with optional discrete custom colors.
+
     Args:
-        elem_field: Field values for each element
+        elem_field: Field values for each element (e.g., material indices)
         mask_low_pseudodensity: Whether to filter out elements with low density
         title: Plot title
         save_path: Path to save the image
-        colormap: Color map for the field visualization
+        colormap: Color map for the field visualization (ignored if colors is provided)
         auto_close: Whether to auto-close the plotter
         fontsize: Font size for the title
         cross_section: Dict with keys 'axis' ('x', 'y', or 'z') and 'position' (float)
                       to create a cross-section view, or None for full view
+        colors: List or array of hex codes or RGB tuples for each element (discrete coloring)
     """
     # Filter elements based on pseudo_density
-    if (mask_low_pseudodensity):
-      mask = self.mesh.elemPseudoDensity > 0.5
-      mask = self.mesh.elemPseudoDensity > 0.5
-      filtered_elems = self.mesh.elemArray[mask]
-      filtered_field = elem_field[mask]
-
+    if mask_low_pseudodensity:
+        mask = self.mesh.elemPseudoDensity > 0.5
+        filtered_elems = self.mesh.elemArray[mask]
+        filtered_field = np.array(elem_field)[mask]
+        filtered_colors = None
+        if colors is not None:
+            filtered_colors = np.array(colors)[mask]
     else:
-      filtered_elems = self.mesh.elemArray
-      filtered_field = elem_field
+        filtered_elems = self.mesh.elemArray
+        filtered_field = np.array(elem_field)
+        filtered_colors = np.array(colors) if colors is not None else None
 
     if len(filtered_elems) == 0:
         print("No elements to plot after filtering")
@@ -529,45 +535,41 @@ class HexStructuralFEA:
 
     # Create cells array for PyVista
     cells = np.hstack((
-              np.full((len(filtered_elems), 1), 8),  # 8 vertices per hexahedron
-              filtered_elems
-            ))
+        np.full((len(filtered_elems), 1), 8),  # 8 vertices per hexahedron
+        filtered_elems
+    ))
 
     # Create PyVista mesh
     pv_mesh = pv.UnstructuredGrid({12: cells[:, 1:]}, vertices)  # 12 is VTK_HEXAHEDRON
 
     # Add field data to cell data
     pv_mesh.cell_data['field'] = filtered_field
-    externalPlotter = False # assume that a plotter is provided
+
+    externalPlotter = False
     if plotter is None:
-      externalPlotter = True 
-      # Create plotter
-      if save_path is None:
-        plotter = self.pyVistaPlotter 
-        if plotter.iren is None:
-          self.create_pyvista_plotter()
-          plotter = self.pyVistaPlotter
-      else:
-        plotter = pv.Plotter(off_screen=True)
-      # Add coordinate axes widget
-      plotter.add_axes(
+        externalPlotter = True
+        if save_path is None:
+            plotter = self.pyVistaPlotter
+            if plotter.iren is None:
+                self.create_pyvista_plotter()
+                plotter = self.pyVistaPlotter
+        else:
+            plotter = pv.Plotter(off_screen=True)
+        plotter.add_axes(
             xlabel='X',
             ylabel='Y',
             zlabel='Z',
             line_width=2,
-            labels_off=False,  # Show axis labels
+            labels_off=False,
             color='black'
-            )
+        )
 
     # If cross-section is specified, create a clipped mesh
     if cross_section is not None:
         axis = cross_section.get('axis', 'x').lower()
         rel_position = cross_section.get('position', 0.0)
-        # Convert relative position to actual position based on bounding box
-        bbox_min = pv_mesh.bounds[::2]  # [xmin, ymin, zmin]
-        bbox_max = pv_mesh.bounds[1::2]  # [xmax, ymax, zmax]
-        
-        # Create a clipping plane based on the axis
+        bbox_min = pv_mesh.bounds[::2]
+        bbox_max = pv_mesh.bounds[1::2]
         if axis == 'x':
             normal = (1, 0, 0)
             position = bbox_min[0] + (bbox_max[0] - bbox_min[0]) * (rel_position + 1) / 2
@@ -585,18 +587,36 @@ class HexStructuralFEA:
             normal = (1, 0, 0)
             position = 0
             origin = (position, 0, 0)
-        
-        # Apply clipping
         pv_mesh = pv_mesh.clip(normal=normal, origin=origin)
-        
-        # Update title to indicate cross-section
         if title:
             title += f" (Cross-section {axis}={position})"
         else:
             title = f"Cross-section {axis}={position}"
 
     # Add mesh to plotter
-    plotter.add_mesh(
+    if filtered_colors is not None:
+        # Use custom discrete colors for each cell
+        plotter.add_mesh(
+            pv_mesh,
+            scalars=filtered_colors,
+            rgb=True,
+            show_edges=True,
+            edge_color='black',
+            line_width=1,
+            opacity=1.0,
+            scalar_bar_args={
+                'title': title,
+                'vertical': True,
+                'position_x': 0.85,   # Move to the right (0.0 = left, 1.0 = right)
+                'position_y': 0.05,   # Move to the bottom (0.0 = bottom, 1.0 = top)
+                'width': 0.08,        # Make it narrower
+                'height': 0.9,        # Make it taller
+                'title_font_size': 12,
+                'label_font_size': 12
+            }
+        )
+    else:
+        plotter.add_mesh(
             pv_mesh,
             scalars='field',
             cmap=colormap,
@@ -604,29 +624,42 @@ class HexStructuralFEA:
             edge_color='black',
             line_width=1,
             scalar_bar_args={
-              'title': title,
-              'vertical': True,
-              'position_x': 0.8,
-              'position_y': 0.3,
-              'width': 0.06
+                'title': title,
+                'vertical': True,
+                'position_x': 0.85,   # Move to the right (0.0 = left, 1.0 = right)
+                'position_y': 0.05,   # Move to the bottom (0.0 = bottom, 1.0 = top)
+                'width': 0.08,        # Make it narrower
+                'height': 0.9,        # Make it taller
+                'title_font_size': 12,
+                'label_font_size': 12
             }
-          )
+        )
 
-
-    
     # Save image if path is provided
-    
     if save_path:
-      plotter.screenshot(save_path)
-      plotter.close()
+        # Get mesh bounds
+        bounds = pv_mesh.bounds
+        center = [(bounds[0] + bounds[1]) / 2,
+                  (bounds[2] + bounds[3]) / 2,
+                  (bounds[4] + bounds[5]) / 2]
+
+        # Set camera above the mesh, looking down the z-axis
+        distance = max(bounds[1] - bounds[0], bounds[3] - bounds[2], bounds[5] - bounds[4]) * 2
+        camera_location = [center[0], center[1], center[2] + distance]
+        focal_point = center
+        view_up = [0, 1, 0]
+
+        plotter.camera_position = [camera_location, focal_point, view_up]
+        plotter.camera.zoom(1.3)
+        plotter.screenshot(save_path)
+        plotter.close()
     else:
-      if (externalPlotter):
-        # Show plot interactively if not saving
-        plotter.show(interactive_update=not auto_close, auto_close=auto_close)
-      else:
-        plotter.show()
-    self.camera_position = plotter.camera_position # For all future displays
-    return 
+        if externalPlotter:
+            plotter.show(interactive_update=not auto_close, auto_close=auto_close)
+        else:
+            plotter.show()
+    self.camera_position = plotter.camera_position
+    return
 #################################################################
   def plot_vonMisesStress(self,
             save_path=None,
