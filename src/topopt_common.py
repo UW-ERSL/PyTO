@@ -24,6 +24,7 @@ class TO_METHODS(enum.Enum):
 
 class TO_QOI(enum.Enum): # Topology optimization; Various Quantity of Interest
 	VOLUME_FRACTION = enum.auto() # Volume fraction
+	VOLUME = enum.auto() # Volume total
 	MASS = enum.auto() # Mass total
 	COMPLIANCE = enum.auto()
 	PNORM_STRESS = enum.auto()

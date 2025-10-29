@@ -27,9 +27,9 @@ def createSmoothingFilter(mesh: hex_mesher.HexMesher, rel_filter_radius: float =
 		elems_within_radius = mesh.get_elems_within_radius(elemCenter, r_min)
 		for i in elems_within_radius:
 			dist = np.linalg.norm(mesh.elem_centers[e, :] - mesh.elem_centers[i, :])
-			weight = (r_min - dist)
-			if weight < 0:
+			if (dist > r_min):
 				continue
+			weight = (r_min - dist)/r_min
 			iH.append(e)
 			jH.append(i)
 			sH.append(weight)
