@@ -88,9 +88,11 @@ def topopt_pareto(fe_solver,
 		elif isinstance(fe_solver, hex_thermal_fea.HexThermalFEA):
 			KE = hex_element_stiffness.hex8_stiffness_matrix_thermal( fe_solver.mat_prop.thermal_conductivity,fe_solver.mesh.elem_size)
 	
+	fe_solver.mesh.setPseudoDensity(x.flatten())
 	sol = fe_solver.solve(x)
 	fe_solver.postprocess()
 	nFEAs = 1
+	
 
 	obj, T,compliance = compute_objective_topological_sensitivity_compliance(to_params,sol,x, fe_solver,KE)
 	J = obj
@@ -118,7 +120,7 @@ def topopt_pareto(fe_solver,
 	if (print_progress):
 		log_message(f"vf={history['volfrac'][-1]:.3f}, obj={history['objective'][-1]:.3g}, compliance={history['compliance'][-1]:.3g}, #FEA={nFEAs:2d}")
 	vol_decr = vol_decr_max
-	
+
 	success = True
 	terminatePareto = False
 	errorMsg = "No errors."
@@ -256,7 +258,7 @@ def topopt_pareto(fe_solver,
 			if (print_progress):
 				log_message(f"vf={history['volfrac'][-1]:.3f}, obj={history['objective'][-1]:.3g}, compliance={history['compliance'][-1]:.3g}, #FEA={nFEAs:2d}")
 			fe_solver.mesh.setPseudoDensity(x.flatten())
-
+		
 
 	totalTime = time.time() - tStart
 
@@ -275,7 +277,7 @@ if __name__ == "__main__":
 	#to_problem = ThermalTOExamples.BridgeThermal # Choose the TO problem
 
 	if (to_problem in StructuralTOExamples):
-		mesh, mat_prop, bc,elem_body_force, to_params = getStructuralTOProblem(to_problem,nDOFDesired=50000)
+		mesh, mat_prop, bc,elem_body_force, to_params = getStructuralTOProblem(to_problem)
 	elif (to_problem in ThermalTOExamples):
 		mesh, mat_prop, bc,elem_body_force, to_params = getThermalTOProblem(to_problem)
 
@@ -325,7 +327,7 @@ if __name__ == "__main__":
 	print("OptimizationMethod: Pareto")
 	sol, history, success,errorMsg,nFEAs = topopt_pareto(fe_solver = fe_solver,
 									to_params = to_params,
-									plot_progress= True,
+									plot_progress= False,
 									debug = debug)
 	
 	timeTaken = time.time() - startTime

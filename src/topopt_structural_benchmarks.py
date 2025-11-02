@@ -31,6 +31,7 @@ class StructuralTOExamples(enum.Enum):
 	LBracketThickTopLoad = enum.auto()
 	LBracketThickMidLoad = enum.auto()
 	Table = enum.auto()
+	GEGrabCAD = enum.auto()
 
     # Non-compliance Examples
 	CantileverMidLoadVolumeCompliance = enum.auto()
@@ -103,6 +104,8 @@ def getSTLPath_TOProblem(to_problem: StructuralTOExamples):
         stl_file = "Models/LBracketThick/LBracketThick.STL"
     elif to_problem == StructuralTOExamples.Table:
         stl_file = "Models/Table/Table.STL"
+    elif to_problem == StructuralTOExamples.GEGrabCAD:
+        stl_file = "Models/GEGrabCAD/GEGrabCAD.STL"
     elif to_problem == StructuralTOExamples.CantileverMidLoadVolumeCompliance:
         stl_file = "Models/Cantilever/CantileverMidLoad.STL"
     elif to_problem == StructuralTOExamples.LBracketTopLoadStressObjective:
@@ -203,7 +206,7 @@ def getStructuralTOProblem(to_problem: StructuralTOExamples,nDOFDesired = None, 
     elif to_problem == StructuralTOExamples.MBBB:
         structural_problem = StructuralExamples.MBBB
         to_params.Comment  = "Benchmark 2.5D"
-        to_params.nDOFDesired = 20000 if nDOFDesired is None else nDOFDesired
+        to_params.nDOFDesired = 60000 if nDOFDesired is None else nDOFDesired
         to_params.Constraints = [(TO_QOI.VOLUME_FRACTION, None, 0.25)] 
     elif to_problem == StructuralTOExamples.Bridge:
         structural_problem = StructuralExamples.Bridge
@@ -320,6 +323,11 @@ def getStructuralTOProblem(to_problem: StructuralTOExamples,nDOFDesired = None, 
         to_params.nDOFDesired = 75000 if nDOFDesired is None else nDOFDesired
         to_params.Constraints = [(TO_QOI.VOLUME_FRACTION, None, 0.15)] 
 
+    elif to_problem == StructuralTOExamples.GEGrabCAD:
+        structural_problem = StructuralExamples.GEGrabCAD
+        to_params.Comment = "3D"
+        to_params.nDOFDesired = 200000 if nDOFDesired is None else nDOFDesired
+        to_params.Constraints = [(TO_QOI.VOLUME_FRACTION, None, 0.5)] 
 
     # Body Force Examples
     elif to_problem == StructuralTOExamples.GravityPlate:

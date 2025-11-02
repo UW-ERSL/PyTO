@@ -11,6 +11,7 @@ import bound_cond
 from stl_reader import STLGeom
 from hex_mesher import HexMesher
 import hex_thermal_fea
+import glob
 
 class ProjectManager:
     def __init__(self):
@@ -368,5 +369,20 @@ class ProjectManager:
         success = manager.execute_project(args.project, args.output)
         sys.exit(0 if success else 1)
 
+def execute_all_projects_in_models():
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    models_dir = os.path.join(os.path.dirname(script_dir), "Models")
+    # Search recursively for all .pyto files
+    pyto_files = glob.glob(os.path.join(models_dir, "**", "*.pyto"), recursive=True)
+    print(f"Found {len(pyto_files)} project files in {models_dir}")
+    manager = ProjectManager()
+    for project_file in pyto_files:
+        print(f"\n--- Executing project: {project_file} ---")
+        manager.execute_project(project_file)
+
 if __name__ == "__main__":
-    ProjectManager.run_from_cli()
+    # If no arguments, run all projects in ../Models
+    if len(sys.argv) == 1:
+        execute_all_projects_in_models()
+    else:
+        ProjectManager.run_from_cli()

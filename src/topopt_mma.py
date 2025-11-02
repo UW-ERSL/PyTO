@@ -14,7 +14,7 @@ def topopt_mma(fe_solver, #hex_structural_fea.HexStructuralFEA or hex_thermal_fe
                             constraint_tol: float = 1.e-4,
                             print_progress: bool = True,
                             plot_progress: bool = False,
-                            binarize_topology: bool = False,   
+                            binarize_topology: bool = True,   
                             progress_callback=None, 
                             plotter=None  
                              ) -> tuple[np.ndarray, dict]:
@@ -198,7 +198,7 @@ def topopt_mma(fe_solver, #hex_structural_fea.HexStructuralFEA or hex_thermal_fe
     
     grey_elements = np.sum((x > 0.1) & (x < 0.9))
     fraction_grey = (grey_elements / num_elems) 
-    if (fraction_grey < 0.1) and (binarize_topology):
+    if (binarize_topology):
         x_sorted = np.sort(x)
         threshold = x_sorted[int((1-np.mean(x))*len(x))]
         x = np.where(x < threshold, 0.0, 1.0)
@@ -244,8 +244,8 @@ if __name__ == "__main__":
  
     print("-" * 50)
 
-    to_problem = StructuralTOExamples.Mitchell_1 # Choose the TO problem
-
+    to_problem = StructuralTOExamples.GEGrabCAD # Choose the TO problem
+    
     if (to_problem in StructuralTOExamples):
         mesh, mat_prop, bc,elem_body_force, to_params = getStructuralTOProblem(to_problem)
     elif (to_problem in ThermalTOExamples):

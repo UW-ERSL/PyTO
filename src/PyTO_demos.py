@@ -3,16 +3,12 @@ This script is a demo for the pyTO package.
 It includes examples of how to use the package for various tasks, including loading STL files, 
 creating hex meshes, and performing finite element analysis (FEA) and topology optimization (TO).
 '''
-
-
-import sys
 import enum
 import time
 import numpy as np  
 import matplotlib.pyplot as plt
 
-# PyTO files
-sys.path.append('./src') #assumes PyTO src files are in this directory
+
 from stl_reader import STLGeom
 from hex_mesher import HexMesher
 from linear_solvers import Solvers
@@ -61,6 +57,9 @@ class pyTODemos(enum.Enum):
 	TetThermalFEA_Pardiso = enum.auto() # Create and solve a thermal FEA problem using the PARDISO solver 
 	TetStructuralFEA_Pardiso = enum.auto() # Create and solve a thermal FEA problem using the PARDISO solver 
 
+    # SolidWorks interface demo is in solidworks_interface.py
+	SolidWorks_Demo= enum.auto() # Interact with SolidWorks to get model info and export STL
+
 demo = pyTODemos.Load_STL  # Initialize with first demo
 while True:
     print(50*'-')
@@ -101,12 +100,13 @@ while True:
         problem = HexThermalExamples.ThickPlate
         nDOFDesired = 10000
         solver = Solvers.PARDISO
-        mesh, mat_prop, bc = getThermalProblem(problem, nDOFDesired=nDOFDesired)
+        mesh, mat_prop, bc,elem_body_force = getThermalProblem(problem, nDOFDesired=nDOFDesired)
         thermal_fe_solver = HexThermalFEA(mesh=mesh,
                     mat_prop=mat_prop,
                     bc=bc,
-                    solver=solver)
-        
+                    solver=solver,
+                    elem_body_force=elem_body_force)
+
         startTime = time.time()
         u = thermal_fe_solver.solve()
         uMax = np.max(np.abs(u))
@@ -196,7 +196,7 @@ while True:
         timeTaken = time.time() - startTime
 
         print(f"Time taken: {timeTaken:.0f} s")
-        title = f"MMA: nDOF: {3*fe_solver.mesh.num_nodes}, vol: {history['volume'][-1]:0.2f}, J: {history['objective'][-1]:.3g}, time: {timeTaken:.0f} s"
+        title = f"MMA: nDOF: {3*fe_solver.mesh.num_nodes}, volfrac: {history['volfrac'][-1]:0.2f}, J: {history['objective'][-1]:.3g}, time: {timeTaken:.0f} s"
     
         if not success:
             print(f"Error: {errorMsg}")
@@ -213,7 +213,7 @@ while True:
         # Plot volume fraction on right y-axis with dotted line
         ax2 = ax1.twinx()
         ax2.set_ylabel('Volume Fraction', color='tab:orange')
-        ax2.plot(history['volume'], color='tab:orange', linestyle=':', label='Volume Fraction')
+        ax2.plot(history['volfrac'], color='tab:orange', linestyle=':', label='Volume Fraction')
         ax2.tick_params(axis='y', labelcolor='tab:orange')
         ax2.yaxis.set_major_formatter(plt.FormatStrFormatter('%.2f'))
 
@@ -244,7 +244,7 @@ while True:
         u, history, success,errorMsg,nFEAs = topopt_optimality_criteria(fe_solver = fe_solver,plot_progress=True,
                                                 to_params = to_params)
         timeTaken = time.time() - startTime
-        title = f"OC: nDOF: {3*fe_solver.mesh.num_nodes}, vol: {history['volume'][-1]:0.2f}, J: {history['objective'][-1]:.3g}, time: {timeTaken:.0f} s"
+        title = f"OC: nDOF: {3*fe_solver.mesh.num_nodes}, vol: {history['volfrac'][-1]:0.2f}, J: {history['objective'][-1]:.3g}, time: {timeTaken:.0f} s"
 
         fig, ax1 = plt.subplots()
 
@@ -257,7 +257,7 @@ while True:
         # Plot volume fraction on right y-axis with dotted line
         ax2 = ax1.twinx()
         ax2.set_ylabel('Volume Fraction', color='tab:orange')
-        ax2.plot(history['volume'], color='tab:orange', linestyle=':', label='Volume Fraction')
+        ax2.plot(history['volfrac'], color='tab:orange', linestyle=':', label='Volume Fraction')
         ax2.tick_params(axis='y', labelcolor='tab:orange')
         ax2.yaxis.set_major_formatter(plt.FormatStrFormatter('%.2f'))
 
@@ -283,7 +283,7 @@ while True:
         fe_solver = HexStructuralFEA(mesh=mesh, mat_prop=mat_prop, solver= Solvers.PARDISO, bc=bc)
         u, history, success,errorMsg,nFEAs = topopt_pareto(fe_solver=fe_solver,to_params=to_params,plot_progress=True)
         plt.figure()
-        plt.plot(history['volume'], history['objective'], marker='o')
+        plt.plot(history['volfrac'], history['objective'], marker='o')
         plt.xlabel('Volume Fraction')
         plt.ylabel('objective')
         plt.title('Pareto: Volume vs Compliance History')
@@ -310,7 +310,7 @@ while True:
         timeTaken = time.time() - startTime
 
         print(f"Time taken: {timeTaken:.0f} s")
-        title = f"MMA: nDOF: {fe_solver.mesh.num_nodes}, vol: {history['volume'][-1]:0.2f}, J: {history['objective'][-1]:.3g}, time: {timeTaken:.0f} s"
+        title = f"MMA: nDOF: {fe_solver.mesh.num_nodes}, vol: {history['volfrac'][-1]:0.2f}, J: {history['objective'][-1]:.3g}, time: {timeTaken:.0f} s"
     
         if not success:
             print(f"Error: {errorMsg}")
@@ -327,7 +327,7 @@ while True:
         # Plot volume fraction on right y-axis with dotted line
         ax2 = ax1.twinx()
         ax2.set_ylabel('Volume Fraction', color='tab:orange')
-        ax2.plot(history['volume'], color='tab:orange', linestyle=':', label='Volume Fraction')
+        ax2.plot(history['volfrac'], color='tab:orange', linestyle=':', label='Volume Fraction')
         ax2.tick_params(axis='y', labelcolor='tab:orange')
         ax2.yaxis.set_major_formatter(plt.FormatStrFormatter('%.2f'))
 
@@ -358,7 +358,7 @@ while True:
         u, history, success,errorMsg,nFEAs = topopt_optimality_criteria(fe_solver = fe_solver,plot_progress=True,
                                                 to_params = to_params)
         timeTaken = time.time() - startTime
-        title = f"OC: nDOF: {fe_solver.mesh.num_nodes}, vol: {history['volume'][-1]:0.2f}, J: {history['objective'][-1]:.3g}, time: {timeTaken:.0f} s"
+        title = f"OC: nDOF: {fe_solver.mesh.num_nodes}, vol: {history['volfrac'][-1]:0.2f}, J: {history['objective'][-1]:.3g}, time: {timeTaken:.0f} s"
 
         fig, ax1 = plt.subplots()
 
@@ -371,7 +371,7 @@ while True:
         # Plot volume fraction on right y-axis with dotted line
         ax2 = ax1.twinx()
         ax2.set_ylabel('Volume Fraction', color='tab:orange')
-        ax2.plot(history['volume'], color='tab:orange', linestyle=':', label='Volume Fraction')
+        ax2.plot(history['volfrac'], color='tab:orange', linestyle=':', label='Volume Fraction')
         ax2.tick_params(axis='y', labelcolor='tab:orange')
         ax2.yaxis.set_major_formatter(plt.FormatStrFormatter('%.2f'))
 
@@ -397,7 +397,7 @@ while True:
         fe_solver = HexThermalFEA(mesh=mesh, mat_prop=mat_prop, solver= Solvers.PARDISO, bc=bc)
         u, history, success,errorMsg,nFEAs = topopt_pareto(fe_solver=fe_solver,to_params=to_params,plot_progress=True)
         plt.figure()
-        plt.plot(history['volume'], history['objective'], marker='o')
+        plt.plot(history['volfrac'], history['objective'], marker='o')
         plt.xlabel('Volume Fraction')
         plt.ylabel('objective')
         plt.title('Pareto: Volume vs Compliance History')
@@ -456,6 +456,23 @@ while True:
         print('Max deformation: ', delta)
         print('-----------------------------')
         fe_solver.plot_deformation()
+    elif demo == pyTODemos.SolidWorks_Demo:
+        from solidworks_interface import SolidWorksInterface
+
+        input("Is SolidWorks open with a part?\nPress Enter to continue...")
+        script_dir = os.path.dirname(os.path.abspath(__file__))
+        sw = SolidWorksInterface()
+        fileName = "temp.stl"
+        sw.saveSTL(fileName)
+        stl_file = os.path.join(script_dir, fileName)
+        stl = STLGeom(stl_file)
+
+        [area,vol,cg,inertia] = sw.getMassProperties()
+        print(f"Area    : {area:.3e}")
+        print(f"Volume  : {vol:.3e}")
+        stl.plotGeometry()
+
+       
     # Move to next demo
     demo_list = list(pyTODemos)
     current_index = demo_list.index(demo)

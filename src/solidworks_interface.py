@@ -2,6 +2,8 @@ import os
 import win32com.client #pip install pypiwin32
 import numpy as np
 
+
+
 class SolidWorksInterface:
     def __init__(self):
         try:
@@ -94,6 +96,25 @@ class SolidWorksInterface:
             #print(f"Error: {str(e)}")
             return False
         
+    def setDimension(self,dimensionName, value):
+        try:
+            model = self.sw.ActiveDoc
+            myDimension = model.Parameter(dimensionName)
+            myDimension.SystemValue = value
+            success = model.EditRebuild3
+            if not success:
+                return False
+            if not self.isBodyValid():
+                #print("Body is invalid after dimension change.")
+                return False
+            success = self.checkAllFeatures()
+            if not success:
+                return False
+            return True
+        except Exception as e:
+            #print(f"Error: {str(e)}")
+            return False
+        
     def getMassProperties(self):
         try:
             model = self.sw.ActiveDoc
@@ -152,11 +173,20 @@ class SolidWorksInterface:
             return False
         
 if __name__ == "__main__":
-    input("Is SolidWorks open with a threeHolesPart?\nPress Enter to continue...")
-    sw = SolidWorksInterface()
-   
+    from stl_reader import STLGeom
 
-    dimName = "d@SideHolesSketch"
+    input("Is SolidWorks open with the part Models/ThreeHolesBracket?\nPress Enter to continue...")
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    sw = SolidWorksInterface()
+    fileName = "temp.stl"
+    sw.saveSTL(fileName)
+    stl_file = os.path.join(script_dir, fileName)
+    stl = STLGeom(stl_file)
+    stl.plotGeometry()
+
+
+
+    dimName = "D1@Sketch2"
     dim0 = sw.getDimension(dimName)  # get dimension
     [area,vol,cg,inertia] = sw.getMassProperties()
     print(f"\nProperties Before:")
@@ -185,4 +215,6 @@ if __name__ == "__main__":
     print(f"Face Count: {sw.getFaceCount()}")
     input("Press Enter to continue...")
     sw.setDimension(dimName,dim0)  # reset
- 
+
+    
+    
