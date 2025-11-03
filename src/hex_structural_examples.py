@@ -984,6 +984,9 @@ def createCantileverTipLoadProblem(nDOFDesired: int = 10000,totalLoad = 5.8e4):
   nElemsDesired = nDOFDesired/3    # estimate
   mesh = hex_mesher.HexMesher()
   mesh.createMeshFromSTLFile(stl_file, nElemsDesired=nElemsDesired)
+  nElems = mesh.num_elements
+  elemVolume = mesh.getElemVolume()
+  
   mesh.createEdofMatStructural()
 
   fixed_nodes = mesh.getNodesOnBoundingBoxPlane(0,True) # x = 0 plane
@@ -1015,6 +1018,8 @@ def createCantileverTipLoadProblem(nDOFDesired: int = 10000,totalLoad = 5.8e4):
             dirichlet_values = dirichlet_values) 
 
   mat_prop = mat_lib.get_material("Steel")
+
+  
   elem_body_force = None
   return mesh, mat_prop, bc, elem_body_force
 
@@ -1995,6 +2000,10 @@ def createGEGrabCADProblem(nDOFDesired: int = 50000, axialLoad = 10000):
 
   mat_prop = mat_lib.get_material("Steel")
 
+  nElems = mesh.num_elems
+  elemVolume = mesh.elem_size[0]*mesh.elem_size[1]*mesh.elem_size[2]
+  totalMass = nElems * elemVolume * mat_prop.mass_density
+  print("Total mass of GEGrabCAD: {:.2f} kg".format(totalMass))
   elem_body_force = None
 
   # All constraints are implemented using the constraint matrix

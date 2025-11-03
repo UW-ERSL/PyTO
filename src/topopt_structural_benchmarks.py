@@ -326,8 +326,9 @@ def getStructuralTOProblem(to_problem: StructuralTOExamples,nDOFDesired = None, 
     elif to_problem == StructuralTOExamples.GEGrabCAD:
         structural_problem = StructuralExamples.GEGrabCAD
         to_params.Comment = "3D"
-        to_params.nDOFDesired = 200000 if nDOFDesired is None else nDOFDesired
-        to_params.Constraints = [(TO_QOI.VOLUME_FRACTION, None, 0.5)] 
+        to_params.nDOFDesired = 1000000 if nDOFDesired is None else nDOFDesired
+        to_params.KeepFixedElems = True 
+        to_params.Constraints = [(TO_QOI.MASS, None, 1.5)] 
 
     # Body Force Examples
     elif to_problem == StructuralTOExamples.GravityPlate:

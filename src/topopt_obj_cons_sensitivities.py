@@ -226,6 +226,11 @@ def compute_objective_and_gradient(to_params, sol: np.ndarray, x: np.ndarray,	fe
 		volfracObj = np.mean(x)
 		volFrac_gradient = np.ones_like(x) / x.size
 		return volfracObj, volFrac_gradient
+	elif (objectiveType == TO_QOI.MASS): 
+		elemVolume =  fe_solver.mesh.elem_size[0] * fe_solver.mesh.elem_size[1] * fe_solver.mesh.elem_size[2]
+		totalMass = np.sum(x * elemVolume * fe_solver.mat_prop.mass_density) 
+		mass_gradient = np.ones_like(x) * (elemVolume * fe_solver.mat_prop.mass_density)
+		return totalMass, mass_gradient
 	elif (objectiveType == TO_QOI.PNORM_STRESS):
 		[stressObj, stress_gradient,max_von_mises] = compute_pnorm_stress_and_sensitivity(sol, x, fe_solver,KE,material_model)
 		return stressObj, stress_gradient
@@ -256,6 +261,12 @@ def compute_constraint_and_gradient(to_params, sol: np.ndarray, x: np.ndarray,	f
 			complianceConstraint =  (compliance/constraintLimit - 1.0)
 			complianceConstraint_gradient =  (compliance_grad/constraintLimit)
 			c[m,0],dc[m,:] = complianceConstraint, complianceConstraint_gradient[np.newaxis]
+		elif (constraintType == TO_QOI.MASS): 
+			elemVolume =  fe_solver.mesh.elem_size[0] * fe_solver.mesh.elem_size[1] * fe_solver.mesh.elem_size[2]
+			totalMass = np.sum(x * elemVolume * fe_solver.mat_prop.mass_density) 
+			massConstraint = ((totalMass / constraintLimit) - 1.0)
+			c[m, 0] = massConstraint
+			dc[m, :] = np.ones_like(x) * (elemVolume * fe_solver.mat_prop.mass_density / constraintLimit)
 		elif (constraintType == TO_QOI.VOLUME_FRACTION):
 			volConstraint, volConstraint_gradient = compute_volume_constraint_and_gradient(x,to_params.Constraints[m][2])
 			c[m,0], dc[m,:] = volConstraint, volConstraint_gradient[np.newaxis]

@@ -244,7 +244,7 @@ if __name__ == "__main__":
  
     print("-" * 50)
 
-    to_problem = StructuralTOExamples.GEGrabCAD # Choose the TO problem
+    to_problem = StructuralTOExamples.Mitchell_1 # Choose the TO problem
     
     if (to_problem in StructuralTOExamples):
         mesh, mat_prop, bc,elem_body_force, to_params = getStructuralTOProblem(to_problem)
