@@ -15,7 +15,7 @@ def topopt_levelset(fe_solver,
                     objective_tol: float = 1.e-3,
                     constraint_tol: float = 1.e-3,
                     plot_progress: bool = False,
-                    print_progress : bool = True,
+                    print_progress : bool = False,
                     debug: bool = False) -> tuple[np.ndarray, dict]:
     """Level Set Method for Topology Optimization using Hamilton-Jacobi equation in 3D.
 
@@ -148,7 +148,7 @@ def topopt_levelset(fe_solver,
         if (iterNum > 5):
             obj_err = (abs(history['objective'][-1] - history['objective'][-3]) / history['objective'][-3]) 
             vol_err = abs(history['volfrac'][-1] - volFractionConstraint)
-            print(obj_err,vol_err)
+            #print(obj_err,vol_err)
             if  (obj_err < objective_tol) and (vol_err < vol_tol):
                     break
 
@@ -156,7 +156,7 @@ def topopt_levelset(fe_solver,
         gradMagSmooth = H*gradMag/Hs 
         Vlm = max(volFractionConstraint,volCurr - volFracDecrement)
         #bisection to find la
-        lMin = 1e-4
+        lMin = 1e-6
         lMax = 1e9
         
         # find volume fraction for lMin and lMax
@@ -233,7 +233,7 @@ if __name__ == "__main__":
 	from topopt_thermal_benchmarks import *
 	
 	print("-" * 50)
-	to_problem = StructuralTOExamples.Multiload # Choose the TO problem
+	to_problem = StructuralTOExamples.Table # Choose the TO problem
 	#to_problem = ThermalTOExamples.BridgeThermal # Choose the TO problem
      
 
