@@ -984,8 +984,7 @@ def createCantileverTipLoadProblem(nDOFDesired: int = 10000,totalLoad = 5.8e4):
   nElemsDesired = nDOFDesired/3    # estimate
   mesh = hex_mesher.HexMesher()
   mesh.createMeshFromSTLFile(stl_file, nElemsDesired=nElemsDesired)
-  nElems = mesh.num_elements
-  elemVolume = mesh.getElemVolume()
+
   
   mesh.createEdofMatStructural()
 
@@ -1998,7 +1997,7 @@ def createGEGrabCADProblem(nDOFDesired: int = 50000, axialLoad = 10000):
   force = np.zeros(3*mesh.num_nodes)
   force[load_dofs] = load_per_dof
 
-  mat_prop = mat_lib.get_material("Steel")
+  mat_prop = mat_lib.get_material("Nitronic60")
 
   nElems = mesh.num_elems
   elemVolume = mesh.elem_size[0]*mesh.elem_size[1]*mesh.elem_size[2]

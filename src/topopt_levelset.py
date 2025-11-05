@@ -4,6 +4,7 @@ from topopt_common import *
 from topopt_material_model import *
 from topopt_obj_cons_sensitivities import *
 from scipy.ndimage import distance_transform_edt
+from matplotlib import pyplot as plt
 import time
 
 
@@ -11,8 +12,10 @@ def topopt_levelset(fe_solver,
                     to_params,
                     maxIterations: int = 250,
                     numReinit: int = 10000,
+                    objective_tol: float = 1.e-3,
+                    constraint_tol: float = 1.e-3,
                     plot_progress: bool = False,
-                    print_progress : bool = False,
+                    print_progress : bool = True,
                     debug: bool = False) -> tuple[np.ndarray, dict]:
     """Level Set Method for Topology Optimization using Hamilton-Jacobi equation in 3D.
 
@@ -30,6 +33,14 @@ def topopt_levelset(fe_solver,
         A tuple containing the displacement field of the optimized structure
         and a dictionary containing the optimization history.
     """
+
+    def lsevol(phi, shapeSens, gradMagSmooth, la, dt):
+        phi += ((shapeSens*gradMagSmooth)) * dt/la 
+        phi = H @ phi.T/Hs
+        rho = (phi < 0).astype(np.float64)
+        rho = np.maximum(rho, void)
+        return rho
+    
     if isinstance(fe_solver, hex_structural_fea.HexStructuralFEA):
         nDOFPerNode = 3
     else:
@@ -38,29 +49,36 @@ def topopt_levelset(fe_solver,
     tStart = time.time()
     material_model = MaterialModel.SIMP 
     mesh=fe_solver.mesh
+    
+    constraintType = to_params.Constraints[0][0]  # assume this is the first constraint
+    if (constraintType == TO_QOI.VOLUME_FRACTION):
+        volFractionConstraint = to_params.Constraints[0][2]
+    else:
+        raise ValueError(f"Unsupported constraint type: {constraintType}")
 
-    print("Creating Derivative filters...")
+
+  
     HXD = createXDerivativeFilter(mesh)
     HYD = createYDerivativeFilter(mesh)
-    HZD = createZDerivativeFilter(mesh)
-
-    print("Creating Smoothing filters...")
+    HZD = createZDerivativeFilter(mesh)  
     [H,Hs] = createFilters(fe_solver, to_params)
 
     # Initialize level set function and design variables
     rho = np.ones((fe_solver.mesh.num_elems))
 
+    if plot_progress:
+        fe_solver.mesh.setPseudoDensity(np.asarray(rho))
+        fe_solver.plot_mesh(plot_bc = False,auto_close = False, title = f'Initial Volfrac: {np.mean(rho):0.3f}')
+        time.sleep(0.1)
+        
     lsf = fe_solver.mesh.compute_signed_distance_function(rho)
     lsf /= np.max(np.abs(lsf))
 
-
-
     shapeSens = np.zeros((fe_solver.mesh.num_elems))
     history = {'objective': [], 'volfrac': []}
-    
     elemsWithForces = find_elements_with_forces(fe_solver.mesh, fe_solver.bc.force,nDOFPerNode)
-   
     if isinstance(fe_solver.mat_prop, list): # multiple materials
+        print("Not tested")
         if isinstance(fe_solver, hex_structural_fea.HexStructuralFEA):
             KE_list = [hex_element_stiffness.hex8_stiffness_matrix_structural( mp.youngs_modulus,mp.poissons_ratio,fe_solver.mesh.elem_size)
 				for mp in fe_solver.mat_prop]
@@ -69,7 +87,6 @@ def topopt_levelset(fe_solver,
             KE_list = [hex_element_stiffness.hex8_stiffness_matrix_thermal( mp.thermal_conductivity,fe_solver.mesh.elem_size)
 				for mp in fe_solver.mat_prop]
             KE = KE_list[0]	
-        print("Assuming all elements have the same material properties")
     else: # single material
         if isinstance(fe_solver, hex_structural_fea.HexStructuralFEA):
             KE = hex_element_stiffness.hex8_stiffness_matrix_structural( fe_solver.mat_prop.youngs_modulus,
@@ -78,55 +95,30 @@ def topopt_levelset(fe_solver,
         elif isinstance(fe_solver, hex_thermal_fea.HexThermalFEA):
             KE = hex_element_stiffness.hex8_stiffness_matrix_thermal( fe_solver.mat_prop.thermal_conductivity,fe_solver.mesh.elem_size)
 	
-	
     volCurr = 1.0
-    volDecrementWeight = 0.1
-    void = 1e-10
+    void = 0
+    vol_tol = 4/fe_solver.mesh.num_elems
+    volFracDecrement = 0.05
     success = True
     errorMsg = "No errors."    
-
-    def bisection_find_radius(mesh, target_volfrac: float, radius_min: float = 0.01, radius_max: float = 1.0, tol: float = 1e-3) -> float:
-        """Find radius via bisection that matches target volume fraction."""
-        iterations = 0
-        max_iterations = 50
-        volfrac = 10.0  # Initialize to a large value
-        while abs(target_volfrac - volfrac) > tol and iterations < max_iterations:
-            radius_mid = (radius_min + radius_max) / 2
-            rho_test = np.ones(mesh.num_elems)
-            rho_test = fe_solver.mesh.create_custom_hole_pattern(rho_test, radius=radius_mid)
-            volfrac = np.mean(rho_test)
-            
-            if volfrac > target_volfrac:
-                radius_min = radius_mid  # Need larger hole to reduce volfrac
-            else:
-                radius_max = radius_mid  # Need smaller hole to increase volfrac
-            iterations += 1
-        
-        print("target_volfrac", target_volfrac)
-        print("volfrac", volfrac)
-        
-        final_radius = (radius_min + radius_max) / 2
-        return final_radius
-
     constraintType = to_params.Constraints[0][0] # assume this is the first constraint
     if (constraintType == TO_QOI.VOLUME_FRACTION):
         volFractionConstraint = to_params.Constraints[0][2]
     else:
         raise ValueError(f"Unsupported constraint type: {constraintType}")
-    beta = 0  # for stable updates
 
     obj0 = None
-    fe_solver.mesh.setPseudoDensity(np.asarray(rho))
-    volCurr = np.mean(rho)
+    dt = 0.1
     for iterNum in range(maxIterations):
         if (plot_progress):
+            fe_solver.mesh.setPseudoDensity(np.asarray(rho))
             fe_solver.plot_mesh(plot_bc = False,auto_close = False, title = f'Volfrac: {volCurr:0.3f}')
-            time.sleep(0.1)
+        
         sol = fe_solver.solve(rho, material_model)
-        obj, grad_obj = compute_objective_and_gradient(to_params,sol,rho, fe_solver,KE, material_model)
+        obj, _ = compute_objective_and_gradient(to_params,sol,rho, fe_solver,KE, material_model)
         if (obj0 is None):
             obj0 = obj
-        c, dcdx = compute_constraint_and_gradient(to_params,sol,rho, fe_solver,KE, material_model)
+        c, _ = compute_constraint_and_gradient(to_params,sol,rho, fe_solver,KE, material_model)
         shapeSens =(-rho)* (np.dot(sol[fe_solver.mesh.edofMat].reshape(fe_solver.mesh.num_elems, 8*nDOFPerNode), KE) * sol[fe_solver.mesh.edofMat].reshape(fe_solver.mesh.num_elems, 8*nDOFPerNode)).sum(1)
  
         shapeSens = (H * shapeSens)/Hs
@@ -142,7 +134,6 @@ def topopt_levelset(fe_solver,
         history['objective'].append(obj)
         history['volfrac'].append(volCurr)
         
-       
          # Extract names for printing
         objective_name = getattr(to_params.Objective[0], 'name', str(to_params.Objective[0]))
         constraint_names = [getattr(c[0], 'name', str(c[0])) for c in to_params.Constraints]
@@ -153,31 +144,46 @@ def topopt_levelset(fe_solver,
             for idx, val in enumerate(c.flatten()):
                 print(f"Constraint {idx+1} ({constraint_names[idx]}): {(val+1)*to_params.Constraints[idx][2]:.3g} {'<='} {to_params.Constraints[idx][2]:.3g}?")
        
-        if (abs(volCurr - volFractionConstraint) < 0.001):
-             break
         
-        adjustedWeight = volDecrementWeight * (1 - abs(volCurr - volFractionConstraint))
-        shapeSens = shapeSens + adjustedWeight * (volCurr - 0.5*volFractionConstraint+beta)
+        if (iterNum > 5):
+            obj_err = (abs(history['objective'][-1] - history['objective'][-3]) / history['objective'][-3]) 
+            vol_err = abs(history['volfrac'][-1] - volFractionConstraint)
+            print(obj_err,vol_err)
+            if  (obj_err < objective_tol) and (vol_err < vol_tol):
+                    break
 
-        beta = min(beta+0.0025,0.15)
         gradMag = GradientMagnitude(lsf,HXD,HYD,HZD)      
-        gradMagSmooth = H*gradMag/Hs        
+        gradMagSmooth = H*gradMag/Hs 
+        Vlm = max(volFractionConstraint,volCurr - volFracDecrement)
+        #bisection to find la
+        lMin = 1e-4
+        lMax = 1e9
         
-        lsf += (shapeSens*gradMagSmooth)
-        rho = (lsf < 0).astype(np.float64)
-        rho = np.maximum(rho, void)
-        
-        fe_solver.mesh.setPseudoDensity(np.asarray(rho))
-        if (iterNum > 0 and iterNum % numReinit == 0):
+        # find volume fraction for lMin and lMax
+        rho = lsevol(-lsf, shapeSens, gradMagSmooth, lMin, dt)
+        rho = lsevol(-lsf, shapeSens, gradMagSmooth, lMax, dt)
+
+        while (lMax - lMin) > 1e-6:
+            la = 0.5 * (lMin + lMax)
+            rho = lsevol(-lsf, shapeSens, gradMagSmooth, la, dt)
+            volNew = np.mean(rho)
+            if volNew > Vlm:
+                lMin = la
+            else:
+                lMax = la
+                
+        if ((iterNum+1) % 5 == 0) and (abs(history['volfrac'][-1] - history['volfrac'][-2]) < constraint_tol):
             print("Reinitializing level set function")
             lsf = fe_solver.mesh.compute_signed_distance_function(rho)
-    
+            lsf /= -np.max(np.abs(lsf))
+
+
+    fe_solver.mesh.setPseudoDensity(np.asarray(rho))
+    if (iterNum > 0 and iterNum % numReinit == 0):
+        print("Reinitializing level set function")
+        lsf = fe_solver.mesh.compute_signed_distance_function(rho)
         lsf /= np.max(np.abs(lsf))
         lsf = H*lsf/Hs
-        if(volCurr - volFractionConstraint > 0.001):
-            volDecrementWeight += 0.0025
-        else:
-            volDecrementWeight -= 0.0025
         
     sol = fe_solver.solve(rho, material_model)
     obj, _ = compute_objective_and_gradient(to_params,sol,rho, fe_solver,KE, material_model)
@@ -227,7 +233,7 @@ if __name__ == "__main__":
 	from topopt_thermal_benchmarks import *
 	
 	print("-" * 50)
-	to_problem = StructuralTOExamples.MBBB # Choose the TO problem
+	to_problem = StructuralTOExamples.Multiload # Choose the TO problem
 	#to_problem = ThermalTOExamples.BridgeThermal # Choose the TO problem
      
 
@@ -287,9 +293,6 @@ if __name__ == "__main__":
 	timeTaken = time.time() - startTime
 	title = f"Level Set: nDOF: {3*fe_solver.mesh.num_nodes}, vol: {history['volfrac'][-1]:0.2f}, J: {history['objective'][-1]:.3g}, time: {timeTaken:.0f} s"	
 
-	# if not success:
-	# 	print(f"Error: {errorMsg}")
+
 	fe_solver.plot_mesh(title = title, save_path = None)
 
-	#plots.plotIsocontour(fe_solver.mesh, title = title, save_path = None)
-	# Save the mesh and results

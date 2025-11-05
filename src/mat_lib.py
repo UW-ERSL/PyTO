@@ -75,6 +75,17 @@ materials = [
     thermal_expansion=8.6e-6,
     cost=35.0,
     yield_strength=880e6
+  ),
+  Material(
+    name="Nitronic60",
+    youngs_modulus=1.81e11,
+    poissons_ratio=0.3,
+    mass_density=7620,
+    thermal_conductivity=21.9,
+    specific_heat=520,
+    thermal_expansion=8.6e-6,
+    cost=4.0,
+    yield_strength=880e6
   )
 ]
 

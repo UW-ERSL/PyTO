@@ -777,7 +777,7 @@ class HexMesher:
 		
 		return nodes_on_plane
 
-	def compute_signed_distance_function(self, density_field: np.ndarray) -> np.ndarray:
+	def compute_signed_distance_function(self, density_field: np.ndarray =None) -> np.ndarray:
 		"""Compute the signed distance function for each element to the boundary face/edge.
 		
 		Args:
@@ -787,6 +787,8 @@ class HexMesher:
 			np.ndarray: Signed distance function for each element.
 		"""
 		# Ensure density_field matches the number of elements
+		if density_field is None:
+			density_field = self.elemPseudoDensity
 		if len(density_field) != self.num_elems:
 			raise ValueError("Density field size must match the number of elements.")
 		 # Create a 3D grid of element centers
