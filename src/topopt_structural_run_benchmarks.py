@@ -49,7 +49,7 @@ def runTOMethodOnStructuralBenchmarks(optimizationMethod):
 	benchmarks_misc_problems = [StructuralTOExamples.Inverter]
 
 	
-	for to_problem in  benchmarks_3D_problems:
+	for to_problem in  [StructuralTOExamples.GEGrabCAD]:
 		if to_problem in benchmarks_2_5D_problems:
 			subFolder = "Compliance2.5D"
 		elif to_problem in benchmarks_3D_problems:
