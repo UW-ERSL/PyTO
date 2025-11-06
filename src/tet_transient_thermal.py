@@ -102,6 +102,7 @@ class TetTransientThermalFEA:
         C = self.C_mtrx
         Keff = beta*K + C/dt
         B = -(1 - beta)*K + C/dt
+        FPrev = heat_flux_func(0, self.deltaTime, self.mesh)
         for timeIndex in range(1,time_steps):
             if (callback is None):
                 print(f"Time step {timeIndex} / {time_steps-1}")

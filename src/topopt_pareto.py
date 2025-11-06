@@ -273,7 +273,7 @@ if __name__ == "__main__":
 	from topopt_thermal_benchmarks import *
 	
 	print("-" * 50)
-	to_problem = StructuralTOExamples.MBBB # Choose the TO problem
+	to_problem = StructuralTOExamples.Table # Choose the TO problem
 	#to_problem = ThermalTOExamples.BridgeThermal # Choose the TO problem
 
 	if (to_problem in StructuralTOExamples):
@@ -327,7 +327,7 @@ if __name__ == "__main__":
 	print("OptimizationMethod: Pareto")
 	sol, history, success,errorMsg,nFEAs = topopt_pareto(fe_solver = fe_solver,
 									to_params = to_params,
-									plot_progress= False,
+									plot_progress= True,
 									debug = debug)
 	
 	timeTaken = time.time() - startTime

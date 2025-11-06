@@ -326,7 +326,7 @@ def getStructuralTOProblem(to_problem: StructuralTOExamples,nDOFDesired = None, 
     elif to_problem == StructuralTOExamples.GEGrabCAD:
         structural_problem = StructuralExamples.GEGrabCAD
         to_params.Comment = "3D"
-        to_params.nDOFDesired = 1000000 if nDOFDesired is None else nDOFDesired
+        to_params.nDOFDesired = 100000 if nDOFDesired is None else nDOFDesired
         to_params.KeepFixedElems = True 
         to_params.Constraints = [(TO_QOI.MASS, None, 1.5)] 
 

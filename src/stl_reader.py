@@ -13,8 +13,11 @@ class STLGeom:
         if (file_path is None) or (not file_path):
             print(f"STLGeom: file path {file_path} invalid.")
             return
-        self.mesh = mesh.Mesh.from_file(file_path)
-        
+        try:
+            self.mesh = mesh.Mesh.from_file(file_path, mode=mesh.stl.Mode.BINARY) # default
+        except:
+            self.mesh = mesh.Mesh.from_file(file_path, mode=mesh.stl.Mode.ASCII)
+
         self.stl_n_triangles = len(self.mesh.vectors)
         #self.tri_normals = [self.compute_normal(vertices) for vertices in self.mesh.vectors]
         self.tri_normals = self.compute_normals_vectorized()

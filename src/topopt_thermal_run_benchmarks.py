@@ -275,7 +275,7 @@ def combine_results():
 
 if __name__ == "__main__":    
 	
-	optimizationMethods = [TO_METHODS.DENSITYMMA, TO_METHODS.DENSITYOCM, TO_METHODS.PARETO]
+	optimizationMethods = [TO_METHODS.DENSITYMMA, TO_METHODS.DENSITYOCM, TO_METHODS.PARETO, TO_METHODS.LEVELSET]
 	for optimizationMethod in optimizationMethods:
 		runTOMethodOnThermalBenchmarks(optimizationMethod)
 		print(f"Finished {optimizationMethod.name} tests.")

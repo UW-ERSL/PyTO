@@ -50,14 +50,12 @@ def topopt_levelset(fe_solver,
     material_model = MaterialModel.SIMP 
     mesh=fe_solver.mesh
     
-    constraintType = to_params.Constraints[0][0]  # assume this is the first constraint
+    constraintType = to_params.Constraints[0][0]  
     if (constraintType == TO_QOI.VOLUME_FRACTION):
         volFractionConstraint = to_params.Constraints[0][2]
     else:
         raise ValueError(f"Unsupported constraint type: {constraintType}")
 
-
-  
     HXD = createXDerivativeFilter(mesh)
     HYD = createYDerivativeFilter(mesh)
     HZD = createZDerivativeFilter(mesh)  
@@ -73,6 +71,8 @@ def topopt_levelset(fe_solver,
         
     lsf = fe_solver.mesh.compute_signed_distance_function(rho)
     lsf /= np.max(np.abs(lsf))
+
+        
 
     shapeSens = np.zeros((fe_solver.mesh.num_elems))
     history = {'objective': [], 'volfrac': []}
@@ -98,7 +98,7 @@ def topopt_levelset(fe_solver,
     volCurr = 1.0
     void = 0
     vol_tol = 4/fe_solver.mesh.num_elems
-    volFracDecrement = 0.05
+    volFracDecrement = 0.025
     success = True
     errorMsg = "No errors."    
     constraintType = to_params.Constraints[0][0] # assume this is the first constraint
@@ -173,14 +173,14 @@ def topopt_levelset(fe_solver,
                 lMax = la
                 
         if ((iterNum+1) % 5 == 0) and (abs(history['volfrac'][-1] - history['volfrac'][-2]) < constraint_tol):
-            print("Reinitializing level set function")
             lsf = fe_solver.mesh.compute_signed_distance_function(rho)
             lsf /= -np.max(np.abs(lsf))
-
-
+            lsf = H*lsf/Hs
+        
+        # scale = np.sqrt(history['objective'][-1] / history['objective'][0])
+        # volFracDecrement = max(vol_decr_min,min(volFracDecrement,volFracDecrement/scale)) # Reduce volume increment for steep increase in compliance
     fe_solver.mesh.setPseudoDensity(np.asarray(rho))
-    if (iterNum > 0 and iterNum % numReinit == 0):
-        print("Reinitializing level set function")
+    if (iterNum > 0 and iterNum % numReinit == 0): # Reinitialize level set function
         lsf = fe_solver.mesh.compute_signed_distance_function(rho)
         lsf /= np.max(np.abs(lsf))
         lsf = H*lsf/Hs
@@ -234,7 +234,7 @@ if __name__ == "__main__":
 	
 	print("-" * 50)
 	to_problem = StructuralTOExamples.Table # Choose the TO problem
-	#to_problem = ThermalTOExamples.BridgeThermal # Choose the TO problem
+	#to_problem = ThermalTOExamples.FourCornersThermal # Choose the TO problem
      
 
 	print(f"Running {to_problem.name}...") 
