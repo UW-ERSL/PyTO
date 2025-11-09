@@ -62,7 +62,6 @@ class pyTODemos(enum.Enum):
 	SolidWorks_Demo= enum.auto() # Interact with SolidWorks to get model info and export STL
 
 demo = pyTODemos.Load_STL  # Initialize with first demo
-demo = pyTODemos.HexThermoElasticFEA
 while True:
     print(50*'-')
     print(f"\nCurrent demo: {demo.name}")
