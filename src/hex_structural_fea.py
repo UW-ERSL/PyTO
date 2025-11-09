@@ -25,9 +25,11 @@ class HexStructuralFEA:
          solver: linear_solvers.Solvers,
          dsolver: deflation.DeflationSolver = None,
          elem_body_force: np.ndarray = None,
+         thermo_elastic_force = None,
          **kwargs):
 
     self.mesh, self.mat_prop, self.bc = mesh, mat_prop, bc
+    self.thermo_elastic_force = thermo_elastic_force
     self.solver, self.kwargs = solver, kwargs
     self.dsolver = dsolver
 
@@ -109,15 +111,10 @@ class HexStructuralFEA:
     self.stiff_mtrx = sp.coo_matrix((elem_stiff_mtrx, (self.node_idx[:, 0], self.node_idx[:, 1])),
                    shape=(self.bc.num_dofs, self.bc.num_dofs))
     self.total_force = self.bc.force.copy()
-    if self.elem_body_force is not None:
+    if self.elem_body_force is not None: # convert element body forces to nodal forces
       elem_force = self.elem_body_force.copy()
-      if material_model is None:
-        masspenal = 1
-      else:
-        masspenal = 1
-      
       for i in range(3):
-        elem_force[i::3]  *= (x**masspenal)
+        elem_force[i::3]  *= x
         
       node_forces = np.zeros((self.mesh.num_nodes * 3,))
       node_forces[0::3] = self.mesh.elem_to_node_field_mapping* elem_force[0::3] 
@@ -128,25 +125,36 @@ class HexStructuralFEA:
     
     if hasattr(self.mesh, 'externalSprings') and self.mesh.externalSprings is not None:
       # Add spring stiffnesses to diagonal terms
-      # external_springs = [
-      # (1000.0, 42),  # Add spring with stiffness 1000 at DOF 42
-      #  (2000.0, 156), # Add spring with stiffness 2000 at DOF 156
-      #  (500.0, 789)   # Add spring with stiffness 500 at DOF 789
-      #]
       # Convert to CSR format for modification
       self.stiff_mtrx  = self.stiff_mtrx.tocsr()
       for KSpring, dof in self.mesh.externalSprings:
           self.stiff_mtrx [dof,dof] += KSpring
 
-    sol =  linear_solvers.solve(self.stiff_mtrx,
-                      self.total_force,
-                      self.solver,
-                      self.bc,
-                      dsolver = self.dsolver,
-                      **self.kwargs)
-    self.sol = sol
+     # purely elastic
+    sol = linear_solvers.solve(self.stiff_mtrx,
+                        self.total_force,
+                        self.solver,
+                        self.bc,
+                        dsolver = self.dsolver,
+                        **self.kwargs)
+    self.sol = sol.copy()
     self.deformation = np.sqrt(sol[0::3]**2 + sol[1::3]**2 + sol[2::3]**2)
     self.max_deformation = np.max(self.deformation)
+    self.solElastic = self.sol.copy()
+
+    if self.thermo_elastic_force is not None: # must solve again since we need to keep track of elastic deformations only 
+      self.solElastic = self.sol.copy()
+      self.total_force += self.thermo_elastic_force
+      sol = linear_solvers.solve(self.stiff_mtrx,
+                        self.total_force,
+                        self.solver,
+                        self.bc,
+                        dsolver = self.dsolver,
+                        **self.kwargs)
+      self.sol = sol.copy()
+      self.deformation = np.sqrt(self.sol[0::3]**2 + self.sol[1::3]**2 + self.sol[2::3]**2)
+      self.max_deformation = np.max(self.deformation)
+    
     return sol
 
 #################################################################
@@ -170,7 +178,6 @@ class HexStructuralFEA:
         gradN[i, :] = 2*gradN[i,:] / self.mesh.elem_size[i]
       # Get element degrees of freedom
       edof = self.mesh.edofMat
-      
       # Compute displacement gradients
       uGrad = gradN @ self.sol[edof[:, ::3]].T
       vGrad = gradN @ self.sol[edof[:, 1::3]].T
@@ -183,14 +190,24 @@ class HexStructuralFEA:
         uGrad[2] + wGrad[0],
         vGrad[2] + wGrad[1]
       ], axis=1)  # Shape: (num_elems, 6)
-
+      self.strainComponents = strain.copy() # store the total strain (elastic + thermal)
     
+      if (self.thermo_elastic_force is not None): # We must use only the elastic strain for computing stresses
+        # Compute elastic strains only
+        uGradElastic = gradN @ self.solElastic[edof[:, ::3]].T
+        vGradElastic = gradN @ self.solElastic[edof[:, 1::3]].T
+        wGradElastic = gradN @ self.solElastic[edof[:, 2::3]].T
+        
+        # Compute Engineering strains
+        strain = np.stack([
+          uGradElastic[0], vGradElastic[1], wGradElastic[2],
+          uGradElastic[1] + vGradElastic[0],
+          uGradElastic[2] + wGradElastic[0],
+          vGradElastic[2] + wGradElastic[1]
+        ], axis=1)  # Shape: (num_elems, 6)
+
       # STRESS_RELAXATION method;
-      # See Efficient stress-constrained topology optimizationusing inexact design sensitivities
-      # by Oded Amir, 2021
-      # Constitutive matrix D for each material
       q = 0.5  # SIMP like penalization for stress
-     
       if isinstance(self.mat_prop, list):
         # Create D matrix for each material
         D_list = []
@@ -207,6 +224,8 @@ class HexStructuralFEA:
         nu = self.mat_prop.poissons_ratio
         D = hex_element_stiffness.isotropic_constitutive_matrix ( E, nu)
         self.stressComponents = np.einsum('ij,ej->ei', D, strain)
+
+
       correction = (EVOID_RELATIVE + (1-EVOID_RELATIVE) * (self.x**q)).reshape((-1,1))
       eStress = correction * self.stressComponents
       self.vonMisesStress = np.sqrt(0.5*((eStress[:,0]-eStress[:,1])**2 +
@@ -214,7 +233,7 @@ class HexStructuralFEA:
                 (eStress[:,2]-eStress[:,0])**2) +
                 3*(eStress[:,3]**2 + eStress[:,4]**2 +
                    eStress[:,5]**2))
-      self.strainComponents = strain
+     
 
       self.elemStrainEnergy = 0.5 * np.sum(strain * eStress, axis=1)  # Element-wise strain energy
       #print(f"Maximum von Mises stress: {np.max(self.vonMisesStress):.4e}")
@@ -374,6 +393,8 @@ class HexStructuralFEA:
     sol = sol.reshape((-1, 3))
     delta = self.deformation
     deltaMax = self.max_deformation
+    if deltaMax < 1e-16:
+      deltaMax = 1e-16
     scale = float(0.1*self.mesh.bbox.diag_length/deltaMax)
     vertices += scale*sol
 
@@ -698,8 +719,8 @@ class HexStructuralFEA:
 if __name__ == "__main__":    
   from hex_structural_examples import StructuralExamples,getStructuralProblem
 
-  problem = StructuralExamples.GEGrabCAD
-  nDOFDesired = 100000
+  problem = StructuralExamples.TensileBar
+  nDOFDesired = 10000
   mesh, mat_prop, bc,elem_body_force = getStructuralProblem(problem,nDOFDesired = nDOFDesired)
   solver = linear_solvers.Solvers.DPCG # typically DPCG or PARDISO
   

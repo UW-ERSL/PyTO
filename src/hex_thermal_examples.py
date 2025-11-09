@@ -8,6 +8,7 @@ import enum
 script_dir = os.path.dirname(os.path.abspath(__file__))
 
 class HexThermalExamples(enum.Enum):
+    ThermalBar = enum.auto()
     HeatPlate = enum.auto()
     FourCornersThermal = enum.auto()
     BridgeThermal = enum.auto()
@@ -33,7 +34,10 @@ def getThermalProblem(problem: HexThermalExamples, **kwargs):
     A tuple containing the mesh, material properties, and boundary conditions for the problem.
   """
   print("problem", problem)
-  if problem == HexThermalExamples.HeatPlate:
+  if problem == HexThermalExamples.ThermalBar:
+    return createThermalBarProblem(**kwargs)
+  
+  elif problem == HexThermalExamples.HeatPlate:
     return createHeatPlateThermalProblem(**kwargs)
   
   elif problem == HexThermalExamples.FourCornersThermal:
@@ -64,6 +68,73 @@ def getThermalProblem(problem: HexThermalExamples, **kwargs):
     raise ValueError("Invalid thermal example name.")
 
 
+def createThermalBarProblem(nDOFDesired: int = 25000, heat_load = 100, T0 = 23):
+    """
+  """
+  # Read the STL model, create a mesh of desired size, and a structural problem is posed on it.
+    stl_file = os.path.join(script_dir, '../Models/Beam/beam.STL')
+    nElemsDesired = nDOFDesired # estimate
+    mesh = hex_mesher.HexMesher()
+  
+    mesh.createMeshFromSTLFile(stl_file, nElemsDesired=nElemsDesired)
+    mesh.createEdofMatThermal()
+    print("Thermal num nodes:", mesh.num_nodes)
+    node_pts = mesh.node_xyz
+  
+    fixed_nodes = np.where(node_pts[:, 0] == np.min(node_pts[:, 0]) )[0] # x = xMin plane
+    fixed_dofs = np.array([fixed_nodes]).flatten().astype(int)
+    dirichlet_values = T0*np.ones_like(fixed_dofs, dtype = float)
+  
+    load_nodes = np.where(node_pts[:, 0] == np.max(node_pts[:, 0]) )[0] # x = xMax plane
+    load_dofs = load_nodes
+    force = np.zeros(mesh.num_nodes)
+    # Add forces on x=xMax plane with different magnitudes for edges and corners
+    # that is consistent with numerical integration over the surface
+    if (abs(heat_load) > 0):
+      load_nodes = mesh.getNodesOnBoundingBoxPlane(0,False) # x = xMax plane
+      # Find edge and corner nodes
+      edge_nodes = []
+      corner_nodes = []
+      face_nodes = [] 
+
+      for node in load_nodes:
+        coords = mesh.node_xyz[node]
+        num_extremes = 0
+        if abs(coords[1] - min(mesh.node_xyz[:,1])) < mesh.elem_size[1]/2 or abs(coords[1] - max(mesh.node_xyz[:,1])) < mesh.elem_size[1]/2:
+          num_extremes += 1
+        if abs(coords[2] - min(mesh.node_xyz[:,2])) < mesh.elem_size[2]/2 or abs(coords[2] - max(mesh.node_xyz[:,2])) < mesh.elem_size[2]/2:
+          num_extremes += 1
+        
+        if num_extremes == 2:
+          corner_nodes.append(node)
+        elif num_extremes == 1:
+          edge_nodes.append(node) 
+        else:
+          face_nodes.append(node)
+      
+      # Split into lists for clarity
+      corner_nodes = np.array(corner_nodes)
+      edge_nodes = np.array(edge_nodes)
+      face_nodes = np.array(face_nodes)
+      # Apply forces according to node type
+      
+      force[face_nodes] = 4.0  
+      force[edge_nodes] = 2.0  
+      force[corner_nodes] = 1.0 
+      
+      # Normalize forces to achieve desired total load
+      total_load = np.sum(force[load_nodes])
+      force[load_nodes] *= heat_load/total_load
+      load_nodes = np.union1d(np.union1d(face_nodes, edge_nodes), corner_nodes)
+      mesh.node_indices[load_nodes, 3] = 2
+    
+
+    dirichlet_values = T0*np.ones_like(fixed_dofs, dtype = float)
+    bc = bound_cond.BC(force = force,fixed_dofs = fixed_dofs,dirichlet_values = dirichlet_values) 
+
+    mat_prop = mat_lib.get_material("Steel")
+    elem_body_force = None
+    return mesh, mat_prop, bc, elem_body_force
 
 def createHeatPlateThermalProblem(nDOFDesired: int = 25000,
                                          heat_load = 1, T0 = 23):

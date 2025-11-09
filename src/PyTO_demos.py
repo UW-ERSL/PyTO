@@ -40,7 +40,8 @@ class pyTODemos(enum.Enum):
 	HexStructuralFEA_Pardiso = enum.auto() # Create and solve a predefined structural FEA problem using the Pardiso solver
 	HexStructuralFEA_DPCG = enum.auto() # Create and solve a predefined structural FEA problem using the DPCG solver
 	HexModalFEA_Pardiso = enum.auto() # Create and solve a predefined structural FEA problem using the Pardiso solver    
-	
+	HexThermoElasticFEA = enum.auto() # Create and solve a predefined thermo-elastic FEA problem using the Pardiso solver
+
      # The following demos are non-conforming voxel mesh Structural topology optimization
 	HexStructuralTO_DensityMMA = enum.auto() # Create and solve a structural topology optimization problem using Density-method and MMA solver
 	HexStructuralTO_DensityOC = enum.auto() # Create and solve a structural topology optimization problem using Density-method and OC solver
@@ -61,6 +62,7 @@ class pyTODemos(enum.Enum):
 	SolidWorks_Demo= enum.auto() # Interact with SolidWorks to get model info and export STL
 
 demo = pyTODemos.Load_STL  # Initialize with first demo
+demo = pyTODemos.HexThermoElasticFEA
 while True:
     print(50*'-')
     print(f"\nCurrent demo: {demo.name}")
@@ -157,7 +159,7 @@ while True:
         fe_solver.plot_deformation()
     elif demo == pyTODemos.HexModalFEA_Pardiso:
         problem = StructuralExamples.LBracket
-        nDOFDesired = 50000
+        nDOFDesired = 20000
         mesh, mat_prop, bc,elem_body_force = getStructuralProblem(problem,nDOFDesired = nDOFDesired)
         solver = Solvers.PARDISO 
 
@@ -178,6 +180,60 @@ while True:
         print('-----------------------------')
         for i in range(nEigenModes):
             modal_solver.plot_eigenmode(i)
+
+    elif demo == pyTODemos.HexThermoElasticFEA:
+        # This example uses the ThermalExamples and StructuralExamples modules.
+        thermalProblem = HexThermalExamples.ThermalBar
+        L = 0.5 # length of the bar in meters
+        Area = 0.05*0.05 # cross-sectional area in m^2
+        heat_load = 1 # heat load in Watts
+        nDOFDesired = 3000
+        tensileForce = 100000 # tensile force in Newtons
+        T0 = 23 # reference temperature in Celsius
+
+        mesh, mat_prop, bc,elem_body_force = getThermalProblem(thermalProblem, nDOFDesired=nDOFDesired,
+                                                               heat_load = heat_load, T0 = T0)
+        solver = Solvers.PARDISO 
+
+        thermal_fe_solver = HexThermalFEA(mesh = mesh,
+                mat_prop = mat_prop,
+                bc = bc,
+                solver = solver,
+                elem_body_force = elem_body_force)
+
+        # Solve for temperature field
+        thermal_fe_solver.solve()
+        deltaTExpected = heat_load*L/(mat_prop.thermal_conductivity*Area)
+        deltaT = np.max(thermal_fe_solver.sol) - np.min(thermal_fe_solver.sol)
+        # Get thermal forces
+        thermo_elastic_force = thermal_fe_solver.get_thermoelastic_force()
+        
+        # Now get the structural response due to thermal loads
+        structuralProblem = StructuralExamples.TensileBar
+        # Use same mesh as thermal problem for coupled analysis
+        # set the tensile force to zero since we are only interested in thermal loads
+        # also fix displacements in y and z directions
+        mesh, mat_prop, bc,elem_body_force = getStructuralProblem(structuralProblem,nDOFDesired = 3*nDOFDesired,
+                                                                  tensileForce=tensileForce,allow_yz_displacement=False)  
+        solver = Solvers.PARDISO
+
+        # Include thermo_elastic_force 
+        structural_solver = HexStructuralFEA(mesh=mesh, mat_prop=mat_prop, bc=bc, 
+                                             solver=solver, elem_body_force=elem_body_force, 
+                                             thermo_elastic_force=thermo_elastic_force.copy())
+    
+        structural_solver.solve()
+        structural_solver.postprocess()
+        expectedDeformation = L*mat_prop.thermal_expansion*deltaTExpected + tensileForce*L/(mat_prop.youngs_modulus*Area)
+        expectedStress = tensileForce/Area
+        print('-----------------------------')
+        print("Expected max temperature change: ",deltaTExpected + T0 )
+        print("Expected max displacement: ", expectedDeformation)
+        print("Expected max stress: ", expectedStress)
+        print('-----------------------------')
+        thermal_fe_solver.plot_temperature()
+        structural_solver.plot_deformation(show_geometry=True)
+        structural_solver.plot_vonMisesStress()   
     elif demo == pyTODemos.HexStructuralTO_DensityMMA:
         to_problem = StructuralTOExamples.Mitchell_1 # Choose the TO problem
         solver = Solvers.PARDISO # # Choose solver. Typically PARDISO, but DPCG for DOF > 200,000
