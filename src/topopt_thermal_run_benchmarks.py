@@ -2,7 +2,7 @@ from topopt_common import *
 from topopt_mma import topopt_mma
 from topopt_ocm import topopt_optimality_criteria	
 from topopt_pareto import topopt_pareto
-from topopt_levelset import topopt_levelset	
+from src.topopt_levelset import topopt_levelset	
 from topopt_thermal_benchmarks import *
 import time
 import glob
