@@ -23,6 +23,27 @@ def compute_volume_constraint_and_gradient(x: np.ndarray,
 	volConstraint_gradient = np.ones_like(x) / volfracUpper/ x.size
 	return volConstraint, volConstraint_gradient
 
+def compute_volume_constraint_torch(
+    x: torch.Tensor,
+    volfrac_upper: float,
+) -> torch.Tensor:
+    """Compute the volume-fraction constraint using Torch.
+
+    The constraint is defined as:
+        c(x) = mean(x) / volfrac_upper - 1,
+    so c(x) <= 0 corresponds to satisfying the volume-fraction upper bound.
+
+    Args:
+        x: Array of shape (num_elems,) containing the element densities (or filtered densities).
+        volfrac_upper: The target upper bound on the volume fraction.
+
+    Returns:
+        The volume-fraction constraint value as a scalar Torch tensor.
+    """
+    x = x.flatten()
+    return x.mean() / volfrac_upper - 1.0
+
+
 def compute_compliance(sol: np.ndarray, x: np.ndarray,
 				fe_solver, KE,
 				material_model = None) -> np.ndarray:
@@ -52,6 +73,41 @@ def compute_compliance(sol: np.ndarray, x: np.ndarray,
 
 	return compliance
 	
+def compute_compliance_torch(
+    sol: torch.Tensor,
+    x: torch.Tensor,
+    fe_solver,
+    KE: torch.Tensor,
+    material_model=None,
+) -> torch.Tensor:
+    """Compute the compliance objective using Torch given an existing solution and density field.
+
+    Args:
+        sol: Array of shape (n_dof,) containing the global displacement/solution vector.
+        x: Array of shape (num_elems,) containing the element densities (or pseudo-densities).
+        fe_solver: The structural FEA solver object, providing mesh and connectivity (mesh.edofMat).
+        KE: Element stiffness matrix of shape (nRows, nRows) used for all elements.
+        material_model: Material model object used to compute the element-wise material scaling.
+
+    Returns:
+        The compliance value as a scalar Torch tensor.
+    """
+    x = x.flatten() # (E,)
+    dofMat = torch.as_tensor(
+        fe_solver.mesh.edofMat,
+        dtype=torch.long,
+        device=sol.device,
+    )  # (E, nRows)
+
+    # Element DOFs: (E, nRows)
+    u_e = sol[dofMat]
+
+    # Element energies: ce_e = u_eᵀ KE u_e
+    # u_e: (E, nRows), KE: (nRows, nRows) → ce: (E,)
+    ce = torch.einsum("ei,ij,ej->e", u_e, KE, u_e)
+    material_scaling = get_structural_material_model_scaling_torch(x, material_model)# (E,)
+
+    return (material_scaling * ce).sum()
 
 def compute_compliance_and_gradient(sol: np.ndarray, x: np.ndarray,
 				fe_solver, KE,
@@ -220,8 +276,8 @@ def compute_objective_and_gradient(to_params, sol: np.ndarray, x: np.ndarray,	fe
 	objectiveType  = to_params.Objective[0]	# first entry is the type of objective
 	optionalParam = to_params.Objective[1] # second entry is an optional parameter	
 	if (objectiveType == TO_QOI.COMPLIANCE): 
-		compliance, compliance_grad = compute_compliance_and_gradient(sol, x, fe_solver, KE, material_model)
-		return compliance, compliance_grad
+		compliance_t = compute_compliance_torch(sol, x, fe_solver, KE, material_model)
+		return compliance_t
 	elif (objectiveType == TO_QOI.VOLUME_FRACTION):
 		volfracObj = np.mean(x)
 		volFrac_gradient = np.ones_like(x) / x.size
@@ -249,8 +305,8 @@ def compute_constraint_and_gradient(to_params, sol: np.ndarray, x: np.ndarray,	f
 				material_model = None,) -> tuple:
 	
 	nConstraints = len(to_params.Constraints)
-	c = np.zeros((nConstraints,1))	
-	dc = np.zeros((nConstraints,x.size))
+	c = torch.zeros((nConstraints,1))	
+	dc = torch.zeros((nConstraints,x.flatten().shape[0]))
 	
 	for m in range(nConstraints):
 		constraintType  = to_params.Constraints[m][0]	# first entry is the type of constraint	
@@ -268,8 +324,8 @@ def compute_constraint_and_gradient(to_params, sol: np.ndarray, x: np.ndarray,	f
 			c[m, 0] = massConstraint
 			dc[m, :] = np.ones_like(x) * (elemVolume * fe_solver.mat_prop.mass_density / constraintLimit)
 		elif (constraintType == TO_QOI.VOLUME_FRACTION):
-			volConstraint, volConstraint_gradient = compute_volume_constraint_and_gradient(x,to_params.Constraints[m][2])
-			c[m,0], dc[m,:] = volConstraint, volConstraint_gradient[np.newaxis]
+			volConstraint = compute_volume_constraint_torch(x,to_params.Constraints[m][2])
+			c[m,0] = volConstraint
 		elif (constraintType == TO_QOI.PNORM_STRESS):
 			pnorm_stress, pnorm_stress_gradient, max_von_mises= compute_pnorm_stress_and_sensitivity(sol, x, fe_solver,KE,material_model)
 			c[m,0] = (pnorm_stress/constraintLimit - 1.0)
