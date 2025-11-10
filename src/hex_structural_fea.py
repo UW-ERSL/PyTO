@@ -7,10 +7,12 @@ import os
 import pyvista as pv
 import mat_lib
 import bound_cond
+from bound_cond import apply_dirichlet_bc_torch
 import linear_solvers
 import hex_element_stiffness
 import deflation
 import scipy.sparse as sp
+from torch_spsolve import solve as sparse_spsolve
 
 
 script_dir = os.path.dirname(os.path.abspath(__file__))
@@ -77,77 +79,84 @@ class HexStructuralFEA:
           hex_element_stiffness.hex8_stiffness_matrix_structural(mat_prop.youngs_modulus,mat_prop.poissons_ratio, self.mesh.elem_size), axis=0)
 
   #################################################################
-  def solve(self,x: np.ndarray = None,
-            material_model: MaterialModel = None) -> np.ndarray:
-    """Solve the structural finite element problem.
 
-    Args:
-      x: Array of (num_elems,) of the material scaling.
-      This is used in SIMP topology optimization
+  def solve(self, x, material_model: MaterialModel = None):
+      """Solve the structural finite element problem using torch and autograd.
 
-    Returns: Array of (num_dofs,) of the solution to the finite element problem.
-    """
-    if x is None:
-      x = np.ones((self.mesh.num_elems,))
+      Assembles the global stiffness matrix in torch, applies Dirichlet
+      boundary conditions, and solves for the displacement field using an
+      autograd-capable sparse linear solver.
 
-    self.x = x # store for postprocessing
+      Args:
+          x: 1D torch tensor of shape (num_elems,) containing the element
+            densities / design variables.
+          material_model: MaterialModel enum selecting the penalization
+            scheme (e.g., SIMP, RAMP, SIMPPLUS). If None, x is used
+            directly as the stiffness scaling in the material model.
 
-    elem_material_scaling = get_structural_material_model_scaling(x, material_model)
-    # Handle different shapes of elem_stiff
-    if self.elem_stiff.shape[0] == 1:
-      # Single material case (1,N,N)
-      elem_stiff_mtrx = np.einsum('ij, e -> eij',
-                    self.elem_stiff[0],
-                    elem_material_scaling).flatten(order = 'C')
-    else:
-      # Multiple materials case (M,N,N)
-      elem_stiff_mtrx = np.einsum('mij, m -> mij',
-                    self.elem_stiff,
-                    elem_material_scaling).flatten(order = 'C')
+      Returns:
+          u: 1D torch tensor of shape (num_dofs,) containing the displacement
+            field for all DOFs.
+      """
 
-    
-    self.stiff_mtrx = sp.coo_matrix((elem_stiff_mtrx, (self.node_idx[:, 0], self.node_idx[:, 1])),
-                   shape=(self.bc.num_dofs, self.bc.num_dofs))
-    self.total_force = self.bc.force.copy()
-    if self.elem_body_force is not None:
-      elem_force = self.elem_body_force.copy()
-      if material_model is None:
-        masspenal = 1
+      self.x = x
+      device, dtype = x.device, x.dtype
+      ndof = self.bc.num_dofs
+
+      elem_material_scaling = get_structural_material_model_scaling_torch(x, material_model)  # (E,)
+
+      if self.elem_stiff.shape[0] == 1:
+          elem_stiff_mtrx_torch = torch.tensor(self.elem_stiff[0], dtype=dtype, device=device)      # (24,24)
+          elem_stiff_mtrx = torch.einsum("ij,e->eij", elem_stiff_mtrx_torch, elem_material_scaling)                              # (E,24,24)
       else:
-        masspenal = 1
-      
-      for i in range(3):
-        elem_force[i::3]  *= (x**masspenal)
-        
-      node_forces = np.zeros((self.mesh.num_nodes * 3,))
-      node_forces[0::3] = self.mesh.elem_to_node_field_mapping* elem_force[0::3] 
-      node_forces[1::3] = self.mesh.elem_to_node_field_mapping* elem_force[1::3] 
-      node_forces[2::3] = self.mesh.elem_to_node_field_mapping* elem_force[2::3] 
-      self.total_force += node_forces
+          elem_stiff_mtrx_torch = torch.tensor(self.elem_stiff, dtype=dtype, device=device)         # (M,24,24)
+          elem_stiff_mtrx = torch.einsum("mij,m->mij", elem_stiff_mtrx_torch, elem_material_scaling)                             # (M,24,24)
 
-    
-    if hasattr(self.mesh, 'externalSprings') and self.mesh.externalSprings is not None:
-      # Add spring stiffnesses to diagonal terms
-      # external_springs = [
-      # (1000.0, 42),  # Add spring with stiffness 1000 at DOF 42
-      #  (2000.0, 156), # Add spring with stiffness 2000 at DOF 156
-      #  (500.0, 789)   # Add spring with stiffness 500 at DOF 789
-      #]
-      # Convert to CSR format for modification
-      self.stiff_mtrx  = self.stiff_mtrx.tocsr()
-      for KSpring, dof in self.mesh.externalSprings:
-          self.stiff_mtrx [dof,dof] += KSpring
+      vals = elem_stiff_mtrx.reshape(-1)
 
-    sol =  linear_solvers.solve(self.stiff_mtrx,
-                      self.total_force,
-                      self.solver,
-                      self.bc,
-                      dsolver = self.dsolver,
-                      **self.kwargs)
-    self.sol = sol
-    self.deformation = np.sqrt(sol[0::3]**2 + sol[1::3]**2 + sol[2::3]**2)
-    self.max_deformation = np.max(self.deformation)
-    return sol
+      if not hasattr(self, "_torch_node_idx"):
+          self._torch_node_idx = torch.from_numpy(self.node_idx.T).long()
+      idx = self._torch_node_idx.to(device)
+
+      self.stiff_mtrx = torch.sparse_coo_tensor(idx, vals, (ndof, ndof), device=device, dtype=dtype).coalesce()
+
+      if getattr(self.mesh, "externalSprings", None):
+          dofs, ks = zip(*self.mesh.externalSprings)
+          spring_idx = torch.tensor([dofs, dofs], dtype=torch.long, device=device)
+          spring_vals = torch.tensor(ks, dtype=dtype, device=device)
+          spring_K = torch.sparse_coo_tensor(spring_idx, spring_vals, (ndof, ndof),
+                                            device=device, dtype=dtype)
+          self.stiff_mtrx = (self.stiff_mtrx + spring_K).coalesce()
+
+      f = torch.tensor(self.bc.force, dtype=dtype, device=device)
+
+      if self.elem_body_force is not None:
+          elem_force = torch.tensor(self.elem_body_force, dtype=dtype, device=device)  # (3E,)
+          elem_force = elem_force.view(-1, 3) * elem_material_scaling.view(-1, 1)                      # (E,3) scaled
+          elem_force = elem_force.reshape(-1)                                         # (3E,)
+
+          map_vec = torch.tensor(self.mesh.elem_to_node_field_mapping,
+                                dtype=dtype, device=device)
+
+          fx = map_vec * elem_force[0::3]
+          fy = map_vec * elem_force[1::3]
+          fz = map_vec * elem_force[2::3]
+
+          node_forces = torch.stack([fx, fy, fz], dim=1).reshape(-1)  # (3 * num_nodes,)
+          f = f + node_forces
+
+      self.total_force = f
+
+      K_bc, f_bc = apply_dirichlet_bc_torch(self.stiff_mtrx, f, self.bc)
+
+      u = sparse_spsolve(K_bc, f_bc)  # (ndof,)
+
+      self.sol = u
+      self.deformation = torch.sqrt(u[0::3]**2 + u[1::3]**2 + u[2::3]**2)
+      self.max_deformation = self.deformation.detach().max().item()
+
+      return u
+
 
 #################################################################
   def postprocess(self):
@@ -161,6 +170,8 @@ class HexStructuralFEA:
           The order of the stress components is:
           sigma_xx, sigma_yy, sigma_zz, sigma_yz, sigma_xz, sigma_xy
       """
+      sol_np = self.sol.detach().cpu().numpy()
+      x_np = self.x.detach().cpu().numpy()
       gradN = (1 / 8) * np.array([
         [-1, 1, 1, -1, -1, 1, 1, -1],
         [-1, -1, 1, 1, -1, -1, 1, 1], 
@@ -172,9 +183,9 @@ class HexStructuralFEA:
       edof = self.mesh.edofMat
       
       # Compute displacement gradients
-      uGrad = gradN @ self.sol[edof[:, ::3]].T
-      vGrad = gradN @ self.sol[edof[:, 1::3]].T
-      wGrad = gradN @ self.sol[edof[:, 2::3]].T
+      uGrad = gradN @ sol_np[edof[:, ::3]].T
+      vGrad = gradN @ sol_np[edof[:, 1::3]].T
+      wGrad = gradN @ sol_np[edof[:, 2::3]].T
       
       # Compute Engineering strains
       strain = np.stack([
@@ -207,7 +218,7 @@ class HexStructuralFEA:
         nu = self.mat_prop.poissons_ratio
         D = hex_element_stiffness.isotropic_constitutive_matrix ( E, nu)
         self.stressComponents = np.einsum('ij,ej->ei', D, strain)
-      correction = (EVOID_RELATIVE + (1-EVOID_RELATIVE) * (self.x**q)).reshape((-1,1))
+      correction = (EVOID_RELATIVE + (1-EVOID_RELATIVE) * (x_np**q)).reshape((-1,1))
       eStress = correction * self.stressComponents
       self.vonMisesStress = np.sqrt(0.5*((eStress[:,0]-eStress[:,1])**2 +
                 (eStress[:,1]-eStress[:,2])**2 +
@@ -694,44 +705,3 @@ class HexStructuralFEA:
                          mask_low_pseudodensity=False, title= title,
                 save_path=save_path, fontsize=fontsize,plotter = plotter)
     
-#################################################################
-if __name__ == "__main__":    
-  from hex_structural_examples import StructuralExamples,getStructuralProblem
-
-  problem = StructuralExamples.GEGrabCAD
-  nDOFDesired = 100000
-  mesh, mat_prop, bc,elem_body_force = getStructuralProblem(problem,nDOFDesired = nDOFDesired)
-  solver = linear_solvers.Solvers.DPCG # typically DPCG or PARDISO
-  
-  dsolver = deflation.DeflationSolver()
-
-  if (solver == linear_solvers.Solvers.DPCG):
-    nGroups =  min(dsolver.maxGroups,max(dsolver.minGroups,round(3*mesh.num_nodes/dsolver.dofPerGroup)))
-    dsolver.create_deflation_groups(mesh, nGroups)
-    #dsolver.plot_deflation_groups(mesh)
-    dsolver.create_deflation_matrix(mesh)
-    dsolver.W = dsolver.W[bc.free_dofs, :]
-  
-  fe_solver = HexStructuralFEA(mesh = mesh,
-        mat_prop = mat_prop,
-        bc = bc,
-        solver = solver,
-        dsolver = dsolver,
-        rtol = 1e-8,
-        elem_body_force = elem_body_force)
-
-  
-  fe_solver.plot_mesh(plot_bc = True,offsetArrow = True)
-  startTime = time.time()
-
-  fe_solver.solve()
-  print(f"Time to solve: {time.time() - startTime:.2f} seconds")
-  fe_solver.postprocess()
-  print(f"Maximum deformation: {fe_solver.max_deformation:.4e}")
-  print(f"Maximum von Mises stress: {np.max(fe_solver.vonMisesStress):.4e}")
-  
-
-  fe_solver.plot_deformation(show_geometry=True)
-  fe_solver.plot_vonMisesStress()
-  fe_solver.plot_stress_component(0)
-  

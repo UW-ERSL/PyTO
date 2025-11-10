@@ -4,6 +4,7 @@ from topopt_material_model import *
 import time
 import matplotlib.pyplot as plt
 from mmaWrapper import runMMA
+import torch
 
 
 def topopt_mma(
@@ -131,24 +132,24 @@ def topopt_mma(
         fe_solver.mesh.setPseudoDensity(x_filtered)
 
         # Optional plotting (now uses filtered density already set on mesh)
-        if plot_progress:
-            if progress_callback is not None:
-                progress_callback()
-            fe_solver.plot_pseudo_density(
-                plotter=plotter,
-                auto_close=False,
-                title=f"Iter {len(history['objective']) + 1} - Density",
-            )
+        # if plot_progress:
+        #     if progress_callback is not None:
+        #         progress_callback()
+        #     fe_solver.plot_pseudo_density(
+        #         plotter=plotter,
+        #         auto_close=False,
+        #         title=f"Iter {len(history['objective']) + 1} - Density",
+        #     )
 
         # FE solve & postprocess
         sol = fe_solver.solve(x_filtered, material_model)
-        fe_solver.postprocess()
+        # fe_solver.postprocess()
 
         # Base objective and gradient (w.r.t. FILTERED density)
         obj_raw, grad_obj_filt = compute_objective_and_gradient(
-            to_params, sol, x_filtered, fe_solver, KE, material_model
+            to_params, sol.detach().numpy(), x_filtered.detach().numpy(), fe_solver, KE, material_model
         )
-        return obj_raw, grad_obj_filt, sol, x_filtered
+        return obj_raw, grad_obj_filt, sol.detach().numpy(), x_filtered.detach().numpy()
 
     def constraint_function(
         x_raw: np.ndarray,
@@ -168,12 +169,12 @@ def topopt_mma(
         # Set filtered density on mesh only if we are going to solve here
         fe_solver.mesh.setPseudoDensity(x_filtered)
         sol = fe_solver.solve(x_filtered, material_model)
-        fe_solver.postprocess()
+        # fe_solver.postprocess()
 
         c, dcdx_filt = compute_constraint_and_gradient(
-            to_params, sol, x_filtered, fe_solver, KE, material_model
+            to_params, sol.detach().numpy(), x_filtered.detach().numpy(), fe_solver, KE, material_model
         )
-        return c, dcdx_filt, x_filtered
+        return c, dcdx_filt, x_filtered.detach().numpy()
 
     # ------------------------ MMA objective callback -------------------------
 
@@ -183,7 +184,8 @@ def topopt_mma(
         x = np.asarray(x).flatten()
 
         # Objective chain (filters are inside)
-        obj_raw, grad_obj_filt, sol, x_filtered = objective_function(x)
+        obj_raw, grad_obj_filt, sol, x_filtered = objective_function(torch.tensor(x))
+        fe_solver.postprocess()
 
         # Normalization
         if obj0 is None:
@@ -218,7 +220,7 @@ def topopt_mma(
             grad_obj[to_params.ElemsToKeep] = min(grad_obj)
 
         # Constraints chain (reuse sol and x_filtered)
-        c, dcdx_filt, _ = constraint_function(x)
+        c, dcdx_filt, _ = constraint_function(torch.tensor(x))
 
         # Sensitivity filtering for constraints (FILTERED -> RAW)
         if to_params.APPLY_FILTER_TO_SENSITIVITY:
@@ -312,8 +314,8 @@ def topopt_mma(
     x = np.asarray(xOptimal).flatten()
 
     # Evaluate final objective/constraints via the same chains (ensures consistency)
-    obj_raw_final, _gobj_filt, sol, x_filtered_final = objective_function(x)
-    c_final, _dg_filt, _ = constraint_function(x)
+    obj_raw_final, _gobj_filt, sol, x_filtered_final = objective_function(torch.tensor(x))
+    c_final, _dg_filt, _ = constraint_function(torch.tensor(x))
 
     # Track in history (store de-normalized to match earlier semantics)
     history["objective"].append(obj_raw_final)
@@ -332,14 +334,14 @@ def topopt_mma(
         x = np.where(x < threshold, 0.0, 1.0)
 
     # For topological operations (hanging elements), operate on RAW (binarized) x
-    fe_solver.mesh.setPseudoDensity(x)
+    fe_solver.mesh.setPseudoDensity(torch.tensor(x))
 
     if to_params.Eliminate_Hanging_Elements:
         # Ensure binarized
         x_sorted = np.sort(x)
         threshold = x_sorted[int((1 - np.mean(x)) * len(x))]
         x = np.where(x < threshold, 0.0, 1.0)
-        fe_solver.mesh.setPseudoDensity(x)
+        fe_solver.mesh.setPseudoDensity(torch.tensor(x))
 
         meshComponents = fe_solver.mesh.find_connected_components()
         if len(meshComponents) > 1:
@@ -352,8 +354,8 @@ def topopt_mma(
             fe_solver.mesh.setPseudoDensity(x.flatten())
 
     # Final FE evaluation for reporting (use analysis chain with filtering)
-    obj_raw_final, _gobj_filt, sol, x_filtered_final = objective_function(x)
-    c_final, _dg_filt, _ = constraint_function(x, sol, x_filtered_cached=x_filtered_final)
+    obj_raw_final, _gobj_filt, sol, x_filtered_final = objective_function(torch.tensor(x))
+    c_final, _dg_filt, _ = constraint_function(torch.tensor(x))
 
     # Log final line
     grey_elements = np.sum((x > 0.1) & (x < 0.9))

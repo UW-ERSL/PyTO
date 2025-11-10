@@ -1,6 +1,13 @@
 """Optimization routines for topology optimization."""
 import enum
 import numpy as np
+import torch
+from torch import Tensor
+
+# stay CPU-first; flip to "cuda" later if/when you like
+_tdev = torch.device("cpu")
+torch.set_default_dtype(torch.float64)
+
 
 SIMP_PENALTY_MIN = 1 # Min Penalization factor for SIMP method
 SIMP_PENALTY_MAX = 3.0 # Max Penalization factor for SIMP method
@@ -68,6 +75,36 @@ def get_structural_material_model_scaling(x: np.ndarray, material_model: Materia
 		y2 = EVOID_RELATIVE*x
 		return (y1+y2)/2
 	raise ValueError("Invalid material model specified.")	
+
+def get_structural_material_model_scaling_torch(x: Tensor,
+                                                material_model: MaterialModel | None) -> Tensor:
+    """Compute the Young's modulus based on the material model.
+
+    Args:
+      x: Array of (num_elems,) containing the element densities.
+      material_model: The material model to use (SIMP or SIMP+).
+
+    Returns: Array of Young's moduli for each element.
+    """
+    Evoid = torch.tensor(EVOID_RELATIVE, device=_tdev, dtype=torch.float64)
+    p     = torch.tensor(SIMP_PENALTY,     device=_tdev, dtype=torch.float64)
+    ramp  = torch.tensor(RAMP_PENALTY,     device=_tdev, dtype=torch.float64)
+
+    if material_model is None:
+        return x
+
+    if material_model == MaterialModel.SIMP:
+        return Evoid + (x**p) * (1.0 - Evoid)
+
+    if material_model == MaterialModel.RAMP:
+        return Evoid + x * (1.0 - Evoid) / (1.0 + (1.0 - x) * ramp)
+
+    if material_model == MaterialModel.SIMPPLUS:
+        y1 = Evoid + (x**p) * (1.0 - Evoid)
+        y2 = Evoid * x
+        return 0.5 * (y1 + y2)
+
+    raise ValueError("Invalid material model specified.")
 
 
 def get_thermal_material_model_scaling(x: np.ndarray, material_model: MaterialModel) -> np.ndarray:
