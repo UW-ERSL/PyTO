@@ -152,10 +152,6 @@ def topopt_mma(fe_solver, #hex_structural_fea.HexStructuralFEA or hex_thermal_fe
    
         grad_obj = grad_obj.reshape(-1, 1)
 
-        # Extract names for printing
-        
-       
-
         # Print objective and constraints for this iteration
         if (print_progress):
             print(50* '-')
