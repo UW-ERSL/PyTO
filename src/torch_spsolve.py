@@ -4,6 +4,7 @@ import numpy as np
 import scipy.sparse as spy_sprs
 from scipy.sparse.linalg import spsolve
 from typing import Dict
+from scipy.sparse.linalg import splu
 
 # Try to use PARDISO if available
 try:
@@ -87,104 +88,83 @@ def _direct_solve(
     if solver_kind == "petsc" and PETSc is not None:
         # Pass the entire options dictionary
         x = _petsc_solve(A_csr, rhs, solver_options)
-        print("PETSc used for sparse solve.")
     elif solver_kind == "pardiso" and pypardiso is not None:
         x = pypardiso.spsolve(A_csr, rhs)
-        print("pypardiso used for sparse solve.")
         pypardiso.ps.free_memory()
     else:
         x = spsolve(A_csr, rhs)
-        print("spsolve used for sparse solve.")
     return x
 
 
 class SparseLinearSolve(torch.autograd.Function):
     @staticmethod
-    def forward(
-        ctx,
-        mtrx: torch.Tensor,
-        b: torch.Tensor,
-        solver_kind: str,
-        solver_params: dict, # Renamed for clarity
-    ):
-        """
-        Solve A x = b for x, where A is a sparse torch tensor.
-        """
-        # Remember which solver to use in backward
-        ctx.solver_kind = solver_kind
-        # Save the entire params dictionary for backward pass
-        ctx.solver_params = solver_params
-
+    def forward(ctx, mtrx, b, solver_kind, solver_params):
         mtrx = mtrx.coalesce()
-        mtrx_indices = mtrx.indices().detach().cpu().numpy()
-        mtrx_values = mtrx.values().detach().cpu().numpy()
-        mtrx_shape = mtrx.shape
-        b_numpy = b.detach().cpu().numpy()
+        idx = mtrx.indices().detach().cpu().numpy()
+        vals = mtrx.values().detach().cpu().numpy()
+        shape = mtrx.shape
+        b_np = b.detach().cpu().numpy()
 
-        mtrx_scipy = spy_sprs.coo_matrix(
-            (mtrx_values, (mtrx_indices[0], mtrx_indices[1])),
-            shape=mtrx_shape,
+        A_csc = spy_sprs.coo_matrix(
+            (vals, (idx[0], idx[1])), shape=shape
         ).tocsc()
 
-        # Solve A x = b
-        x_numpy = _direct_solve(mtrx_scipy, b_numpy, solver_kind, solver_params)
-
-        x_torch = torch.tensor(x_numpy, dtype=b.dtype, device=b.device)
-
-        ctx.save_for_backward(mtrx.indices(), mtrx.values(), x_torch)
-        ctx.mtrx_shape = mtrx_shape
+        ctx.solver_kind = solver_kind
+        ctx.solver_params = solver_params
+        ctx.mtrx_shape = shape
         ctx.b_dtype = b.dtype
         ctx.b_device = b.device
 
-        return x_torch
+        if solver_kind == "spsolve":
+            # Factor once
+            lu = splu(A_csc)    # LU factorization
+            x_np = lu.solve(b_np)
+            ctx.lu = lu
+            ctx.A_T = None
+        else:
+            # fall back to existing _direct_solve for petsc/pardiso
+            x_np = _direct_solve(A_csc, b_np, solver_kind, solver_params)
+            ctx.lu = None
+            ctx.A_T = A_csc.T.tocsc()  # store for re-use in backward if wanted
+
+        # Save minimal tensors for backward
+        ctx.save_for_backward(mtrx.indices(), mtrx.values(), torch.from_numpy(x_np))
+
+        return torch.tensor(x_np, dtype=b.dtype, device=b.device)
 
     @staticmethod
     def backward(ctx, grad_x):
-        """
-        Given grad_x = ∂L/∂x, compute:
-          - grad_b = ∂L/∂b  = y  where Aᵀ y = grad_x
-          - grad_A = ∂L/∂A  with entries -(y_i * x_j)
-        """
         mtrx_indices, mtrx_values, x_torch = ctx.saved_tensors
-        mtrx_shape = ctx.mtrx_shape
+        shape = ctx.mtrx_shape
         solver_kind = ctx.solver_kind
-        # Retrieve the entire params dictionary
         solver_params = ctx.solver_params
 
         grad_A_sparse = None
         grad_b = None
 
-        vals = mtrx_values.detach().cpu().numpy()
-        idxs = (mtrx_indices[0].cpu().numpy(), mtrx_indices[1].cpu().numpy())
-        mtrx_scipy_T = (
-            spy_sprs.coo_matrix((vals, idxs), shape=mtrx_shape)
-            .transpose()
-            .tocsc()
-        )
+        grad_x_np = grad_x.cpu().numpy()
 
-        # Solve Aᵀ y = grad_x for y
-        grad_x_numpy = grad_x.cpu().numpy()
-        grad_b_numpy = _direct_solve(
-            mtrx_scipy_T, grad_x_numpy, solver_kind, solver_params
-        )
-        grad_b_torch = torch.tensor(
-            grad_b_numpy, dtype=ctx.b_dtype, device=ctx.b_device
-        )
+        if solver_kind == "spsolve" and ctx.lu is not None:
+            # Use same LU factors: solve A^T y = grad_x
+            y_np = ctx.lu.solve(grad_x_np, 'T')
+        else:
+            vals = mtrx_values.detach().cpu().numpy()
+            idxs = (mtrx_indices[0].cpu().numpy(), mtrx_indices[1].cpu().numpy())
+            A_T = spy_sprs.coo_matrix((vals, idxs), shape=shape).transpose().tocsc()
+            y_np = _direct_solve(A_T, grad_x_np, solver_kind, solver_params)
+
+        y_t = torch.tensor(y_np, dtype=ctx.b_dtype, device=ctx.b_device)
 
         if ctx.needs_input_grad[1]:
-            grad_b = grad_b_torch.clone() # FIX: Was grad_b_
+            grad_b = y_t
 
         if ctx.needs_input_grad[0]:
             rows, cols = mtrx_indices[0], mtrx_indices[1]
-            y_at_rows = grad_b_torch.index_select(0, rows)
-            x_at_cols = x_torch.index_select(0, cols)
-            grad_vals = -(y_at_rows * x_at_cols)
+            y_rows = y_t.index_select(0, rows)
+            x_cols = x_torch.index_select(0, cols)
+            grad_vals = -(y_rows * x_cols)
+            grad_A_sparse = torch.sparse_coo_tensor(mtrx_indices, grad_vals, shape)
 
-            grad_A_sparse = torch.sparse_coo_tensor(
-                mtrx_indices, grad_vals, mtrx_shape
-            )
-
-        # None for solver_kind, None for solver_params (non-tensor inputs)
         return grad_A_sparse, grad_b, None, None
 
 

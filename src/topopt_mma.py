@@ -87,6 +87,7 @@ def topopt_mma(
             KE = hex_element_stiffness.hex8_stiffness_matrix_thermal(
                 fe_solver.mat_prop.thermal_conductivity, fe_solver.mesh.elem_size
             )
+    KE = torch.tensor(KE)
 
     # Optional body force mapping (structural)
     if fe_solver.elem_body_force is not None:
@@ -113,80 +114,82 @@ def topopt_mma(
 
     # ----------------- Core chains (x -> obj) and (x -> cons) -----------------
 
-    def objective_function(
+    def obj_cons_function(
         x_raw: torch.Tensor,
     ):
         """
-        'x_raw -> x_filtered -> FE solve -> objective, grad' chain.
+        'x_raw -> x_filtered -> FE solve -> objective, constraints, grads' chain.
 
         Returns
         -------
-        obj_raw : float
-        grad_obj_filt : (n,) ndarray  (gradient w.r.t. FILTERED density)
-        sol : ndarray
-        x_filtered : (n,) ndarray     (filtered density used in analysis/solve)
+        obj_raw       : float
+        grad_obj_filt : (n,) ndarray       (gradient w.r.t. FILTERED density)
+        c             : (m,1) ndarray      (constraints)
+        dcdx_filt     : (m,n) ndarray      (grad w.r.t. FILTERED density)
+        sol           : ndarray            (FE solution)
+        x_filtered    : (n,) ndarray       (filtered density used in analysis/solve)
         """
 
-        def obj_wrapper(x_raw: torch.Tensor):
-          # Density filtering for ANALYSIS
-          x_filtered = (H @ x_raw / Hs) if to_params.APPLY_FILTER_TO_DENSITY else x_raw
+        x_raw = x_raw.view(-1)  # ensure 1D
 
-          # Set filtered density on mesh for FE + plotting
-          fe_solver.mesh.setPseudoDensity(x_filtered)
-          # FE solve & postprocess
-          sol = fe_solver.solve(x_filtered, material_model)
-          # fe_solver.postprocess()
-          obj_raw = compute_objective_and_gradient(
-              to_params, sol, x_filtered, fe_solver, torch.tensor(KE), material_model
-          )
-          return obj_raw, sol, x_filtered
-        obj_raw, sol, x_filtered = obj_wrapper(x_raw)
+        def chain(x_raw: torch.Tensor):
+            # Density filtering for ANALYSIS
+            x_filtered = (H @ x_raw / Hs) if to_params.APPLY_FILTER_TO_DENSITY else x_raw
 
-        (grad_obj_filt,) = torch.autograd.grad(
-            outputs=obj_raw,
+            # Set filtered density on mesh for FE + plotting
+            fe_solver.mesh.setPseudoDensity(x_filtered)
+
+            # FE solve
+            sol = fe_solver.solve(x_filtered, material_model)
+
+            # Objective (Torch scalar)
+            obj_raw = compute_objective_and_gradient(
+                to_params, sol, x_filtered, fe_solver, KE, material_model
+            )
+
+            # Constraints (Torch vector)
+            c_t, _ = compute_constraint_and_gradient(
+                to_params, sol, x_filtered, fe_solver, KE, material_model
+            )
+            c_t = c_t.view(-1)  # (m,)
+
+            return obj_raw, c_t, sol, x_filtered
+
+        # Forward pass
+        obj_raw_t, c_t, sol_t, x_filtered_t = chain(x_raw)
+
+        # Gradient of objective wrt x_raw (like jacrev on a scalar)
+        (grad_obj_t,) = torch.autograd.grad(
+            outputs=obj_raw_t,
             inputs=x_raw,
             create_graph=False,
-            retain_graph=False,
+            retain_graph=True,
             allow_unused=False,
-        )
+        )  # (n,)
 
-        
-        return obj_raw.detach().numpy(), grad_obj_filt.detach().numpy(), sol.detach().numpy(), x_filtered.detach().numpy()
+        # Jacobian of constraints wrt x_raw, row-by-row (like jacrev on a vector)
+        grads_c = []
+        m = c_t.numel()
+        for i in range(m):
+            (grad_ci,) = torch.autograd.grad(
+                outputs=c_t[i],
+                inputs=x_raw,
+                create_graph=False,
+                retain_graph=(i < m - 1),
+                allow_unused=False,
+            )
+            grads_c.append(grad_ci)  # each (n,)
+        dcdx_t = torch.stack(grads_c, dim=0)
+        # Convert to numpy with MMA-friendly shapes
+        obj_raw = obj_raw_t.detach().cpu().numpy()
+        grad_obj_filt = grad_obj_t.detach().cpu().numpy().reshape(-1)       # (n,)
+        c_np = c_t.detach().cpu().numpy().reshape(-1, 1)                    # (m,1)
+        dcdx_filt = dcdx_t.detach().cpu().numpy()                           # (m,n)
+        sol_np = sol_t.detach().cpu().numpy()
+        x_filtered_np = x_filtered_t.detach().cpu().numpy()
 
-    def constraint_function(
-        x_raw: torch.Tensor,
-    ):
-        """
-        'x_raw -> x_filtered -> constraints, grad' chain.
+        return obj_raw, grad_obj_filt, c_np, dcdx_filt, sol_np, x_filtered_np
 
-        If `sol` is provided (from the same x_filtered), we reuse it.
-
-        Returns
-        -------
-        c : (m,) ndarray
-        dcdx_filt : (m, n) ndarray  (grad w.r.t. FILTERED density)
-        x_filtered : (n,) ndarray   (filtered density used for constraints)
-        """
-        def cons_wrapper(x_raw: torch.Tensor):
-          x_filtered = (H @ x_raw / Hs) if to_params.APPLY_FILTER_TO_DENSITY else x_raw
-          # Set filtered density on mesh only if we are going to solve here
-          fe_solver.mesh.setPseudoDensity(x_filtered)
-          sol = fe_solver.solve(x_filtered, material_model)
-
-          c, _ = compute_constraint_and_gradient(
-              to_params, sol, x_filtered, fe_solver, KE, material_model
-          )
-          return c, sol, x_filtered
-        c, _, x_filtered = cons_wrapper(x_raw)
-        (grad_c_t,) = torch.autograd.grad(
-            outputs=c,
-            inputs=x_raw,
-            create_graph=False,
-            retain_graph=False,
-            allow_unused=False,
-        )
-        grad_c_t = grad_c_t.view(1, -1)
-        return c.detach().numpy(), grad_c_t.detach().numpy(), x_filtered.detach().numpy()
 
     # ------------------------ MMA objective callback -------------------------
 
@@ -194,10 +197,10 @@ def topopt_mma(
         nonlocal nFEAs, obj0, mmaIterations
 
         x = np.asarray(x).flatten()
+        x_t = torch.tensor(x, requires_grad=True)
 
         # Objective chain (filters are inside)
-        obj_raw, grad_obj_filt, sol, x_filtered = objective_function(torch.tensor(x, requires_grad=True))
-        fe_solver.postprocess()
+        obj_raw, grad_obj_filt, c, dcdx_filt, sol, x_filtered = obj_cons_function(x_t)
 
         # Normalization
         if obj0 is None:
@@ -231,8 +234,6 @@ def topopt_mma(
         if to_params.ElemsToKeep is not None:
             grad_obj[to_params.ElemsToKeep] = min(grad_obj)
 
-        # Constraints chain (reuse sol and x_filtered)
-        c, dcdx_filt, _ = constraint_function(torch.tensor(x, requires_grad=True))
 
         # Sensitivity filtering for constraints (FILTERED -> RAW)
         if to_params.APPLY_FILTER_TO_SENSITIVITY:
@@ -324,10 +325,10 @@ def topopt_mma(
     # ---------------------------- Finalization -------------------------------
 
     x = np.asarray(xOptimal).flatten()
+    x_t = torch.tensor(x, requires_grad=True)
 
     # Evaluate final objective/constraints via the same chains (ensures consistency)
-    obj_raw_final, _gobj_filt, sol, x_filtered_final = objective_function(torch.tensor(x, requires_grad=True))
-    c_final, _dg_filt, _ = constraint_function(torch.tensor(x, requires_grad=True))
+    obj_raw_final, _gobj_filt, c_final, _dg_filt, sol, x_filtered_final = obj_cons_function(x_t)
 
     # Track in history (store de-normalized to match earlier semantics)
     history["objective"].append(obj_raw_final)
@@ -366,8 +367,7 @@ def topopt_mma(
             fe_solver.mesh.setPseudoDensity(x.flatten())
 
     # Final FE evaluation for reporting (use analysis chain with filtering)
-    obj_raw_final, _gobj_filt, sol, x_filtered_final = objective_function(torch.tensor(x, requires_grad=True))
-    c_final, _dg_filt, _ = constraint_function(torch.tensor(x, requires_grad=True))
+    obj_raw_final, _gobj_filt, c_final, _dg_filt, sol, x_filtered_final = obj_cons_function(x_t)
 
     # Log final line
     grey_elements = np.sum((x > 0.1) & (x < 0.9))
@@ -404,7 +404,7 @@ if __name__ == "__main__":
     print(f"Running {to_problem.name}...")
     print("-" * 50)
 
-    solver = Solvers.PETSC  # default, see below
+    solver = Solvers.SPSOLVE  # default, see below
     dsolver = deflation.DeflationSolver(use_gpu=False)
 
     # if to_params.nDOFDesired > DIRECT_SOLVER_DOF_CUTOFF:
@@ -459,7 +459,7 @@ if __name__ == "__main__":
         maxMMAIterations=to_params.MaxIterations,
     )
     timeTaken = time.time() - startTime
-
+    fe_solver.postprocess()
     title = (
         f"MMA: vol: {history['volfrac'][-1]:0.2f}, "
         f"J: {history['objective'][-1]:.3g}, "

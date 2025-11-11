@@ -43,6 +43,7 @@ class HexStructuralFEA:
     else:
       self.elem_stiff = np.expand_dims(
           hex_element_stiffness.hex8_stiffness_matrix_structural(mat_prop.youngs_modulus,mat_prop.poissons_ratio, mesh.elem_size), axis=0)
+    self.elem_stiff_torch = torch.tensor(self.elem_stiff, dtype=torch.float64)
 
    
     self.node_idx = np.stack((
@@ -50,6 +51,18 @@ class HexStructuralFEA:
             np.kron(self.mesh.edofMat, np.ones((1, 24))).flatten())
             ).T.astype(int)
     self.elem_body_force = elem_body_force
+
+    self._bc_force_torch = torch.tensor(self.bc.force, dtype=torch.float64)
+
+    if self.elem_body_force is not None:
+        self._elem_body_force_torch = torch.tensor(self.elem_body_force, dtype=torch.float64)
+        self._elem_to_node_map_torch = torch.tensor(
+            self.mesh.elem_to_node_field_mapping,
+            dtype=torch.float64,
+        )
+    else:
+        self._elem_body_force_torch = None
+        self._elem_to_node_map_torch = None
 
     #default camera position
     view_distance = 2.5 * self.mesh.bbox.diag_length
@@ -104,14 +117,15 @@ class HexStructuralFEA:
       device, dtype = x.device, x.dtype
       ndof = self.bc.num_dofs
 
-      elem_material_scaling = get_structural_material_model_scaling_torch(x, material_model)  # (E,)
+      # Make sure elem_stiff_torch lives on same device/dtype
+      elem_stiff = self.elem_stiff_torch.to(device=device, dtype=dtype)
 
-      if self.elem_stiff.shape[0] == 1:
-          elem_stiff_mtrx_torch = torch.tensor(self.elem_stiff[0], dtype=dtype, device=device)      # (24,24)
-          elem_stiff_mtrx = torch.einsum("ij,e->eij", elem_stiff_mtrx_torch, elem_material_scaling)                              # (E,24,24)
+      elem_material_scaling = get_structural_material_model_scaling_torch(x, material_model)
+
+      if elem_stiff.shape[0] == 1:
+          elem_stiff_mtrx = torch.einsum("ij,e->eij", elem_stiff[0], elem_material_scaling)
       else:
-          elem_stiff_mtrx_torch = torch.tensor(self.elem_stiff, dtype=dtype, device=device)         # (M,24,24)
-          elem_stiff_mtrx = torch.einsum("mij,m->mij", elem_stiff_mtrx_torch, elem_material_scaling)                             # (M,24,24)
+          elem_stiff_mtrx = torch.einsum("mij,m->mij", elem_stiff, elem_material_scaling)
 
       vals = elem_stiff_mtrx.reshape(-1)
 
@@ -119,31 +133,34 @@ class HexStructuralFEA:
           self._torch_node_idx = torch.from_numpy(self.node_idx.T).long()
       idx = self._torch_node_idx.to(device)
 
-      self.stiff_mtrx = torch.sparse_coo_tensor(idx, vals, (ndof, ndof), device=device, dtype=dtype).coalesce()
+      self.stiff_mtrx = torch.sparse_coo_tensor(
+          idx, vals, (ndof, ndof), device=device, dtype=dtype
+      ).coalesce()
 
       if getattr(self.mesh, "externalSprings", None):
           dofs, ks = zip(*self.mesh.externalSprings)
           spring_idx = torch.tensor([dofs, dofs], dtype=torch.long, device=device)
           spring_vals = torch.tensor(ks, dtype=dtype, device=device)
-          spring_K = torch.sparse_coo_tensor(spring_idx, spring_vals, (ndof, ndof),
-                                            device=device, dtype=dtype)
+          spring_K = torch.sparse_coo_tensor(
+              spring_idx, spring_vals, (ndof, ndof), device=device, dtype=dtype
+          )
           self.stiff_mtrx = (self.stiff_mtrx + spring_K).coalesce()
 
-      f = torch.tensor(self.bc.force, dtype=dtype, device=device)
+      # Reuse pre-built force & move it to device/dtype
+      f = self._bc_force_torch.to(device=device, dtype=dtype)
 
-      if self.elem_body_force is not None:
-          elem_force = torch.tensor(self.elem_body_force, dtype=dtype, device=device)  # (3E,)
-          elem_force = elem_force.view(-1, 3) * elem_material_scaling.view(-1, 1)                      # (E,3) scaled
-          elem_force = elem_force.reshape(-1)                                         # (3E,)
+      if self._elem_body_force_torch is not None:
+          elem_force = self._elem_body_force_torch.to(device=device, dtype=dtype)  # (3E,)
+          elem_force = elem_force.view(-1, 3) * elem_material_scaling.view(-1, 1)
+          elem_force = elem_force.reshape(-1)
 
-          map_vec = torch.tensor(self.mesh.elem_to_node_field_mapping,
-                                dtype=dtype, device=device)
+          map_vec = self._elem_to_node_map_torch.to(device=device, dtype=dtype)
 
           fx = map_vec * elem_force[0::3]
           fy = map_vec * elem_force[1::3]
           fz = map_vec * elem_force[2::3]
 
-          node_forces = torch.stack([fx, fy, fz], dim=1).reshape(-1)  # (3 * num_nodes,)
+          node_forces = torch.stack([fx, fy, fz], dim=1).reshape(-1)
           f = f + node_forces
 
       self.total_force = f
