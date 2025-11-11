@@ -233,6 +233,8 @@ class HexStructuralFEA:
                 (eStress[:,2]-eStress[:,0])**2) +
                 3*(eStress[:,3]**2 + eStress[:,4]**2 +
                    eStress[:,5]**2))
+      
+      self.pNormStress = (np.sum(self.vonMisesStress**PNORM_EXPONENT))**(1/PNORM_EXPONENT)  
      
 
       self.elemStrainEnergy = 0.5 * np.sum(strain * eStress, axis=1)  # Element-wise strain energy
@@ -719,7 +721,7 @@ class HexStructuralFEA:
 if __name__ == "__main__":    
   from hex_structural_examples import StructuralExamples,getStructuralProblem
 
-  problem = StructuralExamples.TensileBar
+  problem = StructuralExamples.LBracket
   nDOFDesired = 10000
   mesh, mat_prop, bc,elem_body_force = getStructuralProblem(problem,nDOFDesired = nDOFDesired)
   solver = linear_solvers.Solvers.DPCG # typically DPCG or PARDISO
@@ -750,7 +752,7 @@ if __name__ == "__main__":
   fe_solver.postprocess()
   print(f"Maximum deformation: {fe_solver.max_deformation:.4e}")
   print(f"Maximum von Mises stress: {np.max(fe_solver.vonMisesStress):.4e}")
-  
+  print(f"Maximum p-norm stress (PNORM = {PNORM_EXPONENT}): {fe_solver.pNormStress:.4e}")
 
   fe_solver.plot_deformation(show_geometry=True)
   fe_solver.plot_vonMisesStress()

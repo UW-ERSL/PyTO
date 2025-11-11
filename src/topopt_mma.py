@@ -153,8 +153,8 @@ def topopt_mma(fe_solver, #hex_structural_fea.HexStructuralFEA or hex_thermal_fe
         grad_obj = grad_obj.reshape(-1, 1)
 
         # Extract names for printing
-        objective_name = getattr(to_params.Objective[0], 'name', str(to_params.Objective[0]))
-        constraint_names = [getattr(c[0], 'name', str(c[0])) for c in to_params.Constraints]
+        
+       
 
         # Print objective and constraints for this iteration
         if (print_progress):
@@ -176,6 +176,10 @@ def topopt_mma(fe_solver, #hex_structural_fea.HexStructuralFEA or hex_thermal_fe
                 dcdx[m,:] /= scaling # scale constraint gradient to enforce constraints more strongly
         return obj, grad_obj, c, dcdx
 
+
+    objective_name = getattr(to_params.Objective[0], 'name', str(to_params.Objective[0]))
+    constraint_names = [getattr(c[0], 'name', str(c[0])) for c in to_params.Constraints]
+    
     initialDensity = 0.5
     x0 = initialDensity * np.ones(num_elems, dtype = float).reshape(-1, 1)
     lowerBound = np.zeros(num_elems, dtype = float).reshape(-1, 1)
@@ -244,7 +248,7 @@ if __name__ == "__main__":
  
     print("-" * 50)
 
-    to_problem = StructuralTOExamples.Table # Choose the TO problem
+    to_problem = StructuralTOExamples.LBracketTopLoadStressObjective # Choose the TO problem
     
     if (to_problem in StructuralTOExamples):
         mesh, mat_prop, bc,elem_body_force, to_params = getStructuralTOProblem(to_problem)
@@ -287,11 +291,15 @@ if __name__ == "__main__":
     title = f'nNodes: {fe_solver.mesh.num_nodes}, nElem: {fe_solver.mesh.num_elems}'
     #fe_solver.plot_mesh(title = title, save_path = None)
     
+    plot_progress = True
+    print_progress = True
     startTime = time.time()
     print("OptimizationMethod: MMA")
     
     u, history,success,errorMsg,nFEAs = topopt_mma(fe_solver = fe_solver,
                                 to_params = to_params,
+                                plot_progress= plot_progress,
+                                print_progress= print_progress,
                                 maxMMAIterations= to_params.MaxIterations,)
     timeTaken = time.time() - startTime
     

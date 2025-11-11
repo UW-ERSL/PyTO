@@ -26,7 +26,7 @@ from topopt_mma import topopt_mma
 from topopt_common import TOParams, TO_QOI
 from topopt_ocm import topopt_optimality_criteria
 from topopt_pareto import topopt_pareto
-from src.topopt_levelset import topopt_levelset
+from topopt_levelset import topopt_levelset
 from topopt_stl_recovery import extract_isosurface, subtract_voids_from_stl 
 """
 1) setup.py - PyTO.exe
