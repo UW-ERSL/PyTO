@@ -12,6 +12,7 @@ import linear_solvers
 import hex_element_stiffness
 import deflation
 import scipy.sparse as sp
+import torch_spsolve
 from torch_spsolve import solve as sparse_spsolve
 
 
@@ -24,7 +25,7 @@ class HexStructuralFEA:
          mesh,
          mat_prop: mat_lib.Material | list[mat_lib.Material],
          bc: bound_cond.BC,
-         solver: linear_solvers.Solvers,
+         solver: torch_spsolve.Solvers,
          dsolver: deflation.DeflationSolver = None,
          elem_body_force: np.ndarray = None,
          **kwargs):
@@ -148,8 +149,7 @@ class HexStructuralFEA:
       self.total_force = f
 
       K_bc, f_bc = apply_dirichlet_bc_torch(self.stiff_mtrx, f, self.bc)
-
-      u = sparse_spsolve(K_bc, f_bc)  # (ndof,)
+      u = sparse_spsolve(K_bc, f_bc, solver=self.solver)  # (ndof,)
 
       self.sol = u
       self.deformation = torch.sqrt(u[0::3]**2 + u[1::3]**2 + u[2::3]**2)

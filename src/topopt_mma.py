@@ -1,6 +1,7 @@
 from topopt_common import *
 from topopt_obj_cons_sensitivities import *
 from topopt_material_model import *
+from torch_spsolve import SparseLinearSolve, Solvers
 import time
 import matplotlib.pyplot as plt
 from mmaWrapper import runMMA
@@ -403,22 +404,22 @@ if __name__ == "__main__":
     print(f"Running {to_problem.name}...")
     print("-" * 50)
 
-    solver = lin_solv.Solvers.SPSOLVE  # default, see below
+    solver = Solvers.PETSC  # default, see below
     dsolver = deflation.DeflationSolver(use_gpu=False)
 
-    if to_params.nDOFDesired > DIRECT_SOLVER_DOF_CUTOFF:
-        # Typically PARDISO, but DPCG for large DOF problems
-        solver = lin_solv.Solvers.DPCG
-        nGroups = min(
-            dsolver.maxGroups,
-            max(
-                dsolver.minGroups,
-                round(3 * mesh.num_nodes / dsolver.dofPerGroup),
-            ),
-        )
-        dsolver.create_deflation_groups(mesh, nGroups)
-        dsolver.create_deflation_matrix(mesh)
-        dsolver.W = dsolver.W[bc.free_dofs, :]
+    # if to_params.nDOFDesired > DIRECT_SOLVER_DOF_CUTOFF:
+    #     # Typically PARDISO, but DPCG for large DOF problems
+    #     solver = lin_solv.Solvers.DPCG
+    #     nGroups = min(
+    #         dsolver.maxGroups,
+    #         max(
+    #             dsolver.minGroups,
+    #             round(3 * mesh.num_nodes / dsolver.dofPerGroup),
+    #         ),
+    #     )
+    #     dsolver.create_deflation_groups(mesh, nGroups)
+    #     dsolver.create_deflation_matrix(mesh)
+    #     dsolver.W = dsolver.W[bc.free_dofs, :]
 
     if to_problem in StructuralTOExamples:
         fe_solver = hex_structural_fea.HexStructuralFEA(
