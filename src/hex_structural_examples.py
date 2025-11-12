@@ -1306,7 +1306,6 @@ def createLBracketProblem(nDOFDesired: int = 10000, topload = 1000,midload = 0):
   mesh.node_indices[fixed_nodes, 3] = 1 # for plotting
 
   force = np.zeros(3*mesh.num_nodes)
-  node_pts = mesh.node_xyz
   if(abs(topload) > 0):
     triList1 = [12,13]
     topload_nodes = mesh.get_nodes_on_triangles(triList1)
@@ -2509,7 +2508,8 @@ def createLBracketThickProblem(nDOFDesired: int = 80000,topload = 1000,midload =
   mesh.createMeshFromSTLFile(stl_file, nElemsDesired=nElemsDesired)
   mesh.createEdofMatStructural()
 
-  fixed_nodes = mesh.getNodesOnBoundingBoxPlane(1,False)  # y = yMax plane
+  triList0 = [16,17]
+  fixed_nodes = mesh.get_nodes_on_triangles(triList0)
   fixed_dofs = np.array([3 * fixed_nodes,
               3 * fixed_nodes + 1,
               3 * fixed_nodes + 2]).flatten().astype(int)
@@ -2517,25 +2517,15 @@ def createLBracketThickProblem(nDOFDesired: int = 80000,topload = 1000,midload =
   mesh.node_indices[fixed_nodes, 3] = 1 # for plotting
 
   force = np.zeros(3*mesh.num_nodes)
-  node_pts = mesh.node_xyz
   if(abs(topload) > 0):
-    topload_nodes = np.where(
-      (node_pts[:, 0] >= 0.9) & (node_pts[:, 0] <= 1.0) &
-      (node_pts[:, 1] > 0.39) 
-    )[0]
+    triList1 = [12,13]
+    topload_nodes = mesh.get_nodes_on_triangles(triList1)
+    
     topload_dofs = 3 * topload_nodes + 1  
-   
     mesh.node_indices[topload_nodes, 3] = 2 # for plotting
     force[topload_dofs] = -topload/len(topload_nodes)
 
-  if(abs(midload) > 0):
-    midload_nodes = np.intersect1d(mesh.getNodesOnBoundingBoxPlane(0,False), np.where((node_pts[:, 1] >= 0.18) & (node_pts[:, 1] <= 0.22))[0]) # hard coded    
-    #midload_nodes = midload_nodes[(node_pts[midload_nodes, 2] >= 0.23) & (node_pts[midload_nodes, 2] <= 0.27)]
-    
-    midload_dofs = 3 * midload_nodes + 1  
-    mesh.node_indices[midload_nodes, 3] = 2 # for plotting
-    
-    force[midload_dofs] = -midload/len(midload_nodes)
+  
 
   bc = bound_cond.BC(force = force,fixed_dofs = fixed_dofs,dirichlet_values = dirichlet_values) 
 

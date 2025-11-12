@@ -227,7 +227,8 @@ class HexStructuralFEA:
 
 
       correction = (EVOID_RELATIVE + (1-EVOID_RELATIVE) * (self.x**q)).reshape((-1,1))
-      eStress = correction * self.stressComponents
+      self.stressComponents *= correction 
+      eStress = self.stressComponents
       self.vonMisesStress = np.sqrt(0.5*((eStress[:,0]-eStress[:,1])**2 +
                 (eStress[:,1]-eStress[:,2])**2 +
                 (eStress[:,2]-eStress[:,0])**2) +
@@ -721,7 +722,7 @@ class HexStructuralFEA:
 if __name__ == "__main__":    
   from hex_structural_examples import StructuralExamples,getStructuralProblem
 
-  problem = StructuralExamples.LBracket
+  problem = StructuralExamples.LBracketThick
   nDOFDesired = 10000
   mesh, mat_prop, bc,elem_body_force = getStructuralProblem(problem,nDOFDesired = nDOFDesired)
   solver = linear_solvers.Solvers.DPCG # typically DPCG or PARDISO

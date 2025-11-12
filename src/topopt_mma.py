@@ -244,7 +244,7 @@ if __name__ == "__main__":
  
     print("-" * 50)
 
-    to_problem = StructuralTOExamples.LBracketTopLoadStressObjective # Choose the TO problem
+    to_problem = StructuralTOExamples.LBracketTopLoadStressSafetyFactor # Choose the TO problem
     
     if (to_problem in StructuralTOExamples):
         mesh, mat_prop, bc,elem_body_force, to_params = getStructuralTOProblem(to_problem)
@@ -253,7 +253,7 @@ if __name__ == "__main__":
 
     print(f"Running {to_problem.name}...") 
     print("-" * 50)
-    solver = lin_solv.Solvers.PARDISO # default, see below
+    solver = lin_solv.Solvers.SPSOLVE # default, see below
     dsolver = deflation.DeflationSolver(use_gpu=False)
     if (to_params.nDOFDesired > DIRECT_SOLVER_DOF_CUTOFF):# Typically PARDISO, but DPCG for large DOF problems
         solver = lin_solv.Solvers.DPCG
