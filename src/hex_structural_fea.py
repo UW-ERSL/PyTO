@@ -1,17 +1,14 @@
 """Structural Finite Element Analysis."""
 
 from topopt_material_model import *
-import time
 import numpy as np
 import os
 import pyvista as pv
 import mat_lib
 import bound_cond
 from bound_cond import apply_dirichlet_bc_torch
-import linear_solvers
 import hex_element_stiffness
 import deflation
-import scipy.sparse as sp
 import torch_spsolve
 from torch_spsolve import solve as sparse_spsolve
 
@@ -50,6 +47,21 @@ class HexStructuralFEA:
             np.kron(self.mesh.edofMat, np.ones((24, 1))).flatten(),
             np.kron(self.mesh.edofMat, np.ones((1, 24))).flatten())
             ).T.astype(int)
+    
+    ndof = bc.num_dofs
+    node_idx_np = self.node_idx.astype(np.int64)
+    rows_np = node_idx_np[:, 0]
+    cols_np = node_idx_np[:, 1]
+    keys = rows_np * ndof + cols_np                         # linearize (row,col)
+
+    # unique keys + inverse mapping back to each duplicate
+    uniq_keys, inv = np.unique(keys, return_inverse=True)
+    uniq_rows = (uniq_keys // ndof).astype(np.int64)
+    uniq_cols = (uniq_keys %  ndof).astype(np.int64)
+
+    self._unique_indices   = torch.from_numpy(np.stack([uniq_rows, uniq_cols], axis=0))
+    self._scatter_inverse  = torch.from_numpy(inv.astype(np.int64))
+    self._n_unique             = self._unique_indices.shape[1]
     self.elem_body_force = elem_body_force
 
     self._bc_force_torch = torch.tensor(self.bc.force, dtype=torch.float64)
@@ -63,6 +75,12 @@ class HexStructuralFEA:
     else:
         self._elem_body_force_torch = None
         self._elem_to_node_map_torch = None
+    self._spring_K = None
+    if getattr(self.mesh, "externalSprings", None):
+        dofs, ks = zip(*self.mesh.externalSprings)
+        spring_idx  = torch.tensor([dofs, dofs], dtype=torch.long)
+        spring_vals = torch.tensor(ks, dtype=torch.float64)
+        self._spring_K = (spring_idx, spring_vals)  # store raw parts
 
     #default camera position
     view_distance = 2.5 * self.mesh.bbox.diag_length
@@ -95,84 +113,71 @@ class HexStructuralFEA:
   #################################################################
 
   def solve(self, x, material_model: MaterialModel = None):
-      """Solve the structural finite element problem using torch and autograd.
-
-      Assembles the global stiffness matrix in torch, applies Dirichlet
-      boundary conditions, and solves for the displacement field using an
-      autograd-capable sparse linear solver.
-
-      Args:
-          x: 1D torch tensor of shape (num_elems,) containing the element
-            densities / design variables.
-          material_model: MaterialModel enum selecting the penalization
-            scheme (e.g., SIMP, RAMP, SIMPPLUS). If None, x is used
-            directly as the stiffness scaling in the material model.
-
-      Returns:
-          u: 1D torch tensor of shape (num_dofs,) containing the displacement
-            field for all DOFs.
-      """
 
       self.x = x
       device, dtype = x.device, x.dtype
       ndof = self.bc.num_dofs
 
-      # Make sure elem_stiff_torch lives on same device/dtype
-      elem_stiff = self.elem_stiff_torch.to(device=device, dtype=dtype)
-
+      # 0) material scaling
       elem_material_scaling = get_structural_material_model_scaling_torch(x, material_model)
 
-      if elem_stiff.shape[0] == 1:
-          elem_stiff_mtrx = torch.einsum("ij,e->eij", elem_stiff[0], elem_material_scaling)
-      else:
-          elem_stiff_mtrx = torch.einsum("mij,m->mij", elem_stiff, elem_material_scaling)
-
+      # 1) element stiffness scaling (einsum) -> vals
+      elem_stiff_mtrx = torch.einsum("mij,m->mij", self.elem_stiff_torch, elem_material_scaling)
       vals = elem_stiff_mtrx.reshape(-1)
 
-      if not hasattr(self, "_torch_node_idx"):
-          self._torch_node_idx = torch.from_numpy(self.node_idx.T).long()
-      idx = self._torch_node_idx.to(device)
+      # 2) build global COO (indices) + coalesce
+
+      agg_vals   = torch.zeros(self._n_unique, dtype=dtype, device=device)
+      agg_vals.index_add_(0, self._scatter_inverse, vals)         # sum duplicates once
 
       self.stiff_mtrx = torch.sparse_coo_tensor(
-          idx, vals, (ndof, ndof), device=device, dtype=dtype
-      ).coalesce()
-
+          self._unique_indices, agg_vals, (ndof, ndof), device=device, dtype=dtype
+      )
+      # 3) add external springs (if any)
       if getattr(self.mesh, "externalSprings", None):
           dofs, ks = zip(*self.mesh.externalSprings)
           spring_idx = torch.tensor([dofs, dofs], dtype=torch.long, device=device)
           spring_vals = torch.tensor(ks, dtype=dtype, device=device)
           spring_K = torch.sparse_coo_tensor(
               spring_idx, spring_vals, (ndof, ndof), device=device, dtype=dtype
-          )
+          ).coalesce()
           self.stiff_mtrx = (self.stiff_mtrx + spring_K).coalesce()
 
-      # Reuse pre-built force & move it to device/dtype
-      f = self._bc_force_torch.to(device=device, dtype=dtype)
+      if self._spring_K is not None:
+          self.stiff_mtrx = (self.stiff_mtrx + self.spring_K).coalesce()
+
+
+      # 4) assemble force vector (incl. body forces)
+      f = self._bc_force_torch
 
       if self._elem_body_force_torch is not None:
-          elem_force = self._elem_body_force_torch.to(device=device, dtype=dtype)  # (3E,)
+          elem_force = self._elem_body_force_torch # (3E,)
           elem_force = elem_force.view(-1, 3) * elem_material_scaling.view(-1, 1)
           elem_force = elem_force.reshape(-1)
-
-          map_vec = self._elem_to_node_map_torch.to(device=device, dtype=dtype)
-
+          map_vec = self._elem_to_node_map_torch
           fx = map_vec * elem_force[0::3]
           fy = map_vec * elem_force[1::3]
           fz = map_vec * elem_force[2::3]
-
           node_forces = torch.stack([fx, fy, fz], dim=1).reshape(-1)
           f = f + node_forces
-
       self.total_force = f
 
+
+      # 5) apply Dirichlet BCs
       K_bc, f_bc = apply_dirichlet_bc_torch(self.stiff_mtrx, f, self.bc)
+
+
+      # 6) linear solve
       u = sparse_spsolve(K_bc, f_bc, solver=self.solver)  # (ndof,)
 
+      # 7) post (deformation magnitudes)
       self.sol = u
       self.deformation = torch.sqrt(u[0::3]**2 + u[1::3]**2 + u[2::3]**2)
       self.max_deformation = self.deformation.detach().max().item()
 
+
       return u
+
 
 
 #################################################################

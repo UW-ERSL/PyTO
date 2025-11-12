@@ -137,7 +137,8 @@ def topopt_mma(
             x_filtered = (H @ x_raw / Hs) if to_params.APPLY_FILTER_TO_DENSITY else x_raw
 
             # Set filtered density on mesh for FE + plotting
-            fe_solver.mesh.setPseudoDensity(x_filtered)
+            with torch.no_grad():
+                fe_solver.mesh.setPseudoDensity(x_filtered.detach())
 
             # FE solve
             sol = fe_solver.solve(x_filtered, material_model)
