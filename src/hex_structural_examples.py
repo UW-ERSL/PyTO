@@ -2524,8 +2524,14 @@ def createLBracketThickProblem(nDOFDesired: int = 80000,topload = 1000,midload =
     topload_dofs = 3 * topload_nodes + 1  
     mesh.node_indices[topload_nodes, 3] = 2 # for plotting
     force[topload_dofs] = -topload/len(topload_nodes)
+  if(abs(midload) > 0):
+    triList2 = [4,5]
+    midload_nodes = mesh.get_nodes_on_triangles(triList2)
 
-  
+    midload_dofs = 3 * midload_nodes + 1
+    mesh.node_indices[midload_nodes, 3] = 2 # for plotting
+    force[midload_dofs] = -midload/len(midload_nodes)
+    
 
   bc = bound_cond.BC(force = force,fixed_dofs = fixed_dofs,dirichlet_values = dirichlet_values) 
 

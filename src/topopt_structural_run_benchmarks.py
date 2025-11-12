@@ -2,7 +2,7 @@ from topopt_common import *
 from topopt_mma import topopt_mma
 from topopt_ocm import topopt_optimality_criteria	
 from topopt_pareto import topopt_pareto
-from src.topopt_levelset import topopt_levelset	
+from topopt_levelset import topopt_levelset	
 from topopt_structural_benchmarks import *
 import time
 import glob
@@ -49,7 +49,7 @@ def runTOMethodOnStructuralBenchmarks(optimizationMethod):
 	benchmarks_misc_problems = [StructuralTOExamples.Inverter]
 
 	
-	for to_problem in  [StructuralTOExamples.GEGrabCAD]:
+	for to_problem in  benchmarks_2_5D_problems:
 		if to_problem in benchmarks_2_5D_problems:
 			subFolder = "Compliance2.5D"
 		elif to_problem in benchmarks_3D_problems:
@@ -332,7 +332,7 @@ def combine_results():
 if __name__ == "__main__":    
 	
 	optimizationMethods = [TO_METHODS.DENSITYMMA, TO_METHODS.DENSITYOCM,TO_METHODS.PARETO]
-	for optimizationMethod in [TO_METHODS.LEVELSET]:
+	for optimizationMethod in optimizationMethods:
 		runTOMethodOnStructuralBenchmarks(optimizationMethod)
 		print(f"Finished {optimizationMethod.name} tests.")
 		print("-" * 50)
