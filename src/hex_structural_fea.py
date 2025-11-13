@@ -648,14 +648,14 @@ class HexStructuralFEA:
             edge_color='black',
             line_width=1,
             scalar_bar_args={
-                'title': title,
-                'vertical': True,
-                'position_x': 0.85,   # Move to the right (0.0 = left, 1.0 = right)
-                'position_y': 0.05,   # Move to the bottom (0.0 = bottom, 1.0 = top)
-                'width': 0.08,        # Make it narrower
-                'height': 0.9,        # Make it taller
-                'title_font_size': 12,
-                'label_font_size': 12
+          'title': title,
+          'vertical': True,
+          'position_x': 0.85,   # Move to the right (0.0 = left, 1.0 = right)
+          'position_y': 0.05,   # Move to the bottom (0.0 = bottom, 1.0 = top)
+          'width': 0.08,        # Make it narrower
+          'height': 0.9,        # Make it taller
+          'title_font_size': 12,
+          'label_font_size': 12
             }
         )
 

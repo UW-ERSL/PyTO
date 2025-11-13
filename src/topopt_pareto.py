@@ -5,8 +5,8 @@ from topopt_obj_cons_sensitivities import *
 
 def topopt_pareto(fe_solver,
 				  to_params,
-							rel_err: float = 0.01,
-							vol_decr_max: float = 0.1,
+							rel_err: float = 0.025,
+							vol_decr_max: float = 0.05,
 							vol_decr_min: float = 0.0025,
 							min_local_iters: int = 2,
 							max_local_iters: int = 5,
@@ -151,6 +151,7 @@ def topopt_pareto(fe_solver,
 		TPrev = T.copy()  # Store previous sensitivity
 		xPrev = x.copy()  # Store previous design
 		innerLoopSuccess = True
+		
 		while True:
 			if (debug):
 				log_message(f"Local Iteration: {localIter}/{max_local_iters}, JTemp: {JTemp:.3g}, JPrev: {JPrev:.3g}")
