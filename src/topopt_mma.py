@@ -6,7 +6,7 @@ import matplotlib.pyplot as plt
 from mmaWrapper import runMMA
 def topopt_mma(fe_solver, #hex_structural_fea.HexStructuralFEA or hex_thermal_fea.HexThermalFEA
                            to_params,
-                            maxMMAIterations: int = 100, 
+                            maxMMAIterations: int = 150, 
                             timeLimitSecs: float = 36000, #10 hour
                             move_limit: float = 0.2,
                             kkt_tol: float = 1.e-6,
@@ -244,7 +244,7 @@ if __name__ == "__main__":
  
     print("-" * 50)
 
-    to_problem = StructuralTOExamples.LBracketTopLoadStressConstraint # Choose the TO problem
+    to_problem = StructuralTOExamples.LBracketTopLoadStressSafetyFactor # Choose the TO problem
     
     if (to_problem in StructuralTOExamples):
         mesh, mat_prop, bc,elem_body_force, to_params = getStructuralTOProblem(to_problem)

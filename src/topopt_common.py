@@ -60,7 +60,7 @@ class TOParams: # These are the default parameters
     RemoveHangingElems: bool = False # Should the hanging elements be removed?
     AMBuildDir: str = '' # Direction of AM build, '','X','Y','Z'
     ElemsToKeep: list[int] = None # List of additional elements to retain in the design
-    MaxIterations: int = 100 # Maximum number of iterations
+    MaxIterations: int = 150 # Maximum number of iterations
     PNormExponent: int = 6 # p-norm exponent for stress constraint/objective
     Enforce_Constraints_MMA: bool = False # Should the constraints be enforced more strongly in GCMMA?
     Eliminate_Hanging_Elements: bool = False # Should the hanging elements be eliminated after optimization?

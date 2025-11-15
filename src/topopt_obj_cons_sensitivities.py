@@ -5,6 +5,7 @@ from topopt_material_model import *
 from topopt_common import *
 import linear_solvers
 
+stress_scaling = 1.0 # Global scaling factor for stress constraints/objectives
 def compute_volume_constraint_and_gradient(x: np.ndarray,
 											 volfracUpper: float,
 											 )-> np.ndarray:
@@ -256,7 +257,7 @@ def compute_objective_and_gradient(to_params, sol: np.ndarray, x: np.ndarray,	fe
 
 
 def compute_constraint_and_gradient(to_params, sol: np.ndarray, x: np.ndarray,	fe_solver, KE,
-				material_model = None,) -> tuple:
+				material_model = None) -> tuple:
 	
 	nConstraints = len(to_params.Constraints)
 	c = np.zeros((nConstraints,1))	
@@ -285,18 +286,32 @@ def compute_constraint_and_gradient(to_params, sol: np.ndarray, x: np.ndarray,	f
 			c[m,0] = (pnorm_stress/constraintLimit - 1.0)
 			dc[m,:] = (pnorm_stress_gradient/constraintLimit)
 		elif (constraintType == TO_QOI.MAX_VONMISES_STRESS):
+			# See De Leon, D.M., Alexandersen, J., O. Fonseca, J.S. and Sigmund, O., 2015. 
+			# Stress-constrained topology optimization for compliant mechanism design. 
+			# Structural and Multidisciplinary Optimization, 52(5), pp.929-943
 			pnorm_stress, pnorm_stress_gradient, max_von_mises = compute_pnorm_stress_and_sensitivity(sol, x, fe_solver,KE,material_model)
-			c[m,0] = (max_von_mises/constraintLimit - 1.0)
-			dc[m,:] = (pnorm_stress_gradient/constraintLimit)
+			normalized_pnorm = compute_constraint_and_gradient.stress_scaling*pnorm_stress
+			c[m,0] = (normalized_pnorm/constraintLimit - 1.0)
+			dc[m,:] = (compute_constraint_and_gradient.stress_scaling*pnorm_stress_gradient/constraintLimit)
+			if (max_von_mises > constraintLimit):
+				compute_constraint_and_gradient.stress_scaling = 0.5*max_von_mises/pnorm_stress + 0.5*compute_constraint_and_gradient.stress_scaling
+			
+			#print(f"Updated stress scaling to {compute_constraint_and_gradient.stress_scaling:.4f}")
 		elif (constraintType == TO_QOI.STRESS_SAFETY_FACTOR):
 			pnorm_stress, pnorm_stress_gradient, max_von_mises = compute_pnorm_stress_and_sensitivity(sol, x, fe_solver,KE,material_model)
 			yieldStrength = fe_solver.mat_prop.yield_strength
-			c[m,0] = (max_von_mises/yieldStrength - 1.0/constraintLimit)
-			dc[m,:] =  (pnorm_stress_gradient/yieldStrength)*max_von_mises/pnorm_stress
+			normalized_pnorm = compute_constraint_and_gradient.stress_scaling*pnorm_stress
+			c[m,0] = (normalized_pnorm/yieldStrength - 1.0/constraintLimit)
+			dc[m,:] =  (compute_constraint_and_gradient.stress_scaling*pnorm_stress_gradient/yieldStrength)
+			if (max_von_mises > yieldStrength/constraintLimit):
+				compute_constraint_and_gradient.stress_scaling = 0.5*max_von_mises/pnorm_stress + 0.5*compute_constraint_and_gradient.stress_scaling
+			#print(f"Updated stress scaling to {compute_constraint_and_gradient.stress_scaling:.4f}")
 		else:
 			raise NotImplementedError(f"Constraint {constraintType} is not implemented yet.")
 	return c, dc
 
+# initialize parameter associated with this function
+compute_constraint_and_gradient.stress_scaling = 1.0
 
 ###########################################
 
