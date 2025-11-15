@@ -80,7 +80,7 @@ class HexStructuralFEA:
 
   #################################################################
   def solve(self,x: np.ndarray = None,
-            material_model: MaterialModel = None) -> np.ndarray:
+            material_model: MaterialModel =  MaterialModel.SIMP ) -> np.ndarray:
     """Solve the structural finite element problem.
 
     Args:
