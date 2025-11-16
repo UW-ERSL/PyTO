@@ -244,7 +244,7 @@ if __name__ == "__main__":
  
     print("-" * 50)
 
-    to_problem = StructuralTOExamples.LBracketTopLoadStressSafetyFactor # Choose the TO problem
+    to_problem = StructuralTOExamples.LBracketTopLoadStressObjective # Choose the TO problem
     
     if (to_problem in StructuralTOExamples):
         mesh, mat_prop, bc,elem_body_force, to_params = getStructuralTOProblem(to_problem)
@@ -285,7 +285,7 @@ if __name__ == "__main__":
     print("nElem: ", fe_solver.mesh.num_elems)    
     
     title = f'nNodes: {fe_solver.mesh.num_nodes}, nElem: {fe_solver.mesh.num_elems}'
-    #fe_solver.plot_mesh(title = title, save_path = None)
+    #fe_solver.plot_mesh(title = title, plot_bc = True, save_path = None)
     
     plot_progress = True
     print_progress = True
@@ -301,7 +301,7 @@ if __name__ == "__main__":
     
 
     title = f"MMA: vol: {history['volfrac'][-1]:0.2f}, J: {history['objective'][-1]:.3g}, nFEA: {len(history['objective']):3d}, time: {timeTaken:.0f} s"
-    fe_solver.plot_mesh(title = title, plot_bc = False, save_path = None)
+    fe_solver.plot_mesh(title = title, plot_bc = True, save_path = None)
     fe_solver.postprocess()
     fe_solver.plot_vonMisesStress()
    

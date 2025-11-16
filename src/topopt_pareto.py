@@ -53,7 +53,7 @@ def topopt_pareto(fe_solver,
 	x = np.ones((fe_solver.mesh.num_elems))
 	volfrac = 1.0
 	
-	history = {'objective': [],'compliance':[], 'volfrac': []}
+	history = {'objective': [],'volfrac': []}
 	if (print_progress):
 		log_message("Computing Filters ...")
 	[H,Hs] = createFilters(fe_solver, to_params)
@@ -95,11 +95,12 @@ def topopt_pareto(fe_solver,
 	nFEAs = 1
 	
 
-	obj, T,compliance = compute_objective_topological_sensitivity_compliance(to_params,sol,x, fe_solver,KE)
+	obj, T,compliance0 = compute_objective_topological_sensitivity_compliance(to_params,sol,x, fe_solver,KE)
+	obj0 = obj
+	T = T/obj0
 	J = obj
 
-	history['objective'].append( obj)# may be the same as compliance
-	history['compliance'].append(compliance) 
+	history['objective'].append(obj)# may be the same as compliance
 	history['volfrac'].append(volfrac)
 	
 	# Add contribution from body force to topological sensitivity if present
@@ -116,10 +117,8 @@ def topopt_pareto(fe_solver,
 		T[to_params.ElemsToKeep] = np.max(T)
 	T = (H * T) / Hs
 
-	T /= np.max(np.abs(T))  # Normalize sensitivity
-
 	if (print_progress):
-		log_message(f"vf={history['volfrac'][-1]:.3f}, obj={history['objective'][-1]:.3g}, compliance={history['compliance'][-1]:.3g}, #FEA={nFEAs:2d}")
+		log_message(f"vf={history['volfrac'][-1]:.3f}, obj={history['objective'][-1]:.3g},  #FEA={nFEAs:2d}")
 	vol_decr = vol_decr_max
 
 	success = True
@@ -204,7 +203,7 @@ def topopt_pareto(fe_solver,
 
 			nFEAs += 1
 			obj, TTemp,compliance = compute_objective_topological_sensitivity_compliance(to_params,sol,x, fe_solver,KE)
-		
+			TTemp = TTemp/obj0
 			JTemp = obj  # Update current objective value
 			if (to_params.Objective[0] == TO_QOI.COMPLIANCE):
 				T = TTemp.copy()  # Use current sensitivity for compliance objective
@@ -222,7 +221,6 @@ def topopt_pareto(fe_solver,
 			for _ in range(nSmoothSteps):
 				T = (H * T) / Hs
 
-			T /= np.max(np.abs(T))  # Normalize sensitivity
 			T = ((1-wtDamping)*T + wtDamping*TPrev)  # Damping
 
 			if (elemsWithForces.size > 0):
@@ -256,18 +254,17 @@ def topopt_pareto(fe_solver,
 				fe_solver.mesh.setPseudoDensity(x.flatten())
 				volfrac = np.mean(x)
 			history['objective'].append(obj)
-			history['compliance'].append(compliance)
 			history['volfrac'].append(volfrac)
-			scale = history['objective'][-1] / history['objective'][0]
+			scale = (compliance / compliance0)**2
 			vol_decr = max(vol_decr_min,min(vol_decr,vol_decr_max/scale)) # Reduce volume increment for steep increase in compliance
 			if (print_progress):
-				log_message(f"vf={history['volfrac'][-1]:.3f}, obj={history['objective'][-1]:.3g}, compliance={history['compliance'][-1]:.3g}, #FEA={nFEAs:2d}")
+				log_message(f"vf={history['volfrac'][-1]:.3f}, obj={history['objective'][-1]:.3g},  #FEA={nFEAs:2d}")
 			fe_solver.mesh.setPseudoDensity(x.flatten())
 		
 
 	totalTime = time.time() - tStart
 
-	log_message(f"Final: vf={history['volfrac'][-1]:.3f}, obj={history['objective'][-1]:.3g}, compliance={history['compliance'][-1]:.3g}, #FEA={nFEAs:2d}")
+	log_message(f"Final: vf={history['volfrac'][-1]:.3f}, obj={history['objective'][-1]:.3g},#FEA={nFEAs:2d}")
 	log_message(f"Total Time: {totalTime:.2f} s")
 	log_message(f"Error: {errorMsg}")
 	return sol, history, success,errorMsg,nFEAs
@@ -278,7 +275,7 @@ if __name__ == "__main__":
 	from topopt_thermal_benchmarks import *
 	
 	print("-" * 50)
-	to_problem = StructuralTOExamples.Multiload # Choose the TO problem
+	to_problem = StructuralTOExamples.Mitchell_3 # Choose the TO problem
 	#to_problem = ThermalTOExamples.BridgeThermal # Choose the TO problem
 
 	if (to_problem in StructuralTOExamples):
