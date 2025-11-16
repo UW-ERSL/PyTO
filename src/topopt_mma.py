@@ -5,29 +5,33 @@ from torch_spsolve import SparseLinearSolve, Solvers
 import time
 import matplotlib.pyplot as plt
 from mmaWrapper import runMMA
-import torch
+def topopt_mma(fe_solver, #hex_structural_fea.HexStructuralFEA or hex_thermal_fea.HexThermalFEA
+                           to_params,
+                            maxMMAIterations: int = 150, 
+                            timeLimitSecs: float = 36000, #10 hour
+                            move_limit: float = 0.2,
+                            kkt_tol: float = 1.e-6,
+                            objective_tol: float = 1.e-4,
+                            constraint_tol: float = 1.e-4,
+                            print_progress: bool = True,
+                            plot_progress: bool = False,
+                            binarize_topology: bool = True,   
+                            progress_callback=None, 
+                            plotter=None  
+                             ) -> tuple[np.ndarray, dict]:
+    """MMA based topology optimization for minimum compliance.
 
+    Args:
+        fe_solver: The structural FEA solver object.
+        maxMMAIterations: Maximum number of MMA iterations.
+        volfrac: The target volume fraction.
+        penal: The penalization factor for the SIMP method.
+        move_limit: The maximum change allowed for the design variables in each
+            iteration.
+        kkt_tol: The tolerance for the KKT conditions.
+        step_tol: The tolerance for the step size.
 
-def topopt_mma(
-    fe_solver,  # hex_structural_fea.HexStructuralFEA or hex_thermal_fea.HexThermalFEA
-    to_params,
-    maxMMAIterations: int = 100,
-    timeLimitSecs: float = 36000,  # 10 hour
-    move_limit: float = 0.2,
-    kkt_tol: float = 1.0e-6,
-    objective_tol: float = 1.0e-4,
-    constraint_tol: float = 1.0e-4,
-    print_progress: bool = True,
-    plot_progress: bool = False,
-    binarize_topology: bool = True,
-    progress_callback=None,
-    plotter=None,
-) -> tuple[np.ndarray, dict]:
-    """MMA based topology optimization.
-
-    Returns
-    -------
-    (sol, history, success, errorMsg, nFEAs)
+    Returns: The displacement field of the optimized structure.
     """
     def log_message(msg):  # GUI/console logger
         if progress_callback:
@@ -261,9 +265,13 @@ def topopt_mma(
         # Shape for MMA
         grad_obj = grad_obj.reshape(-1, 1)
 
-        # Pretty printing
-        if print_progress:
-            print(50 * "-")
+        # Extract names for printing
+        objective_name = getattr(to_params.Objective[0], 'name', str(to_params.Objective[0]))
+        constraint_names = [getattr(c[0], 'name', str(c[0])) for c in to_params.Constraints]
+
+        # Print objective and constraints for this iteration
+        if (print_progress):
+            print(50* '-')
             print(f"Iteration: {mmaIterations}")
             objective_name = getattr(
                 to_params.Objective[0], "name", str(to_params.Objective[0])
@@ -290,8 +298,10 @@ def topopt_mma(
 
         return obj, grad_obj, c, dcdx
 
-    # ------------------------------ MMA driver -------------------------------
 
+    objective_name = getattr(to_params.Objective[0], 'name', str(to_params.Objective[0]))
+    constraint_names = [getattr(c[0], 'name', str(c[0])) for c in to_params.Constraints]
+    
     initialDensity = 0.5
     x0 = initialDensity * np.ones(num_elems, dtype=float).reshape(-1, 1)
     lowerBound = np.zeros(num_elems, dtype=float).reshape(-1, 1)
@@ -391,16 +401,12 @@ if __name__ == "__main__":
 
     print("-" * 50)
 
-    to_problem = StructuralTOExamples.CantileverTipLoad  # Choose the TO problem
-
-    if to_problem in StructuralTOExamples:
-        mesh, mat_prop, bc, elem_body_force, to_params = getStructuralTOProblem(
-            to_problem
-        )
-    elif to_problem in ThermalTOExamples:
-        mesh, mat_prop, bc, elem_body_force, to_params = getThermalTOProblem(
-            to_problem
-        )
+    to_problem = StructuralTOExamples.LBracketTopLoadStressSafetyFactor # Choose the TO problem
+    
+    if (to_problem in StructuralTOExamples):
+        mesh, mat_prop, bc,elem_body_force, to_params = getStructuralTOProblem(to_problem)
+    elif (to_problem in ThermalTOExamples):
+        mesh, mat_prop, bc,elem_body_force, to_params = getThermalTOProblem(to_problem)
 
     print(f"Running {to_problem.name}...")
     print("-" * 50)
@@ -446,19 +452,21 @@ if __name__ == "__main__":
     print("Solver: ", fe_solver.solver.name)
     print("nDOF: ", 3 * fe_solver.mesh.num_nodes)
     print("nNodes: ", fe_solver.mesh.num_nodes)
-    print("nElem: ", fe_solver.mesh.num_elems)
-
-    title = f"nNodes: {fe_solver.mesh.num_nodes}, nElem: {fe_solver.mesh.num_elems}"
-    # fe_solver.plot_mesh(title = title, save_path = None)
-
+    print("nElem: ", fe_solver.mesh.num_elems)    
+    
+    title = f'nNodes: {fe_solver.mesh.num_nodes}, nElem: {fe_solver.mesh.num_elems}'
+    #fe_solver.plot_mesh(title = title, save_path = None)
+    
+    plot_progress = True
+    print_progress = True
     startTime = time.time()
     print("OptimizationMethod: MMA")
-
-    u, history, success, errorMsg, nFEAs = topopt_mma(
-        fe_solver=fe_solver,
-        to_params=to_params,
-        maxMMAIterations=to_params.MaxIterations,
-    )
+    
+    u, history,success,errorMsg,nFEAs = topopt_mma(fe_solver = fe_solver,
+                                to_params = to_params,
+                                plot_progress= plot_progress,
+                                print_progress= print_progress,
+                                maxMMAIterations= to_params.MaxIterations,)
     timeTaken = time.time() - startTime
     fe_solver.postprocess()
     title = (

@@ -1,13 +1,13 @@
 {
   "version": "2025.01",
-  "stl_file_path": "LBracket.STL",
+  "stl_file_path": "LBracketThick.STL",
   "settings": {
     "unit_system": "MKS",
     "temperature_unit": "Kelvin",
     "angle_unit": "Degree"
   },
   "analysis_settings": {
-    "n_elements": 8832,
+    "n_elements": 22848,
     "solver_type": "PARDISO"
   },
   "material_data": {
@@ -37,7 +37,7 @@
     "load_forces": [
       [
         0.0,
-        -1000.0,
+        -10000.0,
         0.0
       ]
     ],
@@ -60,8 +60,8 @@
   "topopt_constraints": {
     "manufacturing": {
       "extrude": {
-        "enabled": true,
-        "value": "ZDir"
+        "enabled": false,
+        "value": "XDir"
       },
       "am_build": {
         "enabled": false,
@@ -111,7 +111,7 @@
     "symmetry": {
       "x_symmetry": false,
       "y_symmetry": false,
-      "z_symmetry": false
+      "z_symmetry": true
     },
     "other": {
       "connected_topology": true,

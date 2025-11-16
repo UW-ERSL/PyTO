@@ -144,7 +144,7 @@ def getStructuralProblem(problem: StructuralExamples, **kwargs):
     raise ValueError("Invalid structural example name.")
   
 
-def createTensileBarProblem(nDOFDesired: int = 10000, L: float = [10, 1, 1],tensileForce = 10000):
+def createTensileBarProblem(nDOFDesired: int = 10000,tensileForce = 10000,allow_yz_displacement: bool = False):
   """Creates a tensile problem with approximate desired DOFs.
 
   Parameters:
@@ -166,79 +166,77 @@ def createTensileBarProblem(nDOFDesired: int = 10000, L: float = [10, 1, 1],tens
     - mat_prop: Material properties object
     - bc: Boundary conditions with fixed left face and load on right face
   """
- 
-  nVoxelsDesired = nDOFDesired/3    
-  # Let the number of voxels be proportional to the length in each direction
-  alpha = (nVoxelsDesired/(L[0]*L[1]*L[2]))**(1/3)
-  nelx = round(alpha*L[0])
-  nely = round(alpha*L[1])
-  nelz = round(alpha*L[2])
+   
+  stl_file = os.path.join(script_dir, '../Models/Beam/beam.STL')
+  nElemsDesired = nDOFDesired /3	# estimate
   mesh = hex_mesher.HexMesher()
-  mesh.grid_mesh(num_elems = (nelx, nely, nelz),
-                  elem_size = (L[0]/nelx, L[1]/nely, L[2]/nelz))
+  mesh.createMeshFromSTLFile(stl_file, nElemsDesired=nElemsDesired)
   mesh.createEdofMatStructural()
+  print("Structural num nodes:", mesh.num_nodes)
 
   fixed_nodes = mesh.getNodesOnBoundingBoxPlane(0,True) # x = 0 plane
-  fixed_dofs = np.array([3 * fixed_nodes]).flatten().astype(int) # fixed in x direction
-  # fixed_dofs = np.array([3 * fixed_nodes,
-  #             3 * fixed_nodes + 1,
-  #             3 * fixed_nodes + 2]).flatten().astype(int)
+  if (allow_yz_displacement):
+    fixed_dofs = np.array([3 * fixed_nodes + 0]).flatten().astype(int) # fixed only in x direction
+  else:
+    fixed_dofs = np.array([3 * fixed_nodes,
+                3 * fixed_nodes + 1,
+                3 * fixed_nodes + 2]).flatten().astype(int)
+    
   dirichlet_values = 0*np.ones_like(fixed_dofs, dtype = float)
   mesh.node_indices[fixed_nodes, 3] = 1
   
+  force = np.zeros(3*mesh.num_nodes)
   # Add forces on x=xMax plane with different magnitudes for edges and corners
   # that is consistent with numerical integration over the surface
-  load_nodes = mesh.getNodesOnBoundingBoxPlane(0,False) # x = xMax plane
-  # Find edge and corner nodes
-  edge_nodes = []
-  corner_nodes = []
-  face_nodes = [] 
+  if (abs(tensileForce) > 0):
+    load_nodes = mesh.getNodesOnBoundingBoxPlane(0,False) # x = xMax plane
+    # Find edge and corner nodes
+    edge_nodes = []
+    corner_nodes = []
+    face_nodes = [] 
 
-  for node in load_nodes:
-    coords = mesh.node_xyz[node]
-    num_extremes = 0
-    if abs(coords[1] - min(mesh.node_xyz[:,1])) < mesh.elem_size[1]/2 or abs(coords[1] - max(mesh.node_xyz[:,1])) < mesh.elem_size[1]/2:
-      num_extremes += 1
-    if abs(coords[2] - min(mesh.node_xyz[:,2])) < mesh.elem_size[2]/2 or abs(coords[2] - max(mesh.node_xyz[:,2])) < mesh.elem_size[2]/2:
-      num_extremes += 1
+    for node in load_nodes:
+      coords = mesh.node_xyz[node]
+      num_extremes = 0
+      if abs(coords[1] - min(mesh.node_xyz[:,1])) < mesh.elem_size[1]/2 or abs(coords[1] - max(mesh.node_xyz[:,1])) < mesh.elem_size[1]/2:
+        num_extremes += 1
+      if abs(coords[2] - min(mesh.node_xyz[:,2])) < mesh.elem_size[2]/2 or abs(coords[2] - max(mesh.node_xyz[:,2])) < mesh.elem_size[2]/2:
+        num_extremes += 1
+      
+      if num_extremes == 2:
+        corner_nodes.append(node)
+      elif num_extremes == 1:
+        edge_nodes.append(node) 
+      else:
+        face_nodes.append(node)
     
-    if num_extremes == 2:
-      corner_nodes.append(node)
-    elif num_extremes == 1:
-      edge_nodes.append(node) 
-    else:
-      face_nodes.append(node)
-  
-  # Split into lists for clarity
-  corner_nodes = np.array(corner_nodes)
-  edge_nodes = np.array(edge_nodes)
-  face_nodes = np.array(face_nodes)
-  # Apply forces according to node type
-  force = np.zeros(3*mesh.num_nodes)
-  force[3*face_nodes] = 4.0  
-  force[3*edge_nodes] = 2.0  
-  force[3*corner_nodes] = 1.0 
-  
-  # Normalize forces to achieve desired total load
-  total_load = np.sum(force[3*load_nodes])
-  force[3*load_nodes] *= tensileForce/total_load
-  print("Total force:", np.sum(force[3*load_nodes]))
-  load_nodes = np.union1d(np.union1d(face_nodes, edge_nodes), corner_nodes)
-  mesh.node_indices[load_nodes, 3] = 2
+    # Split into lists for clarity
+    corner_nodes = np.array(corner_nodes)
+    edge_nodes = np.array(edge_nodes)
+    face_nodes = np.array(face_nodes)
+    # Apply forces according to node type
+    
+    force[3*face_nodes] = 4.0  
+    force[3*edge_nodes] = 2.0  
+    force[3*corner_nodes] = 1.0 
+    
+    # Normalize forces to achieve desired total load
+    total_load = np.sum(force[3*load_nodes])
+    force[3*load_nodes] *= tensileForce/total_load
+    load_nodes = np.union1d(np.union1d(face_nodes, edge_nodes), corner_nodes)
+    mesh.node_indices[load_nodes, 3] = 2
   
   bc = bound_cond.BC(force = force,
             fixed_dofs = fixed_dofs,
             dirichlet_values = dirichlet_values) 
 
   mat_prop = mat_lib.get_material("Steel")  
-  
   elem_body_force = None
-
-  print('-----------------------------')
-  print("Theoretical max displacement: {:.2g}".format(tensileForce*L[0]/(mat_prop.youngs_modulus*L[1]*L[2])))
-  print("Theoretical max stress: {:.2g}".format(tensileForce/(L[1]*L[2])))
-  print('-----------------------------')
-
+  if (abs(tensileForce) > 0):
+    print('-----------------------------')
+    print("Theoretical max displacement: {:.2g}".format(tensileForce*0.5/(mat_prop.youngs_modulus*0.05*0.05)))
+    print("Theoretical max stress: {:.2g}".format(tensileForce/(0.05*0.05)))
+    print('-----------------------------')
   return mesh, mat_prop, bc, elem_body_force
 
 def createTorsionBarProblem(nDOFDesired: int = 10000, L: float = [1, 0.2, 0.2], totalLoad = 1000):
@@ -1299,8 +1297,8 @@ def createLBracketProblem(nDOFDesired: int = 10000, topload = 1000,midload = 0):
   
   mesh.createMeshFromSTLFile(stl_file, nElemsDesired=nElemsDesired)
   mesh.createEdofMatStructural()
-
-  fixed_nodes = mesh.getNodesOnBoundingBoxPlane(1,False)  # y = yMax plane
+  triList0 = [16,17]
+  fixed_nodes = mesh.get_nodes_on_triangles(triList0)
   fixed_dofs = np.array([3 * fixed_nodes,
               3 * fixed_nodes + 1,
               3 * fixed_nodes + 2]).flatten().astype(int)
@@ -1308,18 +1306,18 @@ def createLBracketProblem(nDOFDesired: int = 10000, topload = 1000,midload = 0):
   mesh.node_indices[fixed_nodes, 3] = 1 # for plotting
 
   force = np.zeros(3*mesh.num_nodes)
-  node_pts = mesh.node_xyz
   if(abs(topload) > 0):
-    topload_nodes = np.intersect1d(mesh.getNodesOnBoundingBoxPlane(0,False) , np.where((node_pts[:, 1] >= 0.36))[0]) # hard coded    
+    triList1 = [12,13]
+    topload_nodes = mesh.get_nodes_on_triangles(triList1)
+    
     topload_dofs = 3 * topload_nodes + 1  
     mesh.node_indices[topload_nodes, 3] = 2 # for plotting
     force[topload_dofs] = -topload/len(topload_nodes)
 
   if(abs(midload) > 0):
-    midload_nodes = np.intersect1d(mesh.getNodesOnBoundingBoxPlane(0,False), np.where((node_pts[:, 1] >= 0.18) & (node_pts[:, 1] <= 0.22))[0]) # hard coded    
-    midload_dofs = 3 * midload_nodes + 1  
-    mesh.node_indices[midload_nodes, 3] = 2 # for plotting
-    
+    triList2 = [4,5]
+    midload_nodes = mesh.get_nodes_on_triangles(triList2)
+    midload_dofs = 3 * midload_nodes + 1
     force[midload_dofs] = -midload/len(midload_nodes)
 
   bc = bound_cond.BC(force = force,fixed_dofs = fixed_dofs,dirichlet_values = dirichlet_values) 
@@ -2510,7 +2508,8 @@ def createLBracketThickProblem(nDOFDesired: int = 80000,topload = 1000,midload =
   mesh.createMeshFromSTLFile(stl_file, nElemsDesired=nElemsDesired)
   mesh.createEdofMatStructural()
 
-  fixed_nodes = mesh.getNodesOnBoundingBoxPlane(1,False)  # y = yMax plane
+  triList0 = [16,17]
+  fixed_nodes = mesh.get_nodes_on_triangles(triList0)
   fixed_dofs = np.array([3 * fixed_nodes,
               3 * fixed_nodes + 1,
               3 * fixed_nodes + 2]).flatten().astype(int)
@@ -2518,25 +2517,21 @@ def createLBracketThickProblem(nDOFDesired: int = 80000,topload = 1000,midload =
   mesh.node_indices[fixed_nodes, 3] = 1 # for plotting
 
   force = np.zeros(3*mesh.num_nodes)
-  node_pts = mesh.node_xyz
   if(abs(topload) > 0):
-    topload_nodes = np.where(
-      (node_pts[:, 0] >= 0.9) & (node_pts[:, 0] <= 1.0) &
-      (node_pts[:, 1] > 0.39) 
-    )[0]
+    triList1 = [12,13]
+    topload_nodes = mesh.get_nodes_on_triangles(triList1)
+    
     topload_dofs = 3 * topload_nodes + 1  
-   
     mesh.node_indices[topload_nodes, 3] = 2 # for plotting
     force[topload_dofs] = -topload/len(topload_nodes)
-
   if(abs(midload) > 0):
-    midload_nodes = np.intersect1d(mesh.getNodesOnBoundingBoxPlane(0,False), np.where((node_pts[:, 1] >= 0.18) & (node_pts[:, 1] <= 0.22))[0]) # hard coded    
-    #midload_nodes = midload_nodes[(node_pts[midload_nodes, 2] >= 0.23) & (node_pts[midload_nodes, 2] <= 0.27)]
-    
-    midload_dofs = 3 * midload_nodes + 1  
+    triList2 = [4,5]
+    midload_nodes = mesh.get_nodes_on_triangles(triList2)
+
+    midload_dofs = 3 * midload_nodes + 1
     mesh.node_indices[midload_nodes, 3] = 2 # for plotting
-    
     force[midload_dofs] = -midload/len(midload_nodes)
+    
 
   bc = bound_cond.BC(force = force,fixed_dofs = fixed_dofs,dirichlet_values = dirichlet_values) 
 

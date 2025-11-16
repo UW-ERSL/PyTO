@@ -7,7 +7,7 @@ import pyvista as pv # pip install pyvista
 from scipy.sparse import coo_matrix
 import time
 from stl_reader import STLGeom
-
+import enum
 
 @dataclasses.dataclass
 class Extent:
@@ -51,6 +51,12 @@ class BoundingBox:
   def diag_length(self)->float:
     return np.sqrt(self.lx**2 + self.ly**2 + self.lz**2)
 
+
+class DISTANCE_TYPE(enum.Enum):
+	DISTANCE_3D = enum.auto()
+	DISTANCE_XY = enum.auto()
+	DISTANCE_YZ = enum.auto()
+	DISTANCE_XZ = enum.auto()
 
 class HexMesher:
 	def __init__(self):	
@@ -776,8 +782,8 @@ class HexMesher:
 			raise ValueError("Invalid axis. Must be 0, 1, or 2.")
 		
 		return nodes_on_plane
-
-	def compute_signed_distance_function(self, density_field: np.ndarray =None) -> np.ndarray:
+	
+	def compute_signed_distance_function(self, density_field: np.ndarray =None, distance_type: DISTANCE_TYPE = DISTANCE_TYPE.DISTANCE_3D) -> np.ndarray:
 		"""Compute the signed distance function for each element to the boundary face/edge.
 		
 		Args:
@@ -829,7 +835,21 @@ class HexMesher:
 		# Compute distances from each element to the nearest boundary element
 
 		# Calculate distances from all element centers to all boundary element centers
-		distances = np.linalg.norm(elem_centers[:, np.newaxis, :] - elem_centers[boundary_elems], axis=2)
+		if distance_type == DISTANCE_TYPE.DISTANCE_3D:
+			# Use full 3D distance metric
+			distances = np.linalg.norm(elem_centers[:, np.newaxis, :] - elem_centers[boundary_elems], axis=2)
+		
+		elif distance_type == DISTANCE_TYPE.DISTANCE_XY:	
+			# Use XY distance metric (ignore Z distance)
+			distances = np.linalg.norm(elem_centers[:, np.newaxis, :2] - elem_centers[boundary_elems][:, :2], axis=2)
+		elif distance_type == DISTANCE_TYPE.DISTANCE_XZ:
+			# Use XZ distance metric (ignore Y distance)
+			distances = np.linalg.norm(elem_centers[:, np.newaxis, ::2] - elem_centers[boundary_elems][:, ::2], axis=2)
+		elif distance_type == DISTANCE_TYPE.DISTANCE_YZ:
+			# Use YZ distance metric (ignore X distance)
+			distances = np.linalg.norm(elem_centers[:, np.newaxis, 1:] - elem_centers[boundary_elems][:, 1:], axis=2)
+		else:
+			raise ValueError("Invalid distance type specified.")
 		
 		# Find the minimum distance for each element
 		min_distances = np.min(distances, axis=1)

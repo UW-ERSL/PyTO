@@ -5,8 +5,8 @@ from topopt_obj_cons_sensitivities import *
 
 def topopt_pareto(fe_solver,
 				  to_params,
-							rel_err: float = 0.01,
-							vol_decr_max: float = 0.1,
+							rel_err: float = 0.025,
+							vol_decr_max: float = 0.05,
 							vol_decr_min: float = 0.0025,
 							min_local_iters: int = 2,
 							max_local_iters: int = 5,
@@ -41,6 +41,7 @@ def topopt_pareto(fe_solver,
 			print(msg)  
 	nDOFPerNode = 3 if isinstance(fe_solver, hex_structural_fea.HexStructuralFEA) else 1
 	tStart = time.time()
+	material_model = MaterialModel.SIMP 
 	
 	removeHangingElems = to_params.RemoveHangingElems
 	if fe_solver.elem_body_force is not None and (np.linalg.norm(fe_solver.elem_body_force) > 0) and not removeHangingElems:
@@ -151,6 +152,7 @@ def topopt_pareto(fe_solver,
 		TPrev = T.copy()  # Store previous sensitivity
 		xPrev = x.copy()  # Store previous design
 		innerLoopSuccess = True
+		
 		while True:
 			if (debug):
 				log_message(f"Local Iteration: {localIter}/{max_local_iters}, JTemp: {JTemp:.3g}, JPrev: {JPrev:.3g}")
@@ -197,10 +199,12 @@ def topopt_pareto(fe_solver,
 			JPrevPrev = JPrev  # Store previous to previous value
 			JPrev = JTemp  # Store previous value
 
-			sol = fe_solver.solve(x)
+			sol = fe_solver.solve(x, material_model)
 			fe_solver.postprocess()
+
 			nFEAs += 1
 			obj, TTemp,compliance = compute_objective_topological_sensitivity_compliance(to_params,sol,x, fe_solver,KE)
+		
 			JTemp = obj  # Update current objective value
 			if (to_params.Objective[0] == TO_QOI.COMPLIANCE):
 				T = TTemp.copy()  # Use current sensitivity for compliance objective
@@ -229,7 +233,8 @@ def topopt_pareto(fe_solver,
 
 			localIter += 1
 			totalIter += 1
-			
+
+
 		if terminatePareto:
 			if (volfrac > 1.1*volFractionConstraint):
 				success = False
@@ -273,7 +278,7 @@ if __name__ == "__main__":
 	from topopt_thermal_benchmarks import *
 	
 	print("-" * 50)
-	to_problem = StructuralTOExamples.Table # Choose the TO problem
+	to_problem = StructuralTOExamples.Multiload # Choose the TO problem
 	#to_problem = ThermalTOExamples.BridgeThermal # Choose the TO problem
 
 	if (to_problem in StructuralTOExamples):
@@ -284,6 +289,8 @@ if __name__ == "__main__":
 	print(f"Running {to_problem.name}...") 
 	print("-" * 50)
 	
+	plot_progress	 = False
+	print_progress = True
 	debug = False
 
 	solver = lin_solv.Solvers.PARDISO
@@ -327,7 +334,7 @@ if __name__ == "__main__":
 	print("OptimizationMethod: Pareto")
 	sol, history, success,errorMsg,nFEAs = topopt_pareto(fe_solver = fe_solver,
 									to_params = to_params,
-									plot_progress= True,
+									plot_progress= plot_progress,
 									debug = debug)
 	
 	timeTaken = time.time() - startTime

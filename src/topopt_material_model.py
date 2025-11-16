@@ -23,6 +23,7 @@ RAMP_PENALTY = 5
 MASS_PENALTY = 1  # Penalization factor for mass density
 MASS_LOW = 0  # Low density threshold for mass penalization
 
+PNORM_EXPONENT = 6  # Exponent for p-norm stress constraint
 
 class MaterialModel(enum.Enum):
 	SIMP = enum.auto()

@@ -25,9 +25,11 @@ class HexStructuralFEA:
          solver: torch_spsolve.Solvers,
          dsolver: deflation.DeflationSolver = None,
          elem_body_force: np.ndarray = None,
+         thermo_elastic_force = None,
          **kwargs):
 
     self.mesh, self.mat_prop, self.bc = mesh, mat_prop, bc
+    self.thermo_elastic_force = thermo_elastic_force
     self.solver, self.kwargs = solver, kwargs
     self.dsolver = dsolver
 
@@ -203,7 +205,6 @@ class HexStructuralFEA:
         gradN[i, :] = 2*gradN[i,:] / self.mesh.elem_size[i]
       # Get element degrees of freedom
       edof = self.mesh.edofMat
-      
       # Compute displacement gradients
       uGrad = gradN @ sol_np[edof[:, ::3]].T
       vGrad = gradN @ sol_np[edof[:, 1::3]].T
@@ -216,14 +217,24 @@ class HexStructuralFEA:
         uGrad[2] + wGrad[0],
         vGrad[2] + wGrad[1]
       ], axis=1)  # Shape: (num_elems, 6)
-
+      self.strainComponents = strain.copy() # store the total strain (elastic + thermal)
     
+      if (self.thermo_elastic_force is not None): # We must use only the elastic strain for computing stresses
+        # Compute elastic strains only
+        uGradElastic = gradN @ self.solElastic[edof[:, ::3]].T
+        vGradElastic = gradN @ self.solElastic[edof[:, 1::3]].T
+        wGradElastic = gradN @ self.solElastic[edof[:, 2::3]].T
+        
+        # Compute Engineering strains
+        strain = np.stack([
+          uGradElastic[0], vGradElastic[1], wGradElastic[2],
+          uGradElastic[1] + vGradElastic[0],
+          uGradElastic[2] + wGradElastic[0],
+          vGradElastic[2] + wGradElastic[1]
+        ], axis=1)  # Shape: (num_elems, 6)
+
       # STRESS_RELAXATION method;
-      # See Efficient stress-constrained topology optimizationusing inexact design sensitivities
-      # by Oded Amir, 2021
-      # Constitutive matrix D for each material
       q = 0.5  # SIMP like penalization for stress
-     
       if isinstance(self.mat_prop, list):
         # Create D matrix for each material
         D_list = []
@@ -240,6 +251,8 @@ class HexStructuralFEA:
         nu = self.mat_prop.poissons_ratio
         D = hex_element_stiffness.isotropic_constitutive_matrix ( E, nu)
         self.stressComponents = np.einsum('ij,ej->ei', D, strain)
+
+
       correction = (EVOID_RELATIVE + (1-EVOID_RELATIVE) * (x_np**q)).reshape((-1,1))
       eStress = correction * self.stressComponents
       self.vonMisesStress = np.sqrt(0.5*((eStress[:,0]-eStress[:,1])**2 +
@@ -247,7 +260,9 @@ class HexStructuralFEA:
                 (eStress[:,2]-eStress[:,0])**2) +
                 3*(eStress[:,3]**2 + eStress[:,4]**2 +
                    eStress[:,5]**2))
-      self.strainComponents = strain
+      
+      self.pNormStress = (np.sum(self.vonMisesStress**PNORM_EXPONENT))**(1/PNORM_EXPONENT)  
+     
 
       self.elemStrainEnergy = 0.5 * np.sum(strain * eStress, axis=1)  # Element-wise strain energy
       #print(f"Maximum von Mises stress: {np.max(self.vonMisesStress):.4e}")
@@ -407,6 +422,8 @@ class HexStructuralFEA:
     sol = sol.reshape((-1, 3))
     delta = self.deformation
     deltaMax = self.max_deformation
+    if deltaMax < 1e-16:
+      deltaMax = 1e-16
     scale = float(0.1*self.mesh.bbox.diag_length/deltaMax)
     vertices += scale*sol
 
@@ -657,14 +674,14 @@ class HexStructuralFEA:
             edge_color='black',
             line_width=1,
             scalar_bar_args={
-                'title': title,
-                'vertical': True,
-                'position_x': 0.85,   # Move to the right (0.0 = left, 1.0 = right)
-                'position_y': 0.05,   # Move to the bottom (0.0 = bottom, 1.0 = top)
-                'width': 0.08,        # Make it narrower
-                'height': 0.9,        # Make it taller
-                'title_font_size': 12,
-                'label_font_size': 12
+          'title': title,
+          'vertical': True,
+          'position_x': 0.85,   # Move to the right (0.0 = left, 1.0 = right)
+          'position_y': 0.05,   # Move to the bottom (0.0 = bottom, 1.0 = top)
+          'width': 0.08,        # Make it narrower
+          'height': 0.9,        # Make it taller
+          'title_font_size': 12,
+          'label_font_size': 12
             }
         )
 
@@ -727,3 +744,44 @@ class HexStructuralFEA:
                          mask_low_pseudodensity=False, title= title,
                 save_path=save_path, fontsize=fontsize,plotter = plotter)
     
+#################################################################
+if __name__ == "__main__":    
+  from hex_structural_examples import StructuralExamples,getStructuralProblem
+
+  problem = StructuralExamples.LBracketThick
+  nDOFDesired = 10000
+  mesh, mat_prop, bc,elem_body_force = getStructuralProblem(problem,nDOFDesired = nDOFDesired)
+  solver = linear_solvers.Solvers.DPCG # typically DPCG or PARDISO
+  
+  dsolver = deflation.DeflationSolver()
+
+  if (solver == linear_solvers.Solvers.DPCG):
+    nGroups =  min(dsolver.maxGroups,max(dsolver.minGroups,round(3*mesh.num_nodes/dsolver.dofPerGroup)))
+    dsolver.create_deflation_groups(mesh, nGroups)
+    #dsolver.plot_deflation_groups(mesh)
+    dsolver.create_deflation_matrix(mesh)
+    dsolver.W = dsolver.W[bc.free_dofs, :]
+  
+  fe_solver = HexStructuralFEA(mesh = mesh,
+        mat_prop = mat_prop,
+        bc = bc,
+        solver = solver,
+        dsolver = dsolver,
+        rtol = 1e-8,
+        elem_body_force = elem_body_force)
+
+  
+  fe_solver.plot_mesh(plot_bc = True,offsetArrow = True)
+  startTime = time.time()
+
+  fe_solver.solve()
+  print(f"Time to solve: {time.time() - startTime:.2f} seconds")
+  fe_solver.postprocess()
+  print(f"Maximum deformation: {fe_solver.max_deformation:.4e}")
+  print(f"Maximum von Mises stress: {np.max(fe_solver.vonMisesStress):.4e}")
+  print(f"Maximum p-norm stress (PNORM = {PNORM_EXPONENT}): {fe_solver.pNormStress:.4e}")
+
+  fe_solver.plot_deformation(show_geometry=True)
+  fe_solver.plot_vonMisesStress()
+  fe_solver.plot_stress_component(0)
+  
