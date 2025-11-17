@@ -196,6 +196,7 @@ def compute_pnorm_stress_autograd(
     # ---------- 7) STRESS_RELAXATION correction ----------
     q = 0.5  # same q as in postprocess
     x = x_filtered_t.view(nelems)
+    x = torch.clamp(x, min=1e-12)
     correction = EVOID_RELATIVE + (1.0 - EVOID_RELATIVE) * x.pow(q)  # (nelems,)
     correction = correction.unsqueeze(1)  # (nelems, 1)
 
@@ -414,8 +415,9 @@ def compute_objective_and_gradient(to_params, sol: np.ndarray, x: np.ndarray,	fe
 		mass_gradient = np.ones_like(x) * (elemVolume * fe_solver.mat_prop.mass_density)
 		return totalMass, mass_gradient
 	elif (objectiveType == TO_QOI.PNORM_STRESS):
-		[stressObj, stress_gradient,max_von_mises] = compute_pnorm_stress_and_sensitivity(sol, x, fe_solver,KE,material_model)
-		return stressObj, stress_gradient
+		# [stressObj, stress_gradient,max_von_mises] = compute_pnorm_stress_and_sensitivity(sol, x, fe_solver,KE,material_model)
+		stressObj, max_von_mises = compute_pnorm_stress_autograd( sol, x, fe_solver)
+		return stressObj
 	elif (objectiveType == TO_QOI.MAX_VONMISES_STRESS):
 		[stressObj, stress_gradient,max_von_mises] = compute_pnorm_stress_and_sensitivity(sol, x, fe_solver,KE,material_model)
 		return max_von_mises, stress_gradient
