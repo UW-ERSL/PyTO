@@ -283,10 +283,14 @@ def topopt_pareto(fe_solver,
     
     # Compute initial objective and sensitivity
     obj, grad_obj = compute_objective_and_gradient(to_params, sol, x, fe_solver, KE, material_model)
+  
+    # Helps to keep track of compliance changes
+    compliance0, _ = compute_compliance_and_gradient( sol, x, fe_solver, KE, material_model)
     obj0 = obj
     T = -grad_obj / obj0
     
     history['objective'].append(obj)
+    history['compliance'].append(compliance0)
     history['volfrac'].append(volfrac)
     
     # Add body force contribution to topological sensitivity
@@ -420,7 +424,7 @@ def topopt_pareto(fe_solver,
         
         # Initialize local iteration variables
         localIter = 0
-        JTemp = history['objective'][-1]
+        JTemp = history['compliance'][-1]
         JPrev = JTemp
         JPrevPrev = JTemp
         TPrev = T.copy()
@@ -480,8 +484,11 @@ def topopt_pareto(fe_solver,
             # Compute objective and sensitivity
             obj, grad_obj = compute_objective_and_gradient(to_params, sol, x, fe_solver, KE, material_model)
             
+            # Keep track of compliance changes
+            compliance, _ = compute_compliance_and_gradient(sol, x, fe_solver, KE, material_model)
+            
             TTemp = -grad_obj/obj0
-            JTemp = obj
+            JTemp = compliance
             
             if (to_params.Objective[0] == TO_QOI.COMPLIANCE):
                 T = TTemp.copy()
@@ -566,6 +573,7 @@ def topopt_pareto(fe_solver,
             
             # Update history
             history['objective'].append(obj)
+            history['compliance'].append(compliance)
             history['volfrac'].append(volfrac)
             
             # Store constraint information (only non-volume constraints)
@@ -574,7 +582,7 @@ def topopt_pareto(fe_solver,
                 history['multipliers'].append(al_status['multipliers'])
                 history['penalties'].append(al_status['penalties'])
             
-            scale = history['objective'][-1] / history['objective'][0]
+            scale = (compliance / compliance0)**2
             vol_decr = max(vol_decr_min, min(vol_decr, vol_decr_max / scale))
             
             if (print_progress):
@@ -608,7 +616,7 @@ if __name__ == "__main__":
     from topopt_thermal_benchmarks import *
     
     print("-" * 50)
-    to_problem = StructuralTOExamples.MBBB
+    to_problem = StructuralTOExamples.LBracketTopLoadStressObjective
     
     if (to_problem in StructuralTOExamples):
         mesh, mat_prop, bc, elem_body_force, to_params = getStructuralTOProblem(to_problem)
@@ -673,7 +681,7 @@ if __name__ == "__main__":
     
     # Plot convergence
     n_plots = 3 if (len(history.get('constraints', [])) > 0) else 1
-    plt.figure(figsize=(12, 4))
+    plt.figure(figsize=(8, 6))
     
     plt.subplot(1, n_plots, 1)
     plt.plot(history['volfrac'], history['objective'], marker='o')

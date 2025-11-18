@@ -33,8 +33,10 @@ class TO_QOI(enum.Enum): # Topology optimization; Various Quantity of Interest
 	GVECTOR = enum.auto() # g'* u
 	GFUNCTION = enum.auto() # g(u)
 	COST = enum.auto() # Generic cost function
+	TEMPERATURE_SAFETY_FACTOR = enum.auto() # Maximum temperature in thermal problem
 	MAX_CRITICALITY = enum.auto() # Captures availability of material
 	MEAN_CRITICALITY = enum.auto() # Captures availability of material
+
 
 @dataclass(slots=True) # avoid accidental modification
 class TOParams: # These are the default parameters
