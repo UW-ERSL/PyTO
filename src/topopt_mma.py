@@ -4,11 +4,13 @@ from topopt_material_model import *
 import time
 import matplotlib.pyplot as plt
 from mmaWrapper import runMMA
+from PyQt5.QtWidgets import QApplication
+
 def topopt_mma(fe_solver, #hex_structural_fea.HexStructuralFEA or hex_thermal_fea.HexThermalFEA
                            to_params,
                             maxMMAIterations: int = 150, 
                             timeLimitSecs: float = 36000, #10 hour
-                            move_limit: float = 0.2,
+                            move_limit: float = 0.05,
                             kkt_tol: float = 1.e-6,
                             objective_tol: float = 1.e-4,
                             constraint_tol: float = 1.e-4,
@@ -94,6 +96,9 @@ def topopt_mma(fe_solver, #hex_structural_fea.HexStructuralFEA or hex_thermal_fe
         nonlocal nFEAs, obj0,mmaIterations
         
         x = np.asarray(x).flatten()
+        grey_elements = np.sum((x > 0.1) & (x < 0.9))
+        fraction_grey = (grey_elements / num_elems)
+        print(f"Percentange grey elements:", f"{fraction_grey*100:.2f}%")
         if (to_params.APPLY_FILTER_TO_DENSITY):
             x = H*x/Hs
         fe_solver.mesh.setPseudoDensity(x)
@@ -143,13 +148,7 @@ def topopt_mma(fe_solver, #hex_structural_fea.HexStructuralFEA or hex_thermal_fe
         history['volfrac'].append(np.mean(x))
         for idx, val in enumerate(c.flatten()):
             history[f'constraint_{idx+1}'].append(val)
-        if (mmaIterations == 0) and (print_progress):
-            # Check if any constraints are violated (>0) and print a warning
-            if np.any(c > 0):
-                print("Warning: Constraint(s) violated at start of optimization!")
-                print("GCMMA may not converge for this problem.")
-                print("Consider changing constraints if convergence issues occur.")
-   
+
         grad_obj = grad_obj.reshape(-1, 1)
 
         # Print objective and constraints for this iteration
@@ -160,8 +159,6 @@ def topopt_mma(fe_solver, #hex_structural_fea.HexStructuralFEA or hex_thermal_fe
             inequality = '<='
            
             for idx, val in enumerate(c.flatten()):
-                if constraint_names[idx] == "STRESS_SAFETY_FACTOR":
-                    inequality = '>='
                 print(f"Constraint {idx+1} ({constraint_names[idx]}): {(val+1)*to_params.Constraints[idx][2]:.3g} {inequality} {to_params.Constraints[idx][2]:.3g}?")
         mmaIterations += 1
 
@@ -198,6 +195,7 @@ def topopt_mma(fe_solver, #hex_structural_fea.HexStructuralFEA or hex_thermal_fe
     
     grey_elements = np.sum((x > 0.1) & (x < 0.9))
     fraction_grey = (grey_elements / num_elems) 
+  
     if (binarize_topology):
         x_sorted = np.sort(x)
         threshold = x_sorted[int((1-np.mean(x))*len(x))]
@@ -244,7 +242,7 @@ if __name__ == "__main__":
  
     print("-" * 50)
 
-    to_problem = StructuralTOExamples.LBracketTopLoadStressObjective # Choose the TO problem
+    to_problem = StructuralTOExamples.LBracketTopLoadStressConstraint # Choose the TO problem
     
     if (to_problem in StructuralTOExamples):
         mesh, mat_prop, bc,elem_body_force, to_params = getStructuralTOProblem(to_problem)

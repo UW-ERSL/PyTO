@@ -579,6 +579,7 @@ class HexStructuralFEA:
                 plotter = self.pyVistaPlotter
         else:
             plotter = pv.Plotter(off_screen=True)
+        plotter.disable_depth_peeling()
         plotter.add_axes(
             xlabel='X',
             ylabel='Y',

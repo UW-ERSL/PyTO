@@ -42,7 +42,7 @@ def runTOMethodOnStructuralBenchmarks(optimizationMethod):
 	benchmarks_noncompliance_problems = [StructuralTOExamples.CantileverMidLoadVolumeCompliance,
 						StructuralTOExamples.LBracketTopLoadStressObjective, 
 						StructuralTOExamples.LBracketTopLoadStressConstraint, 
-						StructuralTOExamples.LBracketTopLoadStressSafetyFactor,
+						StructuralTOExamples.LBracketTopLoadStressSafetyLimit,
 						StructuralTOExamples.LBracketThickTopLoadStressConstraint,
 						StructuralTOExamples.LBracketMidLoadStressObjective,
 						StructuralTOExamples.Inverter]
@@ -51,7 +51,7 @@ def runTOMethodOnStructuralBenchmarks(optimizationMethod):
 						StructuralTOExamples.CentrifugalPlate]
 
 	
-	for to_problem in  benchmarks_3D_problems:
+	for to_problem in  benchmarks_2_5D_problems:
 		if to_problem in benchmarks_2_5D_problems:
 			subFolder = "Compliance2.5D"
 		elif to_problem in benchmarks_3D_problems:

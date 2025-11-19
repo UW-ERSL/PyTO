@@ -297,12 +297,12 @@ def compute_constraint_and_gradient(to_params, sol: np.ndarray, x: np.ndarray,	f
 				compute_constraint_and_gradient.stress_scaling = 0.5*max_von_mises/pnorm_stress + 0.5*compute_constraint_and_gradient.stress_scaling
 			
 			#print(f"Updated stress scaling to {compute_constraint_and_gradient.stress_scaling:.4f}")
-		elif (constraintType == TO_QOI.STRESS_SAFETY_FACTOR):
+		elif (constraintType == TO_QOI.STRESS_SAFETY_LIMIT):
 			pnorm_stress, pnorm_stress_gradient, max_von_mises = compute_pnorm_stress_and_sensitivity(sol, x, fe_solver,KE,material_model)
 			yieldStrength = fe_solver.mat_prop.yield_strength
 			normalized_pnorm = compute_constraint_and_gradient.stress_scaling*pnorm_stress
-			c[m,0] = (normalized_pnorm/yieldStrength - 1.0/constraintLimit)
-			dc[m,:] =  (compute_constraint_and_gradient.stress_scaling*pnorm_stress_gradient/yieldStrength)
+			c[m,0] = (constraintLimit*normalized_pnorm/yieldStrength - 1.0)
+			dc[m,:] =  (constraintLimit*compute_constraint_and_gradient.stress_scaling*pnorm_stress_gradient/yieldStrength)
 			if (max_von_mises > yieldStrength/constraintLimit):
 				compute_constraint_and_gradient.stress_scaling = 0.5*max_von_mises/pnorm_stress + 0.5*compute_constraint_and_gradient.stress_scaling
 			#print(f"Updated stress scaling to {compute_constraint_and_gradient.stress_scaling:.4f}")
