@@ -39,6 +39,7 @@ class StructuralTOExamples(enum.Enum):
 	LBracketTopLoad_Stress_Vol = enum.auto()
 	LBracketTopLoad_Vol_StressFailureFactor = enum.auto()
 	LBracketTopLoad_Vol_Stress = enum.auto()
+	LBracketTopLoad_Mass_StressFF = enum.auto()
 	LBracketThickTopLoad_Vol_Stress = enum.auto()
 	LBracketThickTopLoad_Stress_Vol = enum.auto()
 
@@ -114,6 +115,8 @@ def getSTLPath_TOProblem(to_problem: StructuralTOExamples):
         stl_file = "Models/LBracket/LBracket.STL"
     elif to_problem == StructuralTOExamples.LBracketTopLoad_Vol_Stress:
         stl_file = "Models/LBracket/LBracket.STL"
+    elif to_problem == StructuralTOExamples.LBracketTopLoad_Mass_StressFF:
+        stl_file =  "Models/LBracket/LBracket.STL"
     elif to_problem == StructuralTOExamples.LBracketThickTopLoad_Stress_Vol:
         stl_file = "Models/LBracket/LBracket.STL"
     elif to_problem == StructuralTOExamples.LBracketMidLoad_Vol_Stress:
@@ -358,12 +361,12 @@ def getStructuralTOProblem(to_problem: StructuralTOExamples,nDOFDesired = None, 
         to_params.Constraints = [(TO_QOI.VOLUME_FRACTION, None, 0.3)]
         to_params.Eliminate_Hanging_Elements = True
         
-    elif to_problem == StructuralTOExamples.LBracketTopLoad_Vol_StressFailureFactor:
+    elif to_problem == StructuralTOExamples.LBracketTopLoad_Mass_StressFF:
         structural_problem = StructuralExamples.LBracket
-        kwargs['topload'] = 2.5e4
+        kwargs['topload'] = 5e4
         kwargs['midload'] = 0
         to_params.Comment  = "Stress Safety Factor"
-        to_params.Objective = (TO_QOI.VOLUME_FRACTION, None) 
+        to_params.Objective = (TO_QOI.MASS, None) 
         to_params.ExtrudeZ = True
         to_params.nDOFDesired = 50000 if nDOFDesired is None else nDOFDesired
         to_params.Constraints = [ (TO_QOI.STRESS_FAILURE_FACTOR, None, 0.5)]  # failure limit is the opposite of safety factor
