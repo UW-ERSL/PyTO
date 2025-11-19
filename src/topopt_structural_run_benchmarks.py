@@ -40,11 +40,11 @@ def runTOMethodOnStructuralBenchmarks(optimizationMethod):
 							StructuralTOExamples.GEGrabCAD,]
 	
 	benchmarks_noncompliance_problems = [StructuralTOExamples.CantileverMidLoadVolumeCompliance,
-						StructuralTOExamples.LBracketTopLoadStressObjective, 
-						StructuralTOExamples.LBracketTopLoadStressConstraint, 
-						StructuralTOExamples.LBracketTopLoadStressSafetyLimit,
-						StructuralTOExamples.LBracketThickTopLoadStressConstraint,
-						StructuralTOExamples.LBracketMidLoadStressObjective,
+						StructuralTOExamples.LBracketTopLoad_Stress_Vol, 
+						StructuralTOExamples.LBracketTopLoad_Vol_Stress, 
+						StructuralTOExamples.LBracketTopLoad_Vol_StressFailureFactor,
+						StructuralTOExamples.LBracketThickTopLoad_Vol_Stress,
+						StructuralTOExamples.LBracketMidLoad_Vol_Stress,
 						StructuralTOExamples.Inverter]
 		
 	benchmarks_bodyforce_problems = [StructuralTOExamples.GravityPlate,

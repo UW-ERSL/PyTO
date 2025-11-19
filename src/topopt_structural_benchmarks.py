@@ -36,15 +36,14 @@ class StructuralTOExamples(enum.Enum):
     # Non-compliance Examples
 	CantileverMidLoadVolumeCompliance = enum.auto()
 
-	LBracketTopLoadStressObjective = enum.auto()
-	LBracketTopLoadStressSafetyLimit = enum.auto()
-	LBracketTopLoadStressConstraint = enum.auto()
-	LBracketThickTopLoadStressConstraint = enum.auto()
-	LBracketThickTopLoadStressObjective = enum.auto()
+	LBracketTopLoad_Stress_Vol = enum.auto()
+	LBracketTopLoad_Vol_StressFailureFactor = enum.auto()
+	LBracketTopLoad_Vol_Stress = enum.auto()
+	LBracketThickTopLoad_Vol_Stress = enum.auto()
+	LBracketThickTopLoad_Stress_Vol = enum.auto()
 
-	LBracketMidLoadStressConstraint = enum.auto()
-	LBracketMidLoadStressSafetyLimit = enum.auto()
-	LBracketMidLoadStressObjective = enum.auto()
+	LBracketMidLoad_Vol_Stress = enum.auto()
+	LBracketMidLoad_Vol_StresssFailureFactor_Compliance = enum.auto()
 	
 	Inverter = enum.auto()
 
@@ -109,19 +108,19 @@ def getSTLPath_TOProblem(to_problem: StructuralTOExamples):
         stl_file = "Models/GEGrabCAD/GEGrabCAD.STL"
     elif to_problem == StructuralTOExamples.CantileverMidLoadVolumeCompliance:
         stl_file = "Models/Cantilever/CantileverMidLoad.STL"
-    elif to_problem == StructuralTOExamples.LBracketTopLoadStressObjective:
+    elif to_problem == StructuralTOExamples.LBracketTopLoad_Stress_Vol:
         stl_file = "Models/LBracket/LBracket.STL"
-    elif to_problem == StructuralTOExamples.LBracketTopLoadStressSafetyLimit:
+    elif to_problem == StructuralTOExamples.LBracketTopLoad_Vol_StressFailureFactor:
         stl_file = "Models/LBracket/LBracket.STL"
-    elif to_problem == StructuralTOExamples.LBracketTopLoadStressConstraint:
+    elif to_problem == StructuralTOExamples.LBracketTopLoad_Vol_Stress:
         stl_file = "Models/LBracket/LBracket.STL"
-    elif to_problem == StructuralTOExamples.LBracketMidLoadStressObjective:
+    elif to_problem == StructuralTOExamples.LBracketThickTopLoad_Stress_Vol:
         stl_file = "Models/LBracket/LBracket.STL"
-    elif to_problem == StructuralTOExamples.LBracketMidLoadStressConstraint:
+    elif to_problem == StructuralTOExamples.LBracketMidLoad_Vol_Stress:
         stl_file = "Models/LBracket/LBracket.STL"
-    elif to_problem == StructuralTOExamples.LBracketMidLoadStressSafetyLimit:
+    elif to_problem == StructuralTOExamples.LBracketMidLoad_Vol_StresssFailureFactor_Compliance:
         stl_file = "Models/LBracket/LBracket.STL"
-    elif to_problem == StructuralTOExamples.LBracketThickTopLoadStressConstraint:
+    elif to_problem == StructuralTOExamples.LBracketThickTopLoad_Vol_Stress:
         stl_file = "Models/LBracketThick/LBracketThick.STL"
     elif to_problem == StructuralTOExamples.Inverter:
         stl_file = "Models/Inverter/Inverter.STL"
@@ -347,7 +346,7 @@ def getStructuralTOProblem(to_problem: StructuralTOExamples,nDOFDesired = None, 
         to_params.KeepFixedElems = True  # Keep elements that are fixed in the centrifugal plate example
 
     # Non-compliance problems
-    elif to_problem == StructuralTOExamples.LBracketTopLoadStressObjective:
+    elif to_problem == StructuralTOExamples.LBracketTopLoad_Stress_Vol:
         structural_problem = StructuralExamples.LBracket
         kwargs['topload'] = 1.5e5
         kwargs['midload'] = 0
@@ -359,17 +358,17 @@ def getStructuralTOProblem(to_problem: StructuralTOExamples,nDOFDesired = None, 
         to_params.Constraints = [(TO_QOI.VOLUME_FRACTION, None, 0.3)]
         to_params.Eliminate_Hanging_Elements = True
         
-    elif to_problem == StructuralTOExamples.LBracketTopLoadStressSafetyLimit:
+    elif to_problem == StructuralTOExamples.LBracketTopLoad_Vol_StressFailureFactor:
         structural_problem = StructuralExamples.LBracket
-        kwargs['topload'] = 1e5
+        kwargs['topload'] = 2.5e4
         kwargs['midload'] = 0
         to_params.Comment  = "Stress Safety Factor"
         to_params.Objective = (TO_QOI.VOLUME_FRACTION, None) 
         to_params.ExtrudeZ = True
         to_params.nDOFDesired = 50000 if nDOFDesired is None else nDOFDesired
-        to_params.Constraints = [ (TO_QOI.STRESS_SAFETY_LIMIT, None, 1)] 
+        to_params.Constraints = [ (TO_QOI.STRESS_FAILURE_FACTOR, None, 0.5)]  # failure limit is the opposite of safety factor
         to_params.Eliminate_Hanging_Elements = True
-    elif to_problem == StructuralTOExamples.LBracketTopLoadStressConstraint:
+    elif to_problem == StructuralTOExamples.LBracketTopLoad_Vol_Stress:
         structural_problem = StructuralExamples.LBracket
         kwargs['topload'] = 1e5
         kwargs['midload'] = 0
@@ -379,7 +378,7 @@ def getStructuralTOProblem(to_problem: StructuralTOExamples,nDOFDesired = None, 
         to_params.nDOFDesired = 50000 if nDOFDesired is None else nDOFDesired
         to_params.Constraints = [ (TO_QOI.MAX_VONMISES_STRESS, None, 400e6)] 
         to_params.Eliminate_Hanging_Elements = True
-    elif to_problem == StructuralTOExamples.LBracketThickTopLoadStressObjective:
+    elif to_problem == StructuralTOExamples.LBracketThickTopLoad_Stress_Vol:
         structural_problem = StructuralExamples.LBracketThick
         kwargs['topload'] = 1.5e5
         kwargs['midload'] = 0
@@ -391,7 +390,7 @@ def getStructuralTOProblem(to_problem: StructuralTOExamples,nDOFDesired = None, 
         to_params.Constraints = [(TO_QOI.VOLUME_FRACTION, None, 0.3)]
         to_params.Eliminate_Hanging_Elements = True
         
-    elif to_problem == StructuralTOExamples.LBracketThickTopLoadStressConstraint:
+    elif to_problem == StructuralTOExamples.LBracketThickTopLoad_Vol_Stress:
         structural_problem = StructuralExamples.LBracketThick
         to_params.Comment  =  "Stress Minimization"
         to_params.Objective = (TO_QOI.VOLUME_FRACTION, None) # pnorm value
@@ -401,7 +400,7 @@ def getStructuralTOProblem(to_problem: StructuralTOExamples,nDOFDesired = None, 
         to_params.nDOFDesired = 50000 if nDOFDesired is None else nDOFDesired
         to_params.Constraints = [(TO_QOI.MAX_VONMISES_STRESS, None, 200e6)] 
         to_params.Eliminate_Hanging_Elements = True
-    elif to_problem == StructuralTOExamples.LBracketMidLoadStressObjective:
+    elif to_problem == StructuralTOExamples.LBracketThickTopLoad_Stress_Vol:
         structural_problem = StructuralExamples.LBracket
         kwargs['topload'] = 0
         kwargs['midload'] = 1.5e5
@@ -410,7 +409,7 @@ def getStructuralTOProblem(to_problem: StructuralTOExamples,nDOFDesired = None, 
         to_params.ExtrudeZ = True
         to_params.nDOFDesired = 50000 if nDOFDesired is None else nDOFDesired
         to_params.Constraints = [(TO_QOI.VOLUME_FRACTION, None, 0.4)] 
-    elif to_problem == StructuralTOExamples.LBracketMidLoadStressConstraint:
+    elif to_problem == StructuralTOExamples.LBracketMidLoad_Vol_Stress:
         structural_problem = StructuralExamples.LBracket
         kwargs['topload'] = 0
         kwargs['midload'] = 1.5e5
@@ -419,7 +418,7 @@ def getStructuralTOProblem(to_problem: StructuralTOExamples,nDOFDesired = None, 
         to_params.ExtrudeZ = True
         to_params.nDOFDesired = 30000 if nDOFDesired is None else nDOFDesired
         to_params.Constraints = [ (TO_QOI.MAX_VONMISES_STRESS, None, 225e6), (TO_QOI.COMPLIANCE, None, 400)] 
-    elif to_problem == StructuralTOExamples.LBracketMidLoadStressSafetyLimit:
+    elif to_problem == StructuralTOExamples.LBracketMidLoad_Vol_StresssFailureFactor_Compliance:
         structural_problem = StructuralExamples.LBracket
         kwargs['topload'] = 0
         kwargs['midload'] = 1.5e5
@@ -427,7 +426,7 @@ def getStructuralTOProblem(to_problem: StructuralTOExamples,nDOFDesired = None, 
         to_params.Objective = (TO_QOI.VOLUME_FRACTION, None) 
         to_params.ExtrudeZ = True
         to_params.nDOFDesired = 30000 if nDOFDesired is None else nDOFDesired
-        to_params.Constraints = [ (TO_QOI.STRESS_SAFETY_LIMIT, None, 2.0), (TO_QOI.COMPLIANCE, None, 400)] 
+        to_params.Constraints = [ (TO_QOI.STRESS_FAILURE_FACTOR, None, 2.0), (TO_QOI.COMPLIANCE, None, 400)] 
 
     elif to_problem == StructuralTOExamples.CantileverMidLoadVolumeCompliance:
         structural_problem = StructuralExamples.CantileverMidLoad

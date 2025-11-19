@@ -293,18 +293,17 @@ def compute_constraint_and_gradient(to_params, sol: np.ndarray, x: np.ndarray,	f
 			normalized_pnorm = compute_constraint_and_gradient.stress_scaling*pnorm_stress
 			c[m,0] = (normalized_pnorm/constraintLimit - 1.0)
 			dc[m,:] = (compute_constraint_and_gradient.stress_scaling*pnorm_stress_gradient/constraintLimit)
-			if (max_von_mises > constraintLimit):
-				compute_constraint_and_gradient.stress_scaling = 0.5*max_von_mises/pnorm_stress + 0.5*compute_constraint_and_gradient.stress_scaling
+			compute_constraint_and_gradient.stress_scaling = 0.25*max_von_mises/pnorm_stress + 0.75*compute_constraint_and_gradient.stress_scaling
 			
 			#print(f"Updated stress scaling to {compute_constraint_and_gradient.stress_scaling:.4f}")
-		elif (constraintType == TO_QOI.STRESS_SAFETY_LIMIT):
+		elif (constraintType == TO_QOI.STRESS_FAILURE_FACTOR):
 			pnorm_stress, pnorm_stress_gradient, max_von_mises = compute_pnorm_stress_and_sensitivity(sol, x, fe_solver,KE,material_model)
 			yieldStrength = fe_solver.mat_prop.yield_strength
 			normalized_pnorm = compute_constraint_and_gradient.stress_scaling*pnorm_stress
-			c[m,0] = (constraintLimit*normalized_pnorm/yieldStrength - 1.0)
-			dc[m,:] =  (constraintLimit*compute_constraint_and_gradient.stress_scaling*pnorm_stress_gradient/yieldStrength)
-			if (max_von_mises > yieldStrength/constraintLimit):
-				compute_constraint_and_gradient.stress_scaling = 0.5*max_von_mises/pnorm_stress + 0.5*compute_constraint_and_gradient.stress_scaling
+			normalized_pnorm_gradient = compute_constraint_and_gradient.stress_scaling*pnorm_stress_gradient
+			c[m,0] = (normalized_pnorm/yieldStrength/constraintLimit - 1.0)
+			dc[m,:] =  (normalized_pnorm_gradient/yieldStrength/constraintLimit)
+			compute_constraint_and_gradient.stress_scaling = 0.25*max_von_mises/pnorm_stress + 0.75*compute_constraint_and_gradient.stress_scaling
 			#print(f"Updated stress scaling to {compute_constraint_and_gradient.stress_scaling:.4f}")
 		else:
 			raise NotImplementedError(f"Constraint {constraintType} is not implemented yet.")

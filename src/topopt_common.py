@@ -29,11 +29,11 @@ class TO_QOI(enum.Enum): # Topology optimization; Various Quantity of Interest
 	COMPLIANCE = enum.auto()
 	PNORM_STRESS = enum.auto()
 	MAX_VONMISES_STRESS = enum.auto()
-	STRESS_SAFETY_LIMIT = enum.auto()
+	STRESS_FAILURE_FACTOR = enum.auto() # opposite of safety factor
 	GVECTOR = enum.auto() # g'* u
 	GFUNCTION = enum.auto() # g(u)
 	COST = enum.auto() # Generic cost function
-	TEMPERATURE_SAFETY_LIMIT= enum.auto() 
+	TEMPERATURE_FAILURE_FACTOR = enum.auto() 
 	MAX_CRITICALITY = enum.auto() # Captures availability of material
 	MEAN_CRITICALITY = enum.auto() # Captures availability of material
 
