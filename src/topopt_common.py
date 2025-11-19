@@ -36,6 +36,8 @@ class TO_QOI(enum.Enum): # Topology optimization; Various Quantity of Interest
 	TEMPERATURE_FAILURE_FACTOR = enum.auto() 
 	MAX_CRITICALITY = enum.auto() # Captures availability of material
 	MEAN_CRITICALITY = enum.auto() # Captures availability of material
+	FATIGUE_FAILURE_FACTOR = enum.auto() # opposite of safety factor for fatigue
+	PBR = enum.auto() # Oxidation index or MMTO
 
 
 @dataclass(slots=True) # avoid accidental modification
