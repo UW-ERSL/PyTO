@@ -115,7 +115,7 @@ def topopt_mma(fe_solver, #hex_structural_fea.HexStructuralFEA or hex_thermal_fe
         fe_solver.postprocess()
 
         obj, grad_obj = compute_objective_and_gradient(to_params,sol,x, fe_solver,KE, material_model)
-      
+
         if (obj0 is None):
             obj0 = obj
         
@@ -144,6 +144,8 @@ def topopt_mma(fe_solver, #hex_structural_fea.HexStructuralFEA or hex_thermal_fe
                 elif (to_params.Constraints[m][0] is not TO_QOI.VOLUME_FRACTION):
                     dcdx[m] = ((H * dcdx[m])/Hs)# apply regular filter
     
+        
+
         history['objective'].append(obj*obj0)
         history['volfrac'].append(np.mean(x))
         for idx, val in enumerate(c.flatten()):
@@ -173,7 +175,13 @@ def topopt_mma(fe_solver, #hex_structural_fea.HexStructuralFEA or hex_thermal_fe
     objective_name = getattr(to_params.Objective[0], 'name', str(to_params.Objective[0]))
     constraint_names = [getattr(c[0], 'name', str(c[0])) for c in to_params.Constraints]
     
+    # Check if there's a volume fraction constraint and set initial density accordingly
     initialDensity = 0.5
+    for constraint in to_params.Constraints:
+        if constraint[0] == TO_QOI.VOLUME_FRACTION:
+            initialDensity = constraint[2]  # Use the constraint value as initial density
+            break
+    
     x0 = initialDensity * np.ones(num_elems, dtype = float).reshape(-1, 1)
     lowerBound = np.zeros(num_elems, dtype = float).reshape(-1, 1)
     upperBound = np.ones(num_elems, dtype = float).reshape(-1, 1)
@@ -242,7 +250,7 @@ if __name__ == "__main__":
  
     print("-" * 50)
 
-    to_problem = StructuralTOExamples.LBracketTopLoad_Vol_StressFailureFactor # Choose the TO problem
+    to_problem = StructuralTOExamples.LBracketTopLoad_Vol_Stress # Choose the TO problem
     
     if (to_problem in StructuralTOExamples):
         mesh, mat_prop, bc,elem_body_force, to_params = getStructuralTOProblem(to_problem)

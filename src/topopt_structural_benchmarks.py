@@ -387,7 +387,7 @@ def getStructuralTOProblem(to_problem: StructuralTOExamples,nDOFDesired = None, 
         to_params.ExtrudeZ = True
         to_params.RelativeFilterRadius = 2.5
         to_params.nDOFDesired = 50000 if nDOFDesired is None else nDOFDesired
-        to_params.Constraints = [(TO_QOI.VOLUME_FRACTION, None, 0.3)]
+        to_params.Constraints = [(TO_QOI.VOLUME_FRACTION, None, 0.5)]
         to_params.Eliminate_Hanging_Elements = True
         
     elif to_problem == StructuralTOExamples.LBracketThickTopLoad_Vol_Stress:

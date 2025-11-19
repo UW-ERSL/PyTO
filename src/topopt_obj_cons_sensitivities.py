@@ -114,9 +114,11 @@ def compute_pnorm_stress_and_sensitivity(sol: np.ndarray, x, fe_solver, KE, mate
     gradN = (1 / 8) * np.array([
         [-1, 1, 1, -1, -1, 1, 1, -1],
         [-1, -1, 1, 1, -1, -1, 1, 1],
-        [-1, -1, -1, -1, 1, 1, 1, 1]
-    ])
-    
+        [-1, -1, -1, -1, 1, 1, 1, 1]])
+    for i in range(3):
+     gradN[i, :] = 2*gradN[i,:] / fe_solver.mesh.elem_size[i]
+
+
     B = np.zeros((6, 24))
     Bi = np.zeros((6, 3, 8))
     Bi[0, 0, :] = gradN[0, :]
@@ -424,6 +426,9 @@ def compute_pnorm_stress_and_TS(sol: np.ndarray, x,
 		[-1, -1, 1, 1, -1, -1, 1, 1],
 		[-1, -1, -1, -1, 1, 1, 1, 1]
 	])
+	for i in range(3):
+		gradN[i, :] = 2*gradN[i,:] / fe_solver.mesh.elem_size[i]
+
 	# Define the B matrix (strain-displacement matrix) for a hexahedral element at the center (xi=0, eta=0, zeta=0)
 	B = np.zeros((6, 24))
 	# Vectorized construction of B matrix for all 8 nodes at once
