@@ -1319,7 +1319,7 @@ def createLBracketProblem(nDOFDesired: int = 10000, topload = 1000,midload = 0):
 
   bc = bound_cond.BC(force = force,fixed_dofs = fixed_dofs,dirichlet_values = dirichlet_values) 
 
-  mat_prop = mat_lib.get_material("Steel") 
+  mat_prop = mat_lib.get_material("SS304") 
   elem_body_force = None
 
   return mesh, mat_prop, bc, elem_body_force

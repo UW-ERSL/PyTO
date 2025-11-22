@@ -44,6 +44,28 @@ materials = [
     yield_strength=250e6
   ),
   Material(
+    name="SS15-5PH",
+    youngs_modulus=2.1e11,
+    poissons_ratio=0.3,
+    mass_density=7790,
+    thermal_conductivity=50,
+    specific_heat=500,
+    thermal_expansion=12e-6,
+    cost=1.0,
+    yield_strength=1120e6
+  ),
+  Material( # obtained through curve fitting experimental data from Teledyne
+    name="SS304",
+    youngs_modulus=5.41e10,
+    poissons_ratio=0.3,
+    mass_density=8000,
+    thermal_conductivity=50,
+    specific_heat=500,
+    thermal_expansion=12e-6,
+    cost=1.0,
+    yield_strength=384e6
+  ),
+  Material(
     name="Aluminum",
     youngs_modulus=7.0e10,
     poissons_ratio=0.33,
@@ -53,6 +75,17 @@ materials = [
     thermal_expansion=23e-6,
     cost=2.7,
     yield_strength=95e6
+  ),
+  Material(
+    name="AA7075",
+    youngs_modulus=9.3e10,
+    poissons_ratio=0.33,
+    mass_density=2710,
+    thermal_conductivity=237,
+    specific_heat=900,
+    thermal_expansion=23e-6,
+    cost=2.7,
+    yield_strength=414e6
   ),
   Material(
     name="Copper",

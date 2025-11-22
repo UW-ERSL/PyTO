@@ -115,10 +115,14 @@ def topopt_mma(fe_solver, #hex_structural_fea.HexStructuralFEA or hex_thermal_fe
         fe_solver.postprocess()
 
         obj, grad_obj = compute_objective_and_gradient(to_params,sol,x, fe_solver,KE, material_model)
+        c, dcdx = compute_constraint_and_gradient(to_params,sol,x, fe_solver,KE, material_model)
 
         if (obj0 is None):
             obj0 = obj
-        
+
+        if any(c0 > 0.5 for c0 in c.flatten()): # if any constraint is significantly violated, zero out objective gradient
+            grad_obj *= 0 # MMA step will try to reduce constraint violation first
+
         obj = obj/obj0 # normalize objective
         grad_obj = grad_obj/obj0 # normalize gradient
 
@@ -136,7 +140,7 @@ def topopt_mma(fe_solver, #hex_structural_fea.HexStructuralFEA or hex_thermal_fe
         if (to_params.ElemsToKeep is not None):
             grad_obj[to_params.ElemsToKeep] = min(grad_obj) # also retain elements that are in the keep list
 
-        c, dcdx = compute_constraint_and_gradient(to_params,sol,x, fe_solver,KE, material_model)
+        
         if (to_params.APPLY_FILTER_TO_SENSITIVITY):
             for m in range(len(to_params.Constraints)):
                 if (to_params.Constraints[m][0] is TO_QOI.COMPLIANCE):
