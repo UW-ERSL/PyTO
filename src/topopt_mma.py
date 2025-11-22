@@ -98,7 +98,8 @@ def topopt_mma(fe_solver, #hex_structural_fea.HexStructuralFEA or hex_thermal_fe
         x = np.asarray(x).flatten()
         grey_elements = np.sum((x > 0.1) & (x < 0.9))
         fraction_grey = (grey_elements / num_elems)
-        print(f"Percentange grey elements:", f"{fraction_grey*100:.2f}%")
+        if (print_progress):
+            print(f"Percentange grey elements:", f"{fraction_grey*100:.2f}%")
         if (to_params.APPLY_FILTER_TO_DENSITY):
             x = H*x/Hs
         fe_solver.mesh.setPseudoDensity(x)
@@ -163,16 +164,12 @@ def topopt_mma(fe_solver, #hex_structural_fea.HexStructuralFEA or hex_thermal_fe
             print(f"Iteration: {mmaIterations}")
             print(f"Min. Objective ({objective_name}): {obj*obj0:.3g}")
             inequality = '<='
-           
             for idx, val in enumerate(c.flatten()):
                 print(f"Constraint {idx+1} ({constraint_names[idx]}): {(val+1)*to_params.Constraints[idx][2]:.3g} {inequality} {to_params.Constraints[idx][2]:.3g}?")
         mmaIterations += 1
 
         nFEAs += 1
-        if (to_params.Enforce_Constraints_MMA): # GCMMA does not enforce constraints strongly enough. This heuristic enforces them more strongly    
-            for m in range(len(to_params.Constraints)):
-                scaling = max(0.1,min(10, 10**c[m])) # heuristic scaling based on constraint violation
-                dcdx[m,:] /= scaling # scale constraint gradient to enforce constraints more strongly
+        
         return obj, grad_obj, c, dcdx
 
 
@@ -254,7 +251,7 @@ if __name__ == "__main__":
  
     print("-" * 50)
 
-    to_problem = StructuralTOExamples.LBracketTopLoad_Mass_StressFF # Choose the TO problem
+    to_problem = StructuralTOExamples.CentrifugalPlate # Choose the TO problem
     
     if (to_problem in StructuralTOExamples):
         mesh, mat_prop, bc,elem_body_force, to_params = getStructuralTOProblem(to_problem)
