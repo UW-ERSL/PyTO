@@ -4,6 +4,7 @@ import enum
 import numpy as np
 import scipy.sparse as spy_sprs
 import scipy.sparse.linalg as spy_linalg
+from scipy.sparse.linalg import splu
 from scipy.sparse.linalg import spilu, LinearOperator
 import pyamg # pip install pyamg
 # Mac does not support pypardiso, so we skip 
@@ -84,6 +85,7 @@ class Solvers(enum.Enum):
 	PYAMG = enum.auto()
 	DPCG = enum.auto()
 	PARDISO = enum.auto()
+	SPLU = enum.auto()
 
 
 def solve(A0: spy_sprs.coo_matrix, 
@@ -109,7 +111,9 @@ def solve(A0: spy_sprs.coo_matrix,
 
     if solver == Solvers.SPSOLVE:
       x = spy_linalg.spsolve(A, b) # very slow for large problems
-
+    elif solver == Solvers.SPLU:
+      lu = splu(A)
+      x = lu.solve(b)
     elif solver == Solvers.PCG:
       rtol = kwargs.get('rtol', DEFAULT_TOL) # for iterative solvers
       M = _jacobi_preconditioner(A)

@@ -495,7 +495,7 @@ class HexStructuralFEA:
       faces = np.arange(len(vertices)).reshape(-1, 3)
       faces = np.column_stack((np.full(len(faces), 3), faces))
       geomMesh = pv.PolyData(vertices, faces)
-      plotter.add_mesh(geomMesh, color='white', show_edges=True)
+      plotter.add_mesh(geomMesh, opacity=0.25, color='white', show_edges=True)
 
     # Save image if path is provided
     if save_path:
@@ -520,6 +520,7 @@ class HexStructuralFEA:
             auto_close = True,
             fontsize=10,
             cross_section=None,
+            show_geometry=False,
             plotter = None,
             colors=None):  # New parameter for custom colors
     """
@@ -636,8 +637,8 @@ class HexStructuralFEA:
                 'position_y': 0.05,   # Move to the bottom (0.0 = bottom, 1.0 = top)
                 'width': 0.08,        # Make it narrower
                 'height': 0.9,        # Make it taller
-                'title_font_size': 12,
-                'label_font_size': 12
+                'title_font_size': 18,
+                'label_font_size': 18
             }
         )
     else:
@@ -655,12 +656,18 @@ class HexStructuralFEA:
           'position_y': 0.05,   # Move to the bottom (0.0 = bottom, 1.0 = top)
           'width': 0.08,        # Make it narrower
           'height': 0.9,        # Make it taller
-          'title_font_size': 12,
-          'label_font_size': 12
+          'title_font_size': 18,
+          'label_font_size': 18
             }
         )
-
+    if (show_geometry):
+      vertices = self.mesh.stlGeom.mesh.vectors.reshape(-1, 3)
+      faces = np.arange(len(vertices)).reshape(-1, 3)
+      faces = np.column_stack((np.full(len(faces), 3), faces))
+      geomMesh = pv.PolyData(vertices, faces)
+      plotter.add_mesh(geomMesh, opacity = 0.5, color='white', show_edges=True)
     # Save image if path is provided
+
     if save_path:
         # Get mesh bounds
         bounds = pv_mesh.bounds
@@ -723,7 +730,7 @@ class HexStructuralFEA:
 if __name__ == "__main__":    
   from hex_structural_examples import StructuralExamples,getStructuralProblem
 
-  problem = StructuralExamples.LBracketThick
+  problem = StructuralExamples.LBracket
   nDOFDesired = 10000
   mesh, mat_prop, bc,elem_body_force = getStructuralProblem(problem,nDOFDesired = nDOFDesired)
   solver = linear_solvers.Solvers.DPCG # typically DPCG or PARDISO
