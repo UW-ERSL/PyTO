@@ -7,13 +7,17 @@ import scipy.sparse.linalg as spy_linalg
 from scipy.sparse.linalg import splu
 from scipy.sparse.linalg import spilu, LinearOperator
 import pyamg # pip install pyamg
-# Mac does not support pypardiso, so we skip 
-try:
+
+try:# Mac does not support pypardiso, so we skip 
   import pypardiso # pip install pypardiso
 except ImportError:
   pypardiso = None
 
 
+try:# Windows does not support petsc, so we skip 
+  import petsc4py.PETSc as PETSc # type: ignore # pip install petsc
+except ImportError:
+  PETSc = None
 
 import bound_cond
 from scipy.linalg import null_space
@@ -23,6 +27,46 @@ class Preconditioners(enum.Enum):
   ILU = enum.auto()
 
 DEFAULT_TOL = 1.e-6 # Default tolerance for iterative solvers
+
+def _petsc_solve(
+  A: spy_sprs.csr_matrix, b: np.ndarray, solver_options: dict) -> np.ndarray:
+    """Solve for u = A^{-1}b using PETSc.
+  
+    Args:
+      A: A sparse CSR matrix of shape (m,m).
+      b: The rhs vector of shape (m,).
+      solver_options: A dictionary containing PETSc solver options.
+  
+    Returns: The solution vector of shape (m,).
+    """
+    
+    ksp_type = "bcgsl" 
+    pc_type = "ilu"
+  
+    A = PETSc.Mat().createAIJ(
+      size=A.shape,
+      csr=(
+        A.indptr.astype(PETSc.IntType, copy=False),
+        A.indices.astype(PETSc.IntType, copy=False),
+        A.data,
+      ),
+    )
+  
+    rhs = PETSc.Vec().createSeq(len(b))
+    rhs.setValues(range(len(b)), np.array(b))
+    ksp = PETSc.KSP().create()
+    ksp.setOperators(A)
+    ksp.setFromOptions()
+    ksp.setType(ksp_type)
+    ksp.pc.setType(pc_type)
+  
+    if ksp_type == "tfqmr":
+      ksp.pc.setFactorSolverType("mumps")
+  
+    x = PETSc.Vec().createSeq(len(b))
+    ksp.solve(rhs, x)
+  
+    return x.getArray()
 
 def _jacobi_preconditioner(A: spy_sprs.coo_matrix,
                           eps_tol: float = 1.e-12,
@@ -86,6 +130,7 @@ class Solvers(enum.Enum):
 	DPCG = enum.auto()
 	PARDISO = enum.auto()
 	SPLU = enum.auto()
+	PETSC = enum.auto()
 
 
 def solve(A0: spy_sprs.coo_matrix, 
@@ -114,6 +159,8 @@ def solve(A0: spy_sprs.coo_matrix,
     elif solver == Solvers.SPLU:
       lu = splu(A)
       x = lu.solve(b)
+    elif solver == Solvers.PETSC:
+      x = _petsc_solve(A.tocsr(), np.asarray(b), kwargs)
     elif solver == Solvers.PCG:
       rtol = kwargs.get('rtol', DEFAULT_TOL) # for iterative solvers
       M = _jacobi_preconditioner(A)
@@ -148,24 +195,40 @@ def solve(A0: spy_sprs.coo_matrix,
     u[bc.free_dofs] = x
     return u
   else:
-    # When using Lagrange multipliers, we do not eliminate any DOFs
-    # Use Lagrange multipliers to impose the constraints
-    num_constraints = bc.constraint_matrix.shape[0]
-    num_dofs = A0.shape[0]
-    # Build blocks separately and use scipy's hstack/vstack for efficiency
-    top_row = spy_sprs.hstack([A0, bc.constraint_matrix.T])
-    bottom_row = spy_sprs.hstack([bc.constraint_matrix, spy_sprs.csr_matrix((num_constraints, num_constraints))])
-    A_modified = spy_sprs.vstack([top_row, bottom_row]).tolil()
-    b_modified = np.zeros(num_dofs + num_constraints)
-    b_modified[:num_dofs] = b0
-    b_modified[num_dofs:] = bc.constraint_rhs
-    # We can only use Pardiso for this case
+    if solver == Solvers.PARDISO:
+     
+      # When using Lagrange multipliers, we do not eliminate any DOFs
+      # Use Lagrange multipliers to impose the constraints
+      num_constraints = bc.constraint_matrix.shape[0]
+      num_dofs = A0.shape[0]
+      # Build blocks separately and use scipy's hstack/vstack for efficiency
+      top_row = spy_sprs.hstack([A0, bc.constraint_matrix.T])
+      bottom_row = spy_sprs.hstack([bc.constraint_matrix, spy_sprs.csr_matrix((num_constraints, num_constraints))])
+      A_modified = spy_sprs.vstack([top_row, bottom_row]).tolil()
+      b_modified = np.zeros(num_dofs + num_constraints)
+      b_modified[:num_dofs] = b0
+      b_modified[num_dofs:] = bc.constraint_rhs
+      # We can only use Pardiso for this case
 
-    sol = pypardiso.spsolve(A_modified.tocsr(), np.array(b_modified))
-    pypardiso.ps.free_memory()
+      sol = pypardiso.spsolve(A_modified.tocsr(), np.array(b_modified))
+      pypardiso.ps.free_memory()
 
-    
-    u = np.zeros(b0.shape)
-    u[:num_dofs] = sol[:num_dofs]
-    # Lagrange multipliers are in sol[num_dofs:], if needed they can be returned
-    return u
+      u = np.zeros(b0.shape)
+      u[:num_dofs] = sol[:num_dofs]
+      # Lagrange multipliers are in sol[num_dofs:], if needed they can be returned
+      return u
+    elif solver == Solvers.DPCG:
+      dsolver = kwargs['dsolver']
+      rtol = kwargs.get('rtol', DEFAULT_TOL) # for iterative solvers
+      M = _jacobi_preconditioner(A0)
+      x = dsolver.deflatedPCG_with_LagrangeMultipliers(
+                              A0,
+                              b0,
+                              bc.constraint_matrix,
+                              bc.constraint_rhs,
+                              W = dsolver.W,
+                              M = M,
+                              rtol = rtol)
+      return x
+    else:
+      raise ValueError('Only Pardiso and DPCG solvers support Lagrange multipliers currently.')

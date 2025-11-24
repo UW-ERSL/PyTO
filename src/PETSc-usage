@@ -1,0 +1,7 @@
+
+conda activate WSL-PyTO
+conda install -c conda-forge compilers
+sudo apt-get install make
+sudo apt-get install libblas-dev liblapack-dev
+conda install -c conda-forge openblas lapack
+pip install petsc petsc4py

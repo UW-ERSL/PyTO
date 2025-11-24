@@ -1,4 +1,6 @@
-Python <=3.12 
+
+conda create --name PyTO python=3.12
+conda activate PyTO
 pip install numpy
 pip install scipy
 pip install matplotlib
@@ -16,4 +18,5 @@ pip install pymeshfix
 pip install mmapy
 pip install pyvistaqt
 pip install manifold3d
+pip install PyQt5
 pip install cupy-cuda11x

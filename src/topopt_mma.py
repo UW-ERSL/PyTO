@@ -110,7 +110,7 @@ def topopt_mma(fe_solver, #hex_structural_fea.HexStructuralFEA or hex_thermal_fe
            fe_solver.plot_pseudo_density(
                    plotter=plotter,
                    auto_close=False,
-                   title=f"Iter {len(history['objective']) + 1} - Density"
+                   title=f"Iter {len(history['objective']) + 1}"
                )
         sol = fe_solver.solve(x, material_model)
         fe_solver.postprocess()
@@ -251,7 +251,7 @@ if __name__ == "__main__":
  
     print("-" * 50)
 
-    to_problem = StructuralTOExamples.CentrifugalPlate # Choose the TO problem
+    to_problem = StructuralTOExamples.EdgeCantilever # Choose the TO problem
     
     if (to_problem in StructuralTOExamples):
         mesh, mat_prop, bc,elem_body_force, to_params = getStructuralTOProblem(to_problem)
