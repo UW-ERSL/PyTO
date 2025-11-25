@@ -1,4 +1,3 @@
-# pyTOLib.txt
 numpy
 scipy
 matplotlib
