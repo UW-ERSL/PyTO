@@ -1,0 +1,20 @@
+# pyTOLib.txt
+numpy
+scipy
+matplotlib
+scikit-learn
+pypardiso
+absl-py
+pyvista
+numpy-stl
+tetgen
+pandas
+pyamg
+numba
+trimesh
+pymeshfix
+mmapy
+pyvistaqt
+manifold3d
+cupy-cuda11x
+
