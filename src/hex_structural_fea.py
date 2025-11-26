@@ -730,10 +730,10 @@ class HexStructuralFEA:
 if __name__ == "__main__":    
   from hex_structural_examples import StructuralExamples,getStructuralProblem
 
-  problem = StructuralExamples.BliskSection
+  problem = StructuralExamples.LBracket
   nDOFDesired = 50000
   mesh, mat_prop, bc,elem_body_force = getStructuralProblem(problem,nDOFDesired = nDOFDesired)
-  solver = linear_solvers.Solvers.PARDISO # typically DPCG or PARDISO
+  solver = linear_solvers.Solvers.DPCG # typically DPCG or PARDISO
   
   dsolver = deflation.DeflationSolver()
 
@@ -742,7 +742,7 @@ if __name__ == "__main__":
     dsolver.create_deflation_groups(mesh, nGroups)
     #dsolver.plot_deflation_groups(mesh)
     dsolver.create_deflation_matrix(mesh)
-    dsolver.W = dsolver.W[bc.free_dofs, :]
+   
   
   fe_solver = HexStructuralFEA(mesh = mesh,
         mat_prop = mat_prop,

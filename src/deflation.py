@@ -670,3 +670,140 @@ class DeflationSolver:
 		if (iter_num == maxIters - 1):
 			print("Warning: Maximum iterations reached in DPCG; relative residual:", np.sqrt(rz_new/rz0))
 		return x
+	def deflatedPCG_with_LagrangeMultipliers(self,
+											K: _Array,
+											f: np.ndarray,
+											C: _Array,
+											b: np.ndarray,
+											W: _Array,
+											M: _Array,
+											rtol=1e-8,
+											maxIters=500,
+											verbose=True):
+		"""Solve using null-space reduction method."""
+		
+		import scipy.sparse.linalg as spla
+		from scipy.linalg import null_space
+		
+		n = f.shape[0]
+		m = C.shape[0]
+		
+		if verbose:
+			print(f"Null-space reduction: {n} DOFs, {m} constraints")
+		
+		CT = C.transpose(copy=True)
+		
+		# Step 1: Find particular solution d_p such that C*d_p = b
+		# Solve: C^T * lambda_p = b using (C*C^T)*lambda_p = b
+		CCT = (C @ CT).toarray()
+		try:
+			lambda_p = np.linalg.solve(CCT, b)
+		except:
+			lambda_p = np.linalg.lstsq(CCT, b, rcond=None)[0]
+		
+		d_p = (CT @ lambda_p).ravel()
+		
+		# Verify particular solution
+		constraint_error = np.linalg.norm(C @ d_p - b)
+		if verbose:
+			print(f"Particular solution constraint error: {constraint_error:.3e}")
+		
+		# Step 2: Find null-space basis Z of C (C*Z = 0)
+		if m >= n:
+			raise ValueError("Over-constrained system: m >= n")
+		
+		if m < 5000:
+			CT_dense = CT.toarray()
+			Z = null_space(CT_dense.T)  # Columns of Z span null(C)
+			if verbose:
+				print(f"Null-space dimension: {Z.shape[1]} (expected {n-m})")
+		else:
+			# For very large m, this is expensive
+			print("Warning: Computing null-space for large constraint matrix")
+			# Use sparse SVD approximation
+			from scipy.sparse.linalg import svds
+			k = min(m, 100)
+			try:
+				U, s, Vt = svds(C, k=k, which='SM')
+				tol = 1e-8 * s.max() if len(s) > 0 else 1e-8
+				null_idx = s < tol
+				if np.any(null_idx):
+					Z = Vt[null_idx, :].T
+				else:
+					raise ValueError("No null space found in sparse SVD")
+			except:
+				# Fallback to dense computation
+				C_dense = C.toarray()
+				Z = null_space(C_dense)
+		
+		# Step 3: Build reduced system K_tilde = Z^T * K * Z
+		ZT = Z.T
+		KZ = K @ Z
+		K_tilde = ZT @ KZ
+		
+		# Build reduced RHS f_tilde = Z^T * (f - K*d_p)
+		f_tilde = ZT @ (f - K @ d_p)
+		
+		if verbose:
+			print(f"Reduced system size: {K_tilde.shape[0]}")
+		
+		# Step 4: Solve reduced system K_tilde * y = f_tilde
+		# This system is typically much better conditioned
+		
+		# Check if small enough for direct solve
+		if K_tilde.shape[0] < 10000:
+			# Direct solve
+			y = np.linalg.solve(K_tilde, f_tilde)
+			if verbose:
+				print("Used direct solve on reduced system")
+		else:
+			# Iterative solve with preconditioner
+			# Build preconditioner M_tilde = Z^T * M * Z
+			MZ = M @ Z
+			M_tilde = ZT @ MZ
+			
+			def matvec(v):
+				return K_tilde @ v
+			
+			def precond(v):
+				return np.linalg.solve(M_tilde, v)
+			
+			K_op = spla.LinearOperator(K_tilde.shape, matvec=matvec)
+			M_op = spla.LinearOperator(K_tilde.shape, matvec=precond)
+			
+			y, info = spla.gmres(K_op, f_tilde, 
+								 M=M_op,
+								 rtol=rtol,
+								 maxiter=maxIters)
+			
+			if info == 0:
+				if verbose:
+					print("GMRES converged on reduced system")
+			else:
+				print(f"GMRES info: {info}")
+		
+		# Step 5: Reconstruct full solution d = d_p + Z*y
+		d = d_p + Z @ y
+		
+		# Verify solution
+		r_prim = f - K @ d
+		r_dual = b - C @ d
+		
+		# Compute Lagrange multipliers from optimality: K*d + C^T*mu = f
+		# So: C^T*mu = f - K*d
+		# Solve: (C*C^T)*mu = C*(f - K*d)
+		rhs_mu = C @ r_prim
+		try:
+			mu = np.linalg.solve(CCT, rhs_mu)
+		except:
+			mu = np.linalg.lstsq(CCT, rhs_mu, rcond=None)[0]
+		
+		# Final residual with multipliers
+		r_prim_full = f - K @ d - CT @ mu
+		
+		if verbose:
+			print(f"Final residuals:")
+			print(f"  ||f - K*d - C^T*mu|| = {np.linalg.norm(r_prim_full):.3e}")
+			print(f"  ||b - C*d||          = {np.linalg.norm(r_dual):.3e}")
+		
+		return d

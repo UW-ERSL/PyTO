@@ -143,7 +143,6 @@ while True:
         nGroups =  min(dsolver.maxGroups,max(dsolver.minGroups,round(3*mesh.num_nodes/dsolver.dofPerGroup)))
         dsolver.create_deflation_groups(mesh, nGroups)
         dsolver.create_deflation_matrix(mesh)
-        dsolver.W = dsolver.W[bc.free_dofs, :]
 
         fe_solver = HexStructuralFEA(mesh = mesh,
                     mat_prop = mat_prop,

@@ -153,7 +153,7 @@ def solve(A0: spy_sprs.coo_matrix,
 
   if (bc.constraint_matrix is None): # No Lagrange multipliers, eliminate fixed DOFs
     A, b = bound_cond.impose_dirichlet_bc(A0.tocsr(), b0, bc)
-
+    
     if solver == Solvers.SPSOLVE:
       x = spy_linalg.spsolve(A, b) # very slow for large problems
     elif solver == Solvers.SPLU:
@@ -176,11 +176,12 @@ def solve(A0: spy_sprs.coo_matrix,
 
     elif solver == Solvers.DPCG:
       dsolver = kwargs['dsolver']
+      W = dsolver.W[bc.free_dofs, :]
       rtol = kwargs.get('rtol', DEFAULT_TOL) # for iterative solvers
       M = _jacobi_preconditioner(A)
       x = dsolver.deflatedPCG(A,
                               b,
-                              W = dsolver.W,
+                              W = W,
                               M = M,
                               rtol = rtol)
 
@@ -194,33 +195,32 @@ def solve(A0: spy_sprs.coo_matrix,
     u[bc.fixed_dofs] = bc.dirichlet_values
     u[bc.free_dofs] = x
     return u
-  else:
+  
+  else: # constraints with Lagrange multipliers
     if solver == Solvers.PARDISO:
-     
       # When using Lagrange multipliers, we do not eliminate any DOFs
-      # Use Lagrange multipliers to impose the constraints
       num_constraints = bc.constraint_matrix.shape[0]
       num_dofs = A0.shape[0]
-      # Build blocks separately and use scipy's hstack/vstack for efficiency
-      top_row = spy_sprs.hstack([A0, bc.constraint_matrix.T])
-      bottom_row = spy_sprs.hstack([bc.constraint_matrix, spy_sprs.csr_matrix((num_constraints, num_constraints))])
-      A_modified = spy_sprs.vstack([top_row, bottom_row]).tolil()
-      b_modified = np.zeros(num_dofs + num_constraints)
-      b_modified[:num_dofs] = b0
-      b_modified[num_dofs:] = bc.constraint_rhs
-      # We can only use Pardiso for this case
-
-      sol = pypardiso.spsolve(A_modified.tocsr(), np.array(b_modified))
+      
+      # Build directly as CSR (avoid expensive tolil conversion)
+      top_row = spy_sprs.hstack([A0, bc.constraint_matrix.T], format='csr')
+      bottom_row = spy_sprs.hstack([bc.constraint_matrix, spy_sprs.csr_matrix((num_constraints, num_constraints))], format='csr')
+      A_modified = spy_sprs.vstack([top_row, bottom_row], format='csr')
+      
+      # Build RHS directly
+      b_modified = np.concatenate([b0, bc.constraint_rhs])
+      
+      # Solve
+      sol = pypardiso.spsolve(A_modified, b_modified)
       pypardiso.ps.free_memory()
 
-      u = np.zeros(b0.shape)
-      u[:num_dofs] = sol[:num_dofs]
-      # Lagrange multipliers are in sol[num_dofs:], if needed they can be returned
-      return u
+      # Extract displacement part
+      return sol[:num_dofs]
     elif solver == Solvers.DPCG:
       dsolver = kwargs['dsolver']
       rtol = kwargs.get('rtol', DEFAULT_TOL) # for iterative solvers
       M = _jacobi_preconditioner(A0)
+      
       x = dsolver.deflatedPCG_with_LagrangeMultipliers(
                               A0,
                               b0,
