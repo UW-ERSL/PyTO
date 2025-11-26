@@ -16,7 +16,7 @@ def runTOMethodOnStructuralBenchmarks(optimizationMethod):
 	binarize_topology = True  # Set to True if you want to binarize the topology for MMA/OCM method
 	results_list = []
 	dsolver = deflation.DeflationSolver()
-
+	feaMode = FEA_MODE.STRUCTURAL
 	benchmarks_2_5D_problems = [StructuralTOExamples.Mitchell_1, 
 							StructuralTOExamples.Mitchell_2,
 							StructuralTOExamples.Mitchell_3, 
@@ -92,22 +92,22 @@ def runTOMethodOnStructuralBenchmarks(optimizationMethod):
 					elem_body_force = elem_body_force)
 		
 		if optimizationMethod == TO_METHODS.DENSITYMMA:
-			u, history,success,errorMsg,nFEAs = topopt_mma(fe_solver = fe_solver,binarize_topology = binarize_topology,
+			u, history,success,errorMsg,nFEAs = topopt_mma(feaMode, fe_solver,None,binarize_topology = binarize_topology,
 									to_params = to_params,print_progress = print_progress)
 		elif optimizationMethod == TO_METHODS.DENSITYOCM:
 			if to_problem in benchmarks_noncompliance_problems:
 				continue
-			u, history, success,errorMsg,nFEAs = topopt_optimality_criteria(fe_solver = fe_solver,binarize_topology = binarize_topology,
+			u, history, success,errorMsg,nFEAs = topopt_optimality_criteria(feaMode,  fe_solver,binarize_topology = binarize_topology,
 											to_params = to_params,print_progress = print_progress)
 		elif optimizationMethod == TO_METHODS.PARETO:
 			if to_problem in benchmarks_noncompliance_problems:
 				continue
-			u, history, success,errorMsg,nFEAs = topopt_pareto(fe_solver = fe_solver,
+			u, history, success,errorMsg,nFEAs = topopt_pareto(feaMode, fe_solver,
 													to_params = to_params,print_progress = print_progress)
 		elif optimizationMethod == TO_METHODS.LEVELSET:
 			if to_problem in benchmarks_noncompliance_problems:
 				continue
-			u, history, success,errorMsg,nFEAs = topopt_levelset(fe_solver = fe_solver,
+			u, history, success,errorMsg,nFEAs = topopt_levelset(feaMode, fe_solver = fe_solver,
 													to_params = to_params)
 		timeTaken = time.time() - startTime
 
@@ -334,7 +334,7 @@ def combine_results():
 if __name__ == "__main__":    
 	
 	optimizationMethods = [TO_METHODS.DENSITYMMA, TO_METHODS.DENSITYOCM,TO_METHODS.PARETO]
-	for optimizationMethod in optimizationMethods:
+	for optimizationMethod in [TO_METHODS.DENSITYOCM,TO_METHODS.PARETO]:
 		runTOMethodOnStructuralBenchmarks(optimizationMethod)
 		print(f"Finished {optimizationMethod.name} tests.")
 		print("-" * 50)

@@ -3,7 +3,7 @@ import time
 import numpy as np
 from topopt_obj_cons_sensitivities import *
 
-def topopt_pareto(fe_solver,
+def topopt_pareto(feaMode,fe_solver,
 				  to_params,
 							rel_err: float = 0.025,
 							vol_decr_max: float = 0.05,
@@ -95,7 +95,7 @@ def topopt_pareto(fe_solver,
 	nFEAs = 1
 	
 
-	obj, T,compliance0 = compute_objective_topological_sensitivity_compliance(to_params,sol,x, fe_solver,KE)
+	obj, T,compliance0 = compute_objective_topological_sensitivity_compliance(feaMode,to_params,sol,x, fe_solver,KE)
 	obj0 = obj
 	T = T/obj0
 	J = obj
@@ -202,7 +202,7 @@ def topopt_pareto(fe_solver,
 			fe_solver.postprocess()
 
 			nFEAs += 1
-			obj, TTemp,compliance = compute_objective_topological_sensitivity_compliance(to_params,sol,x, fe_solver,KE)
+			obj, TTemp,compliance = compute_objective_topological_sensitivity_compliance(feaMode,to_params,sol,x, fe_solver,KE)
 			TTemp = TTemp/obj0
 			JTemp = obj  # Update current objective value
 			if (to_params.Objective[0] == TO_QOI.COMPLIANCE):
@@ -276,12 +276,14 @@ if __name__ == "__main__":
 	
 	print("-" * 50)
 	to_problem = StructuralTOExamples.Mitchell_3 # Choose the TO problem
-	#to_problem = ThermalTOExamples.BridgeThermal # Choose the TO problem
+	to_problem = ThermalTOExamples.FourCornersThermal # Choose the TO problem
 
 	if (to_problem in StructuralTOExamples):
 		mesh, mat_prop, bc,elem_body_force, to_params = getStructuralTOProblem(to_problem)
+		feaMode = FEA_MODE.STRUCTURAL
 	elif (to_problem in ThermalTOExamples):
 		mesh, mat_prop, bc,elem_body_force, to_params = getThermalTOProblem(to_problem)
+		feaMode = FEA_MODE.THERMAL
 
 	print(f"Running {to_problem.name}...") 
 	print("-" * 50)
@@ -329,7 +331,7 @@ if __name__ == "__main__":
 	startTime = time.time()
 
 	print("OptimizationMethod: Pareto")
-	sol, history, success,errorMsg,nFEAs = topopt_pareto(fe_solver = fe_solver,
+	sol, history, success,errorMsg,nFEAs = topopt_pareto(feaMode,fe_solver = fe_solver,
 									to_params = to_params,
 									plot_progress= plot_progress,
 									debug = debug)

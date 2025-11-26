@@ -22,6 +22,11 @@ class TO_METHODS(enum.Enum):
 	PARETO = enum.auto()
 	LEVELSET = enum.auto()
 
+class FEA_MODE(enum.Enum):
+	STRUCTURAL = enum.auto()
+	THERMAL = enum.auto()
+	THERMO_STRUCTURAL = enum.auto()
+
 class TO_QOI(enum.Enum): # Topology optimization; Various Quantity of Interest
 	VOLUME_FRACTION = enum.auto() # Volume fraction
 	VOLUME = enum.auto() # Volume total

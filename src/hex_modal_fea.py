@@ -42,8 +42,8 @@ class ModalFEA:
                     elem_stiff.hex8_mass_matrix_structural(mat_prop.mass_density, mesh.elem_size))
 
     self.node_idx = np.stack((
-                      np.kron(self.mesh.edofMat, np.ones((24, 1))).flatten(),
-                      np.kron(self.mesh.edofMat, np.ones((1, 24))).flatten())
+                      np.kron(self.mesh.edofMatStructural, np.ones((24, 1))).flatten(),
+                      np.kron(self.mesh.edofMatStructural, np.ones((1, 24))).flatten())
                       ).T.astype(int)
   
   def computeEigenModes(self,

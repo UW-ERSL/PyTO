@@ -54,7 +54,7 @@ def compute_compliance(sol: np.ndarray, x: np.ndarray,
 	return compliance
 	
 
-def compute_compliance_and_gradient(sol: np.ndarray, x: np.ndarray,
+def compute_compliance_and_gradient(feaMode: FEA_MODE, sol: np.ndarray, x: np.ndarray,
 				fe_solver, KE,
 				material_model = None) -> np.ndarray:
 	"""Compute the  compliance objective.
@@ -66,7 +66,10 @@ def compute_compliance_and_gradient(sol: np.ndarray, x: np.ndarray,
 
 	Returns: The compliance objective value.
 	"""
-	dofMat = fe_solver.mesh.edofMat
+	if (feaMode == FEA_MODE.STRUCTURAL):
+		dofMat = fe_solver.mesh.edofMatStructural
+	elif (feaMode == FEA_MODE.THERMAL):
+		dofMat = fe_solver.mesh.edofMatThermal
 	num_elems = fe_solver.mesh.num_elems
 	nRows = KE.shape[0]
 	ce = (np.dot(sol[dofMat].reshape(num_elems, nRows), KE) * sol[dofMat].reshape(num_elems, nRows)).sum(1)
@@ -159,8 +162,9 @@ def compute_pnorm_stress_and_sensitivity(sol: np.ndarray, x, fe_solver, KE, mate
     # Compute T1 (direct sensitivity)
     beta = np.zeros(nelems)
     x = np.maximum(x, 1e-12) # avoid division by zero
+	
     for e in range(nelems):
-        edof = mesh.edofMat[e]
+        edof = mesh.edofMatStructural[e]
         u_e = sol[edof]
         beta[e] = qStress * (x[e]**(qStress-1)) * (vm_elems[e]**(p-1)) * DvmDs_all[e] @ D @ B @ u_e
     
@@ -227,13 +231,13 @@ def compute_solution_dotproduct_and_gradient(sol: np.ndarray, x,fe_solver,KE,mat
 		compliance_grad = get_thermal_material_model_sensitivity(x,material_model) * ce
 	return obj, compliance_grad
 	
-def compute_objective_and_gradient(to_params, sol: np.ndarray, x: np.ndarray,	fe_solver, KE,
+def compute_objective_and_gradient(feaMode: FEA_MODE, to_params, sol: np.ndarray, x: np.ndarray,	fe_solver, KE,
 				material_model = None) -> tuple:
 							
 	objectiveType  = to_params.Objective[0]	# first entry is the type of objective
 	optionalParam = to_params.Objective[1] # second entry is an optional parameter	
 	if (objectiveType == TO_QOI.COMPLIANCE): 
-		compliance, compliance_grad = compute_compliance_and_gradient(sol, x, fe_solver, KE, material_model)
+		compliance, compliance_grad = compute_compliance_and_gradient(feaMode, sol, x, fe_solver, KE, material_model)
 		return compliance, compliance_grad
 	elif (objectiveType == TO_QOI.VOLUME_FRACTION):
 		volfracObj = np.mean(x)
@@ -258,7 +262,7 @@ def compute_objective_and_gradient(to_params, sol: np.ndarray, x: np.ndarray,	fe
 		raise NotImplementedError(f"Objective {objectiveType} is not implemented yet.")
 
 
-def compute_constraint_and_gradient(to_params, sol: np.ndarray, x: np.ndarray,	fe_solver, KE,
+def compute_constraint_and_gradient(feaMode: FEA_MODE, to_params, sol: np.ndarray, x: np.ndarray,	fe_solver, KE,
 				material_model = None) -> tuple:
 	
 	nConstraints = len(to_params.Constraints)
@@ -316,12 +320,16 @@ compute_constraint_and_gradient.stress_scaling = 1.0
 
 ###########################################
 
-def compute_objective_topological_sensitivity_compliance(to_params, sol: np.ndarray, x: np.ndarray,	fe_solver, KE,
+def compute_objective_topological_sensitivity_compliance(feaMode: FEA_MODE,to_params, sol: np.ndarray, x: np.ndarray,	fe_solver, KE,
 				material_model = None):
 	
 	
 	# Compute the compliance independent of objective
-	dofMat = fe_solver.mesh.edofMat
+	if (feaMode == FEA_MODE.STRUCTURAL):
+		dofMat = fe_solver.mesh.edofMatStructural
+	elif (feaMode == FEA_MODE.THERMAL):
+		dofMat = fe_solver.mesh.edofMatThermal
+	
 	num_elems = fe_solver.mesh.num_elems
 	nRows = KE.shape[0]
 	ce = (np.dot(sol[dofMat].reshape(num_elems, nRows), KE) * sol[dofMat].reshape(num_elems, nRows)).sum(1)

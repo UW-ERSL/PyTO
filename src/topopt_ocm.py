@@ -5,7 +5,8 @@ from topopt_obj_cons_sensitivities import *
 import time
 
 def topopt_optimality_criteria(
-							fe_solver, #hex_structural_fea.HexStructuralFEA or hex_thermal_fea.HexThermalFEA
+							feaMode,
+							fe_solver,
 							to_params,
 			  				maxIterations: int = 250,
 							move: float = 0.2,
@@ -105,7 +106,7 @@ def topopt_optimality_criteria(
 		
 		sol = fe_solver.solve(x, material_model)
 		fe_solver.postprocess()
-		obj, grad_obj = compute_objective_and_gradient(to_params,sol,x, fe_solver,KE, material_model)
+		obj, grad_obj = compute_objective_and_gradient(feaMode,to_params,sol,x, fe_solver,KE, material_model)
 
 		if (len(history['objective']) == 0):
 			objScaling = abs(obj)
@@ -209,7 +210,7 @@ def topopt_optimality_criteria(
 		fe_solver.mesh.setPseudoDensity(x.flatten())
 		volfrac = np.mean(x)
 	sol = fe_solver.solve(x, material_model)
-	obj, grad_obj = compute_objective_and_gradient(to_params,sol,x, fe_solver,KE, material_model)
+	obj, grad_obj = compute_objective_and_gradient(feaMode,to_params,sol,x, fe_solver,KE, material_model)
 
 	history['objective'].append(obj)
 	history['volfrac'].append(volfrac)
@@ -235,8 +236,10 @@ if __name__ == "__main__":
 
 	if (to_problem in StructuralTOExamples):
 		mesh, mat_prop, bc,elem_body_force, to_params = getStructuralTOProblem(to_problem)
+		feaMode = FEA_MODE.STRUCTURAL
 	elif (to_problem in ThermalTOExamples):
 		mesh, mat_prop, bc,elem_body_force, to_params = getThermalTOProblem(to_problem)
+		feaMode = FEA_MODE.THERMAL
 
 	print(f"Running {to_problem.name}...") 
 	print("-" * 50)
@@ -280,7 +283,7 @@ if __name__ == "__main__":
 	startTime = time.time()		
 	
 	print("OptimizationMethod: OC")
-	sol, history, success,errorMsg,nFEAs = topopt_optimality_criteria(fe_solver = fe_solver,
+	sol, history, success,errorMsg,nFEAs = topopt_optimality_criteria(feaMode,fe_solver = fe_solver,
 											to_params = to_params,
 											plot_progress = True,
 											debug = debug)

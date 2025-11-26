@@ -14,6 +14,7 @@ def runTOMethodOnThermalBenchmarks(optimizationMethod):
 	results_list = []
 	dsolver = deflation.DeflationSolver()
  
+	feaMode = FEA_MODE.THERMAL
 
 	benchmarks_2_5D_problems = [ThermalTOExamples.HeatPlate, ThermalTOExamples.FourCornersThermal,
 							 ThermalTOExamples.BridgeThermal]	
@@ -49,16 +50,16 @@ def runTOMethodOnThermalBenchmarks(optimizationMethod):
 					elem_body_force = elem_body_force)
 		
 		if optimizationMethod == TO_METHODS.DENSITYMMA:
-			u, history,success,errorMsg,nFEAs = topopt_mma(fe_solver = fe_solver,
+			u, history,success,errorMsg,nFEAs = topopt_mma(feaMode,None,fe_solver,
 									to_params = to_params,print_progress = print_progress)
 		elif optimizationMethod == TO_METHODS.DENSITYOCM:
-			u, history, success,errorMsg,nFEAs = topopt_optimality_criteria(fe_solver = fe_solver,
+			u, history, success,errorMsg,nFEAs = topopt_optimality_criteria(feaMode, fe_solver,
 											to_params = to_params,print_progress = print_progress)
 		elif optimizationMethod == TO_METHODS.PARETO:
-			u, history, success,errorMsg,nFEAs = topopt_pareto(fe_solver = fe_solver,
+			u, history, success,errorMsg,nFEAs = topopt_pareto(feaMode, fe_solver,
 													to_params = to_params,print_progress = print_progress)
 		elif optimizationMethod == TO_METHODS.LEVELSET:
-			u, history, success,errorMsg,nFEAs = topopt_levelset(fe_solver = fe_solver,
+			u, history, success,errorMsg,nFEAs = topopt_levelset(feaMode, fe_solver,
 													to_params = to_params,print_progress = print_progress)
 		timeTaken = time.time() - startTime
 		# Create the directory if it does not exist
@@ -276,7 +277,7 @@ def combine_results():
 if __name__ == "__main__":    
 	
 	optimizationMethods = [TO_METHODS.DENSITYMMA, TO_METHODS.DENSITYOCM, TO_METHODS.PARETO]
-	for optimizationMethod in [TO_METHODS.PARETO]:
+	for optimizationMethod in optimizationMethods:
 		runTOMethodOnThermalBenchmarks(optimizationMethod)
 		print(f"Finished {optimizationMethod.name} tests.")
 		print("-" * 50)

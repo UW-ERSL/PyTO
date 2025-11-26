@@ -223,7 +223,7 @@ while True:
     
         structural_solver.solve()
         structural_solver.postprocess()
-        expectedDeformation = L*mat_prop.thermal_expansion*deltaTExpected + tensileForce*L/(mat_prop.youngs_modulus*Area)
+        expectedDeformation = L*mat_prop.thermal_expansion_coefficient*deltaTExpected + tensileForce*L/(mat_prop.youngs_modulus*Area)
         expectedStress = tensileForce/Area
         print('-----------------------------')
         print("Expected max temperature change: ",deltaTExpected + T0 )
@@ -234,6 +234,7 @@ while True:
         structural_solver.plot_deformation(show_geometry=True)
         structural_solver.plot_vonMisesStress()   
     elif demo == pyTODemos.HexStructuralTO_DensityMMA:
+        feaMode = FEA_MODE.STRUCTURAL
         to_problem = StructuralTOExamples.Mitchell_1 # Choose the TO problem
         solver = Solvers.PARDISO # # Choose solver. Typically PARDISO, but DPCG for DOF > 200,000
         # Get the structural problem
@@ -246,7 +247,7 @@ while True:
    
         title = f'nDOF: {3*fe_solver.mesh.num_nodes}, nElem: {fe_solver.mesh.num_elems}'
         startTime = time.time()
-        u, history,success,errorMsg,nFEAs = topopt_mma(fe_solver = fe_solver,plot_progress=True,
+        u, history,success,errorMsg,nFEAs = topopt_mma(feaMode, fe_solver,None,plot_progress=True,
                                     to_params = to_params)
         timeTaken = time.time() - startTime
 
@@ -284,6 +285,7 @@ while True:
 
         # Save the mesh and results
     elif demo == pyTODemos.HexStructuralTO_DensityOC:
+        feaMode = FEA_MODE.STRUCTURAL
         to_problem = StructuralTOExamples.Mitchell_2 # Choose the TO problem
         solver = Solvers.PARDISO #
         # Get the structural problem
@@ -296,8 +298,8 @@ while True:
         
         title = f'nDOF: {3*fe_solver.mesh.num_nodes}, nElem: {fe_solver.mesh.num_elems}'
         startTime = time.time()
-        u, history, success,errorMsg,nFEAs = topopt_optimality_criteria(fe_solver = fe_solver,plot_progress=True,
-                                                to_params = to_params)
+        u, history, success,errorMsg,nFEAs = topopt_optimality_criteria(feaMode, fe_solver,to_params,plot_progress=True,
+                                            )
         timeTaken = time.time() - startTime
         title = f"OC: nDOF: {3*fe_solver.mesh.num_nodes}, vol: {history['volfrac'][-1]:0.2f}, J: {history['objective'][-1]:.3g}, time: {timeTaken:.0f} s"
 
@@ -332,11 +334,12 @@ while True:
         fe_solver.plot_mesh(title = title)
 
     elif demo == pyTODemos.HexStructuralTO_Pareto:
+        feaMode = FEA_MODE.STRUCTURAL
         to_problem = StructuralTOExamples.Mitchell_3
         mesh, mat_prop, bc,elem_body_force, to_params = getStructuralTOProblem(to_problem)
         
         fe_solver = HexStructuralFEA(mesh=mesh, mat_prop=mat_prop, solver= Solvers.PARDISO, bc=bc)
-        u, history, success,errorMsg,nFEAs = topopt_pareto(fe_solver=fe_solver,to_params=to_params,plot_progress=True)
+        u, history, success,errorMsg,nFEAs = topopt_pareto(feaMode, fe_solver,to_params=to_params,plot_progress=True)
         plt.figure()
         plt.plot(history['volfrac'], history['objective'], marker='o')
         plt.xlabel('Volume Fraction')
@@ -348,6 +351,7 @@ while True:
             print(f"Error: {errorMsg}")
         fe_solver.plot_mesh()
     elif demo == pyTODemos.HexThermalTO_DensityMMA:
+        feaMode = FEA_MODE.THERMAL
         to_problem = ThermalTOExamples.FourCornersThermal # Choose the TO problem
         solver = Solvers.PARDISO # # Choose solver. Typically PARDISO, but DPCG for DOF > 200,000
   
@@ -360,7 +364,7 @@ while True:
    
         title = f'nDOF: {fe_solver.mesh.num_nodes}, nElem: {fe_solver.mesh.num_elems}'
         startTime = time.time()
-        u, history,success,errorMsg,nFEAs = topopt_mma(fe_solver = fe_solver,plot_progress=True,
+        u, history,success,errorMsg,nFEAs = topopt_mma(feaMode, None, fe_solver,plot_progress=True,
                                     to_params = to_params)
         timeTaken = time.time() - startTime
 
@@ -398,6 +402,7 @@ while True:
 
         # Save the mesh and results
     elif demo == pyTODemos.HexThermalTO_DensityOC:
+        feaMode = FEA_MODE.THERMAL
         to_problem = ThermalTOExamples.FourCornersThermal # Choose the TO problem
         solver = Solvers.PARDISO #
         # Get the structural problem
@@ -410,7 +415,7 @@ while True:
         
         title = f'nDOF: {fe_solver.mesh.num_nodes}, nElem: {fe_solver.mesh.num_elems}'
         startTime = time.time()
-        u, history, success,errorMsg,nFEAs = topopt_optimality_criteria(fe_solver = fe_solver,plot_progress=True,
+        u, history, success,errorMsg,nFEAs = topopt_optimality_criteria(feaMode, None,fe_solver,plot_progress=True,
                                                 to_params = to_params)
         timeTaken = time.time() - startTime
         title = f"OC: nDOF: {fe_solver.mesh.num_nodes}, vol: {history['volfrac'][-1]:0.2f}, J: {history['objective'][-1]:.3g}, time: {timeTaken:.0f} s"
@@ -446,11 +451,12 @@ while True:
         fe_solver.plot_mesh(title = title)
 
     elif demo == pyTODemos.HexThermalTO_Pareto:
+        feaMode = FEA_MODE.THERMAL
         to_problem = ThermalTOExamples.FourCornersThermal
         mesh, mat_prop, bc,elem_body_force, to_params = getThermalTOProblem(to_problem)
         
         fe_solver = HexThermalFEA(mesh=mesh, mat_prop=mat_prop, solver= Solvers.PARDISO, bc=bc)
-        u, history, success,errorMsg,nFEAs = topopt_pareto(fe_solver=fe_solver,to_params=to_params,plot_progress=True)
+        u, history, success,errorMsg,nFEAs = topopt_pareto(feaMode, None, fe_solver,to_params=to_params,plot_progress=True)
         plt.figure()
         plt.plot(history['volfrac'], history['objective'], marker='o')
         plt.xlabel('Volume Fraction')
