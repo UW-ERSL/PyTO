@@ -45,8 +45,8 @@ class HexStructuralFEA:
 
    
     self.node_idx = np.stack((
-            np.kron(self.mesh.edofMat, np.ones((24, 1))).flatten(),
-            np.kron(self.mesh.edofMat, np.ones((1, 24))).flatten())
+            np.kron(self.mesh.edofMatStructural, np.ones((24, 1))).flatten(),
+            np.kron(self.mesh.edofMatStructural, np.ones((1, 24))).flatten())
             ).T.astype(int)
     self.elem_body_force = elem_body_force
 
@@ -177,7 +177,7 @@ class HexStructuralFEA:
       for i in range(3):
         gradN[i, :] = 2*gradN[i,:] / self.mesh.elem_size[i]
       # Get element degrees of freedom
-      edof = self.mesh.edofMat
+      edof = self.mesh.edofMatStructural
       # Compute displacement gradients
       uGrad = gradN @ self.sol[edof[:, ::3]].T
       vGrad = gradN @ self.sol[edof[:, 1::3]].T

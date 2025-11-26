@@ -16,7 +16,7 @@ class Material:
     mass_density: Mass density of material in [kg/m^3].
     thermal_conductivity: The thermal conductivity of the material [W/mK].
     specific_heat: The specific heat of the material [J/kgK].
-    thermal_expansion: Coefficient of thermal expansion [1/K].
+    thermal_expansion_coefficient: Coefficient of thermal expansion [1/K].
     cost: Cost per kg in USD [$/kg].
     yield_strength: Yield strength of material [Pa].
   """
@@ -26,7 +26,7 @@ class Material:
   mass_density: float
   thermal_conductivity: float
   specific_heat: float
-  thermal_expansion: float
+  thermal_expansion_coefficient: float
   cost: float
   yield_strength: float
 
@@ -39,7 +39,7 @@ materials = [
     mass_density=7850,
     thermal_conductivity=50,
     specific_heat=500,
-    thermal_expansion=12e-6,
+    thermal_expansion_coefficient=12e-6,
     cost=1.0,
     yield_strength=250e6
   ),
@@ -50,7 +50,7 @@ materials = [
     mass_density=7790,
     thermal_conductivity=50,
     specific_heat=500,
-    thermal_expansion=12e-6,
+    thermal_expansion_coefficient=12e-6,
     cost=1.0,
     yield_strength=1120e6
   ),
@@ -61,7 +61,7 @@ materials = [
     mass_density=8000,
     thermal_conductivity=50,
     specific_heat=500,
-    thermal_expansion=12e-6,
+    thermal_expansion_coefficient=12e-6,
     cost=1.0,
     yield_strength=384e6
   ),
@@ -72,7 +72,7 @@ materials = [
     mass_density=2700,
     thermal_conductivity=237,
     specific_heat=900,
-    thermal_expansion=23e-6,
+    thermal_expansion_coefficient=23e-6,
     cost=2.7,
     yield_strength=95e6
   ),
@@ -83,7 +83,7 @@ materials = [
     mass_density=2710,
     thermal_conductivity=237,
     specific_heat=900,
-    thermal_expansion=23e-6,
+    thermal_expansion_coefficient=23e-6,
     cost=2.7,
     yield_strength=414e6
   ),
@@ -94,7 +94,7 @@ materials = [
     mass_density=8960,
     thermal_conductivity=398,
     specific_heat=385,
-    thermal_expansion=17e-6,
+    thermal_expansion_coefficient=17e-6,
     cost=7.0,
     yield_strength=70e6
   ),
@@ -105,7 +105,7 @@ materials = [
     mass_density=4500,
     thermal_conductivity=21.9,
     specific_heat=520,
-    thermal_expansion=8.6e-6,
+    thermal_expansion_coefficient=8.6e-6,
     cost=35.0,
     yield_strength=880e6
   ),
@@ -116,7 +116,7 @@ materials = [
     mass_density=7620,
     thermal_conductivity=21.9,
     specific_heat=520,
-    thermal_expansion=8.6e-6,
+    thermal_expansion_coefficient=8.6e-6,
     cost=4.0,
     yield_strength=880e6
   )

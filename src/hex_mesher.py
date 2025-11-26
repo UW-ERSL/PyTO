@@ -869,10 +869,10 @@ class HexMesher:
 	
 	def createEdofMatStructural(self):
 		self.dofs_per_node = 3 # structural
-		self.edofMat = np.zeros((self.num_elems, 24), dtype = int)
+		self.edofMatStructural = np.zeros((self.num_elems, 24), dtype = int)
 		elemArray= self.elemArray
 		for el in range(self.num_elems):
-			self.edofMat[el, :] = np.array([
+			self.edofMatStructural[el, :] = np.array([
 				3*elemArray[el][0], 3*elemArray[el][0]+1, 3*elemArray[el][0]+2,
 				3*elemArray[el][1], 3*elemArray[el][1]+1, 3*elemArray[el][1]+2,
 				3*elemArray[el][2], 3*elemArray[el][2]+1, 3*elemArray[el][2]+2,
@@ -909,10 +909,10 @@ class HexMesher:
 	
 	def createEdofMatThermal(self):
 		self.dofs_per_node = 1
-		self.edofMat = np.zeros((self.num_elems, 8), dtype = int)
+		self.edofMatThermal = np.zeros((self.num_elems, 8), dtype = int)
 		elemArray= self.elemArray
 		for el in range(self.num_elems):
-			self.edofMat[el, :] = np.array([
+			self.edofMatThermal[el, :] = np.array([
 				elemArray[el][0], 
 				elemArray[el][1],
 				elemArray[el][2], 

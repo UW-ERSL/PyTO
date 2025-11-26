@@ -6,6 +6,7 @@ SIMP_PENALTY_MIN = 1 # Min Penalization factor for SIMP method
 SIMP_PENALTY_MAX = 3.0 # Max Penalization factor for SIMP method
 
 SIMP_PENALTY = 3  # Default penalization factor for SIMP method
+SIMP_THERMAL_PENALTY = 1  # Default penalization factor for SIMP method - thermal
 # For large DOF problems, we encounters numerical issues for smaller values of EVOID_RELATIVE
 
 EVOID_RELATIVE = 1e-8  # Minimum Young's modulus for void elements
@@ -83,11 +84,11 @@ def get_thermal_material_model_scaling(x: np.ndarray, material_model: MaterialMo
 	if material_model is None:
 		return x
 	elif material_model == MaterialModel.SIMP:
-		return (KVOID_RELATIVE + (x**SIMP_PENALTY)*(1 - KVOID_RELATIVE))  # SIMP model
+		return (KVOID_RELATIVE + (x**SIMP_THERMAL_PENALTY)*(1 - KVOID_RELATIVE))  # SIMP model
 	elif material_model == MaterialModel.RAMP:
 		return (KVOID_RELATIVE + x*(1-KVOID_RELATIVE) / (1 + (1 - x) * RAMP_PENALTY))  # RAMP model
 	elif material_model == MaterialModel.SIMPPLUS:
-		y1 = (KVOID_RELATIVE + (x**SIMP_PENALTY)*(1 - KVOID_RELATIVE))
+		y1 = (KVOID_RELATIVE + (x**SIMP_THERMAL_PENALTY)*(1 - KVOID_RELATIVE))
 		y2 = KVOID_RELATIVE*x
 		return (y1+y2)/2
 	raise ValueError("Invalid material model specified.")	
@@ -127,11 +128,11 @@ def get_thermal_material_model_sensitivity(x: np.ndarray, material_model: Materi
 	if material_model is None:
 		return np.ones_like(x)
 	elif material_model == MaterialModel.SIMP:
-		return (SIMP_PENALTY*(x**(SIMP_PENALTY-1))*(1 - KVOID_RELATIVE))  # SIMP model
+		return (SIMP_THERMAL_PENALTY*(x**(SIMP_THERMAL_PENALTY-1))*(1 - KVOID_RELATIVE))  # SIMP model
 	elif material_model == MaterialModel.RAMP:
 		return ((1-KVOID_RELATIVE) / (1 + (1 - x) * RAMP_PENALTY)**2) * (1 + RAMP_PENALTY * (1 - x))
 	elif material_model == MaterialModel.SIMPPLUS:
-		y1 = (SIMP_PENALTY*(x**(SIMP_PENALTY-1))*(1 - KVOID_RELATIVE))
+		y1 = (SIMP_THERMAL_PENALTY*(x**(SIMP_THERMAL_PENALTY-1))*(1 - KVOID_RELATIVE))
 		y2 = KVOID_RELATIVE
 		return (y1+y2)/2
 	else:			
