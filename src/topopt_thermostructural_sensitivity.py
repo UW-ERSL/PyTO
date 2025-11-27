@@ -12,7 +12,7 @@ import numpy as np
 import scipy.sparse as sp
 import linear_solvers
 from topopt_material_model import MaterialModel
-
+import bound_cond
 
 class ThermoElasticSensitivity:
     """Computes sensitivities for coupled thermo-elastic problems."""
@@ -34,7 +34,8 @@ class ThermoElasticSensitivity:
         self.structural_fea = structural_fea
         self.thermalMesh = thermal_fea.mesh
         self.structuralMesh = structural_fea.mesh
-        
+        if (structural_fea.mesh.num_elems != thermal_fea.mesh.num_elems):
+            raise ValueError("Structural and thermal meshes must have the same number of elements.")
         # Cache element stiffness matrices (solid material)
         self.ke_bar_structural = structural_fea.elem_stiff[0]  # 24x24
         self.kt_bar_thermal = thermal_fea.elem_stiff[0]  # 8x8
@@ -68,7 +69,7 @@ class ThermoElasticSensitivity:
         """
         Compute compliance sensitivity: dJ_S / dx_e
         
-        Uses J = (1/2) d^T K d (strain energy definition).
+        Uses J =  d^T K d (strain energy definition).
         
         The sensitivity includes three terms:
         1. Structural stiffness: -p * xi^(p-1) * (1/2) * d_e^T * ke_bar * d_e
@@ -101,7 +102,9 @@ class ThermoElasticSensitivity:
         """
         nelem = self.thermalMesh.num_elems
         dJdx = np.zeros(nelem)
-    
+        term1 = np.zeros(nelem)
+        term2 = np.zeros(nelem) 
+        term3 = np.zeros(nelem)
         
         # Step 1: Solve thermal adjoint equation
         # K_T^T * lambda_T = -sum_e (xi_e^p * E0 * alpha * H^T * d_e)
@@ -113,30 +116,30 @@ class ThermoElasticSensitivity:
             # Get element DOFs
             edof_s = self.structuralMesh.edofMatStructural[e, :]
             edof_t = self.thermalMesh.edofMatThermal[e, :]
-
-            d_e = d[edof_s]  # Total displacement (current)
-       
-            # Extract element vectors
-            d_e = d[edof_s]
+            d_e = d[edof_s]  # Total displacement
             T_e = T[edof_t]
             lambda_T_e = lambda_T[edof_t]
             
-            # Term 1: Direct structural stiffness contribution (strain energy with 1/2)
-            term1 = - p * x[e]**(p - 1) * d_e.T @ self.ke_bar_structural @ d_e
+            # Term 1: Direct structural stiffness contribution 
+            term1[e] = - p * x[e]**(p - 1) * d_e.T @ self.ke_bar_structural @ d_e
             
             # Term 2: Direct thermal force contribution
             T_diff = T_e - self.T_ref
-            term2 = 2* p * x[e]**(p - 1) *self.E0 * self.alpha * d_e.T @ self.H @ T_diff
-
+            term2[e] = 2* p * x[e]**(p - 1) *self.E0 * self.alpha * d_e.T @ self.H @ T_diff
             # Term 3: Adjoint thermal contribution
-            term3 = q * x[e]**(q - 1) * lambda_T_e.T @ self.kt_bar_thermal @ T_e
-            
+            #term3[e] = q * x[e]**(q - 1) * lambda_T_e.T @ self.kt_bar_thermal @ T_e
             k = self.mat_prop.thermal_conductivity  # Get this value
-            scaling_factor = k / (self.E0 * self.alpha)
-            term3 *= scaling_factor
-            # Total sensitivity (NOTE: Signs flipped from standard derivation - empirical correction)
-            dJdx[e] = term1 + term2 + term3
+            term3[e]  = q * x[e]**(q - 1)  * lambda_T_e.T @ self.kt_bar_thermal @ T_e
+
+
+            dJdx[e] = term1[e] + term2[e] + term3[e]
         
+        if verbose:
+            print("\nCompliance Sensitivity Computation:")
+            print(f"{'Elem':<6} {'Term1':<15} {'Term2':<15} {'Term3':<15} {'dJdx':<15}")
+            print("-" * 70)
+            for e in range(10):
+                print(f"{e:<6} {term1[e]:<15.6e} {term2[e]:<15.6e} {term3[e]:<15.6e} {dJdx[e]:<15.6e}")
         return dJdx
     
     def solve_thermal_adjoint(self,
@@ -192,13 +195,14 @@ class ThermoElasticSensitivity:
         # Get thermal stiffness matrix from thermal FEA
         # We need to assemble it with current design variables
         K_T = self.assemble_thermal_stiffness(x, q=1.0)
-        
+        bcAdjoint = bound_cond.BC(force = 0*self.thermal_fea.bc.force,fixed_dofs = self.thermal_fea.bc.fixed_dofs,
+                                  dirichlet_values = 0.0*self.thermal_fea.bc.dirichlet_values) 
         # Solve adjoint system
         lambda_T = linear_solvers.solve(
             K_T,
             rhs,
             solver,
-            self.thermal_fea.bc,
+            bcAdjoint,
             **self.thermal_fea.kwargs
         )
         

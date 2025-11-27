@@ -245,7 +245,7 @@ def getStructuralTOProblem(to_problem: StructuralTOExamples,nDOFDesired = None, 
         to_params.Comment  = "Thermoelastic"
         to_params.XSymmetry = True 
         to_params.ExtrudeZ = True
-        to_params.nDOFDesired = 50000 if nDOFDesired is None else nDOFDesired
+        to_params.nDOFDesired = 25000 if nDOFDesired is None else nDOFDesired
         to_params.Objective = (TO_QOI.COMPLIANCE, None)
         to_params.Constraints = [(TO_QOI.VOLUME_FRACTION, None, 0.25)]
 

@@ -31,20 +31,24 @@ def topopt_mma(feaMode: FEA_MODE, fe_structural_solver, fe_thermal_solver,
         else:
             print(msg)   
 
-    
+    # We set fe_solver as the primary solver based on the FEA mode. Simplifies code below.
     if (feaMode == FEA_MODE.STRUCTURAL):
         fe_solver = fe_structural_solver
+        mesh = fe_structural_solver.mesh
+        mat_prop = fe_structural_solver.mat_prop
         nDOFPerNode = 3
     elif (feaMode == FEA_MODE.THERMAL):
         fe_solver = fe_thermal_solver
+        mesh = fe_thermal_solver.mesh
+        mat_prop = fe_thermal_solver.mat_prop
         nDOFPerNode = 1
     elif (feaMode == FEA_MODE.THERMO_STRUCTURAL):
         fe_solver = fe_structural_solver  # primary solver is structural
         thermoElasticSensitivity = ThermoElasticSensitivity(fe_thermal_solver, fe_structural_solver)
-        nElemsStructural = fe_structural_solver.mesh.num_elems
-        nElemsThermal = fe_thermal_solver.mesh.num_elems
-        if (nElemsStructural != nElemsThermal):
-            raise ValueError("Structural and thermal meshes must have the same number of elements for thermo-structural optimization.")
+        if (fe_structural_solver.mesh.num_elems != fe_thermal_solver.mesh.num_elems):
+            raise ValueError("Structural and thermal meshes must have the same number of elements.")
+        mesh = fe_structural_solver.mesh
+        mat_prop = fe_structural_solver.mat_prop
         nDOFPerNode = 3
     else:
         raise ValueError("Either fe_structural_solver or fe_thermal_solver must be provided.")
@@ -52,7 +56,7 @@ def topopt_mma(feaMode: FEA_MODE, fe_structural_solver, fe_thermal_solver,
     material_model = MaterialModel.SIMP 
 
     tStart = time.time()
-    num_elems= fe_solver.mesh.num_elems
+    num_elems= mesh.num_elems
     
     history = {'objective': [] }
     for idx, constraint in enumerate(to_params.Constraints):
@@ -63,34 +67,34 @@ def topopt_mma(feaMode: FEA_MODE, fe_structural_solver, fe_thermal_solver,
         log_message("Computing Filters ...")
     [H,Hs] = createFilters(fe_solver, to_params)
 
-    elemsWithForces = find_elements_with_forces(fe_solver.mesh, fe_solver.bc.force,nDOFPerNode)
+    elemsWithForces = find_elements_with_forces(mesh, fe_solver.bc.force,nDOFPerNode)
    
     
-    if isinstance(fe_solver.mat_prop, list): # multiple materials
+    if isinstance(mat_prop, list): # multiple materials
         if feaMode in [FEA_MODE.STRUCTURAL, FEA_MODE.THERMO_STRUCTURAL]:
-            KE_list = [hex_element_stiffness.hex8_stiffness_matrix_structural( mp.youngs_modulus,mp.poissons_ratio,fe_solver.mesh.elem_size)
-                for mp in fe_solver.mat_prop]
+            KE_list = [hex_element_stiffness.hex8_stiffness_matrix_structural( mp.youngs_modulus,mp.poissons_ratio,mesh.elem_size)
+                for mp in mat_prop]
             KE = KE_list[0]
         elif feaMode == FEA_MODE.THERMAL:
-            KE_list = [hex_element_stiffness.hex8_stiffness_matrix_thermal( mp.thermal_conductivity,fe_solver.mesh.elem_size)
-                for mp in fe_solver.mat_prop]
+            KE_list = [hex_element_stiffness.hex8_stiffness_matrix_thermal( mp.thermal_conductivity,mesh.elem_size)
+                for mp in mat_prop]
             KE = KE_list[0]    
         log_message("Assuming all elements have the same material properties")
     else: # single material
         if feaMode in [FEA_MODE.STRUCTURAL, FEA_MODE.THERMO_STRUCTURAL]:
-            KE = hex_element_stiffness.hex8_stiffness_matrix_structural( fe_solver.mat_prop.youngs_modulus,
-                                                                fe_solver.mat_prop.poissons_ratio,
-                                                                fe_solver.mesh.elem_size)
+            KE = hex_element_stiffness.hex8_stiffness_matrix_structural( mat_prop.youngs_modulus,
+                                                                mat_prop.poissons_ratio,
+                                                                mesh.elem_size)
         elif feaMode == FEA_MODE.THERMAL:
-            KE = hex_element_stiffness.hex8_stiffness_matrix_thermal( fe_solver.mat_prop.thermal_conductivity,fe_solver.mesh.elem_size)
+            KE = hex_element_stiffness.hex8_stiffness_matrix_thermal(mat_prop.thermal_conductivity,mesh.elem_size)
     
     if (fe_solver.elem_body_force is not None):
         elem_force = fe_solver.elem_body_force.copy()
-        nNodes = fe_solver.mesh.num_nodes
+        nNodes = mesh.num_nodes
         nodal_body_force = np.zeros((nNodes * 3,))
-        nodal_body_force[0::3] = fe_solver.mesh.elem_to_node_field_mapping @ elem_force[0::3]
-        nodal_body_force[1::3] = fe_solver.mesh.elem_to_node_field_mapping @ elem_force[1::3]
-        nodal_body_force[2::3] = fe_solver.mesh.elem_to_node_field_mapping @ elem_force[2::3]
+        nodal_body_force[0::3] = mesh.elem_to_node_field_mapping @ elem_force[0::3]
+        nodal_body_force[1::3] = mesh.elem_to_node_field_mapping @ elem_force[1::3]
+        nodal_body_force[2::3] = mesh.elem_to_node_field_mapping @ elem_force[2::3]
     else:
         nodal_body_force = None
 
@@ -124,13 +128,16 @@ def topopt_mma(feaMode: FEA_MODE, fe_structural_solver, fe_thermal_solver,
         if (feaMode == FEA_MODE.THERMO_STRUCTURAL):
             # Solve thermal problem first
             temperature = fe_thermal_solver.solve(x,material_model)
-            thermo_elastic_force = fe_thermal_solver.get_thermoelastic_force()
+            thermo_elastic_force = fe_thermal_solver.get_thermoelastic_force(x,material_model)
             fe_solver.set_thermal_forces(thermo_elastic_force)
-            d = fe_solver.solve(x, material_model)
+            sol = fe_solver.solve(x, material_model) # structural solve
             fe_solver.postprocess()
-            obj = d.T @ fe_solver.stiff_mtrx @ d
-            grad_obj = thermoElasticSensitivity.compute_compliance_sensitivity(x, temperature, d)
-            c, dcdx = compute_constraint_and_gradient(feaMode,to_params,d,x, fe_solver,KE, material_model)
+            obj = sol.T @ fe_solver.stiff_mtrx @ sol
+            grad_obj = thermoElasticSensitivity.compute_compliance_sensitivity(x, temperature, sol,
+                                                                                p=3.0,  # structural penalty
+                                                                                q=1.0,  # thermal penalty
+                                                                                material_model=material_model)
+            c, dcdx = compute_constraint_and_gradient(feaMode,to_params,sol,x, fe_solver,KE, material_model)
         else:
             sol = fe_solver.solve(x, material_model)
             fe_solver.postprocess()
@@ -147,10 +154,9 @@ def topopt_mma(feaMode: FEA_MODE, fe_structural_solver, fe_thermal_solver,
         obj = obj/obj0 # normalize objective
         grad_obj = grad_obj/obj0 # normalize gradient
 
-        if (nodal_body_force is not None): # additional body force term
-            ce_body_force = (sol[fe_solver.mesh.edofMatStructural].reshape(num_elems, 24) * nodal_body_force[fe_solver.mesh.edofMatStructural].reshape(num_elems, 24)).sum(1)
+        if (nodal_body_force is not None): # additional body force term. Allowed for structural and thermo-structural problems only
+            ce_body_force = (sol[mesh.edofMatStructural].reshape(num_elems, 24) * nodal_body_force[mesh.edofMatStructural].reshape(num_elems, 24)).sum(1)
             grad_obj +=  2*ce_body_force*get_material_model_rho_sensitivity(x,material_model)
-
         if (to_params.APPLY_FILTER_TO_SENSITIVITY) and (to_params.Objective[0] is TO_QOI.COMPLIANCE):
             grad_obj = (H *(x*grad_obj))/Hs/x # apply weighted filter
         elif (to_params.APPLY_FILTER_TO_SENSITIVITY) and (to_params.Objective[0] is not TO_QOI.VOLUME_FRACTION):
@@ -212,21 +218,7 @@ def topopt_mma(feaMode: FEA_MODE, fe_structural_solver, fe_thermal_solver,
              progress_callback= progress_callback)
 
     x = np.asarray(xOptimal).flatten()
-    fe_solver.mesh.setPseudoDensity(x)  
-    sol = fe_solver.solve(x, material_model)  
-    obj, grad_obj = compute_objective_and_gradient(feaMode,to_params,sol,x, fe_solver,KE, material_model)
-    volfrac = np.mean(x)
-    # Find threshold that preserves volume fraction
-    
-    grey_elements = np.sum((x > 0.1) & (x < 0.9))
-    fraction_grey = (grey_elements / num_elems) 
-  
-    if (binarize_topology):
-        x_sorted = np.sort(x)
-        threshold = x_sorted[int((1-np.mean(x))*len(x))]
-        x = np.where(x < threshold, 0.0, 1.0)
 
-    fe_solver.mesh.setPseudoDensity(x)
     if (to_params.Eliminate_Hanging_Elements):
         # we must binarize for hanging element removal
         x_sorted = np.sort(x)
@@ -244,9 +236,34 @@ def topopt_mma(feaMode: FEA_MODE, fe_structural_solver, fe_thermal_solver,
             x[:] = 0.0
             x[list(largest_component)] = 1.0
             fe_solver.mesh.setPseudoDensity(x.flatten())
-    sol = fe_solver.solve(x, material_model)
-    obj, grad_obj = compute_objective_and_gradient(feaMode,to_params,sol,x, fe_solver,KE, material_model)
-    c, dcdx = compute_constraint_and_gradient(feaMode,to_params,sol,x, fe_solver,KE, material_model)
+    elif (binarize_topology):
+        x_sorted = np.sort(x)
+        threshold = x_sorted[int((1-np.mean(x))*len(x))]
+        x = np.where(x < threshold, 0.0, 1.0)
+
+    # Get objective and gradient computation once again
+    if (feaMode == FEA_MODE.THERMO_STRUCTURAL):
+        # Solve thermal problem first
+        temperature = fe_thermal_solver.solve(x,material_model)
+        thermo_elastic_force = fe_thermal_solver.get_thermoelastic_force(x,material_model)
+        fe_solver.set_thermal_forces(thermo_elastic_force)
+        sol = fe_solver.solve(x, material_model) # structural solve
+        fe_solver.postprocess()
+        obj = sol.T @ fe_solver.stiff_mtrx @ sol
+        grad_obj = thermoElasticSensitivity.compute_compliance_sensitivity(x, temperature, sol,
+                                                                                p=3.0,  # structural penalty
+                                                                                q=1.0,  # thermal penalty
+                                                                                material_model=material_model)
+        c, dcdx = compute_constraint_and_gradient(feaMode,to_params,sol,x, fe_solver,KE, material_model)
+    else:
+        fe_solver.mesh.setPseudoDensity(x)  
+        sol = fe_solver.solve(x, material_model)  
+        obj, grad_obj = compute_objective_and_gradient(feaMode,to_params,sol,x, fe_solver,KE, material_model)
+        c, dcdx = compute_constraint_and_gradient(feaMode,to_params,sol,x, fe_solver,KE, material_model)
+
+    grey_elements = np.sum((x > 0.1) & (x < 0.9))
+    fraction_grey = (grey_elements / num_elems) 
+
     history['objective'].append(obj)
     history['volfrac'].append(np.mean(x))
     for idx, val in enumerate(c.flatten()):
@@ -268,9 +285,9 @@ if __name__ == "__main__":
     print("-" * 50)
 
     # Choose the TO problem
-    #to_problem = StructuralTOExamples.TorquePlate 
-    #to_problem = ThermalTOExamples.BiClamp
-    to_problem = ThermoStructuralExamples.BiClamp
+    to_problem = StructuralTOExamples.BiClamp 
+    #to_problem = ThermalTOExamples.FourCornersThermal
+    #to_problem = ThermoStructuralExamples.BiClamp
 
     if (to_problem in StructuralTOExamples):
         mesh, mat_prop, bc,elem_body_force, to_params = getStructuralTOProblem(to_problem)

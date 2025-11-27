@@ -1626,7 +1626,7 @@ def createBeamSurfaceLoadProblem(nDOFDesired: int = 20000, L: float = [0.1, 0.01
   return mesh, mat_prop, bc, elem_body_force
   # ----------------------------------------
 
-def createBiClampProblem(nDOFDesired=50000, totalLoad = 1e5):
+def createBiClampProblem(nDOFDesired=25000, totalLoad = 1e5):
   stl_file = os.path.join(script_dir, '../Models/BiClamp/BiClamp.STL')
 
   mesh = hex_mesher.HexMesher()

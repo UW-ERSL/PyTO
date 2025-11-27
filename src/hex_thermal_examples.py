@@ -467,7 +467,7 @@ def createBliskWithBladeProblem(nDOFDesired: int = 10000, heat_load = 10, T0 = 2
   elem_body_force = None
   return mesh, mat_prop, bc, elem_body_force
 
-def createBiClampProblem(nDOFDesired=50000, T0 = 15):
+def createBiClampProblem(nDOFDesired=25000, T0 = 200):
 
   stl_file = os.path.join(script_dir, '../Models/BiClamp/BiClamp.STL')
 

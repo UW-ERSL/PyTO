@@ -341,7 +341,7 @@ while True:
         mesh, mat_prop, bc,elem_body_force, to_params = getStructuralTOProblem(to_problem)
         
         fe_solver = HexStructuralFEA(mesh=mesh, mat_prop=mat_prop, solver= Solvers.PARDISO, bc=bc)
-        u, history, success,errorMsg,nFEAs = topopt_pareto(feaMode, fe_solver,to_params=to_params,plot_progress=True)
+        u, history, success,errorMsg,nFEAs = topopt_pareto(feaMode, fe_solver,to_params,plot_progress=True)
         plt.figure()
         plt.plot(history['volfrac'], history['objective'], marker='o')
         plt.xlabel('Volume Fraction')
@@ -417,8 +417,7 @@ while True:
         
         title = f'nDOF: {fe_solver.mesh.num_nodes}, nElem: {fe_solver.mesh.num_elems}'
         startTime = time.time()
-        u, history, success,errorMsg,nFEAs = topopt_optimality_criteria(feaMode, None,fe_solver,plot_progress=True,
-                                                to_params = to_params)
+        u, history, success,errorMsg,nFEAs = topopt_optimality_criteria(feaMode,fe_solver,to_params,plot_progress=True, )
         timeTaken = time.time() - startTime
         title = f"OC: nDOF: {fe_solver.mesh.num_nodes}, vol: {history['volfrac'][-1]:0.2f}, J: {history['objective'][-1]:.3g}, time: {timeTaken:.0f} s"
 
@@ -458,7 +457,7 @@ while True:
         mesh, mat_prop, bc,elem_body_force, to_params = getThermalTOProblem(to_problem)
         
         fe_solver = HexThermalFEA(mesh=mesh, mat_prop=mat_prop, solver= Solvers.PARDISO, bc=bc)
-        u, history, success,errorMsg,nFEAs = topopt_pareto(feaMode, None, fe_solver,to_params=to_params,plot_progress=True)
+        u, history, success,errorMsg,nFEAs = topopt_pareto(feaMode, fe_solver,to_params,plot_progress=True)
         plt.figure()
         plt.plot(history['volfrac'], history['objective'], marker='o')
         plt.xlabel('Volume Fraction')
