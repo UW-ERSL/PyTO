@@ -35,6 +35,7 @@ class StructuralExamples(enum.Enum):
 	GravityPlate = enum.auto()
 	LBracket = enum.auto()
 	ArrowHead = enum.auto()
+	BiClamp = enum.auto()
 	CompliantMechanism = enum.auto()
 	FilletedBeam = enum.auto()
 	BeamSurfaceLoad = enum.auto()
@@ -93,6 +94,8 @@ def getStructuralProblem(problem: StructuralExamples, **kwargs):
     return createBridgeProblem(**kwargs)
   elif problem == StructuralExamples.LBracket:
     return createLBracketProblem(**kwargs)
+  elif problem == StructuralExamples.BiClamp:
+    return createBiClampProblem(**kwargs)
   elif problem == StructuralExamples.TensilePlate:
     return createTensilePlateProblem(**kwargs)
   elif problem == StructuralExamples.TwoBar:
@@ -1622,7 +1625,55 @@ def createBeamSurfaceLoadProblem(nDOFDesired: int = 20000, L: float = [0.1, 0.01
 
   return mesh, mat_prop, bc, elem_body_force
   # ----------------------------------------
+
+def createBiClampProblem(nDOFDesired=50000, totalLoad = 1e5):
+  stl_file = os.path.join(script_dir, '../Models/BiClamp/BiClamp.STL')
+
+  mesh = hex_mesher.HexMesher()
+  nElemsDesired = round(nDOFDesired/3)    # estimate
+  mesh.createMeshFromSTLFile(stl_file, nElemsDesired=nElemsDesired)
+  mesh.createEdofMatStructural()
+
+
+  fixed_nodes_1 = mesh.getNodesOnBoundingBoxPlane(0,True) # x = 0 plane
+  fixed_nodes_2 = mesh.getNodesOnBoundingBoxPlane(0,False) # x = xMax plane
+  fixed_nodes = np.union1d(fixed_nodes_1, fixed_nodes_2)
+  fixed_dofs = np.array([3 * fixed_nodes,
+              3 * fixed_nodes + 1,
+              3 * fixed_nodes + 2]).flatten().astype(int)
+  dirichlet_values = 0*np.ones_like(fixed_dofs, dtype = float)
+  mesh.node_indices[fixed_nodes, 3] = 1 # for plotting
+
+  # Get nodes on y = 0 plane
+  y_plane_nodes = mesh.getNodesOnBoundingBoxPlane(1, True)  # y = 0 plane
   
+  # Calculate x midpoint
+  node_pts = mesh.node_xyz
+  x_mid = (np.max(node_pts[:, 0]) + np.min(node_pts[:, 0])) / 2
+  
+  # Filter nodes within distance 0.01 from x_mid
+  load_nodes = y_plane_nodes[np.abs(node_pts[y_plane_nodes, 0] - x_mid) < 0.01]
+ 
+  load_dofs = 3 * load_nodes + 1  # y direction
+  
+  force_values = []
+  for node in load_nodes:
+    force_values.append(-totalLoad / len(load_nodes))
+ 
+  mesh.node_indices[load_nodes, 3] = 2 # for plotting
+  
+  force = np.zeros(3*mesh.num_nodes)
+  force[load_dofs] = force_values
+
+  bc = bound_cond.BC(force = force,fixed_dofs = fixed_dofs,dirichlet_values = dirichlet_values) 
+
+  mat_prop = mat_lib.get_material("Steel")
+  elem_body_force = None
+
+  return mesh, mat_prop, bc, elem_body_force
+
+  # ----------------------------------------
+
 def createFilletedBeamProblem(nDOFDesired=50000, totalLoad = 1):
   stl_file = os.path.join(script_dir, '../Models/FilletedBeam/FilletedBeam.STL')
 

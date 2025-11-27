@@ -33,6 +33,9 @@ class StructuralTOExamples(enum.Enum):
 	Table = enum.auto()
 	GEGrabCAD = enum.auto()
 
+    # For thermo-structural examples
+	BiClamp = enum.auto()
+
     # Non-compliance Examples
 	CantileverMidLoadVolumeCompliance = enum.auto()
 
@@ -104,6 +107,10 @@ def getSTLPath_TOProblem(to_problem: StructuralTOExamples):
         stl_file = "Models/Table/Table.STL"
     elif to_problem == StructuralTOExamples.GEGrabCAD:
         stl_file = "Models/GEGrabCAD/GEGrabCAD.STL"
+
+    elif to_problem == StructuralTOExamples.BiClamp:
+        stl_file = "Models/BiClamp/BiClamp.STL"
+
     elif to_problem == StructuralTOExamples.CantileverMidLoadVolumeCompliance:
         stl_file = "Models/Cantilever/CantileverMidLoad.STL"
     elif to_problem == StructuralTOExamples.LBracketTopLoad_Stress_Vol:
@@ -233,6 +240,15 @@ def getStructuralTOProblem(to_problem: StructuralTOExamples,nDOFDesired = None, 
         to_params.nDOFDesired = 50000 if nDOFDesired is None else nDOFDesired
         to_params.Objective = (TO_QOI.COMPLIANCE, None)
         to_params.Constraints = [(TO_QOI.VOLUME_FRACTION, None, 0.5)]
+    elif to_problem == StructuralTOExamples.BiClamp:
+        structural_problem = StructuralExamples.BiClamp
+        to_params.Comment  = "Thermoelastic"
+        to_params.XSymmetry = True 
+        to_params.ExtrudeZ = True
+        to_params.nDOFDesired = 50000 if nDOFDesired is None else nDOFDesired
+        to_params.Objective = (TO_QOI.COMPLIANCE, None)
+        to_params.Constraints = [(TO_QOI.VOLUME_FRACTION, None, 0.25)]
+
     elif to_problem == StructuralTOExamples.Inverter:
         structural_problem = StructuralExamples.Inverter
         to_params.Comment  = "Compliant Mechanism"

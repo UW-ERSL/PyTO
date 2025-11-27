@@ -189,7 +189,9 @@ while True:
         nDOFDesired = 3000
         tensileForce = 100000 # tensile force in Newtons
         T0 = 23 # reference temperature in Celsius
+        deltaTExpected = heat_load*L/(mat_prop.thermal_conductivity*Area)
 
+        
         mesh, mat_prop, bc,elem_body_force = getThermalProblem(thermalProblem, nDOFDesired=nDOFDesired,
                                                                heat_load = heat_load, T0 = T0)
         solver = Solvers.PARDISO 
@@ -202,7 +204,7 @@ while True:
 
         # Solve for temperature field
         thermal_fe_solver.solve()
-        deltaTExpected = heat_load*L/(mat_prop.thermal_conductivity*Area)
+        
         deltaT = np.max(thermal_fe_solver.sol) - np.min(thermal_fe_solver.sol)
         # Get thermal forces
         thermo_elastic_force = thermal_fe_solver.get_thermoelastic_force()

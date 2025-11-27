@@ -89,10 +89,12 @@ def find_elements_with_forces(mesh: hex_mesher.HexMesher, force,nDOFPerNode) -> 
 	forced_nodes = set(force_dofs // nDOFPerNode)  # Convert DOFs to node indices
 	elements_with_forces = []
 
-	for elem in range(mesh.num_elems):
-		nodes = mesh.elemArray[elem]
-		if any(node in forced_nodes for node in nodes):
-			elements_with_forces.append(elem)
+	# Vectorized approach: check which elements contain forced nodes
+	elem_nodes = mesh.elemArray  # Shape: (num_elems, nodes_per_elem)
+	# Create a mask where True indicates a forced node
+	is_forced = np.isin(elem_nodes, list(forced_nodes))
+	# Find elements that have at least one forced node
+	elements_with_forces = np.where(is_forced.any(axis=1))[0]
 
 	return np.array(elements_with_forces)
 
@@ -111,10 +113,12 @@ def find_elements_with_fixedDOF(mesh, bc,nDOFPerNode ) -> np.ndarray:
 	fixed_nodes = set(fixed_dofs // nDOFPerNode)  # Convert DOFs to node indices
 	elements_with_fixed_dofs = []
 
-	for elem in range(mesh.num_elems):
-		nodes =mesh.elemArray[elem]
-		if any(node in fixed_nodes for node in nodes):
-			elements_with_fixed_dofs.append(elem)
+	# Vectorized approach: check which elements contain fixed nodes
+	elem_nodes = mesh.elemArray  # Shape: (num_elems, nodes_per_elem)
+	# Create a mask where True indicates a fixed node
+	is_fixed = np.isin(elem_nodes, list(fixed_nodes))
+	# Find elements that have at least one fixed node
+	elements_with_fixed_dofs = np.where(is_fixed.any(axis=1))[0]
 
 	return np.array(elements_with_fixed_dofs)
 

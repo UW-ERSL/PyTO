@@ -6,7 +6,7 @@ class ThermalTOExamples(enum.Enum):
 	HeatPlate = enum.auto()
 	FourCornersThermal = enum.auto()
 	BridgeThermal = enum.auto()
-	
+	BiClamp = enum.auto()
 
 def getThermalTOProblem(to_problem: ThermalTOExamples,nDOFDesired = None, **kwargs):
     """
@@ -29,6 +29,14 @@ def getThermalTOProblem(to_problem: ThermalTOExamples,nDOFDesired = None, **kwar
         to_params.Comment = "Benchmark 2.5D"
         to_params.ExtrudeZ = True
         to_params.nDOFDesired = 25000 if nDOFDesired is None else nDOFDesired
+    elif to_problem == ThermalTOExamples.BiClamp:
+        thermal_problem = HexThermalExamples.BiClamp
+        to_params.Comment  = "Thermoelastic"
+        to_params.XSymmetry = True 
+        to_params.ExtrudeZ = True
+        to_params.nDOFDesired = 50000 if nDOFDesired is None else nDOFDesired
+        to_params.Objective = (TO_QOI.COMPLIANCE, None)
+        to_params.Constraints = [(TO_QOI.VOLUME_FRACTION, None, 0.25)]
     else:
         raise ValueError(f"Unknown problem: {to_problem}")
     

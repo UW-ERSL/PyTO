@@ -46,6 +46,7 @@ class HexThermalFEA:
                       np.kron(self.mesh.edofMatThermal, np.ones((8, 1))).flatten(),
                       np.kron(self.mesh.edofMatThermal, np.ones((1, 8))).flatten())
                       ).T.astype(int)
+    
     self.elem_body_force = elem_body_force
 
         #default camera position
@@ -110,7 +111,6 @@ class HexThermalFEA:
         elem_stiff_mtrx = np.einsum('mij, m -> mij',
                     self.elem_stiff,
                     elem_material_scaling).flatten(order = 'C')
-
 
     stiff_mtrx = sp.coo_matrix((elem_stiff_mtrx, (self.node_idx[:, 0], self.node_idx[:, 1])),
                                 shape=(self.bc.num_dofs, self.bc.num_dofs))
@@ -772,11 +772,9 @@ if __name__ == "__main__":
     import time	
     from hex_thermal_examples import *
 
-    problem = HexThermalExamples.ThermalBar
-    nDOFDesired = 25000
-
+    problem = HexThermalExamples.BiClamp
     solver = lin_solv.Solvers.PARDISO
-    mesh, mat_prop, bc, elem_body_force = getThermalProblem(problem, nDOFDesired=nDOFDesired)
+    mesh, mat_prop, bc, elem_body_force = getThermalProblem(problem)
     
     fe_solver = HexThermalFEA(mesh=mesh,
                   mat_prop=mat_prop,

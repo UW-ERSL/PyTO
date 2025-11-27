@@ -78,6 +78,10 @@ class HexStructuralFEA:
       self.elem_stiff = np.expand_dims(
           hex_element_stiffness.hex8_stiffness_matrix_structural(mat_prop.youngs_modulus,mat_prop.poissons_ratio, self.mesh.elem_size), axis=0)
 
+#################################################################
+  def set_thermal_forces(self, thermo_elastic_force: np.ndarray):
+    self.thermo_elastic_force = thermo_elastic_force
+  
   #################################################################
   def solve(self,x: np.ndarray = None,
             material_model: MaterialModel =  MaterialModel.SIMP ) -> np.ndarray:
@@ -730,7 +734,7 @@ class HexStructuralFEA:
 if __name__ == "__main__":    
   from hex_structural_examples import StructuralExamples,getStructuralProblem
 
-  problem = StructuralExamples.LBracket
+  problem = StructuralExamples.BiClamp
   nDOFDesired = 50000
   mesh, mat_prop, bc,elem_body_force = getStructuralProblem(problem,nDOFDesired = nDOFDesired)
   solver = linear_solvers.Solvers.DPCG # typically DPCG or PARDISO
