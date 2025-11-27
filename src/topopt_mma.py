@@ -129,6 +129,12 @@ def topopt_mma(feaMode: FEA_MODE, fe_structural_solver, fe_thermal_solver,
             # Solve thermal problem first
             temperature = fe_thermal_solver.solve(x,material_model)
             thermo_elastic_force = fe_thermal_solver.get_thermoelastic_force(x,material_model)
+             # DEBUG: Check thermal forces
+            print(f"Iteration {len(history['objective'])+1}:")
+            print(f"  Max thermal force: {np.max(np.abs(thermo_elastic_force)):.4e}")
+            print(f"  Max mechanical force: {np.max(np.abs(fe_solver.bc.force)):.4e}")
+            print(f"  Thermal/Mechanical ratio: {np.max(np.abs(thermo_elastic_force))/np.max(np.abs(fe_solver.bc.force)):.4e}")
+          
             fe_solver.set_thermal_forces(thermo_elastic_force)
             sol = fe_solver.solve(x, material_model) # structural solve
             fe_solver.postprocess()
@@ -285,9 +291,9 @@ if __name__ == "__main__":
     print("-" * 50)
 
     # Choose the TO problem
-    to_problem = StructuralTOExamples.BiClamp 
+    #to_problem = StructuralTOExamples.BiClamp 
     #to_problem = ThermalTOExamples.FourCornersThermal
-    #to_problem = ThermoStructuralExamples.BiClamp
+    to_problem = ThermoStructuralExamples.BiClamp
 
     if (to_problem in StructuralTOExamples):
         mesh, mat_prop, bc,elem_body_force, to_params = getStructuralTOProblem(to_problem)

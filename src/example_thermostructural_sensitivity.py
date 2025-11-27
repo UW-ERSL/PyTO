@@ -220,25 +220,6 @@ def run_coupled_analysis(nDOFDesired: int = 10000,
     # Compute analytical sensitivities
     print("\nComputing analytical sensitivities using adjoint method...")
 
-    # === ADD THIS SANITY CHECK HERE ===
-    # Assemble K_S for verification
-    K_S = sensitivity.assemble_structural_stiffness(x, material_model=MaterialModel.SIMP)
-
-    # Method 1: Matrix form
-    J_matrix = d.T @ K_S @ d
-
-    # Method 2: Work form (using equilibrium K*d = f)
-    # Get the actual force vector used in the solve
-    f_total = structural_fea.total_force  # This should be f_ext + f_thermal
-    J_work = d.T @ f_total
-
-    print("\n" + "="*60)
-    print("COMPLIANCE VERIFICATION")
-    print("="*60)
-    print(f"J (matrix form):     {J_matrix:.12e}")
-    print(f"J (work form):       {J_work:.12e}")
-    print("="*60)
-
 
     dJdx = sensitivity.compute_compliance_sensitivity(
         x=x,
@@ -256,6 +237,7 @@ def run_coupled_analysis(nDOFDesired: int = 10000,
     # =========================================================================
     
     if verify_fd:
+        print("\nComputing finite difference sensitivities and comparing with analytical results...")
         # Select elements to verify
         num_verify = min(10, mesh.num_elems)
         element_indices = np.linspace(0, mesh.num_elems - 1, num_verify, dtype=int)
@@ -277,7 +259,7 @@ if __name__ == "__main__":
 
     # Problem parameters
     nDOFDesired = 10000
-    hot_temp = 100.0  # °C
+    hot_temp = 25.0  # °C
     cold_temp = 20.0  # °C
     tensile_force = 1000.0  # N
     
@@ -285,7 +267,7 @@ if __name__ == "__main__":
     p_simp = 3.0  # Structural
     q_simp = 1.0  # Thermal
     
-    perturbation = 1e-4  # Finite difference perturbation size
+    perturbation = 1e-5  # Finite difference perturbation size
 
     run_coupled_analysis(
             nDOFDesired=nDOFDesired,

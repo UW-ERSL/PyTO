@@ -55,8 +55,10 @@ class ThermoElasticSensitivity:
         self.T_ref = thermal_fea.thermoElasticReferenceTemperature
         # Compute H matrix (24x8) for thermal forces
         dx, dy, dz = self.thermalMesh.elem_size
-        self.H = thermal_fea.getHMatrix(dx, dy, dz, self.nu)
-        
+        self.H = thermal_fea.getHMatrix( dx, dy, dz, self.nu)
+
+       
+
     def compute_compliance_sensitivity(self,
                                       x,
                                       T,
@@ -125,21 +127,14 @@ class ThermoElasticSensitivity:
             
             # Term 2: Direct thermal force contribution
             T_diff = T_e - self.T_ref
-            term2[e] = 2* p * x[e]**(p - 1) *self.E0 * self.alpha * d_e.T @ self.H @ T_diff
+            term2[e] = 2* p * x[e]**(p - 1) * self.E0 * self.alpha * d_e.T @ self.H @ T_diff
+
             # Term 3: Adjoint thermal contribution
             #term3[e] = q * x[e]**(q - 1) * lambda_T_e.T @ self.kt_bar_thermal @ T_e
-            k = self.mat_prop.thermal_conductivity  # Get this value
             term3[e]  = q * x[e]**(q - 1)  * lambda_T_e.T @ self.kt_bar_thermal @ T_e
 
-
             dJdx[e] = term1[e] + term2[e] + term3[e]
-        
-        if verbose:
-            print("\nCompliance Sensitivity Computation:")
-            print(f"{'Elem':<6} {'Term1':<15} {'Term2':<15} {'Term3':<15} {'dJdx':<15}")
-            print("-" * 70)
-            for e in range(10):
-                print(f"{e:<6} {term1[e]:<15.6e} {term2[e]:<15.6e} {term3[e]:<15.6e} {dJdx[e]:<15.6e}")
+
         return dJdx
     
     def solve_thermal_adjoint(self,
@@ -186,7 +181,7 @@ class ThermoElasticSensitivity:
             edof_t = self.thermalMesh.edofMatThermal[e, :]
             d_e = d[edof_s]
             # Contribution from this element
-            rhs_e = -2*x[e]**p * self.E0 * self.alpha * self.H.T @ d_e
+            rhs_e = -2*x[e]**p *  self.H.T @ d_e
             
             # Assemble into global RHS
             rhs[edof_t] += rhs_e
