@@ -67,7 +67,7 @@ class HexStructuralFEA:
     self.pyVistaPlotter.enable_anti_aliasing()
     
 #################################################################
-  def set_structural_material(self, mat_prop: mat_lib.Material | list[mat_lib.Material]):
+  def set_material(self, mat_prop: mat_lib.Material | list[mat_lib.Material]):
     
     if isinstance(mat_prop, list):
     # Create element stiffness matrix for each material
@@ -111,7 +111,7 @@ class HexStructuralFEA:
                     self.elem_stiff,
                     elem_material_scaling).flatten(order = 'C')
 
-    
+    self.elem_stiff_mtrx = elem_stiff_mtrx
     self.stiff_mtrx = sp.coo_matrix((elem_stiff_mtrx, (self.node_idx[:, 0], self.node_idx[:, 1])),
                    shape=(self.bc.num_dofs, self.bc.num_dofs))
     self.total_force = self.bc.force.copy()

@@ -65,7 +65,7 @@ class HexThermalFEA:
     # Enable anti-aliasing for better quality
     self.pyVistaPlotter.enable_anti_aliasing()
 ##################################################################
-  def set_thermal_material(self, mat_prop: mat_lib.Material | list[mat_lib.Material]):
+  def set_material(self, mat_prop: mat_lib.Material | list[mat_lib.Material]):
     """
     Set or update the thermal material(s) and recompute element stiffness matrices.
     Args:

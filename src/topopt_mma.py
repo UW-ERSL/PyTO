@@ -69,25 +69,9 @@ def topopt_mma(feaMode: FEA_MODE, fe_structural_solver, fe_thermal_solver,
 
     elemsWithForces = find_elements_with_forces(mesh, fe_solver.bc.force,nDOFPerNode)
    
-    
-    if isinstance(mat_prop, list): # multiple materials
-        if feaMode in [FEA_MODE.STRUCTURAL, FEA_MODE.THERMO_STRUCTURAL]:
-            KE_list = [hex_element_stiffness.hex8_stiffness_matrix_structural( mp.youngs_modulus,mp.poissons_ratio,mesh.elem_size)
-                for mp in mat_prop]
-            KE = KE_list[0]
-        elif feaMode == FEA_MODE.THERMAL:
-            KE_list = [hex_element_stiffness.hex8_stiffness_matrix_thermal( mp.thermal_conductivity,mesh.elem_size)
-                for mp in mat_prop]
-            KE = KE_list[0]    
-        log_message("Assuming all elements have the same material properties")
-    else: # single material
-        if feaMode in [FEA_MODE.STRUCTURAL, FEA_MODE.THERMO_STRUCTURAL]:
-            KE = hex_element_stiffness.hex8_stiffness_matrix_structural( mat_prop.youngs_modulus,
-                                                                mat_prop.poissons_ratio,
-                                                                mesh.elem_size)
-        elif feaMode == FEA_MODE.THERMAL:
-            KE = hex_element_stiffness.hex8_stiffness_matrix_thermal(mat_prop.thermal_conductivity,mesh.elem_size)
-    
+    fe_solver.set_material(mat_prop)
+    KE = fe_solver.elem_stiff[0]  # assuming all elements have same material properties
+   
     if (fe_solver.elem_body_force is not None):
         elem_force = fe_solver.elem_body_force.copy()
         nNodes = mesh.num_nodes
@@ -211,12 +195,11 @@ def topopt_mma(feaMode: FEA_MODE, fe_structural_solver, fe_thermal_solver,
     nVariables = num_elems
     nConstraints = len(to_params.Constraints)
    
-
     [xOptimal,f0val, df0dx, gval, dgdx,nFEAs] = runMMA(nVariables,nConstraints,optimizationFunction,x0,lowerBound,
 			 upperBound, maxIterations = maxMMAIterations,timeLimitSecs= timeLimitSecs, move_limit = move_limit,
              fTolerance= objective_tol,gTolerance= constraint_tol,kktTol = kkt_tol, verbose = False, 
              progress_callback= progress_callback)
-
+    
     x = np.asarray(xOptimal).flatten()
 
     if (to_params.Eliminate_Hanging_Elements):
@@ -285,9 +268,9 @@ if __name__ == "__main__":
     print("-" * 50)
 
     # Choose the TO problem
-    #to_problem = StructuralTOExamples.BiClamp 
+    to_problem = StructuralTOExamples.LBracketMidLoad 
     #to_problem = ThermalTOExamples.FourCornersThermal
-    to_problem = ThermoStructuralExamples.BiClamp
+    #to_problem = ThermoStructuralExamples.BiClamp
 
     if (to_problem in StructuralTOExamples):
         mesh, mat_prop, bc,elem_body_force, to_params = getStructuralTOProblem(to_problem)
