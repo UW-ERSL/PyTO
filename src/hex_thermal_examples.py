@@ -17,8 +17,6 @@ class HexThermalExamples(enum.Enum):
     LBracket = enum.auto()
     Moran = enum.auto()
     BliskWithBlade = enum.auto()
-    BiClamp = enum.auto()
-
 
 def getThermalProblem(problem: HexThermalExamples, **kwargs):
   """Returns a thermal problem based on the given problem name.
@@ -65,9 +63,6 @@ def getThermalProblem(problem: HexThermalExamples, **kwargs):
   
   elif problem == HexThermalExamples.BliskWithBlade:
     return createBliskWithBladeProblem(**kwargs)
-  
-  elif problem == HexThermalExamples.BiClamp:
-    return createBiClampProblem(**kwargs)
   
   else:
     raise ValueError("Invalid thermal example name.")
@@ -465,33 +460,6 @@ def createBliskWithBladeProblem(nDOFDesired: int = 10000, heat_load = 10, T0 = 2
 
   mat_prop = mat_lib.get_material("Steel")
   elem_body_force = None
-  return mesh, mat_prop, bc, elem_body_force
-
-def createBiClampProblem(nDOFDesired=25000, T0 = 23.05):
-
-  stl_file = os.path.join(script_dir, '../Models/BiClamp/BiClamp.STL')
-
-  mesh = hex_mesher.HexMesher()
-  nElemsDesired = round(nDOFDesired/3)    # estimate
-  mesh.createMeshFromSTLFile(stl_file, nElemsDesired=nElemsDesired)
-  mesh.createEdofMatThermal()
-
-
-  fixed_nodes_1 = mesh.getNodesOnBoundingBoxPlane(0,True) # x = 0 plane
-  fixed_nodes_2 = mesh.getNodesOnBoundingBoxPlane(0,False) # x = xMax plane
-  fixed_nodes = np.union1d(fixed_nodes_1, fixed_nodes_2)
-  fixed_dofs = np.array([fixed_nodes]).flatten().astype(int)
-  dirichlet_values = T0*np.ones_like(fixed_dofs, dtype = float)
-  mesh.node_indices[fixed_nodes, 3] = 1 # for plotting
-
-  force = np.zeros(mesh.num_nodes) # no heat load
-
-  bc = bound_cond.BC(force = force,
-						fixed_dofs = fixed_dofs,
-						dirichlet_values = dirichlet_values) 
-  mat_prop = mat_lib.get_material("Steel")
-  elem_body_force = None
-
   return mesh, mat_prop, bc, elem_body_force
 
 

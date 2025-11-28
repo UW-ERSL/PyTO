@@ -130,14 +130,12 @@ class HexThermalFEA:
       Compute H matrix for thermo-elastic coupling with constitutive matrix D included.
       
       This matrix relates nodal temperatures to thermal forces:
-          f_thermal = E * alpha * H @ (T_nodes - T_ref)
+          f_thermal =  H @ (T_nodes - T_ref)
+      
       
       Parameters:
       -----------
-      E : float
-          Young's modulus (Pa)
-      alpha : float
-          Thermal expansion coefficient (1/K)
+      
       dx, dy, dz : float
           Element dimensions (m)
       nu : float

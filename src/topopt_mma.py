@@ -94,7 +94,7 @@ def topopt_mma(feaMode: FEA_MODE, fe_structural_solver, fe_thermal_solver,
         grey_elements = np.sum((x > 0.1) & (x < 0.9))
         fraction_grey = (grey_elements / num_elems)
         if (print_progress):
-            print(f"Percentange grey elements:", f"{fraction_grey*100:.2f}%")
+            print(f"Percentage grey elements:", f"{fraction_grey*100:.2f}%")
         if (to_params.APPLY_FILTER_TO_DENSITY):
             x = H*x/Hs
         fe_solver.mesh.setPseudoDensity(x)
@@ -124,6 +124,7 @@ def topopt_mma(feaMode: FEA_MODE, fe_structural_solver, fe_thermal_solver,
             fe_structural_solver.postprocess()
             obj, grad_obj = compute_thermoelastic_compliance_and_gradient(x, temperature, displacement,
 												  fe_thermal_solver, fe_structural_solver)
+           
             c, dcdx = compute_constraint_and_gradient(feaMode,to_params,displacement,x, fe_solver,KE, material_model)
   
         if (obj0 is None):
@@ -187,8 +188,8 @@ def topopt_mma(feaMode: FEA_MODE, fe_structural_solver, fe_thermal_solver,
             break
     
     x0 = initialDensity * np.ones(num_elems, dtype = float).reshape(-1, 1)
-    lowerBound = np.zeros(num_elems, dtype = float).reshape(-1, 1)
-    upperBound = np.ones(num_elems, dtype = float).reshape(-1, 1)
+    lowerBound = 1e-6*np.ones(num_elems, dtype = float).reshape(-1, 1)
+    upperBound = (1-1e-6)*np.ones(num_elems, dtype = float).reshape(-1, 1)
     nVariables = num_elems
     nConstraints = len(to_params.Constraints)
    
@@ -226,14 +227,12 @@ def topopt_mma(feaMode: FEA_MODE, fe_structural_solver, fe_thermal_solver,
         # Solve thermal problem first
         temperature = fe_thermal_solver.solve(x,material_model)
         thermo_elastic_force = fe_thermal_solver.get_thermoelastic_force(x,material_model)
-        fe_solver.set_thermal_forces(thermo_elastic_force)
-        sol = fe_solver.solve(x, material_model) # structural solve
-        fe_solver.postprocess()
-        obj = sol.T @ fe_solver.stiff_mtrx @ sol
-        grad_obj = thermoElasticSensitivity.compute_compliance_sensitivity(x, temperature, sol,
-                                                                                p=3.0,  # structural penalty
-                                                                                q=1.0,  # thermal penalty
-                                                                                material_model=material_model)
+        fe_structural_solver.set_thermal_forces(thermo_elastic_force)
+        displacement = fe_structural_solver.solve(x, material_model) # structural solve
+        sol = displacement.copy() # for use later
+        fe_structural_solver.postprocess()
+        obj, grad_obj = compute_thermoelastic_compliance_and_gradient(x, temperature, displacement,
+                                                fe_thermal_solver, fe_structural_solver)
         c, dcdx = compute_constraint_and_gradient(feaMode,to_params,sol,x, fe_solver,KE, material_model)
     else:
         fe_solver.mesh.setPseudoDensity(x)  
@@ -261,13 +260,13 @@ def topopt_mma(feaMode: FEA_MODE, fe_structural_solver, fe_thermal_solver,
 if __name__ == "__main__":    
     from topopt_structural_benchmarks import *
     from topopt_thermal_benchmarks import *
-    from topopt_thermostructural_examples import *
+    from topopt_thermostructural_benchmarks import *
     print("-" * 50)
 
     # Choose the TO problem
-    to_problem = StructuralTOExamples.LBracketMidLoad 
+    #to_problem = StructuralTOExamples.LBracketMidLoad 
     #to_problem = ThermalTOExamples.FourCornersThermal
-    to_problem = ThermoStructuralExamples.BiClamp
+    to_problem = ThermoStructuralTOExamples.BiClamp
 
     if (to_problem in StructuralTOExamples):
         mesh, mat_prop, bc,elem_body_force, to_params = getStructuralTOProblem(to_problem)
@@ -275,11 +274,8 @@ if __name__ == "__main__":
     elif (to_problem in ThermalTOExamples):
         mesh, mat_prop, bc,elem_body_force, to_params = getThermalTOProblem(to_problem)
         feaMode = FEA_MODE.THERMAL
-    elif (to_problem in ThermoStructuralExamples):
-        structuralTO_problem = StructuralTOExamples.BiClamp
-        thermalTO_problem = ThermalTOExamples.BiClamp
-        mesh, mat_prop, structural_bc,elem_body_force, to_params = getStructuralTOProblem(structuralTO_problem)
-        thermal_mesh, _, thermal_bc,_, thermal_to_params = getThermalTOProblem(thermalTO_problem)
+    elif (to_problem in ThermoStructuralTOExamples):
+        mesh, mat_prop, structural_bc,thermal_bc, elem_body_force, to_params  = getThermoStructuralTOProblem(to_problem)
         feaMode = FEA_MODE.THERMO_STRUCTURAL # or FEA_MODE.STRUCTURAL depending on the problem setup
 
     print(f"Running {to_problem.name}...") 
@@ -326,7 +322,7 @@ if __name__ == "__main__":
                     dsolver = dsolver,
                     rtol = 1e-8,
                     elem_body_force = elem_body_force)
-        fe_thermal_solver = hex_thermal_fea.HexThermalFEA(mesh = thermal_mesh,
+        fe_thermal_solver = hex_thermal_fea.HexThermalFEA(mesh = mesh,
                     mat_prop = mat_prop,
                     bc = thermal_bc,
                     solver = solver,
@@ -335,8 +331,7 @@ if __name__ == "__main__":
 
         nNodes = fe_structural_solver.mesh.num_nodes
         nElems = fe_structural_solver.mesh.num_elems    
-    
-    
+
     print("nNodes: ", nNodes )
     print("nElem: ", nElems)    
     title = f'nNodes: {nNodes}, nElem: {nElems}'

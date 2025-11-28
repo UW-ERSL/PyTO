@@ -5,7 +5,7 @@ import numpy as np
 SIMP_PENALTY_MIN = 1 # Min Penalization factor for SIMP method
 SIMP_PENALTY_MAX = 3.0 # Max Penalization factor for SIMP method
 
-SIMP_PENALTY = 3  # Default penalization factor for SIMP method
+SIMP_PENALTY = 3.0  # Default penalization factor for SIMP method
 SIMP_THERMAL_PENALTY = 1  # Default penalization factor for SIMP method - thermal
 # For large DOF problems, we encounters numerical issues for smaller values of EVOID_RELATIVE
 

@@ -57,8 +57,6 @@ class ThermoElasticSensitivity:
         dx, dy, dz = self.thermalMesh.elem_size
         self.H = thermal_fea.getHMatrix( dx, dy, dz, self.nu)
 
-       
-
     def compute_compliance_sensitivity(self,
                                       x,
                                       T,
@@ -112,7 +110,7 @@ class ThermoElasticSensitivity:
         # K_T^T * lambda_T = -sum_e (xi_e^p * E0 * alpha * H^T * d_e)
         lambda_T = self.solve_thermal_adjoint(d, x, p, solver, verbose)
         
-
+        print(np.max(np.abs(self.kt_bar_thermal)), np.max(np.abs(lambda_T)))
         # Step 2: Compute element-wise sensitivities
         for e in range(nelem):
             # Get element DOFs
@@ -135,6 +133,7 @@ class ThermoElasticSensitivity:
 
             dJdx[e] = term1[e] + term2[e] + term3[e]
 
+        print(f"Max sensitivity terms: Term1={np.max(np.abs(term1)):.4e}, Term2={np.max(np.abs(term2)):.4e}, Term3={np.max(np.abs(term3)):.4e}")
         return dJdx
     
     def solve_thermal_adjoint(self,
@@ -171,17 +170,14 @@ class ThermoElasticSensitivity:
         nelem = self.thermalMesh.num_elems
         num_thermal_dofs = self.thermalMesh.num_nodes
         
-        
         # Assemble RHS: -sum_e (xi_e^p * E0 * alpha * H^T * d_e)
         rhs = np.zeros(num_thermal_dofs)
-        
-    
         for e in range(nelem):
             edof_s = self.structuralMesh.edofMatStructural[e, :]
             edof_t = self.thermalMesh.edofMatThermal[e, :]
             d_e = d[edof_s]
             # Contribution from this element
-            rhs_e = -2*x[e]**p *  self.H.T @ d_e
+            rhs_e = -2*x[e]**p * self.E0 * self.alpha * self.H.T @ d_e
             
             # Assemble into global RHS
             rhs[edof_t] += rhs_e
@@ -189,7 +185,7 @@ class ThermoElasticSensitivity:
         
         # Get thermal stiffness matrix from thermal FEA
         # We need to assemble it with current design variables
-        K_T = self.assemble_thermal_stiffness(x, q=1.0)
+        K_T = self.assemble_thermal_stiffness(x)
         bcAdjoint = bound_cond.BC(force = 0*self.thermal_fea.bc.force,fixed_dofs = self.thermal_fea.bc.fixed_dofs,
                                   dirichlet_values = 0.0*self.thermal_fea.bc.dirichlet_values) 
         # Solve adjoint system
@@ -248,7 +244,7 @@ class ThermoElasticSensitivity:
         
         return K_S
     
-    def assemble_thermal_stiffness(self, x, q=1.0, material_model=MaterialModel.SIMP):
+    def assemble_thermal_stiffness(self, x, material_model=MaterialModel.SIMP):
         """
         Assemble the global thermal stiffness matrix.
         
@@ -267,8 +263,6 @@ class ThermoElasticSensitivity:
             Global thermal stiffness matrix
         """
         from topopt_material_model import get_thermal_material_model_scaling
-        
-        nelem = self.thermalMesh.num_elems
         
         # Get material scaling
         elem_material_scaling = get_thermal_material_model_scaling(x, material_model)

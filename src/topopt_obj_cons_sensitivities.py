@@ -364,7 +364,7 @@ def solve_thermal_adjoint(x,d,fe_thermal_solver,fe_structural_solver):
 		edof_s = fe_structural_solver.mesh.edofMatStructural[e, :]
 		edof_t = fe_thermal_solver.mesh.edofMatThermal[e, :]
 		# Contribution from this element
-		rhs_e = -2*E*alpha*x[e]**p * HMatrix.T @ d[edof_s]
+		rhs_e = -2*E*alpha*(x[e]**p) * HMatrix.T @ d[edof_s]
 		
 		# Assemble into global RHS
 		rhs[edof_t] += rhs_e
@@ -443,6 +443,11 @@ def compute_thermoelastic_compliance_and_gradient(x, temperature, displacement,
 	HMatrix = fe_thermal_solver.getHMatrix(dx, dy, dz, nu)
 	KE_structural = fe_structural_solver.elem_stiff[0]
 	KE_Thermal = fe_thermal_solver.elem_stiff[0]
+	
+	term1 = np.zeros(nelem)
+	term2 = np.zeros(nelem) 
+	term3 = np.zeros(nelem)
+	p_thermal  = 1 # For better convergence (per Ooms paper)
 	for e in range(nelem):
 		# Get element DOFs
 		edof_s = fe_structural_solver.mesh.edofMatStructural[e, :]
@@ -452,16 +457,18 @@ def compute_thermoelastic_compliance_and_gradient(x, temperature, displacement,
 		lambda_T_e = lambda_T[edof_t]
 
 		# Term 1: Direct structural stiffness contribution 
-		term1 = - p * x[e]**(p - 1) * d_e.T @ KE_structural @ d_e
+		term1[e] = - p * x[e]**(p - 1) * d_e.T @ KE_structural @ d_e
 
 		# Term 2: Direct thermal force contribution
 		T_diff = T_e - fe_thermal_solver.thermoElasticReferenceTemperature
-		term2 = 2* p * x[e]**(p - 1) * E * alpha * d_e.T @ HMatrix @ T_diff
+
+		term2[e] = 2* p_thermal * x[e]**(p_thermal - 1) * E * alpha * d_e.T @ HMatrix @ T_diff
 
 		# Term 3: Adjoint thermal contribution
 		#term3[e] = q * x[e]**(q - 1) * lambda_T_e.T @ self.kt_bar_thermal @ T_e
-		term3  = q * x[e]**(q - 1)  * lambda_T_e.T @ KE_Thermal @ T_e
+		term3[e] = q * (x[e]**(q - 1))  * lambda_T_e.T @ KE_Thermal @ T_e
 
-		dJdx[e] = term1 + term2 + term3
+		dJdx[e] = term1[e] + term2[e] + term3[e]
 	
+	#print(f"Max sensitivity terms: Term1={np.max(np.abs(term1)):.4e}, Term2={np.max(np.abs(term2)):.4e}, Term3={np.max(np.abs(term3)):.4e}")
 	return J, dJdx

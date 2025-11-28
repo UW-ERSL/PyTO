@@ -184,7 +184,7 @@ def run_coupled_analysis(nDOFDesired: int = 10000,
     )
     
     # Initialize design variables (uniform density)
-    x = 0.5*np.ones(mesh.num_elems) 
+    x = 0.1*np.ones(mesh.num_elems) 
 
     # Solve thermal problem
     T = thermal_fea.solve(x, material_model=MaterialModel.SIMP)
@@ -207,7 +207,6 @@ def run_coupled_analysis(nDOFDesired: int = 10000,
         thermo_elastic_force=f_thermal
     )
     # Solve structural problem
-    start_time = time.time()
     d = structural_fea.solve(x, material_model=MaterialModel.SIMP)
 
     # =========================================================================
@@ -259,9 +258,9 @@ if __name__ == "__main__":
 
     # Problem parameters
     nDOFDesired = 10000
-    hot_temp = 25.0  # °C
-    cold_temp = 20.0  # °C
-    tensile_force = 1000.0  # N
+    hot_temp = 30.0  # °C
+    cold_temp = 23.0  # °C
+    tensile_force = 0.0  # N
     
     # SIMP penalties
     p_simp = 3.0  # Structural
