@@ -115,6 +115,7 @@ class HexThermalFEA:
     stiff_mtrx = sp.coo_matrix((elem_stiff_mtrx, (self.node_idx[:, 0], self.node_idx[:, 1])),
                                 shape=(self.bc.num_dofs, self.bc.num_dofs))
     
+    self.stiff_mtrx = stiff_mtrx
 
     sol =  lin_sol.solve(stiff_mtrx,
                       self.bc.force,
