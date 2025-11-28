@@ -352,13 +352,14 @@ def solve_thermal_adjoint(x,d,fe_thermal_solver,fe_structural_solver):
 	nelem = fe_thermal_solver.mesh.num_elems
 	num_thermal_dofs = fe_thermal_solver.mesh.num_nodes
 	
-	
 	# Assemble RHS: -sum_e (xi_e^p * E0 * alpha * H^T * d_e)
 	rhs = np.zeros(num_thermal_dofs)
-	HMatrix = fe_thermal_solver.getHMatrix()
+	dx, dy, dz = fe_structural_solver.mesh.elem_size
+	nu = fe_structural_solver.mat_prop.poissons_ratio
+	HMatrix = fe_thermal_solver.getHMatrix(dx, dy, dz, nu)
 	p = SIMP_PENALTY
 	E = fe_structural_solver.mat_prop.youngs_modulus 
-	alpha = fe_structural_solver.mat_prop.thermal_expansion_coeff
+	alpha = fe_structural_solver.mat_prop.thermal_expansion_coefficient
 	for e in range(nelem):
 		edof_s = fe_structural_solver.mesh.edofMatStructural[e, :]
 		edof_t = fe_thermal_solver.mesh.edofMatThermal[e, :]
@@ -371,6 +372,7 @@ def solve_thermal_adjoint(x,d,fe_thermal_solver,fe_structural_solver):
 	# Get thermal stiffness matrix from thermal FEA
 	# We need to assemble it with current design variables
 	K_T = fe_thermal_solver.stiff_mtrx
+	# Boundary conditions have to be zero for adjoint problem
 	bcAdjoint = bound_cond.BC(force = 0*fe_thermal_solver.bc.force,fixed_dofs = fe_thermal_solver.bc.fixed_dofs,
 								dirichlet_values = 0.0*fe_thermal_solver.bc.dirichlet_values) 
 	# Solve adjoint system
@@ -421,7 +423,10 @@ def compute_thermoelastic_compliance_and_gradient(x, temperature, displacement,
 	dJdx : ndarray (num_elems,)
 	Compliance sensitivity with respect to design variables
 	"""
+
+	J = displacement.T @ fe_structural_solver.stiff_mtrx @ displacement
 	nelem = fe_structural_solver.mesh.num_elems
+
 	dJdx = np.zeros(nelem)
 
 	# Step 1: Solve thermal adjoint equation
@@ -432,10 +437,12 @@ def compute_thermoelastic_compliance_and_gradient(x, temperature, displacement,
 	q = SIMP_THERMAL_PENALTY
 	# Step 2: Compute element-wise sensitivities
 	E = fe_structural_solver.mat_prop.youngs_modulus 
-	alpha = fe_structural_solver.mat_prop.thermal_expansion_coeff
-	HMatrix = fe_thermal_solver.getHMatrix()
-	KE_structural = fe_structural_solver.elem_stiffness_matrix[0]
-	KE_Thermal = fe_thermal_solver.elem_stiffness_matrix[0]
+	alpha = fe_structural_solver.mat_prop.thermal_expansion_coefficient
+	dx, dy, dz = fe_structural_solver.mesh.elem_size
+	nu = fe_structural_solver.mat_prop.poissons_ratio
+	HMatrix = fe_thermal_solver.getHMatrix(dx, dy, dz, nu)
+	KE_structural = fe_structural_solver.elem_stiff[0]
+	KE_Thermal = fe_thermal_solver.elem_stiff[0]
 	for e in range(nelem):
 		# Get element DOFs
 		edof_s = fe_structural_solver.mesh.edofMatStructural[e, :]
@@ -448,7 +455,7 @@ def compute_thermoelastic_compliance_and_gradient(x, temperature, displacement,
 		term1 = - p * x[e]**(p - 1) * d_e.T @ KE_structural @ d_e
 
 		# Term 2: Direct thermal force contribution
-		T_diff = T_e - fe_thermal_solver.T_ref
+		T_diff = T_e - fe_thermal_solver.thermoElasticReferenceTemperature
 		term2 = 2* p * x[e]**(p - 1) * E * alpha * d_e.T @ HMatrix @ T_diff
 
 		# Term 3: Adjoint thermal contribution
@@ -456,5 +463,5 @@ def compute_thermoelastic_compliance_and_gradient(x, temperature, displacement,
 		term3  = q * x[e]**(q - 1)  * lambda_T_e.T @ KE_Thermal @ T_e
 
 		dJdx[e] = term1 + term2 + term3
-
-	return dJdx
+	
+	return J, dJdx
