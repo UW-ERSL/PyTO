@@ -27,7 +27,7 @@ class StructuralExamples(enum.Enum):
 	Inverter = enum.auto()
 	ThreeHoleBracket = enum.auto()
 	ThreeHoleBracketThick = enum.auto()
-	MBBB = enum.auto()
+	MBBBeam = enum.auto()
 	Bridge = enum.auto()
 	DistributedLoad = enum.auto()
 	Multiload = enum.auto()
@@ -85,8 +85,8 @@ def getStructuralProblem(problem: StructuralExamples, **kwargs):
     return createCantileverTipLoadProblem(**kwargs)
   elif problem == StructuralExamples.CantileverMidLoad:
     return createCantileverMidLoadProblem(**kwargs)
-  elif problem == StructuralExamples.MBBB:
-    return createMBBBProblem(**kwargs)
+  elif problem == StructuralExamples.MBBBeam:
+    return createMBBBeamProblem(**kwargs)
   elif problem == StructuralExamples.Bridge:
     return createBridgeProblem(**kwargs)
   elif problem == StructuralExamples.LBracket:
@@ -1078,12 +1078,12 @@ def createTwoBarProblem(nDOFDesired: int = 10000,totalLoad = 9e4):
 
 
 
-def createMBBBProblem(nDOFDesired: int = 10000, load = 2.7e4):
+def createMBBBeamProblem(nDOFDesired: int = 10000, load = 2.7e4):
   ''' 
     See: Topology Optimization Benchmarks in 2D: Results for Minimum Compliance and Minimum Volume in Planar Stress Problems
   S. Ivvan Valdez, et al. Arch Computat Methods Eng (2017) 24:803–839, DOI 10.1007/s11831-016-9190-3
 '''
-  stl_file = os.path.join(script_dir, '../Models/MBBB/MBBB.STL')
+  stl_file = os.path.join(script_dir, '../Models/MBBBeam/MBBBeam.STL')
   nElemsDesired = nDOFDesired/3    # estimate
   mesh = hex_mesher.HexMesher()
   mesh.createMeshFromSTLFile(stl_file, nElemsDesired=nElemsDesired)
@@ -1092,16 +1092,17 @@ def createMBBBProblem(nDOFDesired: int = 10000, load = 2.7e4):
   symmetry_nodes = mesh.getNodesOnBoundingBoxPlane(0,True) # x = 0 plane
   symmetry_dofs = np.array([3 * symmetry_nodes]).flatten().astype(int)
 
-  right_nodes=np.intersect1d(mesh.getNodesOnBoundingBoxPlane(1,True), np.where(mesh.node_xyz[:,0] >= 2.7)[0])
-  right_dofs = np.array([3 * right_nodes+1]).flatten().astype(int)
+  xMax = np.max(mesh.node_xyz[:,0])
+  right_nodes=np.intersect1d(mesh.getNodesOnBoundingBoxPlane(1,True), np.where(mesh.node_xyz[:,0] >= 0.95*xMax)[0])
+  right_dofs = np.array([3 * right_nodes+1, 3 * right_nodes + 2]).flatten().astype(int)
   
   fixed_dofs = np.union1d(symmetry_dofs,right_dofs)
   fixed_nodes = np.union1d(symmetry_nodes,right_nodes)
   dirichlet_values = 0*np.ones_like(fixed_dofs, dtype = float)
   mesh.node_indices[fixed_nodes, 3] = 1
 
- 
-  load_nodes = np.intersect1d(mesh.getNodesOnBoundingBoxPlane(1,False), np.where(mesh.node_xyz[:,0] <= 0.3)[0])
+
+  load_nodes = np.intersect1d(mesh.getNodesOnBoundingBoxPlane(1,False), np.where(mesh.node_xyz[:,0] <= 0.05*xMax)[0])
   load_dofs = 3 * load_nodes + 1  # y direction
 
   mesh.node_indices[load_nodes, 3] = 2

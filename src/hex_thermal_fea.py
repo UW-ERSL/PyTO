@@ -235,8 +235,8 @@ class HexThermalFEA:
     if isinstance(self.mat_prop, list):
       raise ValueError("get_thermoelastic_force currently does not support multi-material cases.")
     else: # single material
-      E = elem_material_scaling*self.mat_prop.youngs_modulus
-      alpha = self.mat_prop.thermal_expansion_coefficient
+      E = self.mat_prop.youngs_modulus
+      alpha = self.mat_prop.thermal_expansion_coefficient # we don't scale this
 
     dx, dy, dz = self.mesh.elem_size
     nu = self.mat_prop.poissons_ratio
@@ -252,7 +252,7 @@ class HexThermalFEA:
       node_temp = self.sol[elem_nodes]
       
       # Compute thermal force for this element (24 DOFs)
-      f_thermal_elem = E[elem] * alpha * HMatrix @ (node_temp - self.thermoElasticReferenceTemperature)
+      f_thermal_elem = elem_material_scaling[elem] * E * alpha * HMatrix @ (node_temp - self.thermoElasticReferenceTemperature)
       
       # Add element thermal forces to global force vector
       

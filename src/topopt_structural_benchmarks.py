@@ -13,7 +13,7 @@ class StructuralTOExamples(enum.Enum):
 	CantileverTipLoad = enum.auto()
 	CantileverMidLoad = enum.auto()
 	CantileverTipLoadDisplacementObjective = enum.auto()
-	MBBB = enum.auto()
+	MBBBeam = enum.auto()
 	LBracketTopLoad = enum.auto()
 	LBracketMidLoad = enum.auto()
 	TwoBar = enum.auto()
@@ -75,8 +75,8 @@ def getSTLPath_TOProblem(to_problem: StructuralTOExamples):
         stl_file = "Models/Cantilever/Cantilever.STL"
     elif to_problem == StructuralTOExamples.CantileverTipLoadDisplacementObjective:
         stl_file = "Models/Cantilever/Cantilever.STL"
-    elif to_problem == StructuralTOExamples.MBBB:
-        stl_file = "Models/MBBB/MBBB.STL"
+    elif to_problem == StructuralTOExamples.MBBBeam:
+        stl_file = "Models/MBBBeam/MBBBeam.STL"
     elif to_problem == StructuralTOExamples.LBracketTopLoad:
         stl_file = "Models/LBracket/LBracket.STL"
     elif to_problem == StructuralTOExamples.LBracketMidLoad:
@@ -218,8 +218,8 @@ def getStructuralTOProblem(to_problem: StructuralTOExamples,nDOFDesired = None, 
         to_params.ExtrudeZ = True
         to_params.nDOFDesired = 25000 if nDOFDesired is None else nDOFDesired
         to_params.Constraints = [(TO_QOI.VOLUME_FRACTION, None, 0.5), (TO_QOI.RELATIVE_COMPLIANCE, None, 3)] 
-    elif to_problem == StructuralTOExamples.MBBB:
-        structural_problem = StructuralExamples.MBBB
+    elif to_problem == StructuralTOExamples.MBBBeam:
+        structural_problem = StructuralExamples.MBBBeam
         to_params.Comment  = "Benchmark 2.5D"
         to_params.nDOFDesired = 60000 if nDOFDesired is None else nDOFDesired
         to_params.Objective = (TO_QOI.COMPLIANCE, None)

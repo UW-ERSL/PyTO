@@ -119,6 +119,17 @@ materials = [
     thermal_expansion_coefficient=8.6e-6,
     cost=4.0,
     yield_strength=880e6
+  ),
+  Material(
+    name="Concrete",
+    youngs_modulus=3e7,
+    poissons_ratio=0.3,
+    mass_density=2400,
+    thermal_conductivity=1,
+    specific_heat=880,
+    thermal_expansion_coefficient=12e-6,
+    cost=0.1,
+    yield_strength=30e6,
   )
 ]
 

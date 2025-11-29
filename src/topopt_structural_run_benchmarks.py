@@ -24,7 +24,7 @@ def runTOMethodOnStructuralBenchmarks(optimizationMethod):
 							StructuralTOExamples.ShortCantileverMidLoad,
 							StructuralTOExamples.CantileverTipLoad, 
 							StructuralTOExamples.CantileverMidLoad,
-							StructuralTOExamples.MBBB,
+							StructuralTOExamples.MBBBeam,
 							StructuralTOExamples.LBracketTopLoad, 
 							StructuralTOExamples.LBracketMidLoad,
 							StructuralTOExamples.TwoBar, 
@@ -51,7 +51,7 @@ def runTOMethodOnStructuralBenchmarks(optimizationMethod):
 						StructuralTOExamples.CentrifugalPlate]
 
 	
-	for to_problem in  benchmarks_2_5D_problems:
+	for to_problem in  [StructuralTOExamples.MBBBeam,]:
 		if to_problem in benchmarks_2_5D_problems:
 			subFolder = "Compliance2.5D"
 		elif to_problem in benchmarks_3D_problems:

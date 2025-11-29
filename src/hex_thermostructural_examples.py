@@ -13,10 +13,15 @@ script_dir = os.path.dirname(os.path.abspath(__file__))
 
 class ThermoStructuralExamples(enum.Enum):
     BiClamp = enum.auto()
+    MBBBeam = enum.auto()
 
 def getThermoStructuralProblem(problem: ThermoStructuralExamples, **kwargs):
     if problem == ThermoStructuralExamples.BiClamp:
         return createBiClampProblem(**kwargs)
+    elif problem == ThermoStructuralExamples.MBBBeam:
+        return createMBBBeamProblem(**kwargs)
+    else:
+        raise ValueError("Invalid Thermo-structural problem specified.")
     
 def createBiClampProblem(nDOFDesired=25000, structural_load = 1e5,TWall = 28):
     stl_file = os.path.join(script_dir, '../Models/BiClamp/BiClamp.STL')
@@ -63,6 +68,59 @@ def createBiClampProblem(nDOFDesired=25000, structural_load = 1e5,TWall = 28):
 						fixed_dofs = thermal_fixed_dofs,
 						dirichlet_values = thermal_dirichlet_values) 
     mat_prop = mat_lib.get_material("Steel")
+    elem_body_force = None
+
+    return mesh, mat_prop, bcStructural,bcThermal, elem_body_force
+
+
+
+def createMBBBeamProblem(nDOFDesired=25000, structural_load = 5000,Ta = 23,Tf  = 823):
+    stl_file = os.path.join(script_dir, '../Models/MBBBeam/MBBBeam.STL')
+
+    mesh = hex_mesher.HexMesher()
+    nElemsDesired = round(nDOFDesired/3)    # estimate
+    mesh.createMeshFromSTLFile(stl_file, nElemsDesired=nElemsDesired)
+    mesh.createEdofMatStructural()
+    mesh.createEdofMatThermal()
+
+
+    symmetryNodes = mesh.getNodesOnBoundingBoxPlane(0,True) # x = 0 plane
+    hingedNodes = mesh.getNodesOnBoundingBoxPlane(1,True) # y = 0 plane
+    node_pts = mesh.node_xyz
+    Lx = np.max(node_pts[:, 0])
+    hingedNodes = hingedNodes[node_pts[hingedNodes, 0] > Lx*0.95]
+
+    fixed_dofs = np.concatenate([3 * symmetryNodes,
+            3 * hingedNodes + 1,
+            3 * hingedNodes + 2]).astype(int)
+    dirichlet_values = 0*np.ones_like(fixed_dofs, dtype = float)
+    mesh.node_indices[hingedNodes, 3] = 1 # for plotting
+
+  
+    load_nodes_temp = mesh.getNodesOnBoundingBoxPlane(1,False) # y = yMax plane
+
+    load_nodes = load_nodes_temp[node_pts[load_nodes_temp, 0] < 0.05*Lx]
+    mesh.node_indices[load_nodes, 3] = 2 # for plotting
+
+    force = np.zeros(3*mesh.num_nodes)
+    for node in load_nodes:
+        force[3 * node + 1] = -structural_load / len(load_nodes)
+
+    bcStructural = bound_cond.BC(force = force,fixed_dofs = fixed_dofs,dirichlet_values = dirichlet_values) 
+
+    top_nodes = mesh.getNodesOnBoundingBoxPlane(1,False) # y =yMax plane
+    bottom_nodes = mesh.getNodesOnBoundingBoxPlane(1,True) # y =yMin plane
+
+    thermal_fixed_dofs = np.concatenate([top_nodes, bottom_nodes]).astype(int)
+    thermal_dirichlet_values = np.concatenate([Ta * np.ones(len(top_nodes)), 
+                                               Tf * np.ones(len(bottom_nodes))]).astype(float)
+    
+    thermal_force = np.zeros(mesh.num_nodes) # no heat load
+
+    bcThermal = bound_cond.BC(force = thermal_force,
+						fixed_dofs = thermal_fixed_dofs,
+						dirichlet_values = thermal_dirichlet_values) 
+    mat_prop = mat_lib.get_material("Concrete")
     elem_body_force = None
 
     return mesh, mat_prop, bcStructural,bcThermal, elem_body_force
