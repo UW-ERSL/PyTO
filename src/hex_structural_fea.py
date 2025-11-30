@@ -15,6 +15,16 @@ import scipy.sparse as sp
 
 script_dir = os.path.dirname(os.path.abspath(__file__))
 
+# Format values based on magnitude
+def format_value(val):
+  abs_val = abs(val)
+  if abs_val == 0:
+    return '0.0'
+  elif abs_val < 0.01 or abs_val >= 1000:
+    return f'{val:.3e}'
+  else:
+    return f'{val:.3f}'
+  
 class HexStructuralFEA:
   """Linear Structural Finite Element Analysis."""
 
@@ -211,7 +221,7 @@ class HexStructuralFEA:
         ], axis=1)  # Shape: (num_elems, 6)
 
       # STRESS_RELAXATION method;
-      q = 0.5  # SIMP like penalization for stress
+      r = SIMP_STRESS_RELAXATION  # SIMP like penalization for stress
       if isinstance(self.mat_prop, list):
         # Create D matrix for each material
         D_list = []
@@ -228,9 +238,8 @@ class HexStructuralFEA:
         nu = self.mat_prop.poissons_ratio
         D = hex_element_stiffness.isotropic_constitutive_matrix ( E, nu)
         self.stressComponents = np.einsum('ij,ej->ei', D, strain)
-
-
-      correction = (EVOID_RELATIVE + (1-EVOID_RELATIVE) * (self.x**q)).reshape((-1,1))
+        
+      correction = (EVOID_RELATIVE + (1-EVOID_RELATIVE) * (self.x**r)).reshape((-1,1))
       self.stressComponents *= correction 
       eStress = self.stressComponents
       self.vonMisesStress = np.sqrt(0.5*((eStress[:,0]-eStress[:,1])**2 +
@@ -664,6 +673,45 @@ class HexStructuralFEA:
           'label_font_size': 18
             }
         )
+    # Add annotations for max and min values
+    field_values = pv_mesh.cell_data['field']
+    if len(field_values) > 0:
+      max_idx = np.argmax(field_values)
+      min_idx = np.argmin(field_values)
+      max_val = field_values[max_idx]
+      min_val = field_values[min_idx]
+      
+      # Get cell centers for annotation positions
+      cell_centers = pv_mesh.cell_centers().points
+      max_pos = cell_centers[max_idx]
+      min_pos = cell_centers[min_idx]
+      
+      # Add text annotations with larger font and better visibility
+      plotter.add_point_labels(
+      [max_pos],
+      [f'Max: {format_value(max_val)}'],
+      point_size=10,
+      font_size=fontsize * 2,
+      text_color='red',
+      fill_shape=True,
+      shape_color='white',
+      shape_opacity=0.9,
+      bold=True,
+      always_visible=True
+      )
+      
+      plotter.add_point_labels(
+      [min_pos],
+      [f'Min: {format_value(min_val)}'],
+      point_size=10,
+      font_size=fontsize * 2,
+      text_color='blue',
+      fill_shape=True,
+      shape_color='white',
+      shape_opacity=0.9,
+      bold=True,
+      always_visible=True
+      )
     if (show_geometry):
       vertices = self.mesh.stlGeom.mesh.vectors.reshape(-1, 3)
       faces = np.arange(len(vertices)).reshape(-1, 3)
@@ -734,7 +782,7 @@ class HexStructuralFEA:
 if __name__ == "__main__":    
   from hex_structural_examples import StructuralExamples,getStructuralProblem
 
-  problem = StructuralExamples.BiClamp
+  problem = StructuralExamples.LBracket
   nDOFDesired = 50000
   mesh, mat_prop, bc,elem_body_force = getStructuralProblem(problem,nDOFDesired = nDOFDesired)
   solver = linear_solvers.Solvers.DPCG # typically DPCG or PARDISO

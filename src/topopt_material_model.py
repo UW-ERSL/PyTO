@@ -5,8 +5,10 @@ import numpy as np
 SIMP_PENALTY_MIN = 1 # Min Penalization factor for SIMP method
 SIMP_PENALTY_MAX = 3.0 # Max Penalization factor for SIMP method
 
-SIMP_PENALTY = 3.0  # Default penalization factor for SIMP method
+SIMP_PENALTY = 3.0  # Default penalization factor for SIMP method 
+SIMP_STRUCTURAL_PENALTY = 3.0  # Default penalization factor for SIMP method - structural
 SIMP_THERMAL_PENALTY = 1  # Default penalization factor for SIMP method - thermal
+SIMP_STRESS_RELAXATION = 0.5  # Relative stress limit for stress constraint
 # For large DOF problems, we encounters numerical issues for smaller values of EVOID_RELATIVE
 
 EVOID_RELATIVE = 1e-8  # Minimum Young's modulus for void elements

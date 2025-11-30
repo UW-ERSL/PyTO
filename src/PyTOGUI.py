@@ -23,7 +23,8 @@ from hex_thermal_fea import HexThermalFEA
 import hex_structural_fea
 from matplotlib.colors import ListedColormap
 from topopt_mma import topopt_mma
-from topopt_common import TOParams, TO_QOI
+from topopt_common import *
+from topopt_thermostructural_sensitivity import ThermoElasticSensitivity
 from topopt_ocm import topopt_optimality_criteria
 from topopt_pareto import topopt_pareto
 from topopt_levelset import topopt_levelset
@@ -2614,6 +2615,9 @@ class AnalysisWindow(QtWidgets.QDialog):
         mesher.createMeshFromSTLFile(self.parent.stl_geom.file_path, self.elements_spin.value())
         self.parent.hex_mesh = mesher
 
+        mesher.createEdofMatStructural()
+        mesher.createEdofMatThermal()
+
         # Prepare mesh for FEA
         self.prepare_mesh_for_analysis(mesher, "structural")
 
@@ -2921,7 +2925,7 @@ class AnalysisWindow(QtWidgets.QDialog):
             mass_density=material_props['Density'],
             thermal_conductivity=material_props['Thermal Conductivity'],
             specific_heat=material_props['Specific Heat Capacity'],
-            thermal_expansion=material_props['Thermal Expansion'],
+            thermal_expansion_coefficient=material_props['Thermal Expansion'],
             cost=material_props['Price'],
             yield_strength=material_props['Yield Strength']
         )
@@ -3064,7 +3068,7 @@ class AnalysisWindow(QtWidgets.QDialog):
             nGroups = min(self.parent.dsolver.maxGroups, max(self.parent.dsolver.minGroups, round(3*self.parent.hex_mesh.num_nodes/self.parent.dsolver.dofPerGroup)))
             self.parent.dsolver.create_deflation_groups(self.parent.hex_mesh, nGroups)
             self.parent.dsolver.create_deflation_matrix(self.parent.hex_mesh)
-            self.parent.dsolver.W = self.parent.dsolver.W[bc.free_dofs, :]
+            #self.parent.dsolver.W = self.parent.dsolver.W[bc.free_dofs, :]
         else:
             self.parent.dsolver = None
         
@@ -3267,7 +3271,7 @@ class AnalysisWindow(QtWidgets.QDialog):
             mass_density=material_props['Density'],
             thermal_conductivity=material_props['Thermal Conductivity'],
             specific_heat=material_props['Specific Heat Capacity'],
-            thermal_expansion=material_props['Thermal Expansion'],
+            thermal_expansion_coefficient=material_props['Thermal Expansion'],
             cost=material_props['Price'],
             yield_strength=material_props['Yield Strength']
         )
@@ -3829,7 +3833,7 @@ class TopOptConstraintsWindow(QtWidgets.QDialog):
                 actor = self.create_plane_actor(center, config['normal'], size, config['color'])
                 self.parent.topopt_constraint_actors[symmetry_key] = actor
         
-        # Handle cyclic symmetry - UPDATED VERSION
+        # Handle cyclic symmetry
         if self.get_widget_value('cyclic_symmetry_check'):
             angle_text = self.get_widget_value('cyclic_symmetry_combo')
             
@@ -4225,13 +4229,21 @@ class StructuralTopOptWindow(QtWidgets.QDialog):
         # Apply topopt constraints
         self.apply_topopt_constraints_to_params(to_params)
 
-        
+        self.to_params = to_params
+
         # Create FE solver
         fe_solver = self.create_fe_solver_for_topopt()
+        self.fe_solver = fe_solver
         
         success = False
         error_msg = ""
         u, history, n_feas = None, None, 0
+
+        history = {
+        'objective': [],
+        'compliance': [],
+        'volume': []
+        }
 
         def progress_callback(*args):
             if len(args) == 0:
@@ -4240,25 +4252,26 @@ class StructuralTopOptWindow(QtWidgets.QDialog):
                 self.optimization_progress.emit(str(args[0]))
 
         try:
+            # Call topopt_mma with correct parameters
             if method == "DENSITY-MMA":
-                #print(to_params.KeepFixedElems)
-                #print(to_params.ElemsToKeep)
-                
-                u, history, success, error_msg, n_feas = topopt_mma(
-                    fe_solver=fe_solver,
-                    to_params=to_params,
-                    maxMMAIterations=250,
-                    timeLimitSecs=28800,
-                    move_limit=0.2,
-                    kkt_tol=1.e-6,
-                    objective_tol=1.e-4,
-                    constraint_tol=1.e-4,
+                u, history, success, errorMsg, nFEAs = topopt_mma(
+                    feaMode=FEA_MODE.STRUCTURAL,
+                    fe_structural_solver=fe_solver,
+                    fe_thermal_solver=None,
+                    to_params=self.to_params,
+                    maxMMAIterations=self.to_params.MaxIterations,
                     print_progress=True,
                     plot_progress=True,
                     binarize_topology=False,
                     progress_callback=progress_callback,
-                    plotter=self.parent.plotter,  
+                    plotter=self.parent.plotter,
                 )
+                
+                if success:
+                    self.parent.optimized_x = u
+                    self.optimization_done.emit(success, error_msg, history, u, self.fe_solver)
+                else:
+                    self.optimization_done.emit(False, f"Optimization failed: {errorMsg}", None, None, None)
                 
             elif method == "DENSITY-OC":
                 u, history, success, error_msg, n_feas = topopt_optimality_criteria(
@@ -4351,19 +4364,29 @@ class StructuralTopOptWindow(QtWidgets.QDialog):
         self.stop_button.setEnabled(False)
         
         if success and history is not None:
-            # Handle different history formats
-            if 'objective' in history:
-                final_objective = history['objective'][-1]
-                final_volume = history['volume'][-1]
-                n_iterations = len(history['objective'])
-            elif 'compliance' in history:  # Level set method
-                final_objective = history['compliance'][-1]
-                final_volume = history['volume'][-1]
-                n_iterations = len(history['compliance'])
-            else:
-                final_objective = 0.0
-                final_volume = 0.0
-                n_iterations = 0
+            # Handle different history formats from different optimization methods
+            final_objective = 0.0
+            final_volume = 0.0
+            n_iterations = 0
+            
+            # Check which keys are available in history
+            if isinstance(history, dict):
+                # Try to get objective value
+                if 'objective' in history and history['objective']:
+                    final_objective = history['objective'][-1]
+                    n_iterations = len(history['objective'])
+                elif 'compliance' in history and history['compliance']:
+                    final_objective = history['compliance'][-1]
+                    n_iterations = len(history['compliance'])
+                
+                # Try to get volume
+                if 'volume' in history and history['volume']:
+                    final_volume = history['volume'][-1]
+                elif 'volume_fraction' in history and history['volume_fraction']:
+                    final_volume = history['volume_fraction'][-1]
+                else:
+                    # Default to specified volume fraction if volume not in history
+                    final_volume = self.vol_spinbox.value()
             
             self.parent.message_text.append("Structural topology optimization completed successfully")
             self.parent.message_text.append(f"Method: {self.method_combo.currentText()}")
@@ -4419,7 +4442,7 @@ class StructuralTopOptWindow(QtWidgets.QDialog):
         to_params.YSymmetry = symmetry.get('y_symmetry', False)
         to_params.ZSymmetry = symmetry.get('z_symmetry', False)
 
-        # Cyclic symmetry constraint
+        # Cyclic symmetry constraint - use ZAxisAngularSymmetry only
         manufacturing_cyclic = manufacturing.get('cyclic_symmetry', {})
         if manufacturing_cyclic.get('enabled', False):
             value = manufacturing_cyclic.get('value', None)
@@ -4427,21 +4450,17 @@ class StructuralTopOptWindow(QtWidgets.QDialog):
             if value and "(" in value and ")" in value:
                 try:
                     n_planes = int(value.split('(')[1].split(')')[0])
-                    to_params.CyclicSymmetry = True
-                    to_params.CyclicSymmetryPlanes = n_planes
+                    to_params.ZAxisAngularSymmetry = n_planes
                 except Exception:
-                    to_params.CyclicSymmetry = False
-                    to_params.CyclicSymmetryPlanes = None
+                    to_params.ZAxisAngularSymmetry = 0
             else:
-                to_params.CyclicSymmetry = False
-                to_params.CyclicSymmetryPlanes = None
+                to_params.ZAxisAngularSymmetry = 0
         else:
-            to_params.CyclicSymmetry = False
-            to_params.CyclicSymmetryPlanes = None
+            to_params.ZAxisAngularSymmetry = 0
 
         # Other constraints
         other = constraints.get('other', {})
-        to_params.ENSURE_CONNECTED_TOPOLOGY = other.get('connected_topology', False)
+        #to_params.ENSURE_CONNECTED_TOPOLOGY = other.get('connected_topology', False)
 
         if other.get('keep_fixed_faces', False):
             analysis_window = AnalysisWindow(self.parent)
@@ -4451,7 +4470,7 @@ class StructuralTopOptWindow(QtWidgets.QDialog):
             )
             to_params.ElemsToKeep = list(constrained_elements)
         else:
-            to_params.ElemsToKeep = None  # <-- Explicitly clear if not enabled
+            to_params.ElemsToKeep = None 
 
     def create_fe_solver_for_topopt(self):
         """Create FE solver for topology optimization (now handles torque)."""

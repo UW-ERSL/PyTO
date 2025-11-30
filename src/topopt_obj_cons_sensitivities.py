@@ -190,9 +190,9 @@ def compute_pnorm_stress_and_sensitivity(sol: np.ndarray, x, fe_solver, KE, mate
     mesh = fe_solver.mesh
     nelems = mesh.num_elems
 
-    qStress = 0.5  # STRESS relaxation factor
-    pSIMP = 3    # SIMP penalization
-    p = PNORM_EXPONENT  # p-norm exponent
+    qStress = SIMP_STRESS_RELAXATION  # STRESS relaxation factor
+    pSIMP = SIMP_STRUCTURAL_PENALTY    # SIMP penalization
+    PNORM_EXPONENT  # p-norm exponent
     
     E = fe_solver.mat_prop.youngs_modulus 
     nu = fe_solver.mat_prop.poissons_ratio
@@ -235,7 +235,7 @@ def compute_pnorm_stress_and_sensitivity(sol: np.ndarray, x, fe_solver, KE, mate
     vm_pnorm = fe_solver.pNormStress
     
     # Compute dpn_dvms = (sum(vm^p))^(1/p - 1)
-    dpn_dvms = (np.sum(vm_elems ** p)) ** (1/p - 1)
+    dpn_dvms = (np.sum(vm_elems **PNORM_EXPONENT )) ** (1/PNORM_EXPONENT - 1)
     
     # Pre-compute DvmDs for all elements
     DvmDs_all = np.zeros((nelems, 6))
@@ -258,7 +258,7 @@ def compute_pnorm_stress_and_sensitivity(sol: np.ndarray, x, fe_solver, KE, mate
     for e in range(nelems):
         edof = mesh.edofMatStructural[e]
         u_e = sol[edof]
-        beta[e] = qStress * (x[e]**(qStress-1)) * (vm_elems[e]**(p-1)) * DvmDs_all[e] @ D @ B @ u_e
+        beta[e] = qStress * (x[e]**(qStress-1)) * (vm_elems[e]**(PNORM_EXPONENT-1)) * DvmDs_all[e] @ D @ B @ u_e
     
     T1 = dpn_dvms * beta
     
@@ -266,7 +266,7 @@ def compute_pnorm_stress_and_sensitivity(sol: np.ndarray, x, fe_solver, KE, mate
     g = np.zeros(fe_solver.bc.num_dofs)
     for e in range(nelems):
         edof = mesh.edofMat[e]
-        g_e = (x[e]**qStress) * dpn_dvms * B.T @ D.T @ DvmDs_all[e] * (vm_elems[e]**(p-1))
+        g_e = (x[e]**qStress) * dpn_dvms * B.T @ D.T @ DvmDs_all[e] * (vm_elems[e]**(PNORM_EXPONENT-1))
         g[edof] += g_e
     
     # Solve adjoint equation
@@ -433,7 +433,7 @@ def compute_thermoelastic_compliance_and_gradient(x, temperature, displacement,
 	# K_T^T * lambda_T = -sum_e (xi_e^p * E0 * alpha * H^T * d_e)
 	lambda_T = solve_thermal_adjoint(x,displacement,fe_thermal_solver,fe_structural_solver)
 
-	p = SIMP_PENALTY
+	p = SIMP_STRUCTURAL_PENALTY
 	q = SIMP_THERMAL_PENALTY
 	# Step 2: Compute element-wise sensitivities
 	E = fe_structural_solver.mat_prop.youngs_modulus 
@@ -447,7 +447,7 @@ def compute_thermoelastic_compliance_and_gradient(x, temperature, displacement,
 	term1 = np.zeros(nelem)
 	term2 = np.zeros(nelem) 
 	term3 = np.zeros(nelem)
-	p_thermal  = 1 # For better convergence (per Ooms paper)
+	p_thermal  = SIMP_THERMAL_PENALTY # For better convergence (per Ooms paper)
 	for e in range(nelem):
 		# Get element DOFs
 		edof_s = fe_structural_solver.mesh.edofMatStructural[e, :]
