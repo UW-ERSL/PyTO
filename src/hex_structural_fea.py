@@ -496,10 +496,11 @@ class HexStructuralFEA:
                     edge_color='black',
                     line_width=1,
                     scalar_bar_args={
-                            'title': 'Deformation',
+                            'title': '',
                             'vertical': True,
-                            'position_x': 0.8,
-                            'position_y': 0.3,
+                            'position_x': 0.7,
+                            'position_y': 0.15,
+                            'height': 0.6,
                             'width': 0.06
                             }
                   )
@@ -517,8 +518,10 @@ class HexStructuralFEA:
       plotter.close()
     else:
       if (externalPlotter):
+        plotter.add_title('Deformation plot', font_size=8)
         plotter.show(interactive_update=not auto_close, auto_close=auto_close)
       else:
+        plotter.add_title('Deformation plot', font_size=8)
         plotter.show()
     self.camera_position = plotter.camera_position # For all future displays
     return 
@@ -645,12 +648,12 @@ class HexStructuralFEA:
             line_width=1,
             opacity=1.0,
             scalar_bar_args={
-                'title': title,
+               'title': '',
                 'vertical': True,
-                'position_x': 0.85,   # Move to the right (0.0 = left, 1.0 = right)
-                'position_y': 0.05,   # Move to the bottom (0.0 = bottom, 1.0 = top)
+                'position_x': 0.7,   # Move to the right (0.0 = left, 1.0 = right)
+                'position_y': 0.15,   # Move to the bottom (0.0 = bottom, 1.0 = top)
                 'width': 0.08,        # Make it narrower
-                'height': 0.9,        # Make it taller
+                'height': 0.6,        # Make it taller
                 'title_font_size': 18,
                 'label_font_size': 18
             }
@@ -664,12 +667,12 @@ class HexStructuralFEA:
             edge_color='black',
             line_width=1,
             scalar_bar_args={
-          'title': title,
+               'title': '',
           'vertical': True,
-          'position_x': 0.85,   # Move to the right (0.0 = left, 1.0 = right)
-          'position_y': 0.05,   # Move to the bottom (0.0 = bottom, 1.0 = top)
+          'position_x': 0.7,   # Move to the right (0.0 = left, 1.0 = right)
+          'position_y': 0.15,   # Move to the bottom (0.0 = bottom, 1.0 = top)
           'width': 0.08,        # Make it narrower
-          'height': 0.9,        # Make it taller
+          'height': 0.6,        # Make it taller
           'title_font_size': 18,
           'label_font_size': 18
             }
@@ -719,6 +722,7 @@ class HexStructuralFEA:
       faces = np.column_stack((np.full(len(faces), 3), faces))
       geomMesh = pv.PolyData(vertices, faces)
       plotter.add_mesh(geomMesh, opacity = 0.5, color='white', show_edges=True)
+      plotter.add_title(title, font_size=fontsize)
     # Save image if path is provided
 
     if save_path:
@@ -740,9 +744,13 @@ class HexStructuralFEA:
         plotter.close()
     else:
         if externalPlotter:
+            plotter.add_title(title, font_size=fontsize)
             plotter.show(interactive_update=not auto_close, auto_close=auto_close)
+            
         else:
+            plotter.add_title(title, font_size=fontsize)
             plotter.show()
+
     self.camera_position = plotter.camera_position
     return
 #################################################################

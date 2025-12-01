@@ -724,8 +724,9 @@ class HexThermalFEA:
               'title': '',
               'vertical': True,
               'position_x': 0.8,
-              'position_y': 0.3,
-              'width': 0.06
+              'position_y': 0.15,
+              'width': 0.06,
+              'height': 0.7,
             }
           )
     # Add max/min value annotations
