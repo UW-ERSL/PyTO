@@ -535,6 +535,7 @@ class HexStructuralFEA:
             cross_section=None,
             show_geometry=False,
             plotter = None,
+            annotate_max_min = False,
             colors=None):  # New parameter for custom colors
     """
     Plot element field on the mesh, with optional discrete custom colors.
@@ -675,43 +676,43 @@ class HexStructuralFEA:
         )
     # Add annotations for max and min values
     field_values = pv_mesh.cell_data['field']
-    if len(field_values) > 0:
-      max_idx = np.argmax(field_values)
-      min_idx = np.argmin(field_values)
-      max_val = field_values[max_idx]
-      min_val = field_values[min_idx]
-      
-      # Get cell centers for annotation positions
-      cell_centers = pv_mesh.cell_centers().points
-      max_pos = cell_centers[max_idx]
-      min_pos = cell_centers[min_idx]
-      
-      # Add text annotations with larger font and better visibility
-      plotter.add_point_labels(
-      [max_pos],
-      [f'Max: {format_value(max_val)}'],
-      point_size=10,
-      font_size=fontsize * 2,
-      text_color='red',
-      fill_shape=True,
-      shape_color='white',
-      shape_opacity=0.9,
-      bold=True,
-      always_visible=True
-      )
-      
-      plotter.add_point_labels(
-      [min_pos],
-      [f'Min: {format_value(min_val)}'],
-      point_size=10,
-      font_size=fontsize * 2,
-      text_color='blue',
-      fill_shape=True,
-      shape_color='white',
-      shape_opacity=0.9,
-      bold=True,
-      always_visible=True
-      )
+    if annotate_max_min and len(field_values) > 0:
+        max_idx = np.argmax(field_values)
+        min_idx = np.argmin(field_values)
+        max_val = field_values[max_idx]
+        min_val = field_values[min_idx]
+        
+        # Get cell centers for annotation positions
+        cell_centers = pv_mesh.cell_centers().points
+        max_pos = cell_centers[max_idx]
+        min_pos = cell_centers[min_idx]
+        
+        # Add text annotations with larger font and better visibility
+        plotter.add_point_labels(
+        [max_pos],
+        [f'Max: {format_value(max_val)}'],
+        point_size=10,
+        font_size=fontsize * 2,
+        text_color='red',
+        fill_shape=True,
+        shape_color='white',
+        shape_opacity=0.9,
+        bold=True,
+        always_visible=True
+        )
+        
+        plotter.add_point_labels(
+        [min_pos],
+        [f'Min: {format_value(min_val)}'],
+        point_size=10,
+        font_size=fontsize * 2,
+        text_color='blue',
+        fill_shape=True,
+        shape_color='white',
+        shape_opacity=0.9,
+        bold=True,
+        always_visible=True
+        )
     if (show_geometry):
       vertices = self.mesh.stlGeom.mesh.vectors.reshape(-1, 3)
       faces = np.arange(len(vertices)).reshape(-1, 3)

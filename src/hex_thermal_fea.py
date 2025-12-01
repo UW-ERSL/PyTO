@@ -300,7 +300,7 @@ class HexThermalFEA:
 
 
   #################################################################
-  def plot_temperature(self,auto_close = True,plotter=None, save_path=None):
+  def plot_temperature(self,auto_close = True,plotter=None, save_path=None, annotate_max_min = False):
     # Return if no solution exists yet
     if not hasattr(self, 'sol'):
       return None
@@ -399,46 +399,46 @@ class HexThermalFEA:
 
 
     # Add max/min value annotations
-    if len(sol) > 0:
-      max_val = np.max(sol)
-      min_val = np.min(sol)
-      max_idx = np.argmax(sol)
-      min_idx = np.argmin(sol)
-      
-      # Get coordinates for max and min values
-      max_pos = vertices[max_idx]
-      min_pos = vertices[min_idx]
-      
+    if annotate_max_min and len(sol) > 0:
+        max_val = np.max(sol)
+        min_val = np.min(sol)
+        max_idx = np.argmax(sol)
+        min_idx = np.argmin(sol)
+        
+        # Get coordinates for max and min values
+        max_pos = vertices[max_idx]
+        min_pos = vertices[min_idx]
+        
 
-      
-      # Add point labels for max and min
-      plotter.add_point_labels(
-      [max_pos],
-      [f'Max: {format_value(max_val)}'],
-      font_size=12,
-      text_color='red',
-      point_size=15,
-      point_color='red',
-      render_points_as_spheres=True,
-      always_visible=True,
-      shape_opacity=0.8,
-      fill_shape=True,
-      shape_color='white'
-      )
-      
-      plotter.add_point_labels(
-      [min_pos],
-      [f'Min: {format_value(min_val)}'],
-      font_size=12,
-      text_color='blue',
-      point_size=15,
-      point_color='blue',
-      render_points_as_spheres=True,
-      always_visible=True,
-      shape_opacity=0.8,
-      fill_shape=True,
-      shape_color='white'
-      )
+        
+        # Add point labels for max and min
+        plotter.add_point_labels(
+        [max_pos],
+        [f'Max: {format_value(max_val)}'],
+        font_size=12,
+        text_color='red',
+        point_size=15,
+        point_color='red',
+        render_points_as_spheres=True,
+        always_visible=True,
+        shape_opacity=0.8,
+        fill_shape=True,
+        shape_color='white'
+        )
+        
+        plotter.add_point_labels(
+        [min_pos],
+        [f'Min: {format_value(min_val)}'],
+        font_size=12,
+        text_color='blue',
+        point_size=15,
+        point_color='blue',
+        render_points_as_spheres=True,
+        always_visible=True,
+        shape_opacity=0.8,
+        fill_shape=True,
+        shape_color='white'
+        )
     # Set camera position for left-bottom-forward view
     view_distance = 2.5 * self.mesh.bbox.diag_length
     offset = 0.2 * view_distance  # Offset for object position
@@ -616,6 +616,7 @@ class HexThermalFEA:
             auto_close = True,
             fontsize=10,
             cross_section=None,
+            annotate_max_min = False,
             plotter=None):  # New parameter for cross-section
     """Plot element field on the mesh.
     
@@ -729,44 +730,44 @@ class HexThermalFEA:
           )
     # Add max/min value annotations
     field_values = pv_mesh.cell_data['field']
-    if len(field_values) > 0:
-      max_val = np.max(field_values)
-      min_val = np.min(field_values)
-      max_idx = np.argmax(field_values)
-      min_idx = np.argmin(field_values)
-      
-      # Get cell centers for max and min values
-      max_center = pv_mesh.cell_centers().points[max_idx]
-      min_center = pv_mesh.cell_centers().points[min_idx]
-      
-      # Add point labels for max and min
-      plotter.add_point_labels(
-      [max_center],
-      [f'Max: {format_value(max_val)}'],
-      font_size=12,
-      text_color='red',
-      point_size=15,
-      point_color='red',
-      render_points_as_spheres=True,
-      always_visible=True,
-      shape_opacity=0.8,
-      fill_shape=True,
-      shape_color='white'
-      )
-      
-      plotter.add_point_labels(
-      [min_center],
-      [f'Min: {format_value(min_val)}'],
-      font_size=12,
-      text_color='blue',
-      point_size=15,
-      point_color='blue',
-      render_points_as_spheres=True,
-      always_visible=True,
-      shape_opacity=0.8,
-      fill_shape=True,
-      shape_color='white'
-      )
+    if annotate_max_min and len(field_values) > 0:
+        max_val = np.max(field_values)
+        min_val = np.min(field_values)
+        max_idx = np.argmax(field_values)
+        min_idx = np.argmin(field_values)
+        
+        # Get cell centers for max and min values
+        max_center = pv_mesh.cell_centers().points[max_idx]
+        min_center = pv_mesh.cell_centers().points[min_idx]
+        
+        # Add point labels for max and min
+        plotter.add_point_labels(
+        [max_center],
+        [f'Max: {format_value(max_val)}'],
+        font_size=12,
+        text_color='red',
+        point_size=15,
+        point_color='red',
+        render_points_as_spheres=True,
+        always_visible=True,
+        shape_opacity=0.8,
+        fill_shape=True,
+        shape_color='white'
+        )
+        
+        plotter.add_point_labels(
+        [min_center],
+        [f'Min: {format_value(min_val)}'],
+        font_size=12,
+        text_color='blue',
+        point_size=15,
+        point_color='blue',
+        render_points_as_spheres=True,
+        always_visible=True,
+        shape_opacity=0.8,
+        fill_shape=True,
+        shape_color='white'
+        )
     # Add title
     plotter.add_title(title, font_size=8)
 
