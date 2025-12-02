@@ -219,9 +219,7 @@ def topopt_mma(feaMode: FEA_MODE, fe_structural_solver, fe_thermal_solver,
         if (plot_progress):
            if progress_callback is not None:
                progress_callback()
-           fe_solver.plot_pseudo_density(
-                   plotter=plotter,
-                   auto_close=False,
+           fe_solver.plot_pseudo_density_realtime(
                    title=f"Iter {mmaIterations + 1}"
                )
         

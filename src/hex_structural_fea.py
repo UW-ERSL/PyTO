@@ -788,6 +788,90 @@ class HexStructuralFEA:
                          mask_low_pseudodensity=False, title= title,
                 save_path=save_path, fontsize=fontsize,plotter = plotter)
     
+  #################################################################
+  # NEW METHOD: Add this for real-time optimization visualization
+ 
+  def plot_pseudo_density_realtime(self, title='Pseudo density', iteration=0):
+    """
+    Real-time visualization with proper Qt event loop handling.
+    This is the CORRECT way to use BackgroundPlotter in a script!
+    """
+    try:
+        from pyvistaqt import BackgroundPlotter
+        from PyQt5.QtWidgets import QApplication
+        import numpy as np
+        import pyvista as pv
+        
+        if not hasattr(self, '_rt_plotter'):
+            # First call: create BackgroundPlotter
+            print("Creating real-time visualization window...")
+            
+            # CRITICAL: Get or create QApplication
+            app = QApplication.instance()
+            if app is None:
+                app = QApplication([])
+            self._qt_app = app
+            
+            # Create BackgroundPlotter
+            self._rt_plotter = BackgroundPlotter()
+            self._rt_plotter.camera_position = self.camera_position
+            
+            # Create mesh
+            cells = self.mesh.elemArray.shape[0]
+            cell_type = np.full(cells, pv.CellType.HEXAHEDRON, dtype=np.uint8)
+            cells_pv = np.column_stack((np.full(cells, 8), self.mesh.elemArray)).flatten()
+            pv_mesh = pv.UnstructuredGrid(cells_pv, cell_type, self.mesh.node_xyz)
+            
+            density = self.mesh.elemPseudoDensity.copy()
+            mask = density > 0.01
+            pv_mesh = pv_mesh.extract_cells(mask)
+            pv_mesh.cell_data['density'] = density[mask]
+            
+            self._rt_plotter.add_mesh(
+                pv_mesh, scalars='density', cmap='gray_r',
+                show_edges=True, edge_color='black', line_width=1,
+                name='density_mesh'  # IMPORTANT: name it for updates
+            )
+            self._rt_plotter.add_text(title, position='upper_edge', font_size=14)
+            
+            print("Real-time visualization ready!")
+        else:
+            # Update existing mesh
+            cells = self.mesh.elemArray.shape[0]
+            cell_type = np.full(cells, pv.CellType.HEXAHEDRON, dtype=np.uint8)
+            cells_pv = np.column_stack((np.full(cells, 8), self.mesh.elemArray)).flatten()
+            pv_mesh = pv.UnstructuredGrid(cells_pv, cell_type, self.mesh.node_xyz)
+            
+            density = self.mesh.elemPseudoDensity.copy()
+            mask = density > 0.01
+            pv_mesh = pv_mesh.extract_cells(mask)
+            pv_mesh.cell_data['density'] = density[mask]
+            
+            # Clear and re-add
+            self._rt_plotter.clear()
+            self._rt_plotter.add_mesh(
+                pv_mesh, scalars='density', cmap='gray_r',
+                show_edges=True, edge_color='black', line_width=1,
+                name='density_mesh'
+            )
+            self._rt_plotter.add_text(title, position='upper_edge', font_size=14)
+        
+        # CRITICAL: Process Qt events to update the window!
+        # This is what prevents the "Not Responding" freeze!
+        self._qt_app.processEvents()
+        
+    except ImportError as e:
+        if iteration == 0:
+            print("=" * 60)
+            print("ERROR: Missing dependencies!")
+            print("Install: pip install pyvistaqt PyQt5")
+            print("=" * 60)
+    except Exception as e:
+        if iteration == 0:
+            print(f"Visualization error: {e}")
+
+
+    
 #################################################################
 if __name__ == "__main__":    
   from hex_structural_examples import StructuralExamples,getStructuralProblem
