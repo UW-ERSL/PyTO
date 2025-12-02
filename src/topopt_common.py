@@ -75,6 +75,7 @@ class TOParams: # These are the default parameters
     Enforce_Constraints_MMA: bool = False # Should the constraints be enforced more strongly in GCMMA?
     Eliminate_Hanging_Elements: bool = False # Should the hanging elements be eliminated after optimization?
     MaterialsExcelFile: str = '' # Path to the Excel file containing material properties for MMTO problems
+    ApplyBinarizationPenalty: bool = True # Should a binarization penalty be applied during optimization
     materialModel: MaterialModel = MaterialModel.SIMP # Material model for density based topology optimization
 
 def find_elements_with_forces(mesh: hex_mesher.HexMesher, force,nDOFPerNode) -> np.ndarray:

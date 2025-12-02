@@ -134,7 +134,7 @@ def topopt_mma(feaMode: FEA_MODE, fe_structural_solver, fe_thermal_solver,
                             constraint_tol: float = 1.e-4,
                             print_progress: bool = True,
                             plot_progress: bool = False,
-                            binarize_topology: bool = True,   
+                            binarize_topology: bool = False,   
                             progress_callback=None, 
                             plotter=None  
                              ) -> tuple[np.ndarray, dict]:
@@ -222,7 +222,7 @@ def topopt_mma(feaMode: FEA_MODE, fe_structural_solver, fe_thermal_solver,
            fe_solver.plot_pseudo_density(
                    plotter=plotter,
                    auto_close=False,
-                   title=f"Iter {len(history['objective']) + 1}"
+                   title=f"Iter {mmaIterations + 1}"
                )
         
         if (feaMode == FEA_MODE.STRUCTURAL) or (feaMode == FEA_MODE.THERMAL):
@@ -253,11 +253,11 @@ def topopt_mma(feaMode: FEA_MODE, fe_structural_solver, fe_thermal_solver,
         obj = obj/obj0 # normalize objective
         grad_obj = grad_obj/obj0 # normalize gradient
 
-        # if (True):
-        #     density_scaling = 0.1*mmaIterations/(maxMMAIterations)
-        #     #obj += density_scaling * ((x*(1 - x)).sum())
-        #     grad_obj += density_scaling * (1 - 2*x)
+        if to_params.ApplyBinarizationPenalty:
+            density_scaling = 1e-5*(np.exp(mmaIterations/(maxMMAIterations)) - 1)
+            grad_obj += density_scaling * (1 - 2*x)  # pushes towards 0 or 1
 
+       
         if (nodal_body_force is not None): # additional body force term. Allowed for structural and thermo-structural problems only
             ce_body_force = (sol[mesh.edofMatStructural].reshape(num_elems, 24) * nodal_body_force[mesh.edofMatStructural].reshape(num_elems, 24)).sum(1)
             grad_obj +=  2*ce_body_force*get_material_model_rho_sensitivity(x,material_model)
@@ -353,7 +353,7 @@ def topopt_mma(feaMode: FEA_MODE, fe_structural_solver, fe_thermal_solver,
         displacement = fe_structural_solver.solve(x, material_model) # structural solve
         sol = displacement.copy() # for use later
         fe_structural_solver.postprocess()
-        obj, grad_obj = compute_thermoelastic_compliance_and_gradient(x, temperature, displacement,
+        obj, grad_obj = compute_thermoelastic_compliance_and_gradient(x, temperature, displacement,to_params,
                                                 fe_thermal_solver, fe_structural_solver)
         c, dcdx = compute_constraint_and_gradient(feaMode,to_params,sol,x, fe_solver,KE)
     else:
@@ -373,7 +373,7 @@ def topopt_mma(feaMode: FEA_MODE, fe_structural_solver, fe_thermal_solver,
     grey_elements = np.sum((x > 0.1) & (x < 0.9))
     fraction_grey = (grey_elements / num_elems) 
     print("-" * 50)
-    log_message(f"Final objective: {obj:.4g}, vf: {np.mean(x):.3f}, grey: {fraction_grey:.3f}")
+    log_message(f"Final objective: {obj:.4g}, vf: {np.mean(x):.3f}, grey: {100*fraction_grey:.2f}%")
 
     log_message(f"Total Time: {time.time() - tStart:.2f} s")
     log_message(f"Error: {errorMsg}")
@@ -386,8 +386,8 @@ if __name__ == "__main__":
     print("-" * 50)
 
     # Choose the TO problem
-    to_problem = StructuralTOExamples.LBracketThickTopLoad_Stress_Vol 
+    to_problem = StructuralTOExamples.LBracketTopLoad 
     #to_problem = ThermalTOExamples.FourCornersThermal
-    #to_problem = ThermoStructuralTOExamples.BiClamp
+    to_problem = ThermoStructuralTOExamples.MBBBeam
 
     run_topopt_mma(to_problem)

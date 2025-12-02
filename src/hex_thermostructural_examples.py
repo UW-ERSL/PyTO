@@ -87,9 +87,11 @@ def createMBBBeamProblem(nDOFDesired=25000, structural_load = 5000,Ta = 23,Tf  =
     symmetryNodes = mesh.getNodesOnBoundingBoxPlane(0,True) # x = 0 plane
     hingedNodes = mesh.getNodesOnBoundingBoxPlane(1,True) # y = 0 plane
     node_pts = mesh.node_xyz
-    Lx = np.max(node_pts[:, 0])
-    hingedNodes = hingedNodes[node_pts[hingedNodes, 0] > Lx*0.95]
+  
+    xMax = np.max(node_pts[:, 0])
 
+    hingedNodes = np.intersect1d(mesh.getNodesOnBoundingBoxPlane(1,True), np.where(mesh.node_xyz[:,0] == xMax)[0])
+   
     fixed_dofs = np.concatenate([3 * symmetryNodes,
             3 * hingedNodes + 1,
             3 * hingedNodes + 2]).astype(int)
@@ -97,9 +99,8 @@ def createMBBBeamProblem(nDOFDesired=25000, structural_load = 5000,Ta = 23,Tf  =
     mesh.node_indices[hingedNodes, 3] = 1 # for plotting
 
   
-    load_nodes_temp = mesh.getNodesOnBoundingBoxPlane(1,False) # y = yMax plane
-
-    load_nodes = load_nodes_temp[node_pts[load_nodes_temp, 0] < 0.05*Lx]
+    xMin = np.min(mesh.node_xyz[:,0])
+    load_nodes = np.intersect1d(mesh.getNodesOnBoundingBoxPlane(1,False), np.where(mesh.node_xyz[:,0] == xMin)[0])
     mesh.node_indices[load_nodes, 3] = 2 # for plotting
 
     force = np.zeros(3*mesh.num_nodes)

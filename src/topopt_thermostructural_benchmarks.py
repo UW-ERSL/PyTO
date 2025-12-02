@@ -31,7 +31,7 @@ def getThermoStructuralTOProblem(to_problem: ThermoStructuralTOExamples, **kwarg
 		thermostructural_problem = ThermoStructuralExamples.MBBBeam 
 		kwargs['structural_load'] = 5000
 		kwargs['Ta'] = 23  # Ambient temperature
-		kwargs['Tf'] = 33 # Base temperature
+		kwargs['Tf'] = 123 # Base temperature
 		to_params.Comment = "Thermo-structural MBB Beam example"
 		to_params.ExtrudeZ = True
 		to_params.nDOFDesired = 25000

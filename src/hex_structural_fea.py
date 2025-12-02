@@ -499,7 +499,7 @@ class HexStructuralFEA:
                     scalar_bar_args={
                             'title': '',
                             'vertical': True,
-                            'position_x': 0.7,
+                            'position_x': 0.8,
                             'position_y': 0.15,
                             'height': 0.6,
                             'width': 0.06
@@ -651,7 +651,7 @@ class HexStructuralFEA:
             scalar_bar_args={
                'title': '',
                 'vertical': True,
-                'position_x': 0.7,   # Move to the right (0.0 = left, 1.0 = right)
+                'position_x': 0.80,   # Move to the right (0.0 = left, 1.0 = right)
                 'position_y': 0.15,   # Move to the bottom (0.0 = bottom, 1.0 = top)
                 'width': 0.08,        # Make it narrower
                 'height': 0.6,        # Make it taller
@@ -670,7 +670,7 @@ class HexStructuralFEA:
             scalar_bar_args={
                'title': '',
           'vertical': True,
-          'position_x': 0.7,   # Move to the right (0.0 = left, 1.0 = right)
+          'position_x': 0.8,   # Move to the right (0.0 = left, 1.0 = right)
           'position_y': 0.15,   # Move to the bottom (0.0 = bottom, 1.0 = top)
           'width': 0.08,        # Make it narrower
           'height': 0.6,        # Make it taller
@@ -745,11 +745,11 @@ class HexStructuralFEA:
         plotter.close()
     else:
         if externalPlotter:
-            plotter.add_title(title, font_size=fontsize)
+            plotter.add_title(title, font_size=0.9*fontsize)
             plotter.show(interactive_update=not auto_close, auto_close=auto_close)
             
         else:
-            plotter.add_title(title, font_size=fontsize)
+            plotter.add_title(title, font_size=0.9*fontsize)
             plotter.show()
 
     self.camera_position = plotter.camera_position

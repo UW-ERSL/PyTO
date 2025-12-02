@@ -1093,7 +1093,7 @@ def createMBBBeamProblem(nDOFDesired: int = 10000, load = 2.7e4):
   symmetry_dofs = np.array([3 * symmetry_nodes]).flatten().astype(int)
 
   xMax = np.max(mesh.node_xyz[:,0])
-  right_nodes=np.intersect1d(mesh.getNodesOnBoundingBoxPlane(1,True), np.where(mesh.node_xyz[:,0] >= 0.95*xMax)[0])
+  right_nodes=np.intersect1d(mesh.getNodesOnBoundingBoxPlane(1,True), np.where(mesh.node_xyz[:,0] == xMax)[0])
   right_dofs = np.array([3 * right_nodes+1, 3 * right_nodes + 2]).flatten().astype(int)
   
   fixed_dofs = np.union1d(symmetry_dofs,right_dofs)
@@ -1101,8 +1101,8 @@ def createMBBBeamProblem(nDOFDesired: int = 10000, load = 2.7e4):
   dirichlet_values = 0*np.ones_like(fixed_dofs, dtype = float)
   mesh.node_indices[fixed_nodes, 3] = 1
 
-
-  load_nodes = np.intersect1d(mesh.getNodesOnBoundingBoxPlane(1,False), np.where(mesh.node_xyz[:,0] <= 0.05*xMax)[0])
+  xMin = np.min(mesh.node_xyz[:,0])
+  load_nodes = np.intersect1d(mesh.getNodesOnBoundingBoxPlane(1,False), np.where(mesh.node_xyz[:,0] == xMin)[0])
   load_dofs = 3 * load_nodes + 1  # y direction
 
   mesh.node_indices[load_nodes, 3] = 2

@@ -1,3 +1,4 @@
+from src.topopt_thermostructural_benchmarks import ThermoStructuralTOExamples
 from topopt_common import *
 from topopt_mma import topopt_mma
 from topopt_ocm import topopt_optimality_criteria	
@@ -50,8 +51,10 @@ def runTOMethodOnStructuralBenchmarks(optimizationMethod):
 	benchmarks_bodyforce_problems = [StructuralTOExamples.GravityPlate,
 						StructuralTOExamples.CentrifugalPlate]
 
+	benchmarks_thermostructural_problems = [ThermoStructuralTOExamples.BiClamp,
+						ThermoStructuralTOExamples.MBBBeam]
 	
-	for to_problem in  [StructuralTOExamples.Mitchell_1]:
+	for to_problem in  benchmarks_noncompliance_problems:
 		if to_problem in benchmarks_2_5D_problems:
 			subFolder = "Compliance2.5D"
 		elif to_problem in benchmarks_3D_problems:
@@ -60,6 +63,8 @@ def runTOMethodOnStructuralBenchmarks(optimizationMethod):
 			subFolder = "NonCompliance"
 		elif to_problem in benchmarks_bodyforce_problems:
 			subFolder = "BodyForce"
+		elif to_problem in benchmarks_thermostructural_problems:
+			subFolder = "ThermoStructural"
 		else:
 			subFolder = "Other"
 		
@@ -95,17 +100,23 @@ def runTOMethodOnStructuralBenchmarks(optimizationMethod):
 			u, history,success,errorMsg,nFEAs = topopt_mma(feaMode, fe_solver,None,binarize_topology = binarize_topology,
 									to_params = to_params,print_progress = print_progress)
 		elif optimizationMethod == TO_METHODS.DENSITYOCM:
-			if to_problem in benchmarks_noncompliance_problems:
+			if to_problem in benchmarks_noncompliance_problems or \
+					to_problem in benchmarks_bodyforce_problems or \
+					to_problem in benchmarks_thermostructural_problems:
 				continue
 			u, history, success,errorMsg,nFEAs = topopt_optimality_criteria(feaMode,  fe_solver,binarize_topology = binarize_topology,
 											to_params = to_params,print_progress = print_progress)
 		elif optimizationMethod == TO_METHODS.PARETO:
-			if to_problem in benchmarks_noncompliance_problems:
+			if to_problem in benchmarks_noncompliance_problems or \
+					to_problem in benchmarks_bodyforce_problems or \
+					to_problem in benchmarks_thermostructural_problems:
 				continue
 			u, history, success,errorMsg,nFEAs = topopt_pareto(feaMode, fe_solver,
 													to_params = to_params,print_progress = print_progress)
 		elif optimizationMethod == TO_METHODS.LEVELSET:
-			if to_problem in benchmarks_noncompliance_problems:
+			if to_problem in benchmarks_noncompliance_problems or \
+					to_problem in benchmarks_bodyforce_problems or \
+					to_problem in benchmarks_thermostructural_problems:
 				continue
 			u, history, success,errorMsg,nFEAs = topopt_levelset(feaMode, fe_solver = fe_solver,
 													to_params = to_params)

@@ -224,6 +224,7 @@ def getStructuralTOProblem(to_problem: StructuralTOExamples,nDOFDesired = None, 
         to_params.nDOFDesired = 60000 if nDOFDesired is None else nDOFDesired
         to_params.Objective = (TO_QOI.COMPLIANCE, None)
         to_params.Constraints = [(TO_QOI.VOLUME_FRACTION, None, 0.25)]
+        to_params.RelativeFilterRadius = 3
     elif to_problem == StructuralTOExamples.Bridge:
         structural_problem = StructuralExamples.Bridge
         to_params.Comment  = "Benchmark 2.5D"
