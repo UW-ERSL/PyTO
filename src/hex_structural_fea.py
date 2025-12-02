@@ -221,7 +221,7 @@ class HexStructuralFEA:
         ], axis=1)  # Shape: (num_elems, 6)
 
       # STRESS_RELAXATION method;
-      r = SIMP_STRESS_RELAXATION  # SIMP like penalization for stress
+      r = get_stress_relaxation_factor()  # SIMP like penalization for stress
       if isinstance(self.mat_prop, list):
         # Create D matrix for each material
         D_list = []
@@ -239,7 +239,7 @@ class HexStructuralFEA:
         D = hex_element_stiffness.isotropic_constitutive_matrix ( E, nu)
         self.stressComponents = np.einsum('ij,ej->ei', D, strain)
         
-      correction = (EVOID_RELATIVE + (1-EVOID_RELATIVE) * (self.x**r)).reshape((-1,1))
+      correction = get_stress_relaxation_correction(self.x)
       self.stressComponents *= correction 
       eStress = self.stressComponents
       self.vonMisesStress = np.sqrt(0.5*((eStress[:,0]-eStress[:,1])**2 +
@@ -248,7 +248,8 @@ class HexStructuralFEA:
                 3*(eStress[:,3]**2 + eStress[:,4]**2 +
                    eStress[:,5]**2))
       
-      self.pNormStress = (np.sum(self.vonMisesStress**PNORM_EXPONENT))**(1/PNORM_EXPONENT)  
+      pNorm = get_pNorm_exponent()
+      self.pNormStress = (np.sum(self.vonMisesStress**pNorm))**(1/pNorm)  
      
 
       self.elemStrainEnergy = 0.5 * np.sum(strain * eStress, axis=1)  # Element-wise strain energy
@@ -822,7 +823,7 @@ if __name__ == "__main__":
   fe_solver.postprocess()
   print(f"Maximum deformation: {fe_solver.max_deformation:.4e}")
   print(f"Maximum von Mises stress: {np.max(fe_solver.vonMisesStress):.4e}")
-  print(f"Maximum p-norm stress (PNORM = {PNORM_EXPONENT}): {fe_solver.pNormStress:.4e}")
+  print(f"Maximum p-norm stress: {fe_solver.pNormStress:.4e}")
 
   fe_solver.plot_deformation(show_geometry=True)
   fe_solver.plot_vonMisesStress()

@@ -7,6 +7,122 @@ from mmaWrapper import runMMA
 from topopt_thermostructural_sensitivity import ThermoElasticSensitivity
 
 
+def run_topopt_mma(to_problem):
+
+    if (to_problem in StructuralTOExamples):
+        mesh, mat_prop, bc,elem_body_force, to_params = getStructuralTOProblem(to_problem)
+        feaMode = FEA_MODE.STRUCTURAL
+    elif (to_problem in ThermalTOExamples):
+        mesh, mat_prop, bc,elem_body_force, to_params = getThermalTOProblem(to_problem)
+        feaMode = FEA_MODE.THERMAL
+    elif (to_problem in ThermoStructuralTOExamples):
+        mesh, mat_prop, structural_bc,thermal_bc, elem_body_force, to_params  = getThermoStructuralTOProblem(to_problem)
+        feaMode = FEA_MODE.THERMO_STRUCTURAL # or FEA_MODE.STRUCTURAL depending on the problem setup
+
+    print(f"Running {to_problem.name}...") 
+    print("-" * 50)
+    
+    solver = lin_solv.Solvers.PARDISO # default, see below
+    dsolver = deflation.DeflationSolver(use_gpu=False)
+    if (to_params.nDOFDesired > DIRECT_SOLVER_DOF_CUTOFF):# Typically PARDISO, but DPCG for large DOF problems
+        solver = lin_solv.Solvers.DPCG
+        nGroups =  min(dsolver.maxGroups,max(dsolver.minGroups,round(3*mesh.num_nodes/dsolver.dofPerGroup)))
+        dsolver.create_deflation_groups(mesh, nGroups)
+        dsolver.create_deflation_matrix(mesh)
+        dsolver.W = dsolver.W[bc.free_dofs, :]
+
+    print('Solver: ', solver.name)
+    fe_structural_solver = None
+    fe_thermal_solver = None
+
+    if (feaMode == FEA_MODE.STRUCTURAL):
+        fe_structural_solver = hex_structural_fea.HexStructuralFEA(mesh = mesh,
+                    mat_prop = mat_prop,
+                    bc = bc,
+                    solver = solver,
+                    dsolver = dsolver,
+                    rtol = 1e-8,
+                    elem_body_force = elem_body_force)
+        nNodes = fe_structural_solver.mesh.num_nodes
+        nElems = fe_structural_solver.mesh.num_elems
+    elif (feaMode == FEA_MODE.THERMAL):
+        fe_thermal_solver = hex_thermal_fea.HexThermalFEA(mesh = mesh,
+                    mat_prop = mat_prop,
+                    bc = bc,
+                    solver = solver,
+                    dsolver = dsolver,
+                    rtol = 1e-8,
+                    elem_body_force = elem_body_force)
+        nNodes = fe_thermal_solver.mesh.num_nodes
+        nElems = fe_thermal_solver.mesh.num_elems
+    elif (feaMode == FEA_MODE.THERMO_STRUCTURAL):
+        fe_structural_solver = hex_structural_fea.HexStructuralFEA(mesh = mesh,
+                    mat_prop = mat_prop,
+                    bc = structural_bc,
+                    solver = solver,
+                    dsolver = dsolver,
+                    rtol = 1e-8,
+                    elem_body_force = elem_body_force)
+        fe_thermal_solver = hex_thermal_fea.HexThermalFEA(mesh = mesh,
+                    mat_prop = mat_prop,
+                    bc = thermal_bc,
+                    solver = solver,
+                    dsolver = dsolver,
+                    rtol = 1e-8)
+
+        nNodes = fe_structural_solver.mesh.num_nodes
+        nElems = fe_structural_solver.mesh.num_elems  
+        #initialize_SIMP_STRUCTURAL_PENALTY(5.0) # higher SIMP  penalty for thermo-structural problems 
+
+    print("nNodes: ", nNodes )
+    print("nElem: ", nElems)    
+    title = f'nNodes: {nNodes}, nElem: {nElems}'
+
+    plot_progress = True
+    print_progress = True
+    startTime = time.time()
+    print("OptimizationMethod: MMA")
+    
+    u, history,success,errorMsg,nFEAs = topopt_mma(feaMode,fe_structural_solver,
+                                                   fe_thermal_solver,
+                                                    to_params = to_params,
+                                                    plot_progress= plot_progress,
+                                                    print_progress= print_progress,
+                                                    maxMMAIterations= to_params.MaxIterations,)
+    timeTaken = time.time() - startTime
+    
+
+    title = f"MMA: vol: {history['volfrac'][-1]:0.2f}, J: {history['objective'][-1]:.3g}, nFEA: {len(history['objective']):3d}, time: {timeTaken:.0f} s"
+    
+    if (feaMode == FEA_MODE.STRUCTURAL):
+        fe_structural_solver.plot_mesh(title = title, plot_bc = True, save_path = None)
+        fe_structural_solver.postprocess()
+        fe_structural_solver.plot_vonMisesStress()
+    elif (feaMode == FEA_MODE.THERMAL):
+        fe_thermal_solver.plot_mesh(title = title, plot_bc = True, save_path = None)
+        fe_thermal_solver.postprocess()
+        fe_thermal_solver.plot_temperature()
+   
+    plt.figure()
+    plt.plot(history['objective'], label='Objective')
+    plt.xlabel('Iterations')
+    plt.ylabel(f'Objective ({to_params.Objective[0].name})')
+    plt.grid(True)
+    plt.show()
+
+    for idx, constraint_name in enumerate([getattr(c[0], 'name', str(c[0])) for c in to_params.Constraints]):
+        plt.figure()
+        val = np.array(history[f'constraint_{idx+1}'])
+        constraint_val = (val+1)*to_params.Constraints[idx][2]
+        plt.plot(constraint_val, label=f'Constraint {idx+1} ({constraint_name})')
+        plt.xlabel('Iterations')
+        plt.ylabel(f'Constraint {idx+1} ({constraint_name})')
+        plt.axhline(y=to_params.Constraints[idx][2], color='r', linestyle='--')
+        plt.grid(True)
+        plt.show()
+    
+
+##########################################################
 
 def topopt_mma(feaMode: FEA_MODE, fe_structural_solver, fe_thermal_solver, 
                            to_params,
@@ -50,10 +166,11 @@ def topopt_mma(feaMode: FEA_MODE, fe_structural_solver, fe_thermal_solver,
         mesh = fe_structural_solver.mesh
         mat_prop = fe_structural_solver.mat_prop
         nDOFPerNode = 3
+        binarize_topology = False # don't binarize for thermo-structural problems
     else:
         raise ValueError("Either fe_structural_solver or fe_thermal_solver must be provided.")
 
-    material_model = MaterialModel.SIMP 
+    material_model = to_params.materialModel
 
     tStart = time.time()
     num_elems= mesh.num_elems
@@ -112,8 +229,8 @@ def topopt_mma(feaMode: FEA_MODE, fe_structural_solver, fe_thermal_solver,
             sol = fe_solver.solve(x, material_model)
             fe_solver.postprocess()
 
-            obj, grad_obj = compute_objective_and_gradient(feaMode,to_params,sol,x, fe_solver,KE, material_model)
-            c, dcdx = compute_constraint_and_gradient(feaMode,to_params,sol,x, fe_solver,KE, material_model)
+            obj, grad_obj = compute_objective_and_gradient(feaMode,to_params,sol,x, fe_solver,KE)
+            c, dcdx = compute_constraint_and_gradient(feaMode,to_params,sol,x, fe_solver,KE)
         elif (feaMode == FEA_MODE.THERMO_STRUCTURAL):
             # Solve thermal problem first
             temperature = fe_thermal_solver.solve(x,material_model)
@@ -122,10 +239,10 @@ def topopt_mma(feaMode: FEA_MODE, fe_structural_solver, fe_thermal_solver,
             displacement = fe_structural_solver.solve(x, material_model) # structural solve
             sol = displacement.copy() # for use later
             fe_structural_solver.postprocess()
-            obj, grad_obj = compute_thermoelastic_compliance_and_gradient(x, temperature, displacement,
+            obj, grad_obj = compute_thermoelastic_compliance_and_gradient(x, temperature, displacement,to_params,
 												  fe_thermal_solver, fe_structural_solver)
            
-            c, dcdx = compute_constraint_and_gradient(feaMode,to_params,displacement,x, fe_solver,KE, material_model)
+            c, dcdx = compute_constraint_and_gradient(feaMode,to_params,displacement,x, fe_solver,KE)
   
         if (obj0 is None):
             obj0 = obj
@@ -135,6 +252,11 @@ def topopt_mma(feaMode: FEA_MODE, fe_structural_solver, fe_thermal_solver,
 
         obj = obj/obj0 # normalize objective
         grad_obj = grad_obj/obj0 # normalize gradient
+
+        # if (True):
+        #     density_scaling = 0.1*mmaIterations/(maxMMAIterations)
+        #     #obj += density_scaling * ((x*(1 - x)).sum())
+        #     grad_obj += density_scaling * (1 - 2*x)
 
         if (nodal_body_force is not None): # additional body force term. Allowed for structural and thermo-structural problems only
             ce_body_force = (sol[mesh.edofMatStructural].reshape(num_elems, 24) * nodal_body_force[mesh.edofMatStructural].reshape(num_elems, 24)).sum(1)
@@ -233,12 +355,12 @@ def topopt_mma(feaMode: FEA_MODE, fe_structural_solver, fe_thermal_solver,
         fe_structural_solver.postprocess()
         obj, grad_obj = compute_thermoelastic_compliance_and_gradient(x, temperature, displacement,
                                                 fe_thermal_solver, fe_structural_solver)
-        c, dcdx = compute_constraint_and_gradient(feaMode,to_params,sol,x, fe_solver,KE, material_model)
+        c, dcdx = compute_constraint_and_gradient(feaMode,to_params,sol,x, fe_solver,KE)
     else:
         fe_solver.mesh.setPseudoDensity(x)  
         sol = fe_solver.solve(x, material_model)  
-        obj, grad_obj = compute_objective_and_gradient(feaMode,to_params,sol,x, fe_solver,KE, material_model)
-        c, dcdx = compute_constraint_and_gradient(feaMode,to_params,sol,x, fe_solver,KE, material_model)
+        obj, grad_obj = compute_objective_and_gradient(feaMode,to_params,sol,x, fe_solver,KE)
+        c, dcdx = compute_constraint_and_gradient(feaMode,to_params,sol,x, fe_solver,KE)
 
     grey_elements = np.sum((x > 0.1) & (x < 0.9))
     fraction_grey = (grey_elements / num_elems) 
@@ -266,117 +388,6 @@ if __name__ == "__main__":
     # Choose the TO problem
     to_problem = StructuralTOExamples.MBBBeam 
     #to_problem = ThermalTOExamples.FourCornersThermal
-    #to_problem = ThermoStructuralTOExamples.BiClamp
-    #to_problem = ThermoStructuralTOExamples.MBBBeam
+    to_problem = ThermoStructuralTOExamples.BiClamp
 
-    if (to_problem in StructuralTOExamples):
-        mesh, mat_prop, bc,elem_body_force, to_params = getStructuralTOProblem(to_problem)
-        feaMode = FEA_MODE.STRUCTURAL
-    elif (to_problem in ThermalTOExamples):
-        mesh, mat_prop, bc,elem_body_force, to_params = getThermalTOProblem(to_problem)
-        feaMode = FEA_MODE.THERMAL
-    elif (to_problem in ThermoStructuralTOExamples):
-        mesh, mat_prop, structural_bc,thermal_bc, elem_body_force, to_params  = getThermoStructuralTOProblem(to_problem)
-        feaMode = FEA_MODE.THERMO_STRUCTURAL # or FEA_MODE.STRUCTURAL depending on the problem setup
-
-    print(f"Running {to_problem.name}...") 
-    print("-" * 50)
-    
-    solver = lin_solv.Solvers.PARDISO # default, see below
-    dsolver = deflation.DeflationSolver(use_gpu=False)
-    if (to_params.nDOFDesired > DIRECT_SOLVER_DOF_CUTOFF):# Typically PARDISO, but DPCG for large DOF problems
-        solver = lin_solv.Solvers.DPCG
-        nGroups =  min(dsolver.maxGroups,max(dsolver.minGroups,round(3*mesh.num_nodes/dsolver.dofPerGroup)))
-        dsolver.create_deflation_groups(mesh, nGroups)
-        dsolver.create_deflation_matrix(mesh)
-        dsolver.W = dsolver.W[bc.free_dofs, :]
-
-    print('Solver: ', solver.name)
-    fe_structural_solver = None
-    fe_thermal_solver = None
-
-    if (feaMode == FEA_MODE.STRUCTURAL):
-        fe_structural_solver = hex_structural_fea.HexStructuralFEA(mesh = mesh,
-                    mat_prop = mat_prop,
-                    bc = bc,
-                    solver = solver,
-                    dsolver = dsolver,
-                    rtol = 1e-8,
-                    elem_body_force = elem_body_force)
-        nNodes = fe_structural_solver.mesh.num_nodes
-        nElems = fe_structural_solver.mesh.num_elems
-    elif (feaMode == FEA_MODE.THERMAL):
-        fe_thermal_solver = hex_thermal_fea.HexThermalFEA(mesh = mesh,
-                    mat_prop = mat_prop,
-                    bc = bc,
-                    solver = solver,
-                    dsolver = dsolver,
-                    rtol = 1e-8,
-                    elem_body_force = elem_body_force)
-        nNodes = fe_thermal_solver.mesh.num_nodes
-        nElems = fe_thermal_solver.mesh.num_elems
-    elif (feaMode == FEA_MODE.THERMO_STRUCTURAL):
-        fe_structural_solver = hex_structural_fea.HexStructuralFEA(mesh = mesh,
-                    mat_prop = mat_prop,
-                    bc = structural_bc,
-                    solver = solver,
-                    dsolver = dsolver,
-                    rtol = 1e-8,
-                    elem_body_force = elem_body_force)
-        fe_thermal_solver = hex_thermal_fea.HexThermalFEA(mesh = mesh,
-                    mat_prop = mat_prop,
-                    bc = thermal_bc,
-                    solver = solver,
-                    dsolver = dsolver,
-                    rtol = 1e-8)
-
-        nNodes = fe_structural_solver.mesh.num_nodes
-        nElems = fe_structural_solver.mesh.num_elems    
-
-    print("nNodes: ", nNodes )
-    print("nElem: ", nElems)    
-    title = f'nNodes: {nNodes}, nElem: {nElems}'
-
-    plot_progress = True
-    print_progress = True
-    startTime = time.time()
-    print("OptimizationMethod: MMA")
-    
-    u, history,success,errorMsg,nFEAs = topopt_mma(feaMode,fe_structural_solver,
-                                                   fe_thermal_solver,
-                                                    to_params = to_params,
-                                                    plot_progress= plot_progress,
-                                                    print_progress= print_progress,
-                                                    maxMMAIterations= to_params.MaxIterations,)
-    timeTaken = time.time() - startTime
-    
-
-    title = f"MMA: vol: {history['volfrac'][-1]:0.2f}, J: {history['objective'][-1]:.3g}, nFEA: {len(history['objective']):3d}, time: {timeTaken:.0f} s"
-    
-    if (feaMode == FEA_MODE.STRUCTURAL):
-        fe_structural_solver.plot_mesh(title = title, plot_bc = True, save_path = None)
-        fe_structural_solver.postprocess()
-        fe_structural_solver.plot_vonMisesStress()
-    elif (feaMode == FEA_MODE.THERMAL):
-        fe_thermal_solver.plot_mesh(title = title, plot_bc = True, save_path = None)
-        fe_thermal_solver.postprocess()
-        fe_thermal_solver.plot_temperature()
-   
-    plt.figure()
-    plt.plot(history['objective'], label='Objective')
-    plt.xlabel('Iterations')
-    plt.ylabel(f'Objective ({to_params.Objective[0].name})')
-    plt.grid(True)
-    plt.show()
-
-    for idx, constraint_name in enumerate([getattr(c[0], 'name', str(c[0])) for c in to_params.Constraints]):
-        plt.figure()
-        val = np.array(history[f'constraint_{idx+1}'])
-        constraint_val = (val+1)*to_params.Constraints[idx][2]
-        plt.plot(constraint_val, label=f'Constraint {idx+1} ({constraint_name})')
-        plt.xlabel('Iterations')
-        plt.ylabel(f'Constraint {idx+1} ({constraint_name})')
-        plt.axhline(y=to_params.Constraints[idx][2], color='r', linestyle='--')
-        plt.grid(True)
-        plt.show()
-    
+    run_topopt_mma(to_problem)

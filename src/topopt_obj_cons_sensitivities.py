@@ -8,12 +8,12 @@ import bound_cond
 
 stress_scaling = 1.0 # Global scaling factor for stress constraints/objectives
 #################################################################	
-def compute_objective_and_gradient(feaMode: FEA_MODE, to_params, sol: np.ndarray, x: np.ndarray,fe_solver, KE,
-				material_model = None) -> tuple:
+def compute_objective_and_gradient(feaMode: FEA_MODE, to_params, sol: np.ndarray, x: np.ndarray,fe_solver, KE) -> tuple:
 	
 					
 	objectiveType  = to_params.Objective[0]	# first entry is the type of objective
 	optionalParam = to_params.Objective[1] # second entry is an optional parameter	
+	material_model = to_params.materialModel
 	if (objectiveType == TO_QOI.COMPLIANCE): 
 		compliance, compliance_grad = compute_compliance_and_gradient(feaMode, sol, x, fe_solver, KE, material_model)
 		return compliance, compliance_grad
@@ -40,13 +40,12 @@ def compute_objective_and_gradient(feaMode: FEA_MODE, to_params, sol: np.ndarray
 		raise NotImplementedError(f"Objective {objectiveType} is not implemented yet.")
 
 #################################################################
-def compute_constraint_and_gradient(feaMode: FEA_MODE, to_params, sol: np.ndarray, x: np.ndarray,	fe_solver, KE,
-				material_model = None) -> tuple:
+def compute_constraint_and_gradient(feaMode: FEA_MODE, to_params, sol: np.ndarray, x: np.ndarray,	fe_solver, KE) -> tuple:
 	
 	nConstraints = len(to_params.Constraints)
 	c = np.zeros((nConstraints,1))	
 	dc = np.zeros((nConstraints,x.size))
-	
+	material_model = to_params.materialModel
 	for m in range(nConstraints):
 		constraintType  = to_params.Constraints[m][0]	# first entry is the type of constraint	
 		optionalParam = to_params.Constraints[m][1] # second entry is an optional parameter	
@@ -118,7 +117,7 @@ def compute_volume_constraint_and_gradient(x: np.ndarray,
 #################################################################
 def compute_compliance(sol: np.ndarray, x: np.ndarray,
 				fe_solver, KE,
-				material_model = None) -> np.ndarray:
+				material_model) -> np.ndarray:
 	"""Compute the  compliance objective.
 
 	Args:
@@ -148,7 +147,7 @@ def compute_compliance(sol: np.ndarray, x: np.ndarray,
 #################################################################
 def compute_compliance_and_gradient(feaMode: FEA_MODE, sol: np.ndarray, x: np.ndarray,
 				fe_solver, KE,
-				material_model = None) -> np.ndarray:
+				material_model) -> np.ndarray:
 	"""Compute the  compliance objective.
 
 	Args:
@@ -190,10 +189,6 @@ def compute_pnorm_stress_and_sensitivity(sol: np.ndarray, x, fe_solver, KE, mate
     mesh = fe_solver.mesh
     nelems = mesh.num_elems
 
-    qStress = SIMP_STRESS_RELAXATION  # STRESS relaxation factor
-    pSIMP = SIMP_STUCTURAL_PENALITY    # SIMP penalization
-    PNORM_EXPONENT  # p-norm exponent
-    
     E = fe_solver.mat_prop.youngs_modulus 
     nu = fe_solver.mat_prop.poissons_ratio
     D = E / ((1 + nu) * (1 - 2*nu)) * np.array([
@@ -235,7 +230,8 @@ def compute_pnorm_stress_and_sensitivity(sol: np.ndarray, x, fe_solver, KE, mate
     vm_pnorm = fe_solver.pNormStress
     
     # Compute dpn_dvms = (sum(vm^p))^(1/p - 1)
-    dpn_dvms = (np.sum(vm_elems **PNORM_EXPONENT )) ** (1/PNORM_EXPONENT - 1)
+    pNormExponent = get_pNorm_exponent()
+    dpn_dvms = (np.sum(vm_elems **pNormExponent )) ** (1/pNormExponent - 1)
     
     # Pre-compute DvmDs for all elements
     DvmDs_all = np.zeros((nelems, 6))
@@ -258,7 +254,7 @@ def compute_pnorm_stress_and_sensitivity(sol: np.ndarray, x, fe_solver, KE, mate
     for e in range(nelems):
         edof = mesh.edofMatStructural[e]
         u_e = sol[edof]
-        beta[e] = qStress * (x[e]**(qStress-1)) * (vm_elems[e]**(PNORM_EXPONENT-1)) * DvmDs_all[e] @ D @ B @ u_e
+        beta[e] = get_stress_relaxation_factor_sensitivity(x[e]) * (vm_elems[e]**(pNormExponent-1)) * DvmDs_all[e] @ D @ B @ u_e
     
     T1 = dpn_dvms * beta
     
@@ -266,7 +262,7 @@ def compute_pnorm_stress_and_sensitivity(sol: np.ndarray, x, fe_solver, KE, mate
     g = np.zeros(fe_solver.bc.num_dofs)
     for e in range(nelems):
         edof = mesh.edofMat[e]
-        g_e = (x[e]**qStress) * dpn_dvms * B.T @ D.T @ DvmDs_all[e] * (vm_elems[e]**(PNORM_EXPONENT-1))
+        g_e = get_stress_relaxation_correction * dpn_dvms * B.T @ D.T @ DvmDs_all[e] * (vm_elems[e]**(pNormExponent-1))
         g[edof] += g_e
     
     # Solve adjoint equation
@@ -283,7 +279,7 @@ def compute_pnorm_stress_and_sensitivity(sol: np.ndarray, x, fe_solver, KE, mate
     ce = (np.dot(adjointSol[dofMat].reshape(nelems, nRows), KE) * 
           sol[dofMat].reshape(nelems, nRows)).sum(1)
     
-    T2 = -pSIMP * (x**(pSIMP-1)) * ce  # Note the negative sign from MATLAB
+    T2 = -get_structural_material_model_sensitivity(x, material_model) * ce  # Note the negative sign from MATLAB
     
     vm_pnorm_sensitivity = T1 + T2
     max_vm = np.max(vm_elems)
@@ -323,7 +319,7 @@ def compute_solution_dotproduct_and_gradient(sol: np.ndarray, x,fe_solver,KE,
 	return obj, compliance_grad
 #################################################################
 
-def solve_thermal_adjoint(x,d,fe_thermal_solver,fe_structural_solver):
+def solve_thermal_adjoint(x,d,fe_thermal_solver,fe_structural_solver,material_model):
 	"""
 	Solve the thermal adjoint equation:
 	K_T^T * lambda_T = -sum_e (xi_e^p * E0 * alpha * H^T * d_e)
@@ -357,14 +353,14 @@ def solve_thermal_adjoint(x,d,fe_thermal_solver,fe_structural_solver):
 	dx, dy, dz = fe_structural_solver.mesh.elem_size
 	nu = fe_structural_solver.mat_prop.poissons_ratio
 	HMatrix = fe_thermal_solver.getHMatrix(dx, dy, dz, nu)
-	p = SIMP_STUCTURAL_PENALITY
+
 	E = fe_structural_solver.mat_prop.youngs_modulus 
 	alpha = fe_structural_solver.mat_prop.thermal_expansion_coefficient
 	for e in range(nelem):
 		edof_s = fe_structural_solver.mesh.edofMatStructural[e, :]
 		edof_t = fe_thermal_solver.mesh.edofMatThermal[e, :]
 		# Contribution from this element
-		rhs_e = -2*E*alpha*(x[e]**p) * HMatrix.T @ d[edof_s]
+		rhs_e = -2*E*alpha*(get_structural_material_model_scaling(x[e], material_model)) * HMatrix.T @ d[edof_s]
 		
 		# Assemble into global RHS
 		rhs[edof_t] += rhs_e
@@ -387,7 +383,7 @@ def solve_thermal_adjoint(x,d,fe_thermal_solver,fe_structural_solver):
 	return lambda_T
 
 #################################################################
-def compute_thermoelastic_compliance_and_gradient(x, temperature, displacement,
+def compute_thermoelastic_compliance_and_gradient(x, temperature, displacement,to_params,
 												  fe_thermal_solver, fe_structural_solver):
 	"""
 	Compute compliance sensitivity: dJ_S / dx_e
@@ -424,6 +420,7 @@ def compute_thermoelastic_compliance_and_gradient(x, temperature, displacement,
 	Compliance sensitivity with respect to design variables
 	"""
 
+	material_model = to_params.materialModel
 	J = displacement.T @ fe_structural_solver.stiff_mtrx @ displacement
 	nelem = fe_structural_solver.mesh.num_elems
 
@@ -431,10 +428,8 @@ def compute_thermoelastic_compliance_and_gradient(x, temperature, displacement,
 
 	# Step 1: Solve thermal adjoint equation
 	# K_T^T * lambda_T = -sum_e (xi_e^p * E0 * alpha * H^T * d_e)
-	lambda_T = solve_thermal_adjoint(x,displacement,fe_thermal_solver,fe_structural_solver)
+	lambda_T = solve_thermal_adjoint(x,displacement,fe_thermal_solver,fe_structural_solver,material_model)
 	
-	p = SIMP_STUCTURAL_PENALITY
-	q = SIMP_THERMAL_PENALTY
 	
 	# Step 2: Compute element-wise sensitivities
 	E = fe_structural_solver.mat_prop.youngs_modulus 
@@ -448,7 +443,7 @@ def compute_thermoelastic_compliance_and_gradient(x, temperature, displacement,
 	term1 = np.zeros(nelem)
 	term2 = np.zeros(nelem) 
 	term3 = np.zeros(nelem)
-	p_thermal  = SIMP_THERMAL_PENALTY # For better convergence (per Ooms paper)
+
 	for e in range(nelem):
 		# Get element DOFs
 		edof_s = fe_structural_solver.mesh.edofMatStructural[e, :]
@@ -458,18 +453,18 @@ def compute_thermoelastic_compliance_and_gradient(x, temperature, displacement,
 		lambda_T_e = lambda_T[edof_t]
 
 		# Term 1: Direct structural stiffness contribution 
-		term1[e] = - p * x[e]**(p - 1) * d_e.T @ KE_structural @ d_e
+		term1[e] = -get_structural_material_model_sensitivity(x[e], material_model) * d_e.T @ KE_structural @ d_e
 
 		# Term 2: Direct thermal force contribution
 		T_diff = T_e - fe_thermal_solver.thermoElasticReferenceTemperature
 
-		term2[e] = 2* p_thermal * x[e]**(p_thermal - 1) * E * alpha * d_e.T @ HMatrix @ T_diff
+		term2[e] = 2* get_thermal_material_model_sensitivity(x[e], material_model) * E * alpha * d_e.T @ HMatrix @ T_diff
 
 		# Term 3: Adjoint thermal contribution
 		#term3[e] = q * x[e]**(q - 1) * lambda_T_e.T @ self.kt_bar_thermal @ T_e
-		term3[e] = q * (x[e]**(q - 1))  * lambda_T_e.T @ KE_Thermal @ T_e
+		term3[e] = get_thermal_material_model_sensitivity(x[e], material_model) * lambda_T_e.T @ KE_Thermal @ T_e
 
 		dJdx[e] = term1[e] + term2[e] + term3[e]
 	
-	print(f"Max sensitivity terms: Term1={np.max(np.abs(term1)):.4e}, Term2={np.max(np.abs(term2)):.4e}, Term3={np.max(np.abs(term3)):.4e}")
+	#print(f"Max sensitivity terms: Term1={np.max(np.abs(term1)):.4e}, Term2={np.max(np.abs(term2)):.4e}, Term3={np.max(np.abs(term3)):.4e}")
 	return J, dJdx

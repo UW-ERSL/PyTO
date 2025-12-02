@@ -13,8 +13,10 @@ from typing import Tuple
 import hex_thermal_fea 
 import deflation
 import linear_solvers
+from topopt_material_model import *
 
 DIRECT_SOLVER_DOF_CUTOFF = 100000 #  dof limit for direct solver, for greater number of dof, iterative solver is used
+
 
 class TO_METHODS(enum.Enum):
 	DENSITYMMA = enum.auto()
@@ -70,10 +72,10 @@ class TOParams: # These are the default parameters
     AMBuildDir: str = '' # Direction of AM build, '','X','Y','Z'
     ElemsToKeep: list[int] = None # List of additional elements to retain in the design
     MaxIterations: int = 150 # Maximum number of iterations
-    PNormExponent: int = 6 # p-norm exponent for stress constraint/objective
     Enforce_Constraints_MMA: bool = False # Should the constraints be enforced more strongly in GCMMA?
     Eliminate_Hanging_Elements: bool = False # Should the hanging elements be eliminated after optimization?
     MaterialsExcelFile: str = '' # Path to the Excel file containing material properties for MMTO problems
+    materialModel: MaterialModel = MaterialModel.SIMP # Material model for density based topology optimization
 
 def find_elements_with_forces(mesh: hex_mesher.HexMesher, force,nDOFPerNode) -> np.ndarray:
 	"""Find all elements that have nodes on which force has been applied.
