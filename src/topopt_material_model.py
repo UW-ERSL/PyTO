@@ -2,11 +2,10 @@
 import enum
 import numpy as np
 
-SIMP_PENALTY_MIN = 1 # Min Penalization factor for SIMP method
-SIMP_PENALTY_MAX = 3.0 # Max Penalization factor for SIMP method
+SIMP_STUCTURAL_PENALITY_MIN = 1 # Min Penalization factor for SIMP method
+SIMP_STUCTURAL_PENALITY_MAX = 8.0 # Max Penalization factor for SIMP method
 
-SIMP_PENALTY = 3.0  # Default penalization factor for SIMP method 
-SIMP_STRUCTURAL_PENALTY = 3.0  # Default penalization factor for SIMP method - structural
+SIMP_STUCTURAL_PENALITY = 3.0  # Default penalization factor for SIMP method 
 SIMP_THERMAL_PENALTY = 1  # Default penalization factor for SIMP method - thermal
 SIMP_STRESS_RELAXATION = 0.5  # Relative stress limit for stress constraint
 # For large DOF problems, we encounters numerical issues for smaller values of EVOID_RELATIVE
@@ -27,30 +26,32 @@ class MaterialModel(enum.Enum):
 	SIMPPLUS = enum.auto()
 
 
-def set_SIMP_PENALTY_MAX(value: float) -> None:
+def set_SIMP_STUCTURAL_PENALITY_MAX(value: float) -> None:
 	"""Set the maximum SIMP penalty value."""
-	global SIMP_PENALTY_MAX
-	SIMP_PENALTY_MAX = value
+	global SIMP_STUCTURAL_PENALITY_MAX
+	SIMP_STUCTURAL_PENALITY_MAX = value
 
-def update_SIMP_PENALTY_for_body_force(fraction_grey: float) -> None:
+def update_SIMP_STUCTURAL_PENALITY_for_body_force(fraction_grey: float) -> None:
 	"""Update the SIMP penalty value. This is heuristic for problems with body force"""
-	global SIMP_PENALTY
-	SIMP_PENALTY = SIMP_PENALTY_MIN*(1 - fraction_grey) + SIMP_PENALTY_MAX*fraction_grey
+	global SIMP_STUCTURAL_PENALITY
+	SIMP_STUCTURAL_PENALITY = SIMP_STUCTURAL_PENALITY_MIN*(1 - fraction_grey) + SIMP_STUCTURAL_PENALITY_MAX*fraction_grey
 
 
-def increment_SIMP_PENALTY(value) -> None:
+def increment_SIMP_STUCTURAL_PENALITY(value) -> None:
 	"""Update the SIMP penalty value."""
-	global SIMP_PENALTY
-	SIMP_PENALTY += value
-	SIMP_PENALTY = max(min(SIMP_PENALTY, SIMP_PENALTY_MAX),SIMP_PENALTY_MIN)  # Ensure it does not exceed the maximum value
+	global SIMP_STUCTURAL_PENALITY
+	SIMP_STUCTURAL_PENALITY += value
+	SIMP_STUCTURAL_PENALITY = max(min(SIMP_STUCTURAL_PENALITY, SIMP_STUCTURAL_PENALITY_MAX),SIMP_STUCTURAL_PENALITY_MIN)  # Ensure it does not exceed the maximum value
+	return SIMP_STUCTURAL_PENALITY
 
-def initialize_SIMP_PENALTY(value = None) -> None:
+def initialize_SIMP_STUCTURAL_PENALITY(value = None) -> None:
 	"""Initialize the SIMP penalty value."""
-	global SIMP_PENALTY
+	global SIMP_STUCTURAL_PENALITY
 	if value is not None:
-		SIMP_PENALTY = value
+		SIMP_STUCTURAL_PENALITY = value
 	else:
-		SIMP_PENALTY = 3.0
+		SIMP_STUCTURAL_PENALITY = 3.0
+	
 
 def get_structural_material_model_scaling(x: np.ndarray, material_model: MaterialModel) -> np.ndarray:
 	"""Compute the Young's modulus based on the material model.
@@ -64,11 +65,11 @@ def get_structural_material_model_scaling(x: np.ndarray, material_model: Materia
 	if material_model is None:
 		return x
 	elif material_model == MaterialModel.SIMP:
-		return (EVOID_RELATIVE + (x**SIMP_PENALTY)*(1 - EVOID_RELATIVE))  # SIMP model
+		return (EVOID_RELATIVE + (x**SIMP_STUCTURAL_PENALITY)*(1 - EVOID_RELATIVE))  # SIMP model
 	elif material_model == MaterialModel.RAMP:
 		return (EVOID_RELATIVE + x*(1-EVOID_RELATIVE) / (1 + (1 - x) * RAMP_PENALTY))  # RAMP model
 	elif material_model == MaterialModel.SIMPPLUS:
-		y1 = (EVOID_RELATIVE + (x**SIMP_PENALTY)*(1 - EVOID_RELATIVE))
+		y1 = (EVOID_RELATIVE + (x**SIMP_STUCTURAL_PENALITY)*(1 - EVOID_RELATIVE))
 		y2 = EVOID_RELATIVE*x
 		return (y1+y2)/2
 	raise ValueError("Invalid material model specified.")	
@@ -107,11 +108,11 @@ def get_structural_material_model_sensitivity(x: np.ndarray, material_model: Mat
 	if material_model is None:
 		return np.ones_like(x)
 	elif material_model == MaterialModel.SIMP:
-		return (SIMP_PENALTY*(x**(SIMP_PENALTY-1))*(1 - EVOID_RELATIVE))  # SIMP model
+		return (SIMP_STUCTURAL_PENALITY*(x**(SIMP_STUCTURAL_PENALITY-1))*(1 - EVOID_RELATIVE))  # SIMP model
 	elif material_model == MaterialModel.RAMP:
 		return ((1-EVOID_RELATIVE) / (1 + (1 - x) * RAMP_PENALTY)**2) * (1 + RAMP_PENALTY * (1 - x))
 	elif material_model == MaterialModel.SIMPPLUS:
-		y1 = (SIMP_PENALTY*(x**(SIMP_PENALTY-1))*(1 - EVOID_RELATIVE))
+		y1 = (SIMP_STUCTURAL_PENALITY*(x**(SIMP_STUCTURAL_PENALITY-1))*(1 - EVOID_RELATIVE))
 		y2 = EVOID_RELATIVE
 		return (y1+y2)/2
 	else:			

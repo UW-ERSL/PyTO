@@ -191,7 +191,7 @@ def compute_pnorm_stress_and_sensitivity(sol: np.ndarray, x, fe_solver, KE, mate
     nelems = mesh.num_elems
 
     qStress = SIMP_STRESS_RELAXATION  # STRESS relaxation factor
-    pSIMP = SIMP_STRUCTURAL_PENALTY    # SIMP penalization
+    pSIMP = SIMP_STUCTURAL_PENALITY    # SIMP penalization
     PNORM_EXPONENT  # p-norm exponent
     
     E = fe_solver.mat_prop.youngs_modulus 
@@ -357,7 +357,7 @@ def solve_thermal_adjoint(x,d,fe_thermal_solver,fe_structural_solver):
 	dx, dy, dz = fe_structural_solver.mesh.elem_size
 	nu = fe_structural_solver.mat_prop.poissons_ratio
 	HMatrix = fe_thermal_solver.getHMatrix(dx, dy, dz, nu)
-	p = SIMP_PENALTY
+	p = SIMP_STUCTURAL_PENALITY
 	E = fe_structural_solver.mat_prop.youngs_modulus 
 	alpha = fe_structural_solver.mat_prop.thermal_expansion_coefficient
 	for e in range(nelem):
@@ -432,9 +432,10 @@ def compute_thermoelastic_compliance_and_gradient(x, temperature, displacement,
 	# Step 1: Solve thermal adjoint equation
 	# K_T^T * lambda_T = -sum_e (xi_e^p * E0 * alpha * H^T * d_e)
 	lambda_T = solve_thermal_adjoint(x,displacement,fe_thermal_solver,fe_structural_solver)
-
-	p = SIMP_STRUCTURAL_PENALTY
+	
+	p = SIMP_STUCTURAL_PENALITY
 	q = SIMP_THERMAL_PENALTY
+	
 	# Step 2: Compute element-wise sensitivities
 	E = fe_structural_solver.mat_prop.youngs_modulus 
 	alpha = fe_structural_solver.mat_prop.thermal_expansion_coefficient
@@ -470,5 +471,5 @@ def compute_thermoelastic_compliance_and_gradient(x, temperature, displacement,
 
 		dJdx[e] = term1[e] + term2[e] + term3[e]
 	
-	#print(f"Max sensitivity terms: Term1={np.max(np.abs(term1)):.4e}, Term2={np.max(np.abs(term2)):.4e}, Term3={np.max(np.abs(term3)):.4e}")
+	print(f"Max sensitivity terms: Term1={np.max(np.abs(term1)):.4e}, Term2={np.max(np.abs(term2)):.4e}, Term3={np.max(np.abs(term3)):.4e}")
 	return J, dJdx

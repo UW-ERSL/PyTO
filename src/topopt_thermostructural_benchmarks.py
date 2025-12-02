@@ -15,10 +15,11 @@ def getThermoStructuralTOProblem(to_problem: ThermoStructuralTOExamples, **kwarg
 		print("Creating Thermo-structural BiClamp problem...")
 		thermostructural_problem = ThermoStructuralExamples.BiClamp 
 		kwargs['structural_load'] = 1e5
-		kwargs['TWall'] = 24 # 23 is the reference temperature
+		kwargs['TWall'] = 26 # 23 is the reference temperature
 		to_params.Comment = "Thermo-structural BiClamp example"
 		to_params.XSymmetry = True
 		to_params.ExtrudeZ = True
+		to_params.RelativeFilterRadius = 2.5
 		to_params.nDOFDesired = 25000
 		to_params.Objective = (TO_QOI.COMPLIANCE, None)
 		to_params.Constraints = [(TO_QOI.VOLUME_FRACTION, None, 0.2)]
