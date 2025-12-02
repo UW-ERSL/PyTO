@@ -386,8 +386,8 @@ if __name__ == "__main__":
     print("-" * 50)
 
     # Choose the TO problem
-    to_problem = StructuralTOExamples.MBBBeam 
+    to_problem = StructuralTOExamples.LBracketThickTopLoad_Stress_Vol 
     #to_problem = ThermalTOExamples.FourCornersThermal
-    to_problem = ThermoStructuralTOExamples.BiClamp
+    #to_problem = ThermoStructuralTOExamples.BiClamp
 
     run_topopt_mma(to_problem)

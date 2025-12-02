@@ -51,7 +51,7 @@ def compute_constraint_and_gradient(feaMode: FEA_MODE, to_params, sol: np.ndarra
 		optionalParam = to_params.Constraints[m][1] # second entry is an optional parameter	
 		constraintLimit = to_params.Constraints[m][2] # third entry is the constraint value	
 		if (constraintType == TO_QOI.COMPLIANCE): 
-			compliance, compliance_grad = compute_compliance_and_gradient(sol, x, fe_solver, KE, material_model)
+			compliance, compliance_grad = compute_compliance_and_gradient(feaMode,sol, x, fe_solver, KE, material_model)
 			complianceConstraint =  (compliance/constraintLimit - 1.0)
 			complianceConstraint_gradient =  (compliance_grad/constraintLimit)
 			c[m,0],dc[m,:] = complianceConstraint, complianceConstraint_gradient[np.newaxis]
@@ -127,7 +127,7 @@ def compute_compliance(sol: np.ndarray, x: np.ndarray,
 
 	Returns: The compliance objective value.
 	"""
-	dofMat = fe_solver.mesh.edofMat
+	dofMat = fe_solver.mesh.edofMatStructural  # assumes structural FEA
 	num_elems = fe_solver.mesh.num_elems
 	nRows = KE.shape[0]
 	ce = (np.dot(sol[dofMat].reshape(num_elems, nRows), KE) * sol[dofMat].reshape(num_elems, nRows)).sum(1)
@@ -261,8 +261,8 @@ def compute_pnorm_stress_and_sensitivity(sol: np.ndarray, x, fe_solver, KE, mate
     # Compute adjoint right-hand side using pre-computed DvmDs
     g = np.zeros(fe_solver.bc.num_dofs)
     for e in range(nelems):
-        edof = mesh.edofMat[e]
-        g_e = get_stress_relaxation_correction * dpn_dvms * B.T @ D.T @ DvmDs_all[e] * (vm_elems[e]**(pNormExponent-1))
+        edof = mesh.edofMatStructural[e]
+        g_e = get_stress_relaxation_correction(x[e]) * dpn_dvms * B.T @ D.T @ DvmDs_all[e] * (vm_elems[e]**(pNormExponent-1))
         g[edof] += g_e
     
     # Solve adjoint equation
@@ -274,7 +274,7 @@ def compute_pnorm_stress_and_sensitivity(sol: np.ndarray, x, fe_solver, KE, mate
                                        **fe_solver.kwargs)
     
     # Compute T2 (indirect sensitivity via adjoint)
-    dofMat = fe_solver.mesh.edofMat
+    dofMat = fe_solver.mesh.edofMatStructural
     nRows = KE.shape[0]
     ce = (np.dot(adjointSol[dofMat].reshape(nelems, nRows), KE) * 
           sol[dofMat].reshape(nelems, nRows)).sum(1)
@@ -306,7 +306,7 @@ def compute_solution_dotproduct_and_gradient(sol: np.ndarray, x,fe_solver,KE,
                       dsolver = fe_solver.dsolver,
                       **fe_solver.kwargs)
 	
-	dofMat = fe_solver.mesh.edofMat
+	dofMat = fe_solver.mesh.edofMatStructural
 	num_elems = fe_solver.mesh.num_elems
 	nRows = KE.shape[0]
 	ce = (np.dot(adjointSol[dofMat].reshape(num_elems, nRows), KE) * sol[dofMat].reshape(num_elems, nRows)).sum(1)

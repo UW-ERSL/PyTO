@@ -129,9 +129,7 @@ def get_thermal_material_model_sensitivity(x: np.ndarray, material_model: Materi
 
 	.
 	"""
-	if material_model is None:
-		return np.ones_like(x)
-	elif material_model == MaterialModel.SIMP:
+	if material_model == MaterialModel.SIMP:
 		return (_SIMP_THERMAL_PENALTY*(x**(_SIMP_THERMAL_PENALTY-1))*(1 - _KVOID_RELATIVE))  # SIMP model
 	elif material_model == MaterialModel.RAMP:
 		return ((1-_KVOID_RELATIVE) / (1 + (1 - x) * _RAMP_PENALTY)**2) * (1 + _RAMP_PENALTY * (1 - x))
@@ -181,11 +179,11 @@ def get_stress_relaxation_factor() -> float:
 
 def get_stress_relaxation_correction(x) -> float:
 	"""Get the stress relaxation sensitivity."""
-	return (_EVOID_RELATIVE + (1-_EVOID_RELATIVE) * (x**_SIMP_STRESS_RELAXATION)).reshape((-1,1))
+	return ( (x**_SIMP_STRESS_RELAXATION)).reshape((-1,1))
 
 def get_stress_relaxation_factor_sensitivity(x) -> float:
 	"""Get the stress relaxation sensitivity."""
-	return  ( _SIMP_STRESS_RELAXATION*(1-_EVOID_RELATIVE) * (x**(_SIMP_STRESS_RELAXATION-1))).reshape((-1,1))
+	return  ( _SIMP_STRESS_RELAXATION* (x**(_SIMP_STRESS_RELAXATION-1))).reshape((-1,1))
 
 
 def get_pNorm_exponent() -> float:

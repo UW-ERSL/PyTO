@@ -429,11 +429,10 @@ def getStructuralTOProblem(to_problem: StructuralTOExamples,nDOFDesired = None, 
         kwargs['midload'] = 0
         to_params.Comment  = "Stress Minimization"
         to_params.ExtrudeZ = True
-        to_params.RelativeFilterRadius = 2.5
         to_params.nDOFDesired = 50000 if nDOFDesired is None else nDOFDesired
         to_params.Eliminate_Hanging_Elements = True
         to_params.Objective = (TO_QOI.PNORM_STRESS, None) 
-        to_params.Constraints = [(TO_QOI.VOLUME_FRACTION, None, 0.5)]
+        to_params.Constraints = [(TO_QOI.VOLUME_FRACTION, None, 0.3)]
     elif to_problem == StructuralTOExamples.LBracketThickTopLoad_Vol_Stress:
         structural_problem = StructuralExamples.LBracketThick
         to_params.Comment  =  "Stress Minimization"

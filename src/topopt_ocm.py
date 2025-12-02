@@ -135,7 +135,7 @@ def topopt_optimality_criteria(
 		else:
 			print(msg)   
 	nDOFPerNode = 3 if isinstance(fe_solver, hex_structural_fea.HexStructuralFEA) else 1
-	material_model = to_params.MaterialModel
+	material_model = to_params.materialModel
 	tStart = time.time()
 	elem_body_force = fe_solver.elem_body_force
 
@@ -203,7 +203,7 @@ def topopt_optimality_criteria(
 		
 		sol = fe_solver.solve(x, material_model)
 		fe_solver.postprocess()
-		obj, grad_obj = compute_objective_and_gradient(feaMode,to_params,sol,x, fe_solver,KE, material_model)
+		obj, grad_obj = compute_objective_and_gradient(feaMode,to_params,sol,x, fe_solver,KE)
 
 		if (len(history['objective']) == 0):
 			objScaling = abs(obj)
@@ -307,7 +307,7 @@ def topopt_optimality_criteria(
 		fe_solver.mesh.setPseudoDensity(x.flatten())
 		volfrac = np.mean(x)
 	sol = fe_solver.solve(x, material_model)
-	obj, grad_obj = compute_objective_and_gradient(feaMode,to_params,sol,x, fe_solver,KE, material_model)
+	obj, grad_obj = compute_objective_and_gradient(feaMode,to_params,sol,x, fe_solver,KE)
 
 	history['objective'].append(obj)
 	history['volfrac'].append(volfrac)

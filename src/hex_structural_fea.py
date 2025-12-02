@@ -12,7 +12,6 @@ import hex_element_stiffness
 import deflation
 import scipy.sparse as sp
 
-
 script_dir = os.path.dirname(os.path.abspath(__file__))
 
 # Format values based on magnitude
@@ -71,6 +70,7 @@ class HexStructuralFEA:
 
 #################################################################
   def create_pyvista_plotter(self):
+
     self.pyVistaPlotter = pv.Plotter(window_size=(500, 400))
     self.pyVistaPlotter.camera_position =self.camera_position
     # Enable anti-aliasing for better quality
@@ -791,6 +791,7 @@ class HexStructuralFEA:
 #################################################################
 if __name__ == "__main__":    
   from hex_structural_examples import StructuralExamples,getStructuralProblem
+ 
 
   problem = StructuralExamples.LBracket
   nDOFDesired = 50000
