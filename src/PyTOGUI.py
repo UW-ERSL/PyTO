@@ -4,7 +4,6 @@ import vtk
 import pyvista as pv
 import numpy as np
 import json
-from scipy.sparse import coo_matrix
 from collections import defaultdict
 from PyQt5 import QtWidgets, QtCore
 from PyQt5.QtCore import QSize

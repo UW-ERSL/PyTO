@@ -334,10 +334,13 @@ def topopt_pareto(feaMode,fe_solver,
 		raise ValueError(f"Unknown constraint type: {constraintType}")
 	
 	while volfrac > volFractionConstraint:
+		
 		if (plot_progress):
 			if progress_callback is not None:
 				progress_callback()
-			fe_solver.plot_mesh(plotter=plotter,plot_bc = False,auto_close = False, title = f'Volfrac: {volfrac:0.3f}')
+			fe_solver.plot_pseudo_density_realtime(
+                   title=f"Iter {totalIter + 1}"
+               )
 		# Move to next volume fraction
 		volfrac = max(volFractionConstraint, volfrac - vol_decr)
 		if (debug):
@@ -476,7 +479,7 @@ if __name__ == "__main__":
 	
 	print("-" * 50)
 	to_problem = StructuralTOExamples.Mitchell_3 # Choose the TO problem
-	#to_problem = ThermalTOExamples.FourCornersThermal # Choose the TO problem
+	to_problem = ThermalTOExamples.FourCornersThermal # Choose the TO problem
 
 	if (to_problem in StructuralTOExamples):
 		mesh, mat_prop, bc,elem_body_force, to_params = getStructuralTOProblem(to_problem)
@@ -488,7 +491,7 @@ if __name__ == "__main__":
 	print(f"Running {to_problem.name}...") 
 	print("-" * 50)
 	
-	plot_progress	 = False
+	plot_progress = True
 	print_progress = True
 	debug = False
 

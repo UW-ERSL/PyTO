@@ -22,16 +22,16 @@ def getThermoStructuralTOProblem(to_problem: ThermoStructuralTOExamples, **kwarg
 		to_params.RelativeFilterRadius = 1.5
 		to_params.nDOFDesired = 25000
 		to_params.Objective = (TO_QOI.COMPLIANCE, None)
-		to_params.Constraints = [(TO_QOI.VOLUME_FRACTION, None, 0.2)]
+		to_params.Constraints = [(TO_QOI.VOLUME_FRACTION, None, 0.25)]
 
 	elif to_problem == ThermoStructuralTOExamples.MBBBeam:
 		# See paper: "Compliance‑based topology optimization of structural components
 		# subjected to thermo‑mechanical loading", by Ooms, et al., 2023
 		print("Creating Thermo-structural MBB Beam problem...")
 		thermostructural_problem = ThermoStructuralExamples.MBBBeam 
-		kwargs['structural_load'] = 5000
+		kwargs['structural_load'] = 10000
 		kwargs['Ta'] = 23  # Ambient temperature
-		kwargs['Tf'] = 123 # Base temperature
+		kwargs['Tf'] = 73 # Base temperature
 		to_params.Comment = "Thermo-structural MBB Beam example"
 		to_params.ExtrudeZ = True
 		to_params.nDOFDesired = 25000

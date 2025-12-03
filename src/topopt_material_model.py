@@ -4,7 +4,11 @@ import numpy as np
 
 # Make these variables private to the module
 _SIMP_STRUCTURAL_PENALTY_MIN = 1 # Min Penalization factor for SIMP method
-_SIMP_STRUCTURAL_PENALTY_MAX = 8.0 # Max Penalization factor for SIMP method
+_SIMP_STRUCTURAL_PENALTY_MAX = 6.0 # Max Penalization factor for SIMP method
+
+_SIMP_THERMAL_PENALTY_MIN = 1  # Min Penalization factor
+_SIMP_THERMAL_PENALTY_MAX = 3  # Max Penalization factor for SIMP method - thermal
+
 
 _SIMP_STRUCTURAL_PENALTY = 3.0  # Default penalization factor for SIMP method 
 _SIMP_THERMAL_PENALTY = 1  # Default penalization factor for SIMP method - thermal
@@ -27,10 +31,11 @@ class MaterialModel(enum.Enum):
 	SIMPPLUS = enum.auto()
 
 
-def set_SIMP_STUCTURAL_PENALTY_MAX(value: float) -> None:
+
+def set_SIMP_STRUCTURAL_PENALTY(value: float) -> None:
 	"""Set the maximum SIMP penalty value."""
-	global SIMP_STUCTURAL_PENALTY_MAX
-	SIMP_STUCTURAL_PENALTY_MAX = value
+	global SIMP_STUCTURAL_PENALTY
+	SIMP_STUCTURAL_PENALTY = value
 
 def update_SIMP_STUCTURAL_PENALTY_for_body_force(fraction_grey: float) -> None:
 	"""Update the SIMP penalty value. This is heuristic for problems with body force"""
@@ -45,6 +50,13 @@ def increment_SIMP_STRUCTURAL_PENALTY(value) -> None:
 	_SIMP_STRUCTURAL_PENALTY = max(min(_SIMP_STRUCTURAL_PENALTY, _SIMP_STRUCTURAL_PENALTY_MAX),_SIMP_STRUCTURAL_PENALTY_MIN)  # Ensure it does not exceed the maximum value
 	return _SIMP_STRUCTURAL_PENALTY
 
+def increment_SIMP_THERMAL_PENALTY(value) -> None:
+	"""Update the SIMP penalty value."""
+	global _SIMP_THERMAL_PENALTY
+	_SIMP_THERMAL_PENALTY += value
+	_SIMP_THERMAL_PENALTY = max(min(_SIMP_THERMAL_PENALTY, _SIMP_THERMAL_PENALTY_MAX),_SIMP_THERMAL_PENALTY_MIN)  # Ensure it does not exceed the maximum value
+	return _SIMP_THERMAL_PENALTY
+
 def initialize_SIMP_STRUCTURAL_PENALTY(value = None) -> None:
 	"""Initialize the SIMP penalty value."""
 	global _SIMP_STRUCTURAL_PENALTY
@@ -53,7 +65,14 @@ def initialize_SIMP_STRUCTURAL_PENALTY(value = None) -> None:
 	else:
 		_SIMP_STRUCTURAL_PENALTY = 3.0
 	
-
+def initialize_SIMP_THERMAL_PENALTY(value = None) -> None:
+	"""Initialize the SIMP penalty value."""
+	global _SIMP_THERMAL_PENALTY
+	if value is not None:
+		_SIMP_THERMAL_PENALTY = value
+	else:
+		_SIMP_THERMAL_PENALTY = 1.0
+		
 def get_structural_material_model_scaling(x: np.ndarray, material_model: MaterialModel) -> np.ndarray:
 	"""Compute the Young's modulus based on the material model.
 

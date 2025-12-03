@@ -113,6 +113,7 @@ def topopt_optimality_criteria(
 							plot_progress: bool = False,
 							debug: bool = False,
 							binarize_topology: bool = True,
+							use_continuation: bool = True,
 							progress_callback=None, 
                             plotter=None  
 							) -> tuple[np.ndarray, dict]:
@@ -191,16 +192,20 @@ def topopt_optimality_criteria(
 	
 	success = True
 	errorMsg = "No errors."
-	
+	if (use_continuation):
+		initialize_SIMP_STRUCTURAL_PENALTY(1)
+	else:
+		initialize_SIMP_STRUCTURAL_PENALTY(3)  
 	for iter in range(maxIterations):
 		x = np.array(x)
+	
 		if (plot_progress):
 			if progress_callback is not None:
-				progress_callback()	
-			fe_solver.mesh.setPseudoDensity(x)
-			fe_solver.plot_pseudo_density(plotter=plotter,auto_close = False, title = f"Iteration {iter}")
-		
-		
+				progress_callback()
+			fe_solver.plot_pseudo_density_realtime(
+                   title=f"Iter {iter + 1}"
+               )
+        
 		sol = fe_solver.solve(x, material_model)
 		fe_solver.postprocess()
 		obj, grad_obj = compute_objective_and_gradient(feaMode,to_params,sol,x, fe_solver,KE)
@@ -282,7 +287,9 @@ def topopt_optimality_criteria(
 			if (dJ < rel_conv_tol) and (volConstraint < rel_conv_tol) and (change < move_tol): # success
 				log_message("OC optimization converged.")
 				break
-
+		if (use_continuation) and (iter % 10 == 0):
+			increment_SIMP_THERMAL_PENALTY(0.5)
+			increment_SIMP_STRUCTURAL_PENALTY(0.5)
 	if iter == maxIterations - 1:
 		errorMsg = "Maximum iterations reached"
 		log_message(errorMsg)
@@ -330,5 +337,6 @@ if __name__ == "__main__":
 
 	print("-" * 50)
 	to_problem = StructuralTOExamples.LBracketMidLoad # Choose the TO problem
+	to_problem = ThermalTOExamples.FourCornersThermal
 
 	run_topopt_ocm(to_problem)

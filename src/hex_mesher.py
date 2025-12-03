@@ -8,7 +8,7 @@ from scipy.sparse import coo_matrix
 import time
 from stl_reader import STLGeom
 import enum
-
+from hex_plotter import HexFEAPlotter
 @dataclasses.dataclass
 class Extent:
   min: float
@@ -64,6 +64,8 @@ class HexMesher:
 		self.num_elems = 0
 		self.minVoxelsPerAxis = 2
 		self.stlGeom = None
+
+		self.plotter = None
 
 
 	def grid_mesh(self,
@@ -1217,31 +1219,19 @@ class HexMesher:
 	def setPseudoDensity(self, rho):
 		self.elemPseudoDensity = rho.copy()
 
-
 	def plot(self,plot_stl = None, plotter = None):
-		if plotter is None:
-			plotter = pv.Plotter()
-		
-		# Add voxelized mesh with component colors
-		if self.num_components == 1:
-			# Simple case - just plot the voxels
-			plotter.add_mesh(self.voxels, show_edges=True)
-		else:
-			# Multi-component case - plot each component with different colors
-			for i in range(self.num_components):
-				color = [i/self.num_components, 1.0, 1 - i/self.num_components]
-				component_cells = self.voxels.threshold(i + 1, scalars="component_id")
-				if component_cells.n_cells > 0:
-					plotter.add_mesh(component_cells, color=color, label=f'Component {i}', show_edges=True)
-
-			plotter.add_legend()
-		plotter.add_axes()
-		plotter.show_grid()
-		if plot_stl and (self.stlMesh is not None) and (self.stlMesh.n_faces > 0):
-			# Add the original STL mesh for reference
-			plotter.add_mesh(self.stlMesh, color='red', show_edges=True, opacity=0.1, label='Original STL')
-		
-		plotter.show()
+		# Create plotter if needed
+		if self.plotter is None:
+            # HexMesher doesn't have camera_position, so use None
+			self.plotter = HexFEAPlotter(self, camera_position=None)
+        
+		return self.plotter.plot_mesh(
+            self.voxels,
+            num_components=self.num_components,
+            plot_stl=plot_stl,
+            stl_mesh=self.stlMesh if hasattr(self, 'stlMesh') else None,
+            plotter=plotter
+        )
 
 	def export_vtu_mesh(self,
 			elem_field,

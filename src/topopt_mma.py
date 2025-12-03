@@ -45,6 +45,7 @@ def run_topopt_mma(to_problem):
                     elem_body_force = elem_body_force)
         nNodes = fe_structural_solver.mesh.num_nodes
         nElems = fe_structural_solver.mesh.num_elems
+        #fe_structural_solver.plot_mesh(title = "Structural Load", plot_bc = True, save_path = None)
     elif (feaMode == FEA_MODE.THERMAL):
         fe_thermal_solver = hex_thermal_fea.HexThermalFEA(mesh = mesh,
                     mat_prop = mat_prop,
@@ -55,6 +56,8 @@ def run_topopt_mma(to_problem):
                     elem_body_force = elem_body_force)
         nNodes = fe_thermal_solver.mesh.num_nodes
         nElems = fe_thermal_solver.mesh.num_elems
+
+        #fe_thermal_solver.plot_mesh(title = "Thermal Load", plot_bc = True, save_path = None)
     elif (feaMode == FEA_MODE.THERMO_STRUCTURAL):
         fe_structural_solver = hex_structural_fea.HexStructuralFEA(mesh = mesh,
                     mat_prop = mat_prop,
@@ -72,12 +75,12 @@ def run_topopt_mma(to_problem):
 
         nNodes = fe_structural_solver.mesh.num_nodes
         nElems = fe_structural_solver.mesh.num_elems  
-        #initialize_SIMP_STRUCTURAL_PENALTY(5.0) # higher SIMP  penalty for thermo-structural problems 
+           
+        # fe_structural_solver.plot_mesh(title = "Structural Load", plot_bc = True, save_path = None)
+        # fe_thermal_solver.plot_mesh(title = "Thermal Load", plot_bc = True, save_path = None)
 
     print("nNodes: ", nNodes )
-    print("nElem: ", nElems)    
-    title = f'nNodes: {nNodes}, nElem: {nElems}'
-
+    print("nElem: ", nElems) 
     plot_progress = True
     print_progress = True
     startTime = time.time()
@@ -95,11 +98,9 @@ def run_topopt_mma(to_problem):
     title = f"MMA: vol: {history['volfrac'][-1]:0.2f}, J: {history['objective'][-1]:.3g}, nFEA: {len(history['objective']):3d}, time: {timeTaken:.0f} s"
     
     if (feaMode == FEA_MODE.STRUCTURAL):
-        fe_structural_solver.plot_mesh(title = title, plot_bc = True, save_path = None)
         fe_structural_solver.postprocess()
         fe_structural_solver.plot_vonMisesStress()
     elif (feaMode == FEA_MODE.THERMAL):
-        fe_thermal_solver.plot_mesh(title = title, plot_bc = True, save_path = None)
         fe_thermal_solver.postprocess()
         fe_thermal_solver.plot_temperature()
    
@@ -134,6 +135,7 @@ def topopt_mma(feaMode: FEA_MODE, fe_structural_solver, fe_thermal_solver,
                             constraint_tol: float = 1.e-4,
                             print_progress: bool = True,
                             plot_progress: bool = False,
+                            use_continuation: bool = True,
                             binarize_topology: bool = False,   
                             progress_callback=None, 
                             plotter=None  
@@ -160,7 +162,6 @@ def topopt_mma(feaMode: FEA_MODE, fe_structural_solver, fe_thermal_solver,
         nDOFPerNode = 1
     elif (feaMode == FEA_MODE.THERMO_STRUCTURAL):
         fe_solver = fe_structural_solver  # primary solver is structural
-        thermoElasticSensitivity = ThermoElasticSensitivity(fe_thermal_solver, fe_structural_solver)
         if (fe_structural_solver.mesh.num_elems != fe_thermal_solver.mesh.num_elems):
             raise ValueError("Structural and thermal meshes must have the same number of elements.")
         mesh = fe_structural_solver.mesh
@@ -205,6 +206,10 @@ def topopt_mma(feaMode: FEA_MODE, fe_structural_solver, fe_thermal_solver,
     obj0 = None
     mmaIterations = 0
     
+    if (use_continuation):
+        initialize_SIMP_STRUCTURAL_PENALTY(1)
+    else:
+        initialize_SIMP_STRUCTURAL_PENALTY(3)   
     def optimizationFunction(x):
         nonlocal nFEAs, obj0,mmaIterations
         x = np.asarray(x).flatten()
@@ -251,10 +256,6 @@ def topopt_mma(feaMode: FEA_MODE, fe_structural_solver, fe_thermal_solver,
         obj = obj/obj0 # normalize objective
         grad_obj = grad_obj/obj0 # normalize gradient
 
-        if to_params.ApplyBinarizationPenalty:
-            density_scaling = 1e-5*(np.exp(mmaIterations/(maxMMAIterations)) - 1)
-            grad_obj += density_scaling * (1 - 2*x)  # pushes towards 0 or 1
-
        
         if (nodal_body_force is not None): # additional body force term. Allowed for structural and thermo-structural problems only
             ce_body_force = (sol[mesh.edofMatStructural].reshape(num_elems, 24) * nodal_body_force[mesh.edofMatStructural].reshape(num_elems, 24)).sum(1)
@@ -294,6 +295,10 @@ def topopt_mma(feaMode: FEA_MODE, fe_structural_solver, fe_thermal_solver,
                 print(f"Constraint {idx+1} ({constraint_names[idx]}): {(val+1)*to_params.Constraints[idx][2]:.3g} {inequality} {to_params.Constraints[idx][2]:.3g}?")
         mmaIterations += 1
         nFEAs += 1
+        if (use_continuation) and (mmaIterations % 10 == 0):
+            increment_SIMP_THERMAL_PENALTY(0.5)
+            increment_SIMP_STRUCTURAL_PENALTY(0.5)
+
         return obj, grad_obj, c, dcdx
 
 
@@ -384,8 +389,8 @@ if __name__ == "__main__":
     print("-" * 50)
 
     # Choose the TO problem
-    to_problem = StructuralTOExamples.LBracketTopLoad 
-    #to_problem = ThermalTOExamples.FourCornersThermal
-    to_problem = ThermoStructuralTOExamples.MBBBeam
+    to_problem = StructuralTOExamples.LBracketTopLoad_Mass_StressFF 
+    to_problem = ThermalTOExamples.FourCornersThermal
+    #to_problem = ThermoStructuralTOExamples.MBBBeam
 
     run_topopt_mma(to_problem)
