@@ -283,7 +283,7 @@ def combine_results():
 		# Sort the directories and take the last one (most recent)
 		#results_dir = sorted(glob.glob(f"./Results/Results_{time.strftime('%Y-%m-%d')}/{subFolder}"))[-1]
 		# If you want to combine results from all subfolders, uncomment the line below
-		results_dirs = sorted(glob.glob(f"./Results/Results_{time.strftime('%Y-%m-%d')}/Structural/{subFolder}"))
+		results_dirs = sorted(glob.glob(f"./Results/Results_{time.strftime('%Y-%m-%d')}/{subFolder}"))
 		if not results_dirs:
 			print(f"No results directory found for {subFolder}. Skipping...")
 			continue

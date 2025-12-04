@@ -167,7 +167,6 @@ def topopt_mma(feaMode: FEA_MODE, fe_structural_solver, fe_thermal_solver,
         mesh = fe_structural_solver.mesh
         mat_prop = fe_structural_solver.mat_prop
         nDOFPerNode = 3
-        binarize_topology = False # don't binarize for thermo-structural problems
     else:
         raise ValueError("Either fe_structural_solver or fe_thermal_solver must be provided.")
 

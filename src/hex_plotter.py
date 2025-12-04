@@ -68,7 +68,34 @@ class HexFEAPlotter:
     # ========================================================================
     # MESH VISUALIZATION
     # ========================================================================
+    def _safe_add_title(self, plotter, title = "", font_size=10):
+        """
+        Add title to plotter, compatible with both Plotter and QtInteractor/BackgroundPlotter.
+        
+        Args:
+            plotter: PyVista plotter, QtInteractor, or BackgroundPlotter
+            title: Title text to display
+            font_size: Font size for the title
+        """
+        if hasattr(plotter, 'add_title'):
+            # Regular pv.Plotter has add_title()
+            plotter.add_title(title, font_size=font_size)
+        else:
+            # QtInteractor/BackgroundPlotter - use add_text() instead
+            pass
+            # plotter.add_text(
+            #     title = title, 
+            #     position='upper_edge',
+            #     font_size=font_size, 
+            #     color='black'
+            # )
     
+    def _safe_show(self, plotter, interactive_update=True, auto_close=True):
+        if hasattr(plotter, 'iren'):
+            plotter.show()  # pv.Plotter
+        else:
+            plotter.show()  # QtInteractor (no args)
+            
     def plot_mesh(self, voxels, num_components=1, plot_stl=False, 
                      stl_mesh=None, plotter=None):
         """
@@ -106,7 +133,7 @@ class HexFEAPlotter:
             plotter.add_mesh(stl_mesh, color='red', show_edges=True, 
                             opacity=0.1, label='Original STL')
         
-        plotter.show()
+        self._safe_show(plotter)
         
     def plot_mesh_structural(self, bc, title=None, plot_bc=True, 
                            rel_arrow_scale=0.1, offsetArrow=False,
@@ -145,7 +172,7 @@ class HexFEAPlotter:
             self._add_structural_boundary_conditions(plotter, bc, rel_arrow_scale, offsetArrow)
         
         if title:
-            plotter.add_title(title, font_size=8)
+            self._safe_add_title(title, font_size=8)
         
         plotter.camera_position = self.camera_position
         plotter.add_axes()
@@ -155,7 +182,7 @@ class HexFEAPlotter:
             plotter.close()
         else:
             if not external_plotter:
-                plotter.show()
+                self._safe_show(plotter)
         
         self.camera_position = plotter.camera_position
     
@@ -194,7 +221,7 @@ class HexFEAPlotter:
             self._add_thermal_boundary_conditions(plotter, bc)
         
         if title:
-            plotter.add_title(title, font_size=8)
+            self._safe_add_title(plotter, title, font_size=8)
         
         plotter.camera_position = self.camera_position
         plotter.add_axes()
@@ -204,9 +231,9 @@ class HexFEAPlotter:
             plotter.close()
         else:
             if external_plotter:
-                plotter.show(interactive_update=not auto_close, auto_close=auto_close)
+                self._safe_show(plotter, interactive_update=not auto_close, auto_close=auto_close)
             else:
-                plotter.show()
+                self._safe_show(plotter)
         
         self.camera_position = plotter.camera_position
     
@@ -263,7 +290,7 @@ class HexFEAPlotter:
         if show_geometry and stl_mesh is not None:
             plotter.add_mesh(stl_mesh, opacity=0.5, color='white', show_edges=True)
         
-        plotter.add_title(f'Deformation (scaled {scale:.2f}x)', font_size=8)
+        self._safe_add_title(plotter, f'Deformation (scaled {scale:.2f}x)', font_size=8)
         plotter.camera_position = self.camera_position
         plotter.add_axes()
         
@@ -272,9 +299,9 @@ class HexFEAPlotter:
             plotter.close()
         else:
             if external_plotter:
-                plotter.show(interactive_update=not auto_close, auto_close=auto_close)
+                self._safe_show(plotter, interactive_update=not auto_close, auto_close=auto_close)
             else:
-                plotter.show()
+                self._safe_show(plotter)
         
         self.camera_position = plotter.camera_position
     
@@ -348,7 +375,7 @@ class HexFEAPlotter:
             plotter.add_point_labels([vertices[min_idx]], [f'Min: {format_value(temp_vals[min_idx])}'],
                                     point_size=10, font_size=14, text_color='blue')
         
-        plotter.add_title('Temperature Field', font_size=8)
+        self._safe_add_title(plotter, 'Temperature Field', font_size=8)
         plotter.camera_position = self.camera_position
         plotter.add_axes()
         
@@ -357,9 +384,9 @@ class HexFEAPlotter:
             plotter.close()
         else:
             if external_plotter:
-                plotter.show(interactive_update=not auto_close, auto_close=auto_close)
+                self._safe_show(plotter, interactive_update=not auto_close, auto_close=auto_close)
             else:
-                plotter.show()
+                self._safe_show(plotter)
         
         self.camera_position = plotter.camera_position
     
@@ -398,12 +425,12 @@ class HexFEAPlotter:
                         cmap='jet', edge_color='black', line_width=1,
                         scalar_bar_args={'title': '', 'vertical': True})
         
-        plotter.add_title(f'Eigenmode {mode_number}; freq: {eigenvalue:.3g} Hz', font_size=8)
+        self._safe_add_title(plotter, f'Eigenmode {mode_number}; freq: {eigenvalue:.3g} Hz', font_size=8)
         plotter.camera_position = self.camera_position
         plotter.add_axes()
         plotter.camera.zoom(0.8)
         plotter.enable_anti_aliasing()
-        plotter.show()
+        self._safe_show(plotter)
     
     # ========================================================================
     # GENERIC ELEMENT FIELD PLOTTING
@@ -499,7 +526,7 @@ class HexFEAPlotter:
             # Add STL geometry
             pass  # Implement if needed
         
-        plotter.add_title(title, font_size=0.9*fontsize)
+        self._safe_add_title(plotter, title, font_size=0.9*fontsize)
         plotter.camera_position = self.camera_position
         
         if save_path:
@@ -507,9 +534,9 @@ class HexFEAPlotter:
             plotter.close()
         else:
             if external_plotter:
-                plotter.show(interactive_update=not auto_close, auto_close=auto_close)
+                self._safe_show(plotter, interactive_update=not auto_close, auto_close=auto_close)
             else:
-                plotter.show()
+                self._safe_show(plotter)
         
         self.camera_position = plotter.camera_position
     
