@@ -247,9 +247,8 @@ def topopt_mma(feaMode: FEA_MODE, fe_structural_solver, fe_thermal_solver,
             fe_structural_solver.postprocess()
             obj, grad_obj = compute_thermoelastic_compliance_and_gradient(x, temperature, displacement,to_params,
 												  fe_thermal_solver, fe_structural_solver)
-           
             c, dcdx = compute_constraint_and_gradient(feaMode,to_params,displacement,x, fe_solver,KE)
-  
+
         if (obj0 is None):
             obj0 = obj
 
@@ -259,7 +258,7 @@ def topopt_mma(feaMode: FEA_MODE, fe_structural_solver, fe_thermal_solver,
         obj = obj/obj0 # normalize objective
         grad_obj = grad_obj/obj0 # normalize gradient
 
-       
+        
         if (nodal_body_force is not None): # additional body force term. Allowed for structural and thermo-structural problems only
             ce_body_force = (sol[mesh.edofMatStructural].reshape(num_elems, 24) * nodal_body_force[mesh.edofMatStructural].reshape(num_elems, 24)).sum(1)
             grad_obj +=  2*ce_body_force*get_material_model_rho_sensitivity(x,material_model)
@@ -403,6 +402,6 @@ if __name__ == "__main__":
     # Choose the TO problem
     to_problem = StructuralTOExamples.LBracketMidLoad 
     #to_problem = ThermalTOExamples.FourCornersThermal
-    #to_problem = ThermoStructuralTOExamples.MBBBeam
+    to_problem = ThermoStructuralTOExamples.MBBBeam
 
     run_topopt_mma(to_problem)

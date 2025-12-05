@@ -121,7 +121,7 @@ def createMBBBeamProblem(nDOFDesired=25000, structural_load = 5000,Ta = 23,Tf  =
     bcThermal = bound_cond.BC(force = thermal_force,
 						fixed_dofs = thermal_fixed_dofs,
 						dirichlet_values = thermal_dirichlet_values) 
-    mat_prop = mat_lib.get_material("Concrete")
+    mat_prop = mat_lib.get_material("Steel")
     elem_body_force = None
 
     return mesh, mat_prop, bcStructural,bcThermal, elem_body_force

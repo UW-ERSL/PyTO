@@ -199,58 +199,51 @@ class HexThermalFEA:
       
       return H
   #################################################################
-  def get_thermoelastic_force(self,x: np.ndarray = None,material_model: MaterialModel = None) -> np.ndarray:
+  def get_thermoelastic_force(self, x: np.ndarray = None, material_model: MaterialModel = None) -> np.ndarray:
     """
     Add thermal forces to the finite element system.
-    x: the design variable array (num_elems,)
-
-    This function computes thermal forces based on temperature differences from a reference
-    temperature and adds them to the global force vector.
-
-    See Deng, S. and Suresh, K., 2017. Stress constrained thermo-elastic topology optimization with varying temperature fields via augmented topological sensitivity based level-set. 
-    Structural and Multidisciplinary Optimization, 56(6), pp.1413-1427.
-  
+    Supports multi-material: uses per-element E, alpha, nu.
     """
     if self.sol is None:
-      raise ValueError("Solution not computed yet. Call solve() before get_thermal_force().")
-    
-    
+        raise ValueError("Solution not computed yet. Call solve() before get_thermal_force().")
+
     if x is None:
-      x = np.ones((self.mesh.num_elems,))
+        x = np.ones((self.mesh.num_elems,))
 
-    self.x = x # store for postprocessing
-    # we need to use the structural material scaling here
+    self.x = x  # store for postprocessing
     elem_material_scaling = get_structural_material_model_scaling(x, material_model)
-    # Get H matrix (24x8)
-    if isinstance(self.mat_prop, list):
-      raise ValueError("get_thermoelastic_force currently does not support multi-material cases.")
-    else: # single material
-      E = self.mat_prop.youngs_modulus
-      alpha = self.mat_prop.thermal_expansion_coefficient # we don't scale this
-
     dx, dy, dz = self.mesh.elem_size
-    nu = self.mat_prop.poissons_ratio
-    
-    # Loop over all elements
-    f_thermoelastic = np.zeros(3 * self.mesh.num_nodes) # Elastic force vector
-    HMatrix = self.getHMatrix( dx, dy, dz, nu)
-    for elem in range(self.mesh.num_elems):
-      # Get element nodes (8 nodes)
-      elem_nodes = self.mesh.elemArray[elem]
-      
-      # Get temperature at element nodes (8 temperatures)
-      node_temp = self.sol[elem_nodes]
-      
-      # Compute thermal force for this element (24 DOFs)
-      f_thermal_elem = elem_material_scaling[elem] * E * alpha * HMatrix @ (node_temp - self.thermoElasticReferenceTemperature)
-      
-      # Add element thermal forces to global force vector
-      
-      for j in range(8):
-        # Add forces for x, y, z directions
-        f_thermoelastic[3 * elem_nodes[j]] += f_thermal_elem[3 * j]
-        f_thermoelastic[3 * elem_nodes[j] + 1] += f_thermal_elem[3 * j + 1]
-        f_thermoelastic[3 * elem_nodes[j] + 2] += f_thermal_elem[3 * j + 2]
+
+    f_thermoelastic = np.zeros(3 * self.mesh.num_nodes)  # Elastic force vector
+
+    # Multi-material support
+    if isinstance(self.mat_prop, list):
+        for elem in range(self.mesh.num_elems):
+            mp = self.mat_prop[elem]
+            E = mp.youngs_modulus
+            alpha = mp.thermal_expansion_coefficient
+            nu = mp.poissons_ratio
+            HMatrix = self.getHMatrix(dx, dy, dz, nu)
+            elem_nodes = self.mesh.elemArray[elem]
+            node_temp = self.sol[elem_nodes]
+            f_thermal_elem = elem_material_scaling[elem] * E * alpha * HMatrix @ (node_temp - self.thermoElasticReferenceTemperature)
+            for j in range(8):
+                f_thermoelastic[3 * elem_nodes[j]] += f_thermal_elem[3 * j]
+                f_thermoelastic[3 * elem_nodes[j] + 1] += f_thermal_elem[3 * j + 1]
+                f_thermoelastic[3 * elem_nodes[j] + 2] += f_thermal_elem[3 * j + 2]
+    else:
+        E = self.mat_prop.youngs_modulus
+        alpha = self.mat_prop.thermal_expansion_coefficient
+        nu = self.mat_prop.poissons_ratio
+        HMatrix = self.getHMatrix(dx, dy, dz, nu)
+        for elem in range(self.mesh.num_elems):
+            elem_nodes = self.mesh.elemArray[elem]
+            node_temp = self.sol[elem_nodes]
+            f_thermal_elem = elem_material_scaling[elem] * E * alpha * HMatrix @ (node_temp - self.thermoElasticReferenceTemperature)
+            for j in range(8):
+                f_thermoelastic[3 * elem_nodes[j]] += f_thermal_elem[3 * j]
+                f_thermoelastic[3 * elem_nodes[j] + 1] += f_thermal_elem[3 * j + 1]
+                f_thermoelastic[3 * elem_nodes[j] + 2] += f_thermal_elem[3 * j + 2]
     return f_thermoelastic
 
 
