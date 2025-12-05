@@ -1222,8 +1222,7 @@ class HexMesher:
 	def plot(self,plot_stl = None, plotter = None):
 		# Create plotter if needed
 		if self.plotter is None:
-            # HexMesher doesn't have camera_position, so use None
-			self.plotter = HexFEAPlotter(self, camera_position=None)
+			self.plotter = HexFEAPlotter(self)
         
 		return self.plotter.plot_mesh(
             self.voxels,

@@ -219,12 +219,14 @@ def topopt_mma(feaMode: FEA_MODE, fe_structural_solver, fe_thermal_solver,
         if (to_params.APPLY_FILTER_TO_DENSITY):
             x = H*x/Hs
         fe_solver.mesh.setPseudoDensity(x)
-     
+
+        # Always call callback if provided
+        if progress_callback is not None:
+            progress_callback()
         if (plot_progress):
-           if progress_callback is not None:
-               progress_callback()
            fe_solver.plot_pseudo_density_realtime(
-                   title=f"Iter {mmaIterations + 1}"
+                   title=f"Iter {mmaIterations + 1}",
+                   external_plotter=plotter  # Pass GUI plotter if available
                )
         
         if (feaMode == FEA_MODE.STRUCTURAL) or (feaMode == FEA_MODE.THERMAL):
@@ -284,14 +286,23 @@ def topopt_mma(feaMode: FEA_MODE, fe_structural_solver, fe_thermal_solver,
 
         grad_obj = grad_obj.reshape(-1, 1)
 
-        # Print objective and constraints for this iteration
         if (print_progress):
-            print(50* '-')
-            print(f"Iteration: {mmaIterations}")
-            print(f"Min. Objective ({objective_name}): {obj*obj0:.3g}")
+            # Build combined message
+            msg_lines = ['-' * 50]
+            msg_lines.append(f"Iteration: {mmaIterations}")
+            msg_lines.append(f"Min. Objective ({objective_name}): {obj*obj0:.3g}")
+            
             inequality = '<='
             for idx, val in enumerate(c.flatten()):
-                print(f"Constraint {idx+1} ({constraint_names[idx]}): {(val+1)*to_params.Constraints[idx][2]:.3g} {inequality} {to_params.Constraints[idx][2]:.3g}?")
+                msg_lines.append(f"Constraint {idx+1} ({constraint_names[idx]}): {(val+1)*to_params.Constraints[idx][2]:.3g} {inequality} {to_params.Constraints[idx][2]:.3g}?")
+            
+            status_msg = '\n'.join(msg_lines)
+            print(status_msg)
+            
+            # Send to GUI
+            if progress_callback is not None:
+                progress_callback(status_msg)
+            
         mmaIterations += 1
         nFEAs += 1
         if (use_continuation) and (mmaIterations % 10 == 0):
@@ -388,7 +399,7 @@ if __name__ == "__main__":
     print("-" * 50)
 
     # Choose the TO problem
-    to_problem = StructuralTOExamples.LBracketTopLoad_Mass_StressFF 
+    to_problem = StructuralTOExamples.LBracketMidLoad 
     to_problem = ThermalTOExamples.FourCornersThermal
     #to_problem = ThermoStructuralTOExamples.MBBBeam
 

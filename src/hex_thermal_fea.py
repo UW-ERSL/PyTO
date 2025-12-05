@@ -335,12 +335,25 @@ class HexThermalFEA:
                          mask_low_pseudodensity=False, title= title,
                 save_path=save_path, plotter = plotter, fontsize=fontsize)
     
-  def plot_pseudo_density_realtime(self, title='Pseudo density', iteration=0):
+  def plot_pseudo_density_realtime(self, title='Pseudo density', iteration=0, external_plotter=None):
     """
     Real-time visualization with proper Qt event loop handling.
-    This is the CORRECT way to use BackgroundPlotter in a script!
+    
+    Args:
+        title: Title for the visualization
+        iteration: Current iteration number
+        external_plotter: Optional external plotter (e.g., from GUI)
+    
+    Notes:
+        This method delegates to the HexFEAPlotter, which handles the actual visualization.
+        When external_plotter is provided (GUI mode), it will use that plotter instead of
+        creating a new BackgroundPlotter window.
     """
-    return self.plotter.plot_pseudo_density_realtime(title=title, iteration=iteration)
+    return self.plotter.plot_pseudo_density_realtime(
+        title=title, 
+        iteration=iteration,
+        external_plotter=external_plotter
+    )
 
 
 #################################################################

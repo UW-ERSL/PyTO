@@ -52,13 +52,7 @@ class HexFEAPlotter:
         
         # Set default camera position if not provided
         if camera_position is None:
-            view_distance = 2.5 * mesh.bbox.diag_length
-            offset = 0.2 * view_distance
-            self.camera_position = [
-                (view_distance*0.5, -view_distance*0.3, view_distance),
-                (offset, offset, 0),
-                (0, 0.8, 0.4)
-            ]
+            pass
         else:
             self.camera_position = camera_position
         
@@ -125,7 +119,8 @@ class HexFEAPlotter:
                                 label=f'Component {i}', show_edges=True)
             plotter.add_legend()
         
-        plotter.add_axes()
+        if not hasattr(plotter, 'axes_actor') or plotter.axes_actor is None:
+            plotter.add_axes()
         plotter.show_grid()
         
         if plot_stl and stl_mesh is not None and stl_mesh.n_faces > 0:
@@ -174,8 +169,10 @@ class HexFEAPlotter:
         if title:
             self._safe_add_title(title, font_size=8)
         
-        plotter.camera_position = self.camera_position
-        plotter.add_axes()
+        if hasattr(self, 'camera_position'):
+            plotter.camera_position = self.camera_position
+        if not hasattr(plotter, 'axes_actor') or plotter.axes_actor is None:
+            plotter.add_axes()
         
         if save_path:
             plotter.screenshot(save_path)
@@ -223,8 +220,10 @@ class HexFEAPlotter:
         if title:
             self._safe_add_title(plotter, title, font_size=8)
         
-        plotter.camera_position = self.camera_position
-        plotter.add_axes()
+        if hasattr(self, 'camera_position'):
+            plotter.camera_position = self.camera_position
+        if not hasattr(plotter, 'axes_actor') or plotter.axes_actor is None:
+            plotter.add_axes()
         
         if save_path:
             plotter.screenshot(save_path)
@@ -291,8 +290,10 @@ class HexFEAPlotter:
             plotter.add_mesh(stl_mesh, opacity=0.5, color='white', show_edges=True)
         
         self._safe_add_title(plotter, f'Deformation (scaled {scale:.2f}x)', font_size=8)
-        plotter.camera_position = self.camera_position
-        plotter.add_axes()
+        if hasattr(self, 'camera_position'):
+            plotter.camera_position = self.camera_position
+        if not hasattr(plotter, 'axes_actor') or plotter.axes_actor is None:
+            plotter.add_axes()
         
         if save_path:
             plotter.screenshot(save_path)
@@ -377,7 +378,8 @@ class HexFEAPlotter:
         
         self._safe_add_title(plotter, 'Temperature Field', font_size=8)
         plotter.camera_position = self.camera_position
-        plotter.add_axes()
+        if not hasattr(plotter, 'axes_actor') or plotter.axes_actor is None:
+            plotter.add_axes()
         
         if save_path:
             plotter.screenshot(save_path)
@@ -427,7 +429,8 @@ class HexFEAPlotter:
         
         self._safe_add_title(plotter, f'Eigenmode {mode_number}; freq: {eigenvalue:.3g} Hz', font_size=8)
         plotter.camera_position = self.camera_position
-        plotter.add_axes()
+        if not hasattr(plotter, 'axes_actor') or plotter.axes_actor is None:
+            plotter.add_axes()
         plotter.camera.zoom(0.8)
         plotter.enable_anti_aliasing()
         self._safe_show(plotter)
@@ -554,56 +557,87 @@ class HexFEAPlotter:
     # REAL-TIME OPTIMIZATION VISUALIZATION
     # ========================================================================
     
-    def plot_pseudo_density_realtime(self, title='Pseudo density', iteration=0):
+    def plot_pseudo_density_realtime(self, title='Pseudo density', iteration=0, external_plotter=None):
         """
         Real-time non-blocking visualization for optimization.
-        Uses BackgroundPlotter with proper Qt event loop handling.
-        """
-            
-        if not hasattr(self, '_rt_plotter'):
-            # Get or create QApplication
-            app = QApplication.instance()
-            if app is None:
-                app = QApplication([])
-            self._qt_app = app
-            
-            # Create BackgroundPlotter
-            self._rt_plotter = BackgroundPlotter(window_size=(800, 600))
-            self._rt_plotter.camera_position = self.camera_position
-            
-            # Create mesh
-            cells = self.mesh.elemArray.shape[0]
-            cell_type = np.full(cells, pv.CellType.HEXAHEDRON, dtype=np.uint8)
-            cells_pv = np.column_stack((np.full(cells, 8), self.mesh.elemArray)).flatten()
-            pv_mesh = pv.UnstructuredGrid(cells_pv, cell_type, self.mesh.node_xyz)
-            
-            density = self.mesh.elemPseudoDensity.copy()
-            mask = density > 0.01
-            pv_mesh = pv_mesh.extract_cells(mask)
-            pv_mesh.cell_data['density'] = density[mask]
-            
-            self._rt_plotter.add_mesh(pv_mesh, scalars='density', cmap='gray_r',
-                                        show_edges=True, edge_color='black', line_width=1)
-            self._rt_plotter.add_text(title, position='upper_edge', font_size=10)
-        else:
-            # Update mesh
-            cells = self.mesh.elemArray.shape[0]
-            cell_type = np.full(cells, pv.CellType.HEXAHEDRON, dtype=np.uint8)
-            cells_pv = np.column_stack((np.full(cells, 8), self.mesh.elemArray)).flatten()
-            pv_mesh = pv.UnstructuredGrid(cells_pv, cell_type, self.mesh.node_xyz)
-            
-            density = self.mesh.elemPseudoDensity.copy()
-            mask = density > 0.01
-            pv_mesh = pv_mesh.extract_cells(mask)
-            pv_mesh.cell_data['density'] = density[mask]
-            
-            self._rt_plotter.clear()
-            self._rt_plotter.add_mesh(pv_mesh, scalars='density', cmap='gray_r',
-                                        show_edges=True, edge_color='black', line_width=1)
-            self._rt_plotter.add_text(title, position='upper_edge', font_size=10)
         
-            # CRITICAL: Process Qt events!
-        self._qt_app.processEvents()
+        Args:
+            title: Title text for the plot
+            iteration: Current iteration number
+            external_plotter: Optional external plotter (e.g., from GUI's QtInteractor)
+                            If provided, uses this instead of creating BackgroundPlotter
+        
+        Notes:
+            - In standalone mode (no external_plotter): Creates BackgroundPlotter window
+            - In GUI mode (external_plotter provided): Updates the GUI's plotter
+        """
+        
+        # Determine which plotter to use
+        if external_plotter is not None:
+            # GUI mode - use provided plotter
+            plotter = external_plotter
+            use_external = True
+        else:
+            # Standalone mode - create/use BackgroundPlotter
+            if not hasattr(self, '_rt_plotter'):
+                # Get or create QApplication
+                app = QApplication.instance()
+                if app is None:
+                    app = QApplication([])
+                self._qt_app = app
+                
+                # Create BackgroundPlotter for standalone use
+                self._rt_plotter = BackgroundPlotter(
+                    window_size=(800, 600),
+                    title="Topology Optimization Progress"
+                )
+                self._rt_plotter.camera_position = self.camera_position
+                self._rt_plotter_initialized = False
+            
+            plotter = self._rt_plotter
+            use_external = False
+        
+        # Create mesh representation
+        cells = self.mesh.elemArray.shape[0]
+        cell_type = np.full(cells, pv.CellType.HEXAHEDRON, dtype=np.uint8)
+        cells_pv = np.column_stack((np.full(cells, 8), self.mesh.elemArray)).flatten()
+        pv_mesh = pv.UnstructuredGrid(cells_pv, cell_type, self.mesh.node_xyz)
+        
+        # Apply density threshold
+        density = self.mesh.elemPseudoDensity.copy()
+        mask = density > 0.01
+        pv_mesh = pv_mesh.extract_cells(mask)
+        pv_mesh.cell_data['density'] = density[mask]
+        
+        # Clear plotter if this is an update (not first call)
+        if use_external or (hasattr(self, '_rt_plotter_initialized') and self._rt_plotter_initialized):
+            plotter.clear()
+        
+        # Add mesh with density coloring
+        plotter.add_mesh(
+            pv_mesh, 
+            scalars='density', 
+            cmap='gray_r',
+            show_edges=True, 
+            edge_color='black', 
+            line_width=1,
+            clim=[0, 1]  # Fix colormap range
+        )
+        
+        # Add title text
+        plotter.add_text(
+            title, 
+            position='upper_edge', 
+            font_size=10,
+            color='black'
+        )
+        
+        # Mark as initialized for future updates
+        if not use_external:
+            self._rt_plotter_initialized = True
+            # Process Qt events for standalone BackgroundPlotter
+            if hasattr(self, '_qt_app'):
+                self._qt_app.processEvents()
             
  
     def save_pseudo_density_snapshot(self, filename, title='Pseudo density'):

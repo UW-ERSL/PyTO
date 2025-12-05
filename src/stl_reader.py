@@ -358,10 +358,16 @@ class STLGeom:
         mesh = pv.PolyData(vertices, faces)
         if (plotter is None):
             plotter = pv.Plotter()
-            if show_axes:
-                plotter.add_axes()
+        if show_axes:
+            plotter.add_axes()
         plotter.add_mesh(mesh, show_edges=show_edges)
-        
+
+            
+        plotter.camera_position = "xy"
+        plotter.camera.azimuth = 25  # Rotate around
+        plotter.camera.elevation = 25  # Adjust angle
+
+        plotter.reset_camera_clipping_range()
         if show_bounding_box:
             plotter.add_bounding_box()
             # Get bounding box
@@ -378,6 +384,7 @@ class STLGeom:
             # Add text label for lowest left corner coordinates
             plotter.add_point_labels([[bounds[0], bounds[2], bounds[4]]],
                                     [f'({bounds[0]:.2f}, {bounds[2]:.2f}, {bounds[4]:.2f})'])
+            
         plotter.show()
         return plotter
    
@@ -741,7 +748,7 @@ if __name__ == "__main__":
     stl_file = os.path.join(script_dir, '../Models/Beam/beam.STL')
     stl_file = os.path.join(script_dir, '../Models/LBracket/LBracket.STL')
     #stl_file = os.path.join(script_dir, '../Models/Inverter/Inverter.STL')
-    #stl_file = os.path.join(script_dir, '../Models/LBracketThick/LBracketThick.STL')
+    stl_file = os.path.join(script_dir, '../Models/LBracketThick/LBracketThick.STL')
     #stl_file = os.path.join(script_dir, '../Models/Comb/Comb.STL')
   
     stl_geom = STLGeom(stl_file)

@@ -276,7 +276,6 @@ class MainWindow(QtWidgets.QMainWindow):
     def setup_visualization(self):
         """Setup PyVista visualization environment"""
         self.picker = pv._vtk.vtkCellPicker()
-        self.plotter.add_axes(interactive=False)
         self.plotter.set_background('white')
         self.plotter.enable_parallel_projection()
 
@@ -314,6 +313,11 @@ class MainWindow(QtWidgets.QMainWindow):
 
     def handle_button_click(self, config):
         """button click handler"""
+        # cam_pos = self.plotter.camera_position
+        # print("="*60)
+        # print(f"Camera Position:")
+        # print(f"plotter.camera_position = {cam_pos}")
+        # print("="*60)
         if not self.check_button_availability(config):
             return
             
@@ -449,6 +453,7 @@ class MainWindow(QtWidgets.QMainWindow):
         btn = self.sidebar_buttons.get(button_text)
         if btn:
             btn.setIcon(self.get_icon(icon_type))
+
 
     def update_highlights(self):
         """Update triangle highlights"""
@@ -630,7 +635,7 @@ class MainWindow(QtWidgets.QMainWindow):
         if self.stl_geom and "stl_geometry" not in self.plotter.actors:
             self.stl_geom.plotGeometry(
                 show_edges=False,
-                show_axes=False,
+                show_axes=True,
                 show_bounding_box=False,
                 plotter=self.plotter
             )
@@ -885,7 +890,7 @@ class GeometryWindow(QtWidgets.QDialog):
             # Plot geometry
             self.stl_geom.plotGeometry(
                 show_edges=False, 
-                show_axes=False, 
+                show_axes=True, 
                 show_bounding_box=False, 
                 plotter=self.parent.plotter
             )
@@ -932,7 +937,7 @@ class GeometryWindow(QtWidgets.QDialog):
                 QtWidgets.QMessageBox.warning(self, "SolidWorks Error", "Failed to get STL from SolidWorks.")
                 return
             # Plot and set in parent
-            stl_geom.plotGeometry(show_edges=False, show_axes=False, show_bounding_box=False, plotter=self.parent.plotter)
+            stl_geom.plotGeometry(show_edges=False, show_axes=True, show_bounding_box=False, plotter=self.parent.plotter)
             self.parent.stl_geom = stl_geom
 
             # Use the shared info text update
@@ -3092,6 +3097,7 @@ class AnalysisWindow(QtWidgets.QDialog):
         if 'colored_mesh' in self.parent.plotter.actors:
             self.parent.plotter.remove_actor('colored_mesh', reset_camera=False)
 
+        
         scale_info = fe_solver.plot_deformation(plotter=self.parent.plotter)
         if scale_info:
             self.parent.message_text.append(scale_info)
@@ -4135,7 +4141,10 @@ class StructuralTopOptWindow(QtWidgets.QDialog):
         self.optimization_thread = None
 
         self.optimization_progress.connect(self.parent.message_text.append)
-        self.optimization_update.connect(self.update_visualization)
+        self.optimization_update.connect(
+            self.update_visualization,
+            QtCore.Qt.QueuedConnection  # Force main thread execution!
+        )
         self.optimization_done.connect(self.optimization_completed)
         
         self.setup_ui()
@@ -4245,11 +4254,52 @@ class StructuralTopOptWindow(QtWidgets.QDialog):
         }
 
         def progress_callback(*args):
-            if len(args) == 0:
-                self.optimization_update.emit(fe_solver, len(history['objective']) if history else 0)
-            elif len(args) == 1 and isinstance(args[0], str):
-                self.optimization_progress.emit(str(args[0]))
-
+            """
+            Progress callback that creates mesh data and emits it via signal.
+            Only updates visualization when "Iteration:" message is received.
+            """
+            # Handle text messages - always send to GUI
+            if len(args) == 1 and isinstance(args[0], str):
+                msg = str(args[0])
+                self.optimization_progress.emit(msg)
+                
+                # Only update visualization on "Iteration:" messages
+                if 'Iteration:' not in msg:
+                    return  # Skip visualization for other messages
+            else:
+                # If no args or not a string, skip
+                return
+            
+            # If we get here, we have an "Iteration:" message - update visualization
+            try:
+                import pyvista as pv
+                import re
+                
+                # Extract iteration number from message
+                iteration = 0
+                match = re.search(r'Iteration:\s*(\d+)', msg)
+                if match:
+                    iteration = int(match.group(1))
+                
+                # Create mesh
+                density = fe_solver.mesh.elemPseudoDensity.copy()
+                
+                cells = fe_solver.mesh.elemArray.shape[0]
+                cell_type = np.full(cells, pv.CellType.HEXAHEDRON, dtype=np.uint8)
+                cells_pv = np.column_stack((np.full(cells, 8), 
+                                        fe_solver.mesh.elemArray)).flatten()
+                pv_mesh = pv.UnstructuredGrid(cells_pv, cell_type, 
+                                            fe_solver.mesh.node_xyz)
+                
+                mask = density > 0.01
+                pv_mesh = pv_mesh.extract_cells(mask)
+                pv_mesh.cell_data['density'] = density[mask]
+                
+                # Emit visualization update
+                self.optimization_update.emit(pv_mesh, iteration)
+                
+            except Exception as e:
+                print(f"[CALLBACK] Error creating visualization: {e}")
         try:
             # Call topopt_mma with correct parameters
             if method == "DENSITY-MMA":
@@ -4260,10 +4310,10 @@ class StructuralTopOptWindow(QtWidgets.QDialog):
                     to_params=self.to_params,
                     maxMMAIterations=self.to_params.MaxIterations,
                     print_progress=True,
-                    plot_progress=True,
+                    plot_progress=False,
                     binarize_topology=False,
                     progress_callback=progress_callback,
-                    plotter=self.parent.plotter,
+                    plotter=None,
                 )
                 
                 if success:
@@ -4281,10 +4331,10 @@ class StructuralTopOptWindow(QtWidgets.QDialog):
                     move_tol=0.05,
                     rel_conv_tol=1e-4,
                     print_progress=True,
-                    plot_progress=True,
+                    plot_progress=False,
                     binarize_topology=False,
                     progress_callback=progress_callback,
-                    plotter=self.parent.plotter,
+                    plotter=None,
                 )
                 
             elif method == "PARETO":
@@ -4297,9 +4347,9 @@ class StructuralTopOptWindow(QtWidgets.QDialog):
                     min_local_iters=2,
                     max_local_iters=5,
                     print_progress=True,
-                    plot_progress=True,
+                    plot_progress=False,
                     progress_callback=progress_callback,
-                    plotter=self.parent.plotter,
+                    plotter=None,
                 )
                 
             elif method == "LEVELSET":
@@ -4309,10 +4359,10 @@ class StructuralTopOptWindow(QtWidgets.QDialog):
                     maxIterations=250,
                     numReinit=10000,
                     print_progress=True,
-                    plot_progress=True,
+                    plot_progress=False,
                     binarize_topology=False,
                     progress_callback=progress_callback,
-                    plotter=self.parent.plotter,
+                    plotter=None,
                 )
                 
             else:
@@ -4326,34 +4376,72 @@ class StructuralTopOptWindow(QtWidgets.QDialog):
         self.optimization_done.emit(success, error_msg, history, u, fe_solver)
 
     @QtCore.pyqtSlot(object, int)
-    def update_visualization(self, fe_solver, iteration):
-        """Update visualization during optimization without clearing geometry_info"""
-        # Store geometry_info actor if it exists
-        geometry_info_actor = None
-        if 'geometry_info' in self.parent.plotter.actors:
-            geometry_info_actor = self.parent.plotter.actors['geometry_info']
+    def update_visualization(self, pv_mesh, iteration):
+        """
+        Update visualization during optimization.
+        Runs on MAIN THREAD - safe for OpenGL operations.
         
-        # Clear all actors except geometry_info
-        for name in list(self.parent.plotter.actors.keys()):
-            if name != 'geometry_info':
-                self.parent.plotter.remove_actor(name, reset_camera=False)
-        
-        # Plot pseudo-density
-        fe_solver.plot_pseudo_density(
-            plotter=self.parent.plotter,
-            auto_close=False,
-            title=f"Iteration {iteration + 1}"
-        )
-        
-        # Force restore geometry_info by re-adding it to the plotter
-        if geometry_info_actor:
-            # Remove it first if it exists (in case plot_pseudo_density added something with same name)
-            if 'geometry_info' in self.parent.plotter.actors and self.parent.plotter.actors['geometry_info'] != geometry_info_actor:
-                self.parent.plotter.remove_actor('geometry_info', reset_camera=False)
-            # Re-add the original geometry_info actor
-            self.parent.plotter.add_actor(geometry_info_actor, name='geometry_info')
-        
-        self.parent.plotter.render()
+        Args:
+            pv_mesh: PyVista mesh with density data (created in worker thread)
+            iteration: Current iteration number
+        """
+    
+        try:
+            # Store geometry_info actor if it exists
+            geometry_info_actor = None
+            if 'geometry_info' in self.parent.plotter.actors:
+                geometry_info_actor = self.parent.plotter.actors['geometry_info']
+            
+            # Clear all actors except geometry_info
+            for name in list(self.parent.plotter.actors.keys()):
+                if name != 'geometry_info':
+                    self.parent.plotter.remove_actor(name, reset_camera=False)
+            
+            # Add the mesh directly (no FEA solver calls - pure OpenGL)
+            self.parent.plotter.add_mesh(
+                pv_mesh,
+                scalars='density',
+                cmap='gray_r',
+                show_edges=True,
+                edge_color='black',
+                line_width=0.5,
+                clim=[0, 1],
+                show_scalar_bar=True,
+                scalar_bar_args={
+                    'title': 'Density',
+                    'vertical': True,
+                    'height': 0.25,
+                    'width': 0.05,
+                    'position_x': 0.9,
+                    'position_y': 0.02
+                }
+            )
+            
+            # Add iteration text
+            self.parent.plotter.add_text(
+                f"Iteration {iteration + 1}",
+                position='upper_edge',
+                font_size=12,
+                color='black',
+                font='arial'
+            )
+            
+            # Restore geometry_info actor if it existed
+            if geometry_info_actor:
+                if 'geometry_info' in self.parent.plotter.actors and self.parent.plotter.actors['geometry_info'] != geometry_info_actor:
+                    self.parent.plotter.remove_actor('geometry_info', reset_camera=False)
+                self.parent.plotter.add_actor(geometry_info_actor, name='geometry_info')
+            
+            # Render the updated scene
+            self.parent.plotter.render()
+            QtCore.QCoreApplication.processEvents()
+       
+            
+        except Exception as e:
+            print(f"Error updating visualization: {e}")
+            import traceback
+            traceback.print_exc()
+
 
     @QtCore.pyqtSlot(bool, str, object, object, object)
     def optimization_completed(self, success, error_msg, history, u, fe_solver):
@@ -5120,7 +5208,8 @@ class DisplayOptionsWindow(QtWidgets.QDialog):
     def toggle_axes(self, show):
         """Show/hide coordinate axes."""
         if show:
-            self.parent.plotter.add_axes(interactive=False)
+            if not hasattr(self.parent, 'axes_actor') or self.parent.plotter.axes_actor is None:
+                self.parent.plotter.add_axes(interactive=False)
         else:
             # Remove all axes actors
             for name in list(self.parent.plotter.actors.keys()):
@@ -5653,7 +5742,7 @@ class ProjectsWindow(QtWidgets.QDialog):
     def load_geometry(self, file_path):
         """Load geometry using the same approach as GeometryWindow"""
         stl_geom = STLGeom(file_path)
-        stl_geom.plotGeometry(show_edges=False, show_axes=False, show_bounding_box=False, plotter=self.parent.plotter)
+        stl_geom.plotGeometry(show_edges=False, show_axes=True, show_bounding_box=False, plotter=self.parent.plotter)
         
         area, volume, _, _ = stl_geom.compute_mass_properties()
         bounds = stl_geom.get_bounding_box()
