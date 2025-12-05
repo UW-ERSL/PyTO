@@ -360,14 +360,9 @@ class STLGeom:
             plotter = pv.Plotter()
         if show_axes:
             plotter.add_axes()
-        plotter.add_mesh(mesh, show_edges=show_edges)
-
-            
+        plotter.add_mesh(mesh, show_edges=show_edges)        
         plotter.camera_position = "xy"
-        plotter.camera.azimuth = 25  # Rotate around
-        plotter.camera.elevation = 25  # Adjust angle
 
-        plotter.reset_camera_clipping_range()
         if show_bounding_box:
             plotter.add_bounding_box()
             # Get bounding box

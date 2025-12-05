@@ -140,7 +140,6 @@ class HexFEAPlotter:
             if save_path is not None:
                 # Off-screen rendering for saving
                 plotter = pv.Plotter(off_screen=True)
-                plotter.camera_position = self.camera_position
                 plotter.enable_anti_aliasing()
             else:
                 # Interactive rendering
@@ -171,6 +170,9 @@ class HexFEAPlotter:
         
         if hasattr(self, 'camera_position'):
             plotter.camera_position = self.camera_position
+        else:
+            plotter.camera_position = 'xy'
+        
         if not hasattr(plotter, 'axes_actor') or plotter.axes_actor is None:
             plotter.add_axes()
         
@@ -191,7 +193,6 @@ class HexFEAPlotter:
             if save_path is not None:
                 # Off-screen rendering for saving
                 plotter = pv.Plotter(off_screen=True)
-                plotter.camera_position = self.camera_position
                 plotter.enable_anti_aliasing()
             else:
                 # Interactive rendering
@@ -222,6 +223,8 @@ class HexFEAPlotter:
         
         if hasattr(self, 'camera_position'):
             plotter.camera_position = self.camera_position
+        else:
+            plotter.camera_position = 'xy'
         if not hasattr(plotter, 'axes_actor') or plotter.axes_actor is None:
             plotter.add_axes()
         
@@ -276,7 +279,6 @@ class HexFEAPlotter:
             if save_path is not None:
                 # Off-screen rendering for saving
                 plotter = pv.Plotter(off_screen=True)
-                plotter.camera_position = self.camera_position
                 plotter.enable_anti_aliasing()
             else:
                 # Interactive rendering
@@ -284,7 +286,7 @@ class HexFEAPlotter:
         
         plotter.add_mesh(pv_mesh, scalars='deformation', show_edges=True,
                         cmap='jet', edge_color='black', line_width=1,
-                        scalar_bar_args={'title': 'Deformation', 'vertical': True})
+                        scalar_bar_args={'title': 'Deformation', 'vertical': False,'position_x':0.25})
         
         if show_geometry and stl_mesh is not None:
             plotter.add_mesh(stl_mesh, opacity=0.5, color='white', show_edges=True)
@@ -292,6 +294,8 @@ class HexFEAPlotter:
         self._safe_add_title(plotter, f'Deformation (scaled {scale:.2f}x)', font_size=8)
         if hasattr(self, 'camera_position'):
             plotter.camera_position = self.camera_position
+        else:
+            plotter.camera_position = "xy"
         if not hasattr(plotter, 'axes_actor') or plotter.axes_actor is None:
             plotter.add_axes()
         
@@ -356,7 +360,6 @@ class HexFEAPlotter:
             if save_path is not None:
                 # Off-screen rendering for saving
                 plotter = pv.Plotter(off_screen=True)
-                plotter.camera_position = self.camera_position
                 plotter.enable_anti_aliasing()
             else:
                 # Interactive rendering
@@ -364,7 +367,7 @@ class HexFEAPlotter:
         
         plotter.add_mesh(pv_mesh, scalars='temperature', show_edges=True,
                         cmap='jet', edge_color='black', line_width=1,
-                        scalar_bar_args={'title': 'Temperature', 'vertical': True})
+                        scalar_bar_args={'title': 'Temperature', 'vertical': False,'position_x':0.25})
         
         if annotate_max_min:
             # Add annotations for max/min
@@ -377,7 +380,11 @@ class HexFEAPlotter:
                                     point_size=10, font_size=14, text_color='blue')
         
         self._safe_add_title(plotter, 'Temperature Field', font_size=8)
-        plotter.camera_position = self.camera_position
+        if hasattr(self, 'camera_position'):
+            plotter.camera_position = self.camera_position
+        else:
+            plotter.camera_position = "xy"
+
         if not hasattr(plotter, 'axes_actor') or plotter.axes_actor is None:
             plotter.add_axes()
         
@@ -425,10 +432,14 @@ class HexFEAPlotter:
         
         plotter.add_mesh(pv_mesh, scalars='values', show_edges=True,
                         cmap='jet', edge_color='black', line_width=1,
-                        scalar_bar_args={'title': '', 'vertical': True})
+                        scalar_bar_args={'title': '', 'vertical': False,'position_x':0.25})
         
         self._safe_add_title(plotter, f'Eigenmode {mode_number}; freq: {eigenvalue:.3g} Hz', font_size=8)
-        plotter.camera_position = self.camera_position
+        
+        if hasattr(self, 'camera_position'):
+            plotter.camera_position = self.camera_position
+        else:
+            plotter.camera_position = "xy"
         if not hasattr(plotter, 'axes_actor') or plotter.axes_actor is None:
             plotter.add_axes()
         plotter.camera.zoom(0.8)
@@ -466,7 +477,6 @@ class HexFEAPlotter:
             if save_path is not None:
                 # Off-screen rendering for saving
                 plotter = pv.Plotter(off_screen=True)
-                plotter.camera_position = self.camera_position
                 plotter.enable_anti_aliasing()
             else:
                 # Interactive rendering
@@ -511,7 +521,7 @@ class HexFEAPlotter:
         else:
             plotter.add_mesh(pv_mesh, scalars='field', cmap=colormap,
                            show_edges=True, edge_color='black', line_width=1,
-                           scalar_bar_args={'title': '', 'vertical': True})
+                           scalar_bar_args={'title': title, 'vertical': False,'position_x':0.25})
         
         # Annotate max/min
         if annotate_max_min and len(filtered_field) > 0:
@@ -530,7 +540,10 @@ class HexFEAPlotter:
             pass  # Implement if needed
         
         self._safe_add_title(plotter, title, font_size=0.9*fontsize)
-        plotter.camera_position = self.camera_position
+        if hasattr(self, 'camera_position'):
+            plotter.camera_position = self.camera_position
+        else:
+            plotter.camera_position = "xy"
         
         if save_path:
             plotter.screenshot(save_path)
@@ -591,7 +604,7 @@ class HexFEAPlotter:
                     window_size=(800, 600),
                     title="Topology Optimization Progress"
                 )
-                self._rt_plotter.camera_position = self.camera_position
+                
                 self._rt_plotter_initialized = False
             
             plotter = self._rt_plotter
@@ -631,7 +644,16 @@ class HexFEAPlotter:
             font_size=10,
             color='black'
         )
-        
+        if hasattr(self, 'camera_position'):
+            self._rt_plotter.camera_position = self.camera_position
+            self._rt_plotter.reset_camera_clipping_range()
+        else:
+            self._rt_plotter.camera_position = "xy"
+            self._rt_plotter.reset_camera_clipping_range()
+            # # self._rt_plotter.camera.azimuth = 25  # Rotate around
+            # # self._rt_plotter.camera.elevation = 25  # Adjust angle
+            # self._rt_plotter.reset_camera_clipping_range()
+
         # Mark as initialized for future updates
         if not use_external:
             self._rt_plotter_initialized = True

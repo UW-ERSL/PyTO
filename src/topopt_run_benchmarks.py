@@ -70,7 +70,7 @@ def runTOMethodOnBenchmarks(optimizationMethod):
 					benchmarks_bodyforce_problems + \
 					benchmarks_thermostructural_problems
 	
-	for to_problem in  sampleBenchmarks:
+	for to_problem in  [ThermalTOExamples.FourCornersThermal]:
 		if to_problem in benchmarks_2_5D_problems:
 			subFolder = "Structural-Compliance2.5D"
 		elif to_problem in benchmarks_2_5D_thermal_problems:

@@ -206,9 +206,11 @@ def topopt_mma(feaMode: FEA_MODE, fe_structural_solver, fe_thermal_solver,
     mmaIterations = 0
     
     if (use_continuation):
-        initialize_SIMP_STRUCTURAL_PENALTY(1)
+        initialize_SIMP_STRUCTURAL_PENALTY(1.5)
+        initialize_SIMP_THERMAL_PENALTY(1)
     else:
         initialize_SIMP_STRUCTURAL_PENALTY(3)   
+        initialize_SIMP_THERMAL_PENALTY(1)
     def optimizationFunction(x):
         nonlocal nFEAs, obj0,mmaIterations
         x = np.asarray(x).flatten()
@@ -306,7 +308,7 @@ def topopt_mma(feaMode: FEA_MODE, fe_structural_solver, fe_thermal_solver,
         mmaIterations += 1
         nFEAs += 1
         if (use_continuation) and (mmaIterations % 10 == 0):
-            increment_SIMP_THERMAL_PENALTY(0.5)
+            increment_SIMP_THERMAL_PENALTY(0.25)
             increment_SIMP_STRUCTURAL_PENALTY(0.5)
 
         return obj, grad_obj, c, dcdx
@@ -400,7 +402,7 @@ if __name__ == "__main__":
 
     # Choose the TO problem
     to_problem = StructuralTOExamples.LBracketMidLoad 
-    to_problem = ThermalTOExamples.FourCornersThermal
+    #to_problem = ThermalTOExamples.FourCornersThermal
     #to_problem = ThermoStructuralTOExamples.MBBBeam
 
     run_topopt_mma(to_problem)

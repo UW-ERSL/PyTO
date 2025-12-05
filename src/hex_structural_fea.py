@@ -265,16 +265,16 @@ class HexStructuralFEA:
   
 
     return self.plotter.plot_elem_field(elem_field,
-            mask_low_pseudodensity = True,
-            title = '',
+            mask_low_pseudodensity = mask_low_pseudodensity,
+            title = title,
             save_path=None,
             colormap = 'jet',
             auto_close = True,
-            fontsize=10,
-            cross_section=None,
-            show_geometry=False,
+            fontsize=fontsize,
+            cross_section=cross_section,
+            show_geometry=show_geometry,
             plotter = None,
-            annotate_max_min = False)  
+            annotate_max_min = annotate_max_min)  
     
 #################################################################
   def plot_vonMisesStress(self,
@@ -338,7 +338,7 @@ if __name__ == "__main__":
   from hex_structural_examples import StructuralExamples,getStructuralProblem
  
 
-  problem = StructuralExamples.GEGrabCAD
+  problem = StructuralExamples.LBracketMidLoad
   nDOFDesired = 30000
   mesh, mat_prop, bc,elem_body_force = getStructuralProblem(problem,nDOFDesired = nDOFDesired)
   solver = linear_solvers.Solvers.DPCG # typically DPCG or PARDISO
