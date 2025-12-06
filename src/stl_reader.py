@@ -359,7 +359,8 @@ class STLGeom:
         if (plotter is None):
             plotter = pv.Plotter()
         if show_axes:
-            plotter.add_axes()
+            if not hasattr(plotter, 'axes_actor') or plotter.axes_actor is None:
+                plotter.add_axes()
         plotter.add_mesh(mesh, show_edges=show_edges)        
         plotter.camera_position = "xy"
 

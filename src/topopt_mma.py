@@ -307,8 +307,8 @@ def topopt_mma(feaMode: FEA_MODE, fe_structural_solver, fe_thermal_solver,
         mmaIterations += 1
         nFEAs += 1
         if (use_continuation) and (mmaIterations % 10 == 0):
-            increment_SIMP_THERMAL_PENALTY(0.25)
-            increment_SIMP_STRUCTURAL_PENALTY(0.5)
+            increment_SIMP_THERMAL_PENALTY(0.1)
+            increment_SIMP_STRUCTURAL_PENALTY(0.25)
 
         return obj, grad_obj, c, dcdx
 
@@ -400,8 +400,8 @@ if __name__ == "__main__":
     print("-" * 50)
 
     # Choose the TO problem
-    to_problem = StructuralTOExamples.LBracketMidLoad 
+    to_problem = StructuralTOExamples.Mitchell_1 
     #to_problem = ThermalTOExamples.FourCornersThermal
-    to_problem = ThermoStructuralTOExamples.MBBBeam
+    #to_problem = ThermoStructuralTOExamples.MBBBeam
 
     run_topopt_mma(to_problem)

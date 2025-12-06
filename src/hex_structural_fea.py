@@ -100,7 +100,7 @@ class HexStructuralFEA:
     self.elem_stiff_mtrx = elem_stiff_mtrx
     self.stiff_mtrx = sp.coo_matrix((elem_stiff_mtrx, (self.node_idx[:, 0], self.node_idx[:, 1])),
                    shape=(self.bc.num_dofs, self.bc.num_dofs))
-    self.total_force = self.bc.force.copy()
+    self.external_force = self.bc.force.copy()
     if self.elem_body_force is not None: # convert element body forces to nodal forces
       elem_force = self.elem_body_force.copy()
       for i in range(3):
@@ -110,7 +110,7 @@ class HexStructuralFEA:
       node_forces[0::3] = self.mesh.elem_to_node_field_mapping* elem_force[0::3] 
       node_forces[1::3] = self.mesh.elem_to_node_field_mapping* elem_force[1::3] 
       node_forces[2::3] = self.mesh.elem_to_node_field_mapping* elem_force[2::3] 
-      self.total_force += node_forces
+      self.external_force += node_forces
 
     
     if hasattr(self.mesh, 'externalSprings') and self.mesh.externalSprings is not None:
@@ -122,7 +122,7 @@ class HexStructuralFEA:
 
      # purely elastic
     sol = linear_solvers.solve(self.stiff_mtrx,
-                        self.total_force,
+                        self.external_force,
                         self.solver,
                         self.bc,
                         dsolver = self.dsolver,
@@ -132,6 +132,7 @@ class HexStructuralFEA:
     self.max_deformation = np.max(self.deformation)
     self.solElastic = self.sol.copy()
 
+    self.total_force = self.external_force.copy()
     if self.thermo_elastic_force is not None: # must solve again since we need to keep track of elastic deformations only 
       self.solElastic = self.sol.copy()
       self.total_force += self.thermo_elastic_force
@@ -338,7 +339,7 @@ if __name__ == "__main__":
   from hex_structural_examples import StructuralExamples,getStructuralProblem
  
 
-  problem = StructuralExamples.LBracketMidLoad
+  problem = StructuralExamples.CantileverMidLoad
   nDOFDesired = 30000
   mesh, mat_prop, bc,elem_body_force = getStructuralProblem(problem,nDOFDesired = nDOFDesired)
   solver = linear_solvers.Solvers.DPCG # typically DPCG or PARDISO

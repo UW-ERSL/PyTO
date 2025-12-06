@@ -173,7 +173,7 @@ class HexFEAPlotter:
         else:
             plotter.camera_position = 'xy'
         
-        if not hasattr(plotter, 'axes_actor') or plotter.axes_actor is None:
+        if not external_plotter and (not hasattr(plotter, 'axes_actor') or plotter.axes_actor is None):
             plotter.add_axes()
         
         if save_path:
@@ -225,7 +225,7 @@ class HexFEAPlotter:
             plotter.camera_position = self.camera_position
         else:
             plotter.camera_position = 'xy'
-        if not hasattr(plotter, 'axes_actor') or plotter.axes_actor is None:
+        if not external_plotter and (not hasattr(plotter, 'axes_actor') or plotter.axes_actor is None):
             plotter.add_axes()
         
         if save_path:
@@ -296,7 +296,7 @@ class HexFEAPlotter:
             plotter.camera_position = self.camera_position
         else:
             plotter.camera_position = "xy"
-        if not hasattr(plotter, 'axes_actor') or plotter.axes_actor is None:
+        if not external_plotter and (not hasattr(plotter, 'axes_actor') or plotter.axes_actor is None):
             plotter.add_axes()
         
         if save_path:
@@ -385,7 +385,7 @@ class HexFEAPlotter:
         else:
             plotter.camera_position = "xy"
 
-        if not hasattr(plotter, 'axes_actor') or plotter.axes_actor is None:
+        if not external_plotter and (not hasattr(plotter, 'axes_actor') or plotter.axes_actor is None):
             plotter.add_axes()
         
         if save_path:
@@ -426,6 +426,7 @@ class HexFEAPlotter:
         pv_mesh = pv.UnstructuredGrid(cells, np.full(len(cells), pv.CellType.QUAD), vertices)
         pv_mesh.point_data['values'] = sol
         
+        external_plotter = plotter is not None
         # Plot
         if plotter is None:
             plotter = pv.Plotter( window_size=[400,300])
@@ -440,7 +441,7 @@ class HexFEAPlotter:
             plotter.camera_position = self.camera_position
         else:
             plotter.camera_position = "xy"
-        if not hasattr(plotter, 'axes_actor') or plotter.axes_actor is None:
+        if not external_plotter and (not hasattr(plotter, 'axes_actor') or plotter.axes_actor is None):
             plotter.add_axes()
         plotter.camera.zoom(0.8)
         plotter.enable_anti_aliasing()
@@ -545,6 +546,9 @@ class HexFEAPlotter:
         else:
             plotter.camera_position = "xy"
         
+        if not hasattr(plotter, 'axes_actor') or plotter.axes_actor is None:
+            plotter.add_axes()
+
         if save_path:
             plotter.screenshot(save_path)
             plotter.close()
