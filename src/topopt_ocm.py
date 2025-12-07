@@ -198,12 +198,14 @@ def topopt_optimality_criteria(
 		initialize_SIMP_STRUCTURAL_PENALTY(3)  
 	for iter in range(maxIterations):
 		x = np.array(x)
+		fe_solver.mesh.setPseudoDensity(x)
+		if progress_callback is not None:
+			progress_callback()
 	
 		if (plot_progress):
-			if progress_callback is not None:
-				progress_callback()
 			fe_solver.plot_pseudo_density_realtime(
-                   title=f"Iter {iter + 1}"
+                   title=f"Iter {iter + 1}",
+                   external_plotter=plotter  # Pass GUI plotter if available
                )
         
 		sol = fe_solver.solve(x, material_model)
@@ -268,7 +270,7 @@ def topopt_optimality_criteria(
 		fraction_grey = (grey_elements / num_elems) 
 
 		if (print_progress):
-			log_message(f"it.: {iter+1:d}, obj.: {(obj*objScaling):.3g}, "
+			log_message(f"Iteration: {iter+1:d}, obj.: {(obj*objScaling):.3g}, "
 				  	f"vol.: {np.mean(xPhys):.3g}, grey: {fraction_grey:.3f}")
 		if np.isnan(obj):
 			log_message("Objective function became NaN. Exiting optimization.")

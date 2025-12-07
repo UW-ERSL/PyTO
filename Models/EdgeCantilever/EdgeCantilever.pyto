@@ -6,6 +6,10 @@
     "temperature_unit": "Kelvin",
     "angle_unit": "Degree"
   },
+  "analysis_settings": {
+    "n_elements": 10000,
+    "solver_type": "PARDISO"
+  },
   "material_data": {
     "name": "Steel",
     "properties": {
@@ -19,34 +23,41 @@
       "Price": 0.8
     }
   },
-  "force_data": [
-    {
-      "triangles": [
+  "structuralBC": {
+    "fixed_faces_indices": [
+      2,
+      3
+    ],
+    "load_faces_indices": [
+      [
         6,
         7
-      ],
-      "force_x": 0.0,
-      "force_y": -1000.0,
-      "force_z": 0.0,
-      "load_set": 0,
-      "type": "force_xyz"
-    }
-  ],
-  "constraint_data": [
-    {
-      "type": "Fixed XYZ",
-      "triangles": [
-        2,
-        3
       ]
+    ],
+    "load_forces": [
+      [
+        0.0,
+        -1000.0,
+        0.0
+      ]
+    ],
+    "constraint_counts": {
+      "fixed_triangles": 2,
+      "loaded_triangles": 2
     }
-  ],
-  "constrained_triangles": [
-    2,
-    3
-  ],
-  "thermal_loads": {},
-  "topopt_constraints": {
+  },
+  "thermalBC": {
+    "fixed_temps": [],
+    "heat_sources": [],
+    "total_heat_sources": [],
+    "thermal_counts": {
+      "fixed_temps": 0,
+      "heat_sources": 0,
+      "total_heat_sources": 0,
+      "convection": 0
+    }
+  },
+  "topopt_options": {
     "manufacturing": {
       "extrude": {
         "enabled": true,
@@ -65,20 +76,6 @@
         "value": "(2) 180 deg"
       }
     },
-    "patterns": {
-      "x_grid": {
-        "enabled": false,
-        "value": 2
-      },
-      "y_grid": {
-        "enabled": false,
-        "value": 2
-      },
-      "z_grid": {
-        "enabled": false,
-        "value": 2
-      }
-    },
     "performance": {
       "stress_safety": {
         "enabled": false,
@@ -87,10 +84,6 @@
       "max_displacement": {
         "enabled": false,
         "value": 160.0
-      },
-      "min_frequency": {
-        "enabled": false,
-        "value": 1000.0
       },
       "max_temperature": {
         "enabled": false,
@@ -103,7 +96,6 @@
       "z_symmetry": false
     },
     "other": {
-      "connected_topology": true,
       "keep_fixed_faces": false
     }
   }

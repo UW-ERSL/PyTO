@@ -29,15 +29,7 @@ from topopt_pareto import topopt_pareto
 from topopt_levelset import topopt_levelset
 from topopt_stl_recovery import extract_isosurface, subtract_voids_from_stl 
 """
-1) setup.py - PyTO.exe
-2) Adaptive sizing of Arrows for topopt constraints
-3) Need to Implement Help window
-4) Remove the Mesh Quality
-5) Default for TopOpt Postprocess resolution should be 15 or more.
-6) Add a progress bar for long operations
-7) once done with topopt constraints and if you open the display options window it adds solid colour to the planes
-8) display options - most bugs
-9) check arrow signs after each operation completed
+
 
 """
 DEFAULT_FONT_SIZE = 32
@@ -59,22 +51,22 @@ class MainWindow(QtWidgets.QMainWindow):
             'icon': 'check'
         },
         'structural_loads_complete': {
-            'enables': ['Analysis', 'TopOpt Constraints'],
-            'message': "Structural loads complete (forces and constraints applied). You can now run analysis or define TopOpt constraints.",
+            'enables': ['Analysis', 'TopOpt Options'],
+            'message': "Structural loads complete (forces and constraints applied). You can now run analysis or define TopOpt options.",
             'icon': 'check'
         },
         'thermal_loads_complete': {
-            'enables': ['Analysis', 'TopOpt Constraints'],
-            'message': "Thermal loads applied. You can now run analysis or define TopOpt constraints.",
+            'enables': ['Analysis', 'TopOpt Options'],
+            'message': "Thermal loads applied. You can now run analysis or define TopOpt options.",
             'icon': 'check'
         },
         'analysis_performed': {
             'message': "Analysis completed.",
             'icon': 'check'
         },
-        'topopt_constraints_defined': {
+        'topopt_options_defined': {
             'enables': ['TopOpt Execute'],
-            'message': "TopOpt constraints defined. You can now run topology optimization.",
+            'message': "TopOpt options defined. You can now run topology optimization.",
             'icon': 'check'
         }
     }
@@ -89,8 +81,8 @@ class MainWindow(QtWidgets.QMainWindow):
         {"name": "Body force", "icon": "cross", "requires": "material_defined", "handler": "open_body_force_window"},
         {"name": "Display Options", "icon": "arrow", "always_enabled": True, "handler": "open_display_options_window"},
         {"name": "Analysis", "icon": "cross", "requires": "loads_applied", "handler": "open_analysis_window"},
-        {"name": "TopOpt Constraints", "icon": "cross", "requires": "loads_applied", "handler": "open_topopt_constraints_window"},
-        {"name": "TopOpt Execute", "icon": "cross", "requires": "topopt_constraints_defined", "handler": "open_structural_topopt_window"},
+        {"name": "TopOpt Options", "icon": "cross", "requires": "loads_applied", "handler": "open_topopt_options_window"},
+        {"name": "TopOpt Execute", "icon": "cross", "requires": "topopt_options_defined", "handler": "open_structural_topopt_window"},
         {"name": "TopOpt Postprocess", "icon": "cross", "requires": "topopt_performed", "handler": "open_topopt_results_window"},
         {"name": "Projects", "icon": "arrow", "always_enabled": True, "handler": "open_projects_window"},
         {"name": "Help", "icon": "arrow", "always_enabled": True, "handler": "show_help"}
@@ -127,7 +119,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.stl_geom = None
         self.hex_mesh = None
 
-        self.topopt_constraints = None
+        self.topopt_options = None
 
     def create_initial_state(self):
         """Create the initial LivVar state dictionary"""
@@ -342,7 +334,7 @@ class MainWindow(QtWidgets.QMainWindow):
             if not loads_ready:
                 self.show_workflow_warning("Please apply structural or thermal loads first.")
                 return False
-        elif requirement == "topopt_constraints_defined":
+        elif requirement == "topopt_options_defined":
             if not self.LivVar.get('topopt', {}).get('constraints_defined', False):
                 self.show_workflow_warning("Please define topology optimization constraints first.")
                 return False
@@ -376,7 +368,7 @@ class MainWindow(QtWidgets.QMainWindow):
             'structural_loads.forces_applied': self.handle_structural_loads_change,
             'structural_loads.fixed_constraints': self.handle_structural_loads_change,
             'thermal_loads.applied': self.handle_thermal_loads_applied,
-            'topopt.constraints_defined': self.handle_topopt_constraints_defined,
+            'topopt.constraints_defined': self.handle_topopt_options_defined,
         }
         
         handler = state_handlers.get(key)
@@ -401,9 +393,9 @@ class MainWindow(QtWidgets.QMainWindow):
         if value:
             self.update_workflow_step('thermal_loads_complete')
 
-    def handle_topopt_constraints_defined(self, value):
+    def handle_topopt_options_defined(self, value):
         if value:
-            self.update_workflow_step('topopt_constraints_defined')
+            self.update_workflow_step('topopt_options_defined')
 
     def update_workflow_step(self, step_key):
         """Update workflow step and associated UI elements"""
@@ -431,7 +423,7 @@ class MainWindow(QtWidgets.QMainWindow):
             'structural_loads_complete': 'Structural Loads',
             'thermal_loads_complete': 'Thermal Loads',
             'analysis_performed': 'Analysis',
-            'topopt_constraints_defined': 'TopOpt Constraints'
+            'topopt_options_defined': 'TopOpt Options'
         }
         return step_to_button.get(step_key)
 
@@ -613,7 +605,7 @@ class MainWindow(QtWidgets.QMainWindow):
         dialog = AnalysisWindow(self)
         dialog.show()
 
-    def open_topopt_constraints_window(self):
+    def open_topopt_options_window(self):
         # Only remove mesh/analysis/result actors, keep geometry, loads, constraints, and info
         keep_names = {
             "geometry_info",
@@ -634,8 +626,8 @@ class MainWindow(QtWidgets.QMainWindow):
                     for actor in getattr(self.thermal_loads_window, attr):
                         if hasattr(actor, "GetName"):
                             keep_names.add(actor.GetName())
-        if hasattr(self, "topopt_constraint_actors"):
-            for actor in self.topopt_constraint_actors.values():
+        if hasattr(self, "topopt_option_actors"):
+            for actor in self.topopt_option_actors.values():
                 if isinstance(actor, list):
                     for a in actor:
                         if hasattr(a, "GetName"):
@@ -658,8 +650,8 @@ class MainWindow(QtWidgets.QMainWindow):
                 plotter=self.plotter
             )
         self.update_highlights()
-        self.topopt_constraints_window = TopOptConstraintsWindow(self)
-        self.topopt_constraints_window.show()
+        self.topopt_options_window = TopOptOptionsWindow(self)
+        self.topopt_options_window.show()
 
     def open_structural_topopt_window(self):
         self.structural_topopt_window = StructuralTopOptWindow(self)
@@ -3291,18 +3283,18 @@ class AnalysisWindow(QtWidgets.QDialog):
         
         return mesh, mat_prop, bc
     
-class TopOptConstraintsWindow(QtWidgets.QDialog):
+class TopOptOptionsWindow(QtWidgets.QDialog):
     def __init__(self, parent):
         super().__init__(parent)
-        self.setWindowTitle("TopOpt Constraints")
+        self.setWindowTitle("TopOpt Options")
         self.setWindowModality(QtCore.Qt.NonModal)
         self.resize(300, 600)
         self.parent = parent
         self.applied = False
         
         # Initialize constraint actors
-        if not hasattr(self.parent, 'topopt_constraint_actors'):
-            self.parent.topopt_constraint_actors = {}
+        if not hasattr(self.parent, 'topopt_option_actors'):
+            self.parent.topopt_option_actors = {}
         
         # Define constraint configuration
         self.constraint_config = {
@@ -3356,9 +3348,9 @@ class TopOptConstraintsWindow(QtWidgets.QDialog):
         
         self.connect_signals()
 
-        # Restore checkbox states from parent.topopt_constraints if available
-        if hasattr(self.parent, 'topopt_constraints') and self.parent.topopt_constraints:
-            for category, constraint_data in self.parent.topopt_constraints.items():
+        # Restore checkbox states from parent.topopt_options if available
+        if hasattr(self.parent, 'topopt_options') and self.parent.topopt_options:
+            for category, constraint_data in self.parent.topopt_options.items():
                 for constraint_key, constraint_value in constraint_data.items():
                     if isinstance(constraint_value, bool):
                         widget_name = f'{constraint_key}_check'
@@ -3484,7 +3476,7 @@ class TopOptConstraintsWindow(QtWidgets.QDialog):
             start_pos = self.get_boundary_start_position(direction_key, bbox, center)
             actors.append(self.create_arrow_actor(start_pos, direction, color, size))
         
-        self.parent.topopt_constraint_actors[constraint_key] = actors if len(actors) > 1 else actors[0]
+        self.parent.topopt_option_actors[constraint_key] = actors if len(actors) > 1 else actors[0]
     
     def get_boundary_start_position(self, direction_key, bbox, center):
         """Get starting position at model boundary for arrows"""
@@ -3503,7 +3495,7 @@ class TopOptConstraintsWindow(QtWidgets.QDialog):
             # Create bounding box
             box = pv.Box(bounds=bbox)
             actor = self.parent.plotter.add_mesh(box, style='wireframe', color='gray', line_width=2)
-            self.parent.topopt_constraint_actors['bounding_box'] = actor
+            self.parent.topopt_option_actors['bounding_box'] = actor
             
             # Create grid planes for each enabled axis
             grid_config = {
@@ -3516,7 +3508,7 @@ class TopOptConstraintsWindow(QtWidgets.QDialog):
                 if self.get_widget_value(f'{axis}_grid_check'):
                     divisions = self.get_widget_value(f'{axis}_grid_spin')
                     actors = self.create_grid_planes_for_axis(axis, divisions, bbox, config)
-                    self.parent.topopt_constraint_actors[f'{axis}_grid'] = actors
+                    self.parent.topopt_option_actors[f'{axis}_grid'] = actors
     
     def create_grid_planes_for_axis(self, axis, divisions, bbox, config):
         """Create grid planes for a specific axis"""
@@ -3567,7 +3559,7 @@ class TopOptConstraintsWindow(QtWidgets.QDialog):
         for symmetry_key, config in symmetry_config.items():
             if self.get_widget_value(f'{symmetry_key}_check'):
                 actor = self.create_plane_actor(center, config['normal'], size, config['color'])
-                self.parent.topopt_constraint_actors[symmetry_key] = actor
+                self.parent.topopt_option_actors[symmetry_key] = actor
         
         # Handle cyclic symmetry
         if self.get_widget_value('cyclic_symmetry_check'):
@@ -3597,7 +3589,7 @@ class TopOptConstraintsWindow(QtWidgets.QDialog):
                 actor = self.create_cyclic_plane(center, normal, bbox, 'cyan')
                 actors.append(actor)
             
-            self.parent.topopt_constraint_actors['cyclic_symmetry'] = actors
+            self.parent.topopt_option_actors['cyclic_symmetry'] = actors
 
     def create_cyclic_plane(self, center, normal, bbox, color):
         """Create plane for cyclic symmetry"""
@@ -3689,7 +3681,7 @@ class TopOptConstraintsWindow(QtWidgets.QDialog):
     
     def clear_all_visualizations(self):
         """Remove all constraint visualizations"""
-        for actor_key, actor in list(self.parent.topopt_constraint_actors.items()):
+        for actor_key, actor in list(self.parent.topopt_option_actors.items()):
             if actor:
                 if isinstance(actor, list):
                     for a in actor:
@@ -3697,7 +3689,7 @@ class TopOptConstraintsWindow(QtWidgets.QDialog):
                 else:
                     self.parent.plotter.remove_actor(actor, reset_camera=False)
         
-        self.parent.topopt_constraint_actors.clear()
+        self.parent.topopt_option_actors.clear()
     
     def closeEvent(self, event):
         """Handle dialog close event"""
@@ -3839,14 +3831,14 @@ class TopOptConstraintsWindow(QtWidgets.QDialog):
                     }
         
         # Store constraints in parent
-        self.parent.topopt_constraints = constraints
+        self.parent.topopt_options = constraints
         self.applied = True
         
         # FIX: Update UI state 
-        self.parent.update_LivVar('topopt.constraints_defined', True)
-        self.parent.set_sidebar_icon("TopOpt Constraints", "check")
+        self.parent.update_LivVar('topopt.options_defined', True)
+        self.parent.set_sidebar_icon("TopOpt Options", "check")
         self.parent.set_sidebar_icon("TopOpt Execute", "arrow")
-        self.parent.message_text.append(f"TopOpt constraints applied successfully. Constraints stored: {len(constraints)} categories")
+        self.parent.message_text.append(f"TopOpt options applied successfully. Options stored: {len(constraints)} categories")
         
         # ADD DEBUG: Print the LivVar state to verify
         #print(f"DEBUG: LivVar topopt state: {self.parent.LivVar.get('topopt', {})}")
@@ -3871,7 +3863,7 @@ class StructuralTopOptWindow(QtWidgets.QDialog):
         self.optimization_running = False
         self.optimization_thread = None
 
-        self.optimization_progress.connect(self.parent.message_text.append)
+        self.optimization_progress.connect(self.parent.message_text.append, QtCore.Qt.QueuedConnection)
         self.optimization_update.connect(
             self.update_visualization,
             QtCore.Qt.QueuedConnection  # Force main thread execution!
@@ -3964,8 +3956,8 @@ class StructuralTopOptWindow(QtWidgets.QDialog):
         to_params.Objective = (TO_QOI.COMPLIANCE, "minimize", 1.0)
         to_params.Constraints = [(TO_QOI.VOLUME_FRACTION, "<=", volume_fraction)]
  
-        # Apply topopt constraints
-        self.apply_topopt_constraints_to_params(to_params)
+        # Apply topopt options
+        self.apply_topopt_options_to_params(to_params)
 
         self.to_params = to_params
 
@@ -4210,7 +4202,7 @@ class StructuralTopOptWindow(QtWidgets.QDialog):
             
             self.parent.message_text.append("Structural topology optimization completed successfully")
             self.parent.message_text.append(f"Method: {self.method_combo.currentText()}")
-            self.parent.message_text.append(f"Final objective: {final_objective:.6e}, Volume fraction: {final_volume:.3f}")
+            self.parent.message_text.append(f"Final objective: {final_objective:.3g}, Volume fraction: {final_volume:.3f}")
             
             self.parent.update_LivVar('topopt.structural_performed', True)
             self.parent.set_sidebar_icon("TopOpt Execute", "check")
@@ -4243,8 +4235,8 @@ class StructuralTopOptWindow(QtWidgets.QDialog):
         else:
             self.parent.message_text.append(f"Structural topology optimization failed: {error_msg}")
 
-    def apply_topopt_constraints_to_params(self, to_params):
-        constraints = self.parent.topopt_constraints
+    def apply_topopt_options_to_params(self, to_params):
+        constraints = self.parent.topopt_options
 
         # Manufacturing constraints
         manufacturing = constraints.get('manufacturing', {})
@@ -4407,7 +4399,7 @@ class StructuralTopOptWindow(QtWidgets.QDialog):
             )
             return False
         
-        if self.parent.topopt_constraints is None:
+        if self.parent.topopt_options is None:
             QtWidgets.QMessageBox.warning(self, "No Constraints", "Please define topology optimization constraints first.")
             return False
         
@@ -4665,7 +4657,7 @@ class DisplayOptionsWindow(QtWidgets.QDialog):
             'show_axis': True,
             'show_structural_loads': False,
             'show_thermal_loads': False,
-            'show_topopt_constraints': False,
+            'show_topopt_options': False,
             'show_non_design_parts': False
         }
 
@@ -4730,8 +4722,8 @@ class DisplayOptionsWindow(QtWidgets.QDialog):
         self.show_thermal_loads_checkbox = QtWidgets.QCheckBox("Show thermal loads")
         layout.addWidget(self.show_thermal_loads_checkbox)
 
-        self.show_topopt_constraints_checkbox = QtWidgets.QCheckBox("Show TopOpt Constraints")
-        layout.addWidget(self.show_topopt_constraints_checkbox)
+        self.show_topopt_options_checkbox = QtWidgets.QCheckBox("Show TopOpt Options")
+        layout.addWidget(self.show_topopt_options_checkbox)
 
         animate_layout = QtWidgets.QHBoxLayout()
         animate_btn = QtWidgets.QPushButton("Animate for 3 cycles")
@@ -4775,7 +4767,7 @@ class DisplayOptionsWindow(QtWidgets.QDialog):
         for checkbox in [self.show_bounding_box_checkbox, self.show_triangles, self.show_text,
                          self.scale_deformation, self.show_transparent_geometry, 
                          self.show_structural_loads_checkbox, self.show_thermal_loads_checkbox,
-                         self.show_topopt_constraints_checkbox]:
+                         self.show_topopt_options_checkbox]:
             checkbox.stateChanged.connect(self.update_display)
         self.update_checkbox_states()
 
@@ -4798,11 +4790,11 @@ class DisplayOptionsWindow(QtWidgets.QDialog):
         self.show_thermal_loads_checkbox.setChecked(bool(has_thermal))
 
         has_constraints = (
-            hasattr(self.parent, 'topopt_constraint_actors') and
-            bool(self.parent.topopt_constraint_actors)
+            hasattr(self.parent, 'topopt_option_actors') and
+            bool(self.parent.topopt_option_actors)
         )
-        self.show_topopt_constraints_checkbox.setEnabled(bool(has_constraints))
-        self.show_topopt_constraints_checkbox.setChecked(bool(has_constraints))
+        self.show_topopt_options_checkbox.setEnabled(bool(has_constraints))
+        self.show_topopt_options_checkbox.setChecked(bool(has_constraints))
 
     def showEvent(self, event):
         super().showEvent(event)
@@ -4898,10 +4890,10 @@ class DisplayOptionsWindow(QtWidgets.QDialog):
             self.show_thermal_loads(True)
         else:
             self.show_thermal_loads(False)
-        if self.show_topopt_constraints_checkbox.isChecked():
-            self.show_topopt_constraints(True)
+        if self.show_topopt_options_checkbox.isChecked():
+            self.show_topopt_options(True)
         else:
-            self.show_topopt_constraints(False)
+            self.show_topopt_options(False)
 
         self.parent.plotter.render()
 
@@ -5030,9 +5022,9 @@ class DisplayOptionsWindow(QtWidgets.QDialog):
                         else:
                             self.parent.plotter.remove_actor(actor, reset_camera=False)
 
-    def show_topopt_constraints(self, show):
-        if hasattr(self.parent, 'topopt_constraint_actors'):
-            for actor_key, actor in self.parent.topopt_constraint_actors.items():
+    def show_topopt_options(self, show):
+        if hasattr(self.parent, 'topopt_option_actors'):
+            for actor_key, actor in self.parent.topopt_option_actors.items():
                 if actor:
                     if isinstance(actor, list):
                         for a in actor:
@@ -5323,7 +5315,7 @@ class ProjectsWindow(QtWidgets.QDialog):
             'material_data': getattr(self.parent, 'applied_material', None),
             'structuralBC': structuralBC,
             'thermalBC': thermalBC,
-            'topopt_constraints': getattr(self.parent, 'topopt_constraints', None)
+            'topopt_options': getattr(self.parent, 'topopt_options', None)
         }
         
         try:
@@ -5464,9 +5456,9 @@ class ProjectsWindow(QtWidgets.QDialog):
             # Legacy support for older projects
             self.restore_thermal_loads(project_data['thermal_loads'])
         
-        # Restore TopOpt constraints
-        if project_data.get('topopt_constraints'):
-            self.restore_topopt_constraints(project_data['topopt_constraints'])
+        # Restore TopOpt options
+        if project_data.get('topopt_options'):
+            self.restore_topopt_options(project_data['topopt_options'])
         
         self.parent.message_text.append(f"Project loaded: {os.path.basename(filename)}")
         self.close()
@@ -5584,7 +5576,7 @@ class ProjectsWindow(QtWidgets.QDialog):
             self.parent.LivVar['structural_loads']['applied'] = True
             self.parent.set_sidebar_icon("Structural Loads", "check")
             self.parent.set_sidebar_icon("Analysis", "arrow")
-            self.parent.set_sidebar_icon("TopOpt Constraints", "arrow")
+            self.parent.set_sidebar_icon("TopOpt Options", "arrow")
 
     def restore_thermal_loads(self, thermal_data):
         """Restore thermal loads and visualizations from either format"""
@@ -5633,43 +5625,43 @@ class ProjectsWindow(QtWidgets.QDialog):
             self.parent.update_LivVar('thermal_loads.applied', True)
             self.parent.set_sidebar_icon("Thermal Loads", "check")
             self.parent.set_sidebar_icon("Analysis", "arrow")
-            self.parent.set_sidebar_icon("TopOpt Constraints", "arrow")
+            self.parent.set_sidebar_icon("TopOpt Options", "arrow")
 
-    def restore_topopt_constraints(self, constraints):
+    def restore_topopt_options(self, options):
         """Restore TopOpt constraints and visualizations"""
-        self.parent.topopt_constraints = constraints
+        self.parent.topopt_options = options
         
-        # Create TopOpt constraints window if needed
-        if not getattr(self.parent, 'topopt_constraints_window', None):
-            self.parent.topopt_constraints_window = TopOptConstraintsWindow(self.parent)
+        # Create TopOpt options window if needed
+        if not getattr(self.parent, 'topopt_options_window', None):
+            self.parent.topopt_options_window = TopOptOptionsWindow(self.parent)
         
-        # Update widgets to match saved constraints
-        for category, constraint_data in constraints.items():
-            for constraint_key, constraint_value in constraint_data.items():
-                if isinstance(constraint_value, bool):
-                    widget_name = f'{constraint_key}_check'
-                    if widget_name in self.parent.topopt_constraints_window.widgets:
-                        self.parent.topopt_constraints_window.widgets[widget_name].setChecked(constraint_value)
-                elif isinstance(constraint_value, dict):
-                    check_widget = f'{constraint_key}_check'
-                    if check_widget in self.parent.topopt_constraints_window.widgets:
-                        self.parent.topopt_constraints_window.widgets[check_widget].setChecked(
-                            constraint_value.get('enabled', False))
+        # Update widgets to match saved options
+        for category, option_data in options.items():
+            for option_key, option_value in option_data.items():
+                if isinstance(option_value, bool):
+                    widget_name = f'{option_key}_check'
+                    if widget_name in self.parent.topopt_options_window.widgets:
+                        self.parent.topopt_options_window.widgets[widget_name].setChecked(option_value)
+                elif isinstance(option_value, dict):
+                    check_widget = f'{option_key}_check'
+                    if check_widget in self.parent.topopt_options_window.widgets:
+                        self.parent.topopt_options_window.widgets[check_widget].setChecked(
+                            option_value.get('enabled', False))
                     
-                    if 'value' in constraint_value:
+                    if 'value' in option_value:
                         for widget_type in ['combo', 'spin']:
-                            value_widget = f'{constraint_key}_{widget_type}'
-                            if value_widget in self.parent.topopt_constraints_window.widgets:
-                                widget = self.parent.topopt_constraints_window.widgets[value_widget]
+                            value_widget = f'{option_key}_{widget_type}'
+                            if value_widget in self.parent.topopt_options_window.widgets:
+                                widget = self.parent.topopt_options_window.widgets[value_widget]
                                 if widget_type == 'combo':
-                                    widget.setCurrentText(str(constraint_value['value']))
+                                    widget.setCurrentText(str(option_value['value']))
                                 else:
-                                    widget.setValue(constraint_value['value'])
+                                    widget.setValue(option_value['value'])
                                 break
         
-        self.parent.topopt_constraints_window.update_visualizations()
+        self.parent.topopt_options_window.update_visualizations()
         self.parent.update_LivVar('topopt.constraints_defined', True)
-        self.parent.set_sidebar_icon("TopOpt Constraints", "check")
+        self.parent.set_sidebar_icon("TopOpt Options", "check")
         self.parent.set_sidebar_icon("TopOpt Execute", "arrow")
 
     def recreate_triangle_data(self, triangle_indices):

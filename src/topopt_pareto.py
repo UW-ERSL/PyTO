@@ -318,7 +318,7 @@ def topopt_pareto(feaMode,fe_solver,
 	T = (H * T) / Hs
 
 	if (print_progress):
-		log_message(f"vf={history['volfrac'][-1]:.3f}, obj={history['objective'][-1]:.3g},  #FEA={nFEAs:2d}")
+		log_message(f"Iteration: {totalIter}, vf={history['volfrac'][-1]:.3f}, obj={history['objective'][-1]:.3g},  #FEA={nFEAs:2d}")
 	vol_decr = vol_decr_max
 
 	success = True
@@ -335,11 +335,13 @@ def topopt_pareto(feaMode,fe_solver,
 	
 	while volfrac > volFractionConstraint:
 		
+		fe_solver.mesh.setPseudoDensity(x)
+		if progress_callback is not None:
+			progress_callback()
 		if (plot_progress):
-			if progress_callback is not None:
-				progress_callback()
 			fe_solver.plot_pseudo_density_realtime(
-                   title=f"Iter {totalIter + 1}"
+                   title=f"Iter {totalIter + 1}",
+                   external_plotter=plotter  # Pass GUI plotter if available
                )
 		# Move to next volume fraction
 		volfrac = max(volFractionConstraint, volfrac - vol_decr)
@@ -461,7 +463,7 @@ def topopt_pareto(feaMode,fe_solver,
 			scale = (compliance / compliance0)**2
 			vol_decr = max(vol_decr_min,min(vol_decr,vol_decr_max/scale)) # Reduce volume increment for steep increase in compliance
 			if (print_progress):
-				log_message(f"vf={history['volfrac'][-1]:.3f}, obj={history['objective'][-1]:.3g},  #FEA={nFEAs:2d}")
+				log_message(f"Iteration: {totalIter}, vf={history['volfrac'][-1]:.3f}, obj={history['objective'][-1]:.3g},  #FEA={nFEAs:2d}")
 			fe_solver.mesh.setPseudoDensity(x.flatten())
 		
 

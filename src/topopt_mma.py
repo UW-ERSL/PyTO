@@ -136,7 +136,7 @@ def topopt_mma(feaMode: FEA_MODE, fe_structural_solver, fe_thermal_solver,
                             print_progress: bool = True,
                             plot_progress: bool = False,
                             use_continuation: bool = True,
-                            binarize_topology: bool = False,   
+                            binarize_topology: bool = True,   
                             progress_callback=None, 
                             plotter=None  
                              ) -> tuple[np.ndarray, dict]:
