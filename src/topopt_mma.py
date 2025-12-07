@@ -184,11 +184,15 @@ def topopt_mma(feaMode: FEA_MODE, fe_structural_solver, fe_thermal_solver,
         log_message("Computing Filters ...")
     [H,Hs] = createFilters(fe_solver, to_params)
 
+    if (print_progress):
+        log_message("Finding elements with forces ...")
     elemsWithForces = find_elements_with_forces(mesh, fe_solver.bc.force,nDOFPerNode)
    
     fe_solver.set_material(mat_prop)
     KE = fe_solver.elem_stiff[0]  # assuming all elements have same material properties
    
+    if (print_progress):
+        log_message("Finding body forces ...")
     if (fe_solver.elem_body_force is not None):
         elem_force = fe_solver.elem_body_force.copy()
         nNodes = mesh.num_nodes
@@ -217,7 +221,7 @@ def topopt_mma(feaMode: FEA_MODE, fe_structural_solver, fe_thermal_solver,
         grey_elements = np.sum((x > 0.1) & (x < 0.9))
         fraction_grey = (grey_elements / num_elems)
         if (print_progress):
-            print(f"Percentage grey elements:", f"{fraction_grey*100:.2f}%")
+            log_message(f"Percentage grey elements: {fraction_grey*100:.2f}%")
         if (to_params.APPLY_FILTER_TO_DENSITY):
             x = H*x/Hs
         fe_solver.mesh.setPseudoDensity(x)
@@ -298,16 +302,13 @@ def topopt_mma(feaMode: FEA_MODE, fe_structural_solver, fe_thermal_solver,
                 msg_lines.append(f"Constraint {idx+1} ({constraint_names[idx]}): {(val+1)*to_params.Constraints[idx][2]:.3g} {inequality} {to_params.Constraints[idx][2]:.3g}?")
             
             status_msg = '\n'.join(msg_lines)
-            print(status_msg)
+            log_message(status_msg)
             
-            # Send to GUI
-            if progress_callback is not None:
-                progress_callback(status_msg)
             
         mmaIterations += 1
         nFEAs += 1
         if (use_continuation) and (mmaIterations % 10 == 0):
-            increment_SIMP_THERMAL_PENALTY(0.1)
+            increment_SIMP_THERMAL_PENALTY(0.25)
             increment_SIMP_STRUCTURAL_PENALTY(0.25)
 
         return obj, grad_obj, c, dcdx
@@ -329,6 +330,8 @@ def topopt_mma(feaMode: FEA_MODE, fe_structural_solver, fe_thermal_solver,
     nVariables = num_elems
     nConstraints = len(to_params.Constraints)
    
+    if (print_progress):
+        log_message("Calling MMA ...")
     [xOptimal,f0val, df0dx, gval, dgdx,nFEAs] = runMMA(nVariables,nConstraints,optimizationFunction,x0,lowerBound,
 			 upperBound, maxIterations = maxMMAIterations,timeLimitSecs= timeLimitSecs, move_limit = move_limit,
              fTolerance= objective_tol,gTolerance= constraint_tol,kktTol = kkt_tol, verbose = False, 
@@ -401,7 +404,7 @@ if __name__ == "__main__":
 
     # Choose the TO problem
     to_problem = StructuralTOExamples.Mitchell_1 
-    #to_problem = ThermalTOExamples.FourCornersThermal
+    to_problem = ThermalTOExamples.FourCornersThermal
     #to_problem = ThermoStructuralTOExamples.MBBBeam
 
     run_topopt_mma(to_problem)

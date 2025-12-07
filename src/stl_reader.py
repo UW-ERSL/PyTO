@@ -356,10 +356,11 @@ class STLGeom:
         faces = np.arange(len(vertices)).reshape(-1, 3)
         faces = np.column_stack((np.full(len(faces), 3), faces))
         mesh = pv.PolyData(vertices, faces)
+        external_plotter = plotter is not None
         if (plotter is None):
             plotter = pv.Plotter()
         if show_axes:
-            if not hasattr(plotter, 'axes_actor') or plotter.axes_actor is None:
+            if not external_plotter:
                 plotter.add_axes()
         plotter.add_mesh(mesh, show_edges=show_edges)        
         plotter.camera_position = "xy"

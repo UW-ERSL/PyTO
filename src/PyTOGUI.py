@@ -33,7 +33,7 @@ from topopt_stl_recovery import extract_isosurface, subtract_voids_from_stl
 2) Adaptive sizing of Arrows for topopt constraints
 3) Need to Implement Help window
 4) Remove the Mesh Quality
-5) Default for TopOpt results resolution should be 15 or more.
+5) Default for TopOpt Postprocess resolution should be 15 or more.
 6) Add a progress bar for long operations
 7) once done with topopt constraints and if you open the display options window it adds solid colour to the planes
 8) display options - most bugs
@@ -73,7 +73,7 @@ class MainWindow(QtWidgets.QMainWindow):
             'icon': 'check'
         },
         'topopt_constraints_defined': {
-            'enables': ['Structural TopOpt', 'Thermal TopOpt'],
+            'enables': ['TopOpt Execute'],
             'message': "TopOpt constraints defined. You can now run topology optimization.",
             'icon': 'check'
         }
@@ -90,9 +90,8 @@ class MainWindow(QtWidgets.QMainWindow):
         {"name": "Display Options", "icon": "arrow", "always_enabled": True, "handler": "open_display_options_window"},
         {"name": "Analysis", "icon": "cross", "requires": "loads_applied", "handler": "open_analysis_window"},
         {"name": "TopOpt Constraints", "icon": "cross", "requires": "loads_applied", "handler": "open_topopt_constraints_window"},
-        {"name": "Structural TopOpt", "icon": "cross", "requires": "topopt_constraints_defined", "handler": "open_structural_topopt_window"},
-        {"name": "Thermal TopOpt", "icon": "cross", "requires": "topopt_constraints_defined", "handler": "show_coming_soon"},
-        {"name": "TopOpt Results", "icon": "cross", "requires": "topopt_performed", "handler": "open_topopt_results_window"},
+        {"name": "TopOpt Execute", "icon": "cross", "requires": "topopt_constraints_defined", "handler": "open_structural_topopt_window"},
+        {"name": "TopOpt Postprocess", "icon": "cross", "requires": "topopt_performed", "handler": "open_topopt_results_window"},
         {"name": "Projects", "icon": "arrow", "always_enabled": True, "handler": "open_projects_window"},
         {"name": "Help", "icon": "arrow", "always_enabled": True, "handler": "show_help"}
     ]
@@ -262,8 +261,8 @@ class MainWindow(QtWidgets.QMainWindow):
         """)
         
         labels_config = [
-            ("PyTO GUI Version 2025.01. ", ""),
-            ("GUI Build Date 6.26.2025. ", ""),
+            ("PyTO GUI Version 2025.04. ", ""),
+            ("GUI Build Date 12.06.2025. ", ""),
             ("This is an academic license, and should not be used for commercial purposes.", "color: red;")
         ]
         
@@ -278,6 +277,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.picker = pv._vtk.vtkCellPicker()
         self.plotter.set_background('white')
         self.plotter.enable_parallel_projection()
+        self.plotter.add_axes()  # Add this line - axes added once and stay visibl
 
         
 #################################################################
@@ -528,17 +528,35 @@ class MainWindow(QtWidgets.QMainWindow):
         if not picker or not self.stl_geom:
             return
         
+        # Get the picked actor and cell ID
         cell_id = picker.GetCellId()
-        if cell_id < 0 or cell_id in self.constrained_triangles:
-            self.message_text.append("Cannot select constrained triangle." if cell_id >= 0 
-                                   else "No triangle selected.")
+        picked_actor = picker.GetActor()
+        
+        if cell_id < 0:
+            self.message_text.append("No triangle selected.")
+            return
+        
+        # Validate we picked the STL geometry actor (not highlight/constraint overlay)
+        if picked_actor:
+            n_stl_triangles = len(self.stl_geom.mesh.vectors)
+            if hasattr(picked_actor, 'GetMapper'):
+                mapper = picked_actor.GetMapper()
+                if mapper and hasattr(mapper, 'GetInput'):
+                    mesh_input = mapper.GetInput()
+                    if mesh_input and hasattr(mesh_input, 'GetNumberOfCells'):
+                        # Reject if picked actor doesn't have same number of cells as STL
+                        if mesh_input.GetNumberOfCells() != n_stl_triangles:
+                            self.message_text.append("Please click on the geometry surface.")
+                            return
+        
+        if cell_id in self.constrained_triangles:
+            self.message_text.append("Cannot select constrained triangle.")
             return
         
         count, area = self.select_triangles(cell_id)
         if count > 0:
             self.update_highlights()
-            self.message_text.append(f"Selected {count} triangle{'s' if count > 1 else ''} "
-                                   f"with area {area:.6f} square units")
+            self.message_text.append(f"Selected {count} triangle{'s' if count > 1 else ''} ")
 
     def select_triangles(self, cell_id):
         """Select triangles based on current mode"""
@@ -883,6 +901,16 @@ class GeometryWindow(QtWidgets.QDialog):
             self.parent.plotter.clear_actors()
             self.parent.plotter.reset_camera()
             self.parent.plotter.disable_picking()
+
+            # Clear all stored data
+            self.parent.constrained_triangles.clear()
+            self.parent.constraint_actors.clear()
+            self.parent.constraint_data.clear()
+            self.parent.force_data.clear()
+            self.parent.force_actors.clear()
+            self.parent.material_data = None
+            self.parent.applied_material = None
+            self.parent.highlight_actor = None
 
             # Create new STL geometry
             self.stl_geom = STLGeom(file_path)
@@ -2779,29 +2807,6 @@ class AnalysisWindow(QtWidgets.QDialog):
                 show_scalar_bar=False,
                 name="colored_mesh"
             )
-
-            # Plot constrained nodes (black spheres)
-            if constrained_nodes:
-                pts = mesh.node_xyz[list(constrained_nodes)]
-                self.parent.plotter.add_mesh(
-                    pv.PolyData(pts),
-                    color='black',
-                    point_size=5,
-                    render_points_as_spheres=True,
-                    name="constrained_nodes"
-                )
-
-            # Plot loaded nodes (red spheres)
-            if loaded_nodes:
-                pts = mesh.node_xyz[list(loaded_nodes)]
-                self.parent.plotter.add_mesh(
-                    pv.PolyData(pts),
-                    color='red',
-                    point_size=5,
-                    render_points_as_spheres=True,
-                    name="loaded_nodes"
-                )
-
         elif visualization_type == "thermal":
             fixed_temp_nodes = set()
             heat_flux_nodes = set()
@@ -3307,15 +3312,9 @@ class TopOptConstraintsWindow(QtWidgets.QDialog):
                 ('draw_direction', 'Draw Direction', 'combo', ["XDir", "YDir", "ZDir"]),
                 ('cyclic_symmetry', 'CyclicSym(Z)', 'combo', ["(2) 180 deg", "(3) 120 deg", "(4) 90 deg", "(5) 72 deg", "(6) 60 deg", "(7) 51 deg","(8) 45 deg"])
             ],
-            'patterns': [
-                ('x_grid', 'XGridPattern', 'spin', (1, 10, 2)),
-                ('y_grid', 'YGridPattern', 'spin', (1, 10, 2)),
-                ('z_grid', 'ZGridPattern', 'spin', (1, 10, 2))
-            ],
             'performance': [
                 ('stress_safety', 'StressSafety', 'double_spin', (0.1, 10.0, 1.0)),
                 ('max_displacement', 'MaxDisp(m)', 'double_spin', (0, 1000, 160.0, 6)),
-                ('min_frequency', 'MinFreq(Hz)', 'double_spin', (0, 10000, 1000.0)),
                 ('max_temperature', 'MaxTemp(K)', 'double_spin', (0, 5000, 2000.0))
             ],
             'symmetry': [
@@ -3324,7 +3323,6 @@ class TopOptConstraintsWindow(QtWidgets.QDialog):
                 ('z_symmetry', 'Z-Symmetry', 'check_only')
             ],
             'other': [
-                ('connected_topology', 'Connected Topology', 'check_only', True),
                 ('keep_fixed_faces', 'Keep Fixed Faces', 'check_only')
             ]
         }
@@ -3847,8 +3845,7 @@ class TopOptConstraintsWindow(QtWidgets.QDialog):
         # FIX: Update UI state 
         self.parent.update_LivVar('topopt.constraints_defined', True)
         self.parent.set_sidebar_icon("TopOpt Constraints", "check")
-        self.parent.set_sidebar_icon("Structural TopOpt", "arrow")
-        self.parent.set_sidebar_icon("Thermal TopOpt", "arrow")
+        self.parent.set_sidebar_icon("TopOpt Execute", "arrow")
         self.parent.message_text.append(f"TopOpt constraints applied successfully. Constraints stored: {len(constraints)} categories")
         
         # ADD DEBUG: Print the LivVar state to verify
@@ -3856,6 +3853,7 @@ class TopOptConstraintsWindow(QtWidgets.QDialog):
 
         # Notify display options window
         self.parent.notify_display_options_update()
+        self.close()
 #----------------------------------------------------------------------------
 class StructuralTopOptWindow(QtWidgets.QDialog):
 
@@ -3865,7 +3863,7 @@ class StructuralTopOptWindow(QtWidgets.QDialog):
 
     def __init__(self, parent):
         super().__init__(parent)
-        self.setWindowTitle("Structural TopOpt")
+        self.setWindowTitle("TopOpt Execute")
         self.setWindowModality(QtCore.Qt.NonModal)
         self.setBaseSize(300, 400)
         self.parent = parent
@@ -3926,7 +3924,6 @@ class StructuralTopOptWindow(QtWidgets.QDialog):
         self.stop_button = QtWidgets.QPushButton("STOP OPTIMIZATION!")
         self.stop_button.clicked.connect(self.stop_optimization)
         self.stop_button.setEnabled(False)
-        self.stop_button.setStyleSheet("QPushButton { background-color: #ff6b6b; }")
         layout.addWidget(self.stop_button)
         
         # Close button
@@ -4057,6 +4054,7 @@ class StructuralTopOptWindow(QtWidgets.QDialog):
                 
             elif method == "DENSITY-OC":
                 u, history, success, error_msg, n_feas = topopt_optimality_criteria(
+                    feaMode=FEA_MODE.STRUCTURAL,
                     fe_solver=fe_solver,
                     to_params=to_params,
                     maxIterations=250,
@@ -4072,6 +4070,7 @@ class StructuralTopOptWindow(QtWidgets.QDialog):
                 
             elif method == "PARETO":
                 u, history, success, error_msg, n_feas = topopt_pareto(
+                    feaMode=FEA_MODE.STRUCTURAL,
                     fe_solver=fe_solver,
                     to_params=to_params,
                     rel_err=0.02,
@@ -4087,6 +4086,7 @@ class StructuralTopOptWindow(QtWidgets.QDialog):
                 
             elif method == "LEVELSET":
                 u, history, success, error_msg, n_feas = topopt_levelset(
+                    feaMode=FEA_MODE.STRUCTURAL,
                     fe_solver=fe_solver,
                     to_params=to_params,
                     maxIterations=250,
@@ -4167,7 +4167,7 @@ class StructuralTopOptWindow(QtWidgets.QDialog):
             
             # Render the updated scene
             self.parent.plotter.render()
-            QtCore.QCoreApplication.processEvents()
+            #QtCore.QCoreApplication.processEvents()
        
             
         except Exception as e:
@@ -4213,8 +4213,8 @@ class StructuralTopOptWindow(QtWidgets.QDialog):
             self.parent.message_text.append(f"Final objective: {final_objective:.6e}, Volume fraction: {final_volume:.3f}")
             
             self.parent.update_LivVar('topopt.structural_performed', True)
-            self.parent.set_sidebar_icon("Structural TopOpt", "check")
-            self.parent.set_sidebar_icon("TopOpt Results", "arrow")
+            self.parent.set_sidebar_icon("TopOpt Execute", "check")
+            self.parent.set_sidebar_icon("TopOpt Postprocess", "arrow")
             
             self.parent.topopt_results = {
                 'method': self.method_combo.currentText(), 
@@ -4470,7 +4470,7 @@ class StructuralTopOptWindow(QtWidgets.QDialog):
 class TopOptResultsWindow(QtWidgets.QDialog):
     def __init__(self, parent):
         super().__init__(parent)
-        self.setWindowTitle("TopOpt Results")
+        self.setWindowTitle("TopOpt Postprocess")
         self.setFixedSize(320, 180)
         self.parent = parent
 
@@ -4533,7 +4533,7 @@ class TopOptResultsWindow(QtWidgets.QDialog):
 
         topopt_results = getattr(self.parent, "topopt_results", None)
         if not topopt_results or not hasattr(self.parent, "stl_geom"):
-            QtWidgets.QMessageBox.warning(self, "No TopOpt Results", "Please run topology optimization first.")
+            QtWidgets.QMessageBox.warning(self, "No TopOpt Postprocess", "Please run topology optimization first.")
             return
 
         stl_path = self.parent.stl_geom.file_path
@@ -4594,7 +4594,7 @@ class TopOptResultsWindow(QtWidgets.QDialog):
         try:
             optimized_topology_stl.save(output_path)
             self.parent.message_text.append(f"Optimized STL saved: {output_path}")
-            self.parent.set_sidebar_icon("TopOpt Results", "check")
+            self.parent.set_sidebar_icon("TopOpt Postprocess", "check")
         except Exception as e:
             self.parent.message_text.append(f"Failed to save optimized STL: {e}")
 
@@ -4720,15 +4720,9 @@ class DisplayOptionsWindow(QtWidgets.QDialog):
         self.show_text.setChecked(True)
         layout.addWidget(self.show_text)
 
-        self.scale_deformation = QtWidgets.QCheckBox("Scale deformation")
-        layout.addWidget(self.scale_deformation)
-
         self.show_transparent_geometry = QtWidgets.QCheckBox("Show transparent geometry")
         layout.addWidget(self.show_transparent_geometry)
 
-        self.show_axis = QtWidgets.QCheckBox("Show axis")
-        self.show_axis.setChecked(True)
-        layout.addWidget(self.show_axis)
 
         self.show_structural_loads_checkbox = QtWidgets.QCheckBox("Show structural loads")
         layout.addWidget(self.show_structural_loads_checkbox)
@@ -4766,9 +4760,6 @@ class DisplayOptionsWindow(QtWidgets.QDialog):
         save_image_btn = QtWidgets.QPushButton("Save Image")
         save_image_btn.clicked.connect(self.save_image)
         button_layout.addWidget(save_image_btn)
-        reset_view_btn = QtWidgets.QPushButton("Reset View")
-        reset_view_btn.clicked.connect(self.reset_view)
-        button_layout.addWidget(reset_view_btn)
         close_btn = QtWidgets.QPushButton("Close")
         close_btn.clicked.connect(self.close)
         button_layout.addWidget(close_btn)
@@ -4782,7 +4773,7 @@ class DisplayOptionsWindow(QtWidgets.QDialog):
         self.y_cutting_spin.valueChanged.connect(self.update_cutting)
         self.z_cutting_spin.valueChanged.connect(self.update_cutting)
         for checkbox in [self.show_bounding_box_checkbox, self.show_triangles, self.show_text,
-                         self.scale_deformation, self.show_transparent_geometry, self.show_axis,
+                         self.scale_deformation, self.show_transparent_geometry, 
                          self.show_structural_loads_checkbox, self.show_thermal_loads_checkbox,
                          self.show_topopt_constraints_checkbox]:
             checkbox.stateChanged.connect(self.update_display)
@@ -4854,7 +4845,6 @@ class DisplayOptionsWindow(QtWidgets.QDialog):
         elif geometry_choice == "Initial Design" and self.parent.stl_geom:
             self.parent.stl_geom.plotGeometry(
                 show_edges=self.show_triangles.isChecked(),
-                show_axes=self.show_axis.isChecked(),
                 show_bounding_box=self.show_bounding_box_checkbox.isChecked(),
                 plotter=self.parent.plotter
             )
@@ -4887,7 +4877,6 @@ class DisplayOptionsWindow(QtWidgets.QDialog):
 
         # Robust toggles for triangles and axes
         self.toggle_mesh_edges(self.show_triangles.isChecked())
-        self.toggle_axes(self.show_axis.isChecked())
 
         if self.show_bounding_box_checkbox.isChecked():
             self.show_bounding_box(True)
@@ -4940,14 +4929,7 @@ class DisplayOptionsWindow(QtWidgets.QDialog):
 
     def toggle_axes(self, show):
         """Show/hide coordinate axes."""
-        if show:
-            if not hasattr(self.parent, 'axes_actor') or self.parent.plotter.axes_actor is None:
-                self.parent.plotter.add_axes(interactive=False)
-        else:
-            # Remove all axes actors
-            for name in list(self.parent.plotter.actors.keys()):
-                if 'axes' in name.lower():
-                    self.parent.plotter.remove_actor(name, reset_camera=False)
+        pass
 
     def show_bounding_box(self, show):
         # Remove any actor whose name contains "bounding_box" (case-insensitive)
@@ -5214,8 +5196,12 @@ class ProjectsWindow(QtWidgets.QDialog):
             QtWidgets.QMessageBox.warning(self, "No Data", "No geometry loaded to save.")
             return
                 
+        # Generate default filename from STL geometry name
+        stl_basename = os.path.splitext(os.path.basename(self.parent.stl_geom.file_path))[0]
+        default_filename = f"{stl_basename}.pyto"
+        
         filename, _ = QtWidgets.QFileDialog.getSaveFileName(
-            self, "Save Project", "", "PyTO Files (*.pyto)")
+            self, "Save Project", default_filename, "PyTO Files (*.pyto)")
         
         if not filename:
             return
@@ -5361,6 +5347,19 @@ class ProjectsWindow(QtWidgets.QDialog):
             QtWidgets.QMessageBox.warning(self, "Load Error", f"Error loading project: {str(e)}")
             return
         
+        # Clear all existing data before loading project
+        self.parent.plotter.clear_actors()
+        self.parent.plotter.reset_camera()
+        self.parent.constrained_triangles.clear()
+        self.parent.constraint_actors.clear()
+        self.parent.constraint_data.clear()
+        self.parent.force_data.clear()
+        self.parent.force_actors.clear()
+        self.parent.material_data = None
+        self.parent.applied_material = None
+        self.parent.highlight_actor = None
+        self.parent.LivVar = self.parent.create_initial_state()
+
         # Restore settings
         if 'settings' in project_data:
             s = project_data['settings']
@@ -5474,6 +5473,8 @@ class ProjectsWindow(QtWidgets.QDialog):
 
     def load_geometry(self, file_path):
         """Load geometry using the same approach as GeometryWindow"""
+        self.parent.plotter.clear_actors()
+        self.parent.plotter.reset_camera()
         stl_geom = STLGeom(file_path)
         stl_geom.plotGeometry(show_edges=False, show_axes=True, show_bounding_box=False, plotter=self.parent.plotter)
         
@@ -5669,8 +5670,7 @@ class ProjectsWindow(QtWidgets.QDialog):
         self.parent.topopt_constraints_window.update_visualizations()
         self.parent.update_LivVar('topopt.constraints_defined', True)
         self.parent.set_sidebar_icon("TopOpt Constraints", "check")
-        self.parent.set_sidebar_icon("Structural TopOpt", "arrow")
-        self.parent.set_sidebar_icon("Thermal TopOpt", "arrow")
+        self.parent.set_sidebar_icon("TopOpt Execute", "arrow")
 
     def recreate_triangle_data(self, triangle_indices):
         """Recreate triangle data structure from saved indices"""

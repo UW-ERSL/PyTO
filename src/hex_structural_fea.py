@@ -274,7 +274,7 @@ class HexStructuralFEA:
             fontsize=fontsize,
             cross_section=cross_section,
             show_geometry=show_geometry,
-            plotter = None,
+            plotter = plotter,
             annotate_max_min = annotate_max_min)  
     
 #################################################################

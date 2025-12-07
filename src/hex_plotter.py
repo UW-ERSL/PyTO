@@ -40,7 +40,7 @@ def format_value(val):
 class HexFEAPlotter:
     """Consolidated plotter for hex mesh FEA visualization."""
     
-    def __init__(self, mesh, camera_position=None):
+    def __init__(self, mesh, camera_position="xy"):
         """
         Initialize plotter with mesh.
         
@@ -51,10 +51,7 @@ class HexFEAPlotter:
         self.mesh = mesh
         
         # Set default camera position if not provided
-        if camera_position is None:
-            pass
-        else:
-            self.camera_position = camera_position
+        self.camera_position = camera_position
         
         # Initialize standard plotter (can be overridden)
         self.pv_plotter = None
@@ -295,7 +292,7 @@ class HexFEAPlotter:
         if hasattr(self, 'camera_position'):
             plotter.camera_position = self.camera_position
         else:
-            plotter.camera_position = "xy"
+            plotter.camera_position = self.camera_position
         if not external_plotter and (not hasattr(plotter, 'axes_actor') or plotter.axes_actor is None):
             plotter.add_axes()
         

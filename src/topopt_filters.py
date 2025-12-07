@@ -522,9 +522,12 @@ def createXExtrudeFilter(mesh: hex_mesher.HexMesher):
 	rows = []
 	cols = []
 	data = []
-	
+	elemsProcessed = []
 	for i in range(num_elems):
 		elemCenter = mesh.elem_centers[i, :]
+		# sufficient to process elements with x = x_min 
+		if i in elemsProcessed:
+			continue
 		# Find all elements along the x-axis for current y,z position
 		# Count unique x positions in mesh
 		num_x_layers = mesh.grid[0]
@@ -533,19 +536,24 @@ def createXExtrudeFilter(mesh: hex_mesher.HexMesher):
 		for x in x_positions:
 			test_point = np.array([x, elemCenter[1], elemCenter[2]])
 			elem_id = mesh.get_element_near_point(test_point)
-			if elem_id not in matching_elems:
+			if (elem_id == -1):
+				continue
+			if elem_id not in matching_elems: # Avoid duplicates
 				matching_elems.append(elem_id)
 	
+		matching_elems.append(i)
+		# Add all matching elements to processed list to avoid redundant processing
+		elemsProcessed.extend(matching_elems)
 		# Set equal weights for all matching elements
 		weight = 1.0 / len(matching_elems)
-		for matching_elem in matching_elems:
-			rows.append(i)
-			cols.append(matching_elem)
-			data.append(weight)
+		for m1 in matching_elems:
+			for m2 in matching_elems:
+				rows.append(m1)
+				cols.append(m2)
+				data.append(weight)
 
 	HXE = coo_matrix((data, (rows, cols)), shape=(num_elems, num_elems)).tocsc()
 	return HXE
-
 def createYExtrudeFilter(mesh: hex_mesher.HexMesher):
 	"""Create a filter matrix for extruding elements all the way through in the Y direction.
 	
@@ -564,9 +572,12 @@ def createYExtrudeFilter(mesh: hex_mesher.HexMesher):
 	rows = []
 	cols = []
 	data = []
-	
+	elemsProcessed = []
 	for i in range(num_elems):
 		elemCenter = mesh.elem_centers[i, :]
+		# sufficient to process elements with y = y_min 
+		if i in elemsProcessed:
+			continue
 		# Find all elements along the y-axis for current x,z position
 		# Count unique y positions in mesh
 		num_y_layers = mesh.grid[1]
@@ -575,19 +586,24 @@ def createYExtrudeFilter(mesh: hex_mesher.HexMesher):
 		for y in y_positions:
 			test_point = np.array([elemCenter[0], y, elemCenter[2]])
 			elem_id = mesh.get_element_near_point(test_point)
-			if elem_id not in matching_elems:
+			if (elem_id == -1):
+				continue
+			if elem_id not in matching_elems: # Avoid duplicates
 				matching_elems.append(elem_id)
 	
+		matching_elems.append(i)
+		# Add all matching elements to processed list to avoid redundant processing
+		elemsProcessed.extend(matching_elems)
 		# Set equal weights for all matching elements
 		weight = 1.0 / len(matching_elems)
-		for matching_elem in matching_elems:
-			rows.append(i)
-			cols.append(matching_elem)
-			data.append(weight)
+		for m1 in matching_elems:
+			for m2 in matching_elems:
+				rows.append(m1)
+				cols.append(m2)
+				data.append(weight)
 
 	HYE = coo_matrix((data, (rows, cols)), shape=(num_elems, num_elems)).tocsc()
 	return HYE
-
 def createZExtrudeFilter(mesh: hex_mesher.HexMesher):
 	"""Create a filter matrix for extruding elements all the way through in the Z direction.
 	
@@ -606,9 +622,12 @@ def createZExtrudeFilter(mesh: hex_mesher.HexMesher):
 	rows = []
 	cols = []
 	data = []
-	
+	elemsProcessed = []
 	for i in range(num_elems):
 		elemCenter = mesh.elem_centers[i, :]
+		# sufficient to process elements with z = z_min 
+		if i in elemsProcessed:
+			continue
 		# Find all elements along the z-axis for current x,y position
 		# Count unique z positions in mesh
 		num_z_layers = mesh.grid[2]
@@ -617,15 +636,21 @@ def createZExtrudeFilter(mesh: hex_mesher.HexMesher):
 		for z in z_positions:
 			test_point = np.array([elemCenter[0], elemCenter[1], z])
 			elem_id = mesh.get_element_near_point(test_point)
-			if elem_id not in matching_elems:
+			if (elem_id == -1):
+				continue
+			if elem_id not in matching_elems: # Avoid duplicates
 				matching_elems.append(elem_id)
 	
+		matching_elems.append(i)
+		# Add all matching elements to processed list to avoid redundant processing
+		elemsProcessed.extend(matching_elems)
 		# Set equal weights for all matching elements
 		weight = 1.0 / len(matching_elems)
-		for matching_elem in matching_elems:
-			rows.append(i)
-			cols.append(matching_elem)
-			data.append(weight)
+		for m1 in matching_elems:
+			for m2 in matching_elems:
+				rows.append(m1)
+				cols.append(m2)
+				data.append(weight)
 
 	HZE = coo_matrix((data, (rows, cols)), shape=(num_elems, num_elems)).tocsc()
-	return HZE	
+	return HZE

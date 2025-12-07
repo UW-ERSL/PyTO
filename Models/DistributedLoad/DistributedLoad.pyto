@@ -1,13 +1,13 @@
 {
   "version": "2025.01",
-  "stl_file_path": "BicycleCrank.STL",
+  "stl_file_path": "DistributedLoad.STL",
   "settings": {
     "unit_system": "MKS",
     "temperature_unit": "Kelvin",
     "angle_unit": "Degree"
   },
   "analysis_settings": {
-    "n_elements": 9466,
+    "n_elements": 8100,
     "solver_type": "PARDISO"
   },
   "material_data": {
@@ -25,98 +25,27 @@
   },
   "structuralBC": {
     "fixed_faces_indices": [
-      91,
-      92,
-      93,
-      94,
-      95,
-      96,
-      97,
-      98
+      2,
+      3,
+      6,
+      7
     ],
     "load_faces_indices": [
       [
-        101,
-        102,
-        103,
-        104,
-        105,
-        106,
-        107,
-        108,
-        109,
-        110,
-        111,
-        112,
-        113,
-        114,
-        115,
-        116,
-        117,
-        118,
-        119,
-        120,
-        121,
-        122,
-        123,
-        124,
-        125,
-        126,
-        127,
-        128,
-        129,
-        130,
-        131,
-        132,
-        133,
-        134,
-        135,
-        136,
-        137,
-        138,
-        139,
-        140,
-        141,
-        142,
-        143,
-        144,
-        145,
-        146,
-        147,
-        148,
-        149,
-        150,
-        151,
-        152,
-        153,
-        154,
-        155,
-        156,
-        157,
-        158,
-        159,
-        160,
-        161,
-        162,
-        163,
-        164,
-        165,
-        166,
-        167,
-        168,
-        169
+        10,
+        11
       ]
     ],
     "load_forces": [
       [
-        1000.0,
         0.0,
+        -1000.0,
         0.0
       ]
     ],
     "constraint_counts": {
-      "fixed_triangles": 8,
-      "loaded_triangles": 69
+      "fixed_triangles": 4,
+      "loaded_triangles": 2
     }
   },
   "thermalBC": {
@@ -134,7 +63,7 @@
     "manufacturing": {
       "extrude": {
         "enabled": true,
-        "value": "XDir"
+        "value": "ZDir"
       },
       "am_build": {
         "enabled": false,
@@ -149,6 +78,20 @@
         "value": "(2) 180 deg"
       }
     },
+    "patterns": {
+      "x_grid": {
+        "enabled": false,
+        "value": 2
+      },
+      "y_grid": {
+        "enabled": false,
+        "value": 2
+      },
+      "z_grid": {
+        "enabled": false,
+        "value": 2
+      }
+    },
     "performance": {
       "stress_safety": {
         "enabled": false,
@@ -157,6 +100,10 @@
       "max_displacement": {
         "enabled": false,
         "value": 160.0
+      },
+      "min_frequency": {
+        "enabled": false,
+        "value": 1000.0
       },
       "max_temperature": {
         "enabled": false,
@@ -169,7 +116,8 @@
       "z_symmetry": false
     },
     "other": {
-      "keep_fixed_faces": true
+      "connected_topology": true,
+      "keep_fixed_faces": false
     }
   }
 }
