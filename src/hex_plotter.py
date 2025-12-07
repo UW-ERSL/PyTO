@@ -457,7 +457,7 @@ class HexFEAPlotter:
             material_names: List of material names
             material_colors: List of colors (matplotlib color format) for each material
             title: Plot title
-            mask_low_pseudodensity: Filter elements below 0.01 density
+            mask_low_pseudodensity: Filter elements below 0.1 density
             auto_close: Whether to close plot automatically
             save_path: Path to save screenshot
             fontsize: Font size for title and legend
@@ -477,7 +477,7 @@ class HexFEAPlotter:
         
         # Filter elements based on density
         if mask_low_pseudodensity:
-            mask = self.mesh.elemPseudoDensity > 0.01
+            mask = self.mesh.elemPseudoDensity > 0.1
             filtered_elems = self.mesh.elemArray[mask]
             filtered_indices = material_indices[mask]
         else:
@@ -515,7 +515,7 @@ class HexFEAPlotter:
             
             legend_x = x_max * 1.15
             legend_y_start = y_max * 0.9
-            y_spacing = (y_max - np.min(bounds[:, 1])) * 0.08
+            y_spacing = (y_max - np.min(bounds[:, 1])) * 0.175
             sphere_radius = y_spacing * 0.3
             
             for i, mat_idx in enumerate(sorted(unique_materials)):
@@ -530,12 +530,14 @@ class HexFEAPlotter:
                     
                     # Label
                     plotter.add_point_labels(
-                        points=[[legend_x + sphere_radius * 2.5, legend_y, z_center]],
+                        points=[[legend_x + sphere_radius * 2.5, legend_y- 0.25*y_spacing, z_center]],
                         labels=[material_names[mat_idx]],
                         point_size=0,
                         font_size=24,
+                        always_visible=True,
                         text_color='black',
-                        always_visible=True
+                        shape=None,  # This removes the background box
+                        fill_shape=False  # Additional parameter to ensure no fill
                     )
         
         self._safe_add_title(plotter, title, font_size=0.9*fontsize)
@@ -574,7 +576,7 @@ class HexFEAPlotter:
             elem_field: Array of element field values
             title: Plot title
             colormap: Color map to use
-            mask_low_pseudodensity: Filter elements below 0.01 density
+            mask_low_pseudodensity: Filter elements below 0.1 density
             auto_close: Whether to close plot automatically
             save_path: Path to save screenshot
             fontsize: Font size for title
@@ -596,7 +598,7 @@ class HexFEAPlotter:
         
         # Filter elements based on density
         if mask_low_pseudodensity:
-            mask = self.mesh.elemPseudoDensity > 0.01
+            mask = self.mesh.elemPseudoDensity > 0.1
             filtered_elems = self.mesh.elemArray[mask]
             filtered_field = elem_field[mask]
         else:
@@ -733,7 +735,7 @@ class HexFEAPlotter:
         
         # Apply density threshold
         density = self.mesh.elemPseudoDensity.copy()
-        mask = density > 0.01
+        mask = density > 0.1
         pv_mesh = pv_mesh.extract_cells(mask)
         pv_mesh.cell_data['density'] = density[mask]
         
@@ -785,7 +787,7 @@ class HexFEAPlotter:
         pv_mesh = pv.UnstructuredGrid(cells_pv, cell_type, self.mesh.node_xyz)
         
         density = self.mesh.elemPseudoDensity.copy()
-        mask = density > 0.01
+        mask = density > 0.1
         pv_mesh = pv_mesh.extract_cells(mask)
         pv_mesh.cell_data['density'] = density[mask]
         
