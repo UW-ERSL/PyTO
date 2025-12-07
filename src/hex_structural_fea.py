@@ -268,14 +268,34 @@ class HexStructuralFEA:
     return self.plotter.plot_elem_field(elem_field,
             mask_low_pseudodensity = mask_low_pseudodensity,
             title = title,
-            save_path=None,
-            colormap = 'jet',
+            save_path=save_path,
+            colormap = colormap,
             auto_close = True,
             fontsize=fontsize,
             cross_section=cross_section,
             show_geometry=show_geometry,
             plotter = plotter,
             annotate_max_min = annotate_max_min)  
+  
+  def plot_material_distribution(self, material_indices, material_names, 
+                               material_colors, title='Material Distribution',
+                               mask_low_pseudodensity=True, auto_close=True,
+                               save_path=None, fontsize=10, plotter=None,
+                               cross_section=None, show_legend=True):
+    
+    return self.plotter.plot_material_distribution(
+        material_indices,
+        material_names,
+        material_colors,
+        title=title,
+        mask_low_pseudodensity=mask_low_pseudodensity,
+        auto_close=auto_close,
+        save_path=save_path,
+        fontsize=fontsize,
+        plotter=plotter,
+        cross_section=cross_section,
+        show_legend=show_legend
+    )
     
 #################################################################
   def plot_vonMisesStress(self,

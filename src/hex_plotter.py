@@ -19,7 +19,7 @@ Usage:
 import numpy as np
 import pyvista as pv
 from typing import Optional, Tuple
-
+import matplotlib.colors as mcolors
 try:
     from pyvistaqt import BackgroundPlotter
     from PyQt5.QtWidgets import QApplication
@@ -40,7 +40,7 @@ def format_value(val):
 class HexFEAPlotter:
     """Consolidated plotter for hex mesh FEA visualization."""
     
-    def __init__(self, mesh, camera_position="xy"):
+    def __init__(self, mesh, camera_position=None):
         """
         Initialize plotter with mesh.
         
@@ -444,6 +444,120 @@ class HexFEAPlotter:
         plotter.enable_anti_aliasing()
         self._safe_show(plotter)
     
+    def plot_material_distribution(self, material_indices, material_names, 
+                               material_colors, title='Material Distribution',
+                               mask_low_pseudodensity=True, auto_close=True,
+                               save_path=None, fontsize=10, plotter=None,
+                               cross_section=None, show_legend=True):
+        """
+        Plot material distribution with color-coded elements and legend.
+        
+        Args:
+            material_indices: Array of material indices for each element (num_elems,)
+            material_names: List of material names
+            material_colors: List of colors (matplotlib color format) for each material
+            title: Plot title
+            mask_low_pseudodensity: Filter elements below 0.01 density
+            auto_close: Whether to close plot automatically
+            save_path: Path to save screenshot
+            fontsize: Font size for title and legend
+            plotter: External plotter to use
+            cross_section: Tuple (axis, position) for cross-section
+            show_legend: Whether to display the material legend
+        """
+        import matplotlib.colors as mcolors
+        
+        external_plotter = plotter is not None
+        if plotter is None:
+            if save_path is not None:
+                plotter = pv.Plotter(off_screen=True)
+                plotter.enable_anti_aliasing()
+            else:
+                plotter = pv.Plotter()
+        
+        # Filter elements based on density
+        if mask_low_pseudodensity:
+            mask = self.mesh.elemPseudoDensity > 0.01
+            filtered_elems = self.mesh.elemArray[mask]
+            filtered_indices = material_indices[mask]
+        else:
+            filtered_elems = self.mesh.elemArray
+            filtered_indices = material_indices
+        
+        if len(filtered_elems) == 0:
+            print("No elements to plot after filtering")
+            return
+        
+        # Convert material colors to RGB arrays
+        rgb_colors = np.array([mcolors.to_rgb(material_colors[int(idx)]) 
+                            for idx in filtered_indices])
+        
+        # Create PyVista mesh
+        cells = np.hstack((np.full((len(filtered_elems), 1), 8), filtered_elems))
+        pv_mesh = pv.UnstructuredGrid({pv.CellType.HEXAHEDRON: cells[:, 1:]}, 
+                                    self.mesh.node_xyz)
+        
+     
+        
+        # Add mesh with RGB colors
+        plotter.add_mesh(pv_mesh, scalars=rgb_colors, rgb=True,
+                        show_edges=True, edge_color='black', line_width=1)
+        
+        # Add material legend with colored text
+       # In the legend section, replace with:
+        if show_legend:
+            unique_materials = np.unique(filtered_indices.astype(int))
+            
+            # Get bounding box
+            bounds = self.mesh.node_xyz
+            x_max, y_max = np.max(bounds[:, 0]), np.max(bounds[:, 1])
+            z_center = (np.max(bounds[:, 2]) + np.min(bounds[:, 2])) / 2
+            
+            legend_x = x_max * 1.15
+            legend_y_start = y_max * 0.9
+            y_spacing = (y_max - np.min(bounds[:, 1])) * 0.08
+            sphere_radius = y_spacing * 0.3
+            
+            for i, mat_idx in enumerate(sorted(unique_materials)):
+                if mat_idx < len(material_names):
+                    legend_y = legend_y_start - i * y_spacing
+                    
+                    # Colored sphere
+                    sphere = pv.Sphere(radius=sphere_radius, 
+                                    center=[legend_x, legend_y, z_center])
+                    color_rgb = mcolors.to_rgb(material_colors[mat_idx])
+                    plotter.add_mesh(sphere, color=color_rgb, lighting=True)
+                    
+                    # Label
+                    plotter.add_point_labels(
+                        points=[[legend_x + sphere_radius * 2.5, legend_y, z_center]],
+                        labels=[material_names[mat_idx]],
+                        point_size=0,
+                        font_size=24,
+                        text_color='black',
+                        always_visible=True
+                    )
+        
+        self._safe_add_title(plotter, title, font_size=0.9*fontsize)
+        
+        if hasattr(self, 'camera_position'):
+            plotter.camera_position = self.camera_position
+        else:
+            plotter.camera_position = "xy"
+        
+        if not hasattr(plotter, 'axes_actor') or plotter.axes_actor is None:
+            plotter.add_axes()
+        
+        if save_path:
+            plotter.screenshot(save_path)
+            plotter.close()
+        else:
+            if external_plotter:
+                self._safe_show(plotter, interactive_update=not auto_close, auto_close=auto_close)
+            else:
+                self._safe_show(plotter)
+        
+        self.camera_position = plotter.camera_position
     # ========================================================================
     # GENERIC ELEMENT FIELD PLOTTING
     # ========================================================================
