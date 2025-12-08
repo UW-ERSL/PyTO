@@ -16,7 +16,7 @@ def runTOMethodOnBenchmarks(optimizationMethod):
 	# Create a list to store results
 
 	saveVTU = False  # Set to True if you want to save the VTU files for MMA method
-	binarize_topology = False  # Set to True if you want to binarize the topology for MMA/OCM method
+	binarize_topology = True  # Set to True if you want to binarize the topology for MMA/OCM method
 	results_list = []
 	dsolver = deflation.DeflationSolver()
 	feaMode = FEA_MODE.STRUCTURAL
@@ -70,7 +70,7 @@ def runTOMethodOnBenchmarks(optimizationMethod):
 					benchmarks_bodyforce_problems + \
 					benchmarks_thermostructural_problems
 	
-	for to_problem in allBenchmarks:
+	for to_problem in benchmarks_2_5D_problems:
 		if to_problem in benchmarks_2_5D_problems:
 			subFolder = "Structural-Compliance2.5D"
 		elif to_problem in benchmarks_2_5D_thermal_problems:
@@ -191,7 +191,10 @@ def runTOMethodOnBenchmarks(optimizationMethod):
 		image_path = f"{output_dir}/{to_problem.name}.png"
 		title = f"{optimizationMethod.name}: vol: {history['volfrac'][-1]:0.2f}, J: {history['objective'][-1]:.3g}, nFEA: {len(history['objective']):3d}, time: {timeTaken:.0f} s"
 	
-		fe_solver.plot_mesh(save_path=image_path, plot_bc = None, title=title)
+		if to_problem in benchmarks_2_5D_problems or to_problem in benchmarks_2_5D_thermal_problems:
+			fe_solver.plot_mesh(save_path=image_path, plot_bc = None, title=title, camera_position='xy')
+		else:
+			fe_solver.plot_mesh(save_path=image_path, plot_bc = None, title=title)
 	
 		results_list.append({
 			'name': to_problem.name,
@@ -411,8 +414,9 @@ def combine_results():
 if __name__ == "__main__":    
 	
 	optimizationMethods = [TO_METHODS.DENSITYMMA, TO_METHODS.DENSITYOCM,TO_METHODS.PARETO]
-	for optimizationMethod in optimizationMethods:
+	for optimizationMethod in [TO_METHODS.LEVELSET]:
 		runTOMethodOnBenchmarks(optimizationMethod)
+		print("-" * 50)
 		print(f"Finished {optimizationMethod.name} tests.")
 		print("-" * 50)
 		print("\n")

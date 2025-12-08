@@ -234,10 +234,10 @@ class HexStructuralFEA:
       return 
 #################################################################
   def plot_mesh(self, title = None,plot_bc = True,rel_arrow_scale = 0.1, 
-                 save_path=None,offsetArrow = False, plotter=None):
+                 save_path=None,offsetArrow = False, camera_position = None, plotter=None):
     
     return self.plotter.plot_mesh_structural(self.bc, title = title, plot_bc = plot_bc,rel_arrow_scale = rel_arrow_scale, 
-                save_path=save_path,offsetArrow = offsetArrow, plotter=plotter)
+                save_path=save_path,offsetArrow = offsetArrow, camera_position = camera_position, plotter=plotter)
   
 ################################################################# 
   def plot_deformation(self,show_geometry=False, auto_close = True, save_path=None, plotter=None):

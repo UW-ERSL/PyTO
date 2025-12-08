@@ -323,7 +323,7 @@ def topopt_mma(feaMode: FEA_MODE, fe_structural_solver, fe_thermal_solver,
         if constraint[0] == TO_QOI.VOLUME_FRACTION:
             initialDensity = constraint[2]  # Use the constraint value as initial density
             break
-    
+   
     x0 = initialDensity * np.ones(num_elems, dtype = float).reshape(-1, 1)
     lowerBound = 1e-6*np.ones(num_elems, dtype = float).reshape(-1, 1)
     upperBound = (1-1e-6)*np.ones(num_elems, dtype = float).reshape(-1, 1)
@@ -403,8 +403,8 @@ if __name__ == "__main__":
     print("-" * 50)
 
     # Choose the TO problem
-    to_problem = StructuralTOExamples.Mitchell_1 
-    to_problem = ThermalTOExamples.FourCornersThermal
+    to_problem = StructuralTOExamples.LBracketMidLoad 
+    #to_problem = ThermalTOExamples.FourCornersThermal
     #to_problem = ThermoStructuralTOExamples.MBBBeam
 
     run_topopt_mma(to_problem)

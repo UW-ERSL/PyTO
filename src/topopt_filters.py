@@ -59,11 +59,33 @@ def createXDerivativeFilter(mesh: hex_mesher.HexMesher) -> tuple[coo_matrix, np.
 	
 	for i in range(num_elems):
 		elemCenter = mesh.elem_centers[i, :]
-		# Query neighbors offset by one element size in x-direction
-		left_point = elemCenter + np.array([-dx, 0, 0])
-		right_point = elemCenter + np.array([dx, 0, 0])
-		left_idx = mesh.get_element_near_point(left_point)
-		right_idx = mesh.get_element_near_point(right_point)
+		neighborElems = mesh.elemNeighborsArray[i]  # 27 elements
+		# Find left and right neighbors from the 27-element neighborhood
+		# Assuming neighborElems is ordered such that we can identify x-direction neighbors
+		left_idx = -1
+		right_idx = -1
+		
+		# Vectorize neighbor search
+		valid_neighbors = neighborElems[neighborElems != -1]
+		valid_neighbors = valid_neighbors[valid_neighbors != i]
+		
+		if len(valid_neighbors) > 0:
+			neighbor_centers = mesh.elem_centers[valid_neighbors, :]
+			deltas = neighbor_centers - elemCenter
+			
+			# Check for left neighbor (negative x, same y and z)
+			left_mask = (np.abs(deltas[:, 0] + dx) < dx * 0.1) & \
+						(np.abs(deltas[:, 1]) < dx * 0.1) & \
+						(np.abs(deltas[:, 2]) < dx * 0.1)
+			if np.any(left_mask):
+				left_idx = valid_neighbors[left_mask][0]
+			
+			# Check for right neighbor (positive x, same y and z)
+			right_mask = (np.abs(deltas[:, 0] - dx) < dx * 0.1) & \
+						 (np.abs(deltas[:, 1]) < dx * 0.1) & \
+						 (np.abs(deltas[:, 2]) < dx * 0.1)
+			if np.any(right_mask):
+				right_idx = valid_neighbors[right_mask][0]
 		
 		if left_idx != -1 and right_idx != -1:
 			# Use central difference: (f[right] - f[left]) / (2dx)
@@ -123,10 +145,33 @@ def createYDerivativeFilter(mesh: hex_mesher.HexMesher) -> tuple[coo_matrix, np.
 	
 	for i in range(num_elems):
 		elemCenter = mesh.elem_centers[i, :]
-		lower_point = elemCenter + np.array([0, -dy, 0])
-		upper_point = elemCenter + np.array([0, dy, 0])
-		lower_idx = mesh.get_element_near_point(lower_point)
-		upper_idx = mesh.get_element_near_point(upper_point)
+		neighborElems = mesh.elemNeighborsArray[i]  # 27 elements
+		# Find lower and upper neighbors from the 27-element neighborhood
+		# Assuming neighborElems is ordered such that we can identify y-direction neighbors
+		lower_idx = -1
+		upper_idx = -1
+		
+		# Vectorize neighbor search
+		valid_neighbors = neighborElems[neighborElems != -1]
+		valid_neighbors = valid_neighbors[valid_neighbors != i]
+		
+		if len(valid_neighbors) > 0:
+			neighbor_centers = mesh.elem_centers[valid_neighbors, :]
+			deltas = neighbor_centers - elemCenter
+			
+			# Check for lower neighbor (negative y, same x and z)
+			lower_mask = (np.abs(deltas[:, 0]) < dy * 0.1) & \
+						(np.abs(deltas[:, 1] + dy) < dy * 0.1) & \
+						(np.abs(deltas[:, 2]) < dy * 0.1)
+			if np.any(lower_mask):
+				lower_idx = valid_neighbors[lower_mask][0]
+			
+			# Check for upper neighbor (positive y, same x and z)
+			upper_mask = (np.abs(deltas[:, 0]) < dy * 0.1) & \
+							(np.abs(deltas[:, 1] - dy) < dy * 0.1) & \
+							(np.abs(deltas[:, 2]) < dy * 0.1)
+			if np.any(upper_mask):
+				upper_idx = valid_neighbors[upper_mask][0]
 		
 		if lower_idx != -1 and upper_idx != -1:
 			# Use central difference: (f[upper] - f[lower]) / (2dy)
@@ -160,7 +205,7 @@ def createYDerivativeFilter(mesh: hex_mesher.HexMesher) -> tuple[coo_matrix, np.
 			rows.append(i)
 			cols.append(i)
 			data.append(0.0)
-			
+	
 	HYD = coo_matrix((data, (rows, cols)), shape=(num_elems, num_elems)).tocsc()
 
 	return HYD
@@ -186,10 +231,33 @@ def createZDerivativeFilter(mesh: hex_mesher.HexMesher) -> tuple[coo_matrix, np.
 	
 	for i in range(num_elems):
 		elemCenter = mesh.elem_centers[i, :]
-		lower_point = elemCenter + np.array([0, 0, -dz])
-		upper_point = elemCenter + np.array([0, 0, dz])
-		lower_idx = mesh.get_element_near_point(lower_point)
-		upper_idx = mesh.get_element_near_point(upper_point)
+		neighborElems = mesh.elemNeighborsArray[i]  # 27 elements
+		# Find lower and upper neighbors from the 27-element neighborhood
+		# Assuming neighborElems is ordered such that we can identify z-direction neighbors
+		lower_idx = -1
+		upper_idx = -1
+		
+		# Vectorize neighbor search
+		valid_neighbors = neighborElems[neighborElems != -1]
+		valid_neighbors = valid_neighbors[valid_neighbors != i]
+		
+		if len(valid_neighbors) > 0:
+			neighbor_centers = mesh.elem_centers[valid_neighbors, :]
+			deltas = neighbor_centers - elemCenter
+			
+			# Check for lower neighbor (negative z, same x and y)
+			lower_mask = (np.abs(deltas[:, 0]) < dz * 0.1) & \
+						(np.abs(deltas[:, 1]) < dz * 0.1) & \
+						(np.abs(deltas[:, 2] + dz) < dz * 0.1)
+			if np.any(lower_mask):
+				lower_idx = valid_neighbors[lower_mask][0]
+			
+			# Check for upper neighbor (positive z, same x and y)
+			upper_mask = (np.abs(deltas[:, 0]) < dz * 0.1) & \
+							(np.abs(deltas[:, 1]) < dz * 0.1) & \
+							(np.abs(deltas[:, 2] - dz) < dz * 0.1)
+			if np.any(upper_mask):
+				upper_idx = valid_neighbors[upper_mask][0]
 		
 		if lower_idx != -1 and upper_idx != -1:
 			# Use central difference: (f[upper] - f[lower]) / (2dz)
@@ -223,7 +291,7 @@ def createZDerivativeFilter(mesh: hex_mesher.HexMesher) -> tuple[coo_matrix, np.
 			rows.append(i)
 			cols.append(i)
 			data.append(0.0)
-			
+	
 	HZD = coo_matrix((data, (rows, cols)), shape=(num_elems, num_elems)).tocsc()
 
 	return HZD

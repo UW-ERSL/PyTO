@@ -324,8 +324,7 @@ def topopt_pareto(feaMode,fe_solver,
 	success = True
 	terminatePareto = False
 	errorMsg = "No errors."
-	# Observation: Damping using the previous sensitivity values avoids getting trapped in local minima
-	wtDamping = 0.5 # 0 means full wt to current T values, else previous T values are damped in
+	
 	nSmoothSteps = 2 # Number of smoothing steps to apply
 	constraintType = to_params.Constraints[0][0] # assume this is the first constraint
 	if (constraintType == TO_QOI.VOLUME_FRACTION):
@@ -334,7 +333,8 @@ def topopt_pareto(feaMode,fe_solver,
 		raise ValueError(f"Unknown constraint type: {constraintType}")
 	
 	while volfrac > volFractionConstraint:
-		
+		# Observation: Damping using the previous sensitivity values avoids getting trapped in local minima
+		wtDamping = 0.9 # 0 means full wt to current T values, else previous T values are damped in
 		fe_solver.mesh.setPseudoDensity(x)
 		if progress_callback is not None:
 			progress_callback()
@@ -427,7 +427,7 @@ def topopt_pareto(feaMode,fe_solver,
 				T = (H * T) / Hs
 
 			T = ((1-wtDamping)*T + wtDamping*TPrev)  # Damping
-
+			wtDamping *= 0.5
 			if (elemsWithForces.size > 0):
 				T[elemsWithForces] = np.max(T)
 
@@ -480,8 +480,8 @@ if __name__ == "__main__":
 	from topopt_thermal_benchmarks import *
 	
 	print("-" * 50)
-	to_problem = StructuralTOExamples.Mitchell_3 # Choose the TO problem
-	to_problem = ThermalTOExamples.FourCornersThermal # Choose the TO problem
+	to_problem = StructuralTOExamples.EdgeCantilever # Choose the TO problem
+	#to_problem = ThermalTOExamples.FourCornersThermal # Choose the TO problem
 
 	if (to_problem in StructuralTOExamples):
 		mesh, mat_prop, bc,elem_body_force, to_params = getStructuralTOProblem(to_problem)
@@ -495,7 +495,7 @@ if __name__ == "__main__":
 	
 	plot_progress = True
 	print_progress = True
-	debug = False
+	debug = True
 
 	solver = lin_solv.Solvers.PARDISO
 	dsolver = deflation.DeflationSolver()

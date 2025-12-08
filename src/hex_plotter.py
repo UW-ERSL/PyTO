@@ -129,7 +129,7 @@ class HexFEAPlotter:
         
     def plot_mesh_structural(self, bc, title=None, plot_bc=True, 
                            rel_arrow_scale=0.1, offsetArrow=False,
-                           save_path=None, plotter=None):
+                           save_path=None, camera_position = None, plotter=None):
         """Plot structural mesh with boundary conditions."""
         external_plotter = plotter is not None
         
@@ -165,11 +165,14 @@ class HexFEAPlotter:
         if title:
             self._safe_add_title(title, font_size=8)
         
+        
         if hasattr(self, 'camera_position'):
             plotter.camera_position = self.camera_position
         else:
             plotter.camera_position = 'xy'
-        
+            
+        if camera_position is not None:
+            plotter.camera_position = camera_position
         if not external_plotter and (not hasattr(plotter, 'axes_actor') or plotter.axes_actor is None):
             plotter.add_axes()
         
@@ -723,10 +726,10 @@ class HexFEAPlotter:
                 )
                 
                 self._rt_plotter_initialized = False
-            
             plotter = self._rt_plotter
             use_external = False
         
+
         # Create mesh representation
         cells = self.mesh.elemArray.shape[0]
         cell_type = np.full(cells, pv.CellType.HEXAHEDRON, dtype=np.uint8)
@@ -749,7 +752,7 @@ class HexFEAPlotter:
             scalars='density', 
             cmap='gray_r',
             show_edges=True, 
-            edge_color='black', 
+            edge_color='grey', 
             line_width=1,
             clim=[0, 1]  # Fix colormap range
         )

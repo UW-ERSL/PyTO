@@ -785,7 +785,8 @@ class HexMesher:
 		
 		return nodes_on_plane
 	
-	def compute_signed_distance_function(self, density_field: np.ndarray =None, distance_type: DISTANCE_TYPE = DISTANCE_TYPE.DISTANCE_3D) -> np.ndarray:
+	def compute_signed_distance_function(self, density_field: np.ndarray =None, 
+									  distance_type: DISTANCE_TYPE = DISTANCE_TYPE.DISTANCE_3D) -> np.ndarray:
 		"""Compute the signed distance function for each element to the boundary face/edge.
 		
 		Args:
@@ -840,7 +841,6 @@ class HexMesher:
 		if distance_type == DISTANCE_TYPE.DISTANCE_3D:
 			# Use full 3D distance metric
 			distances = np.linalg.norm(elem_centers[:, np.newaxis, :] - elem_centers[boundary_elems], axis=2)
-		
 		elif distance_type == DISTANCE_TYPE.DISTANCE_XY:	
 			# Use XY distance metric (ignore Z distance)
 			distances = np.linalg.norm(elem_centers[:, np.newaxis, :2] - elem_centers[boundary_elems][:, :2], axis=2)
@@ -990,6 +990,8 @@ class HexMesher:
 		elems_within_radius = np.array(potential_elems)[distances_sq <= r**2]
 		
 		return elems_within_radius
+	
+	
 	def get_element_near_point(self, point: np.ndarray) -> int:
 		"""Find element closest to point using spatial hash grid.
 		
