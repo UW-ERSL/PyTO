@@ -7,8 +7,71 @@ from scipy.ndimage import distance_transform_edt
 from matplotlib import pyplot as plt
 import time
 
+def run_topopt_levelset(to_problem):
+     
+	print(f"Running {to_problem.name}...") 
+	print("-" * 50)
+	solver = lin_solv.Solvers.PARDISO # # Choose solver. Typically PARDISO, but DPCG for DOF > 200,000
+	debug = False
 
-def topopt_levelset(fe_solver,
+	if (to_problem in StructuralTOExamples):
+		mesh, mat_prop, bc,elem_body_force, to_params = getStructuralTOProblem(to_problem)
+		feaMode = FEA_MODE.STRUCTURAL         
+	elif (to_problem in ThermalTOExamples):
+		mesh, mat_prop, bc,elem_body_force, to_params = getThermalTOProblem(to_problem)
+		feaMode = FEA_MODE.THERMAL
+	dsolver = deflation.DeflationSolver()
+	# initialize the fe solver 
+	if (solver == lin_solv.Solvers.DPCG):
+		nGroups =  min(dsolver.maxGroups,max(dsolver.minGroups,round(3*mesh.num_nodes/dsolver.dofPerGroup)))
+		dsolver.create_deflation_groups(mesh, nGroups)
+		dsolver.create_delfation_matrix(mesh)
+		dsolver.W = dsolver.W[bc.free_dofs, :]
+
+	if (feaMode == FEA_MODE.STRUCTURAL):
+		fe_solver = hex_structural_fea.HexStructuralFEA(mesh = mesh,
+					mat_prop = mat_prop,
+					bc = bc,
+					solver = solver,
+					dsolver = dsolver,
+					rtol = 1e-8,
+					elem_body_force = elem_body_force)
+	elif (feaMode == FEA_MODE.THERMAL):
+		fe_solver = hex_thermal_fea.HexThermalFEA(mesh = mesh,
+					mat_prop = mat_prop,
+					bc = bc,
+					solver = solver,
+					dsolver = dsolver,
+					rtol = 1e-8,
+					elem_body_force = elem_body_force)
+	
+
+	print('Solver: ', fe_solver.solver.name)
+	print("nDof: ", 3*fe_solver.mesh.num_nodes)
+	print("nElem: ", fe_solver.mesh.num_elems)	
+	
+	title = f'nDOF: {3*fe_solver.mesh.num_nodes}, nElem: {fe_solver.mesh.num_elems}'
+	#plots.plotMesh(mesh, bc,title = title)
+
+
+	startTime = time.time()
+	
+	print("OptimizationMethod: Level Set")
+	u, history, success,errorMsg,nFEAs = topopt_levelset(feaMode,fe_solver=fe_solver,
+                                                    to_params=to_params,
+                                                    plot_progress = True,
+                                                    print_progress = True,
+                                                    maxIterations=250,
+                                                    debug = False)
+	timeTaken = time.time() - startTime
+	title = f"Level Set: nDOF: {3*fe_solver.mesh.num_nodes}, vol: {history['volfrac'][-1]:0.2f}, J: {history['objective'][-1]:.3g}, time: {timeTaken:.0f} s"	
+
+
+	fe_solver.plot_mesh(title = title, save_path = None)
+
+
+def topopt_levelset(feaMode,
+                    fe_solver,
                     to_params,
                     maxIterations: int = 250,
                     numReinit: int = 10000,
@@ -16,6 +79,7 @@ def topopt_levelset(fe_solver,
                     constraint_tol: float = 1.e-3,
                     plot_progress: bool = False,
                     print_progress : bool = False,
+                    plotter = None,
                     debug: bool = False) -> tuple[np.ndarray, dict]:
     """Level Set Method for Topology Optimization using Hamilton-Jacobi equation in 3D.
 
@@ -64,10 +128,6 @@ def topopt_levelset(fe_solver,
     # Initialize level set function and design variables
     rho = np.ones((fe_solver.mesh.num_elems))
 
-    if plot_progress:
-        fe_solver.mesh.setPseudoDensity(np.asarray(rho))
-        fe_solver.plot_mesh(plot_bc = False,auto_close = False, title = f'Initial Volfrac: {np.mean(rho):0.3f}')
-        time.sleep(0.1)
         
     lsf = fe_solver.mesh.compute_signed_distance_function(rho)
     lsf /= np.max(np.abs(lsf))
@@ -109,18 +169,23 @@ def topopt_levelset(fe_solver,
 
     obj0 = None
     dt = 0.1
-    for iterNum in range(maxIterations):
+    for iterations in range(maxIterations):
+        fe_solver.mesh.setPseudoDensity(np.asarray(rho))
+    
         if (plot_progress):
-            fe_solver.mesh.setPseudoDensity(np.asarray(rho))
-            fe_solver.plot_mesh(plot_bc = False,auto_close = False, title = f'Volfrac: {volCurr:0.3f}')
-        
+           fe_solver.plot_pseudo_density_realtime(
+                   title=f"Iter {iterations + 1}",
+                   external_plotter=plotter  # Pass GUI plotter if available
+               )
         sol = fe_solver.solve(rho, material_model)
-        obj, _ = compute_objective_and_gradient(to_params,sol,rho, fe_solver,KE, material_model)
+        obj, _ = compute_objective_and_gradient(feaMode,to_params,sol,rho, fe_solver,KE)
         if (obj0 is None):
             obj0 = obj
-        c, _ = compute_constraint_and_gradient(to_params,sol,rho, fe_solver,KE, material_model)
-        shapeSens =(-rho)* (np.dot(sol[fe_solver.mesh.edofMat].reshape(fe_solver.mesh.num_elems, 8*nDOFPerNode), KE) * sol[fe_solver.mesh.edofMat].reshape(fe_solver.mesh.num_elems, 8*nDOFPerNode)).sum(1)
- 
+        c, _ = compute_constraint_and_gradient(feaMode,to_params,sol,rho, fe_solver,KE)
+        if (feaMode == FEA_MODE.STRUCTURAL):
+            shapeSens =(-rho)* (np.dot(sol[fe_solver.mesh.edofMatStructural].reshape(fe_solver.mesh.num_elems, 8*nDOFPerNode), KE) * sol[fe_solver.mesh.edofMatStructural].reshape(fe_solver.mesh.num_elems, 8*nDOFPerNode)).sum(1)
+        elif (feaMode == FEA_MODE.THERMAL):
+            shapeSens =(-rho)* (np.dot(sol[fe_solver.mesh.edofMatThermal].reshape(fe_solver.mesh.num_elems, 8*nDOFPerNode), KE) * sol[fe_solver.mesh.edofMatThermal].reshape(fe_solver.mesh.num_elems, 8*nDOFPerNode)).sum(1)   
         shapeSens = (H * shapeSens)/Hs
         shapeSens /= np.max(np.abs(shapeSens))
         
@@ -139,13 +204,13 @@ def topopt_levelset(fe_solver,
         constraint_names = [getattr(c[0], 'name', str(c[0])) for c in to_params.Constraints]
         if (print_progress):
             print(50* '-')
-            print(f"Iteration: {iterNum}")
+            print(f"Iteration: {iterations}")
             print(f"Min. Objective ({objective_name}): {obj:.3g}")
             for idx, val in enumerate(c.flatten()):
                 print(f"Constraint {idx+1} ({constraint_names[idx]}): {(val+1)*to_params.Constraints[idx][2]:.3g} {'<='} {to_params.Constraints[idx][2]:.3g}?")
        
         
-        if (iterNum > 5):
+        if (iterations > 5):
             obj_err = (abs(history['objective'][-1] - history['objective'][-3]) / history['objective'][-3]) 
             vol_err = abs(history['volfrac'][-1] - volFractionConstraint)
             #print(obj_err,vol_err)
@@ -172,7 +237,7 @@ def topopt_levelset(fe_solver,
             else:
                 lMax = la
                 
-        if ((iterNum+1) % 5 == 0) and (abs(history['volfrac'][-1] - history['volfrac'][-2]) < constraint_tol):
+        if ((iterations+1) % 5 == 0) and (abs(history['volfrac'][-1] - history['volfrac'][-2]) < constraint_tol):
             lsf = fe_solver.mesh.compute_signed_distance_function(rho)
             lsf /= -np.max(np.abs(lsf))
             lsf = H*lsf/Hs
@@ -180,17 +245,17 @@ def topopt_levelset(fe_solver,
         # scale = np.sqrt(history['objective'][-1] / history['objective'][0])
         # volFracDecrement = max(vol_decr_min,min(volFracDecrement,volFracDecrement/scale)) # Reduce volume increment for steep increase in compliance
     fe_solver.mesh.setPseudoDensity(np.asarray(rho))
-    if (iterNum > 0 and iterNum % numReinit == 0): # Reinitialize level set function
+    if (iterations > 0 and iterations % numReinit == 0): # Reinitialize level set function
         lsf = fe_solver.mesh.compute_signed_distance_function(rho)
         lsf /= np.max(np.abs(lsf))
         lsf = H*lsf/Hs
         
     sol = fe_solver.solve(rho, material_model)
-    obj, _ = compute_objective_and_gradient(to_params,sol,rho, fe_solver,KE, material_model)
+    obj, _ = compute_objective_and_gradient(feaMode,to_params,sol,rho, fe_solver,KE)
 		
     history['objective'].append(obj)
     history['volfrac'].append(volCurr)
-    if iterNum == maxIterations - 1:
+    if iterations == maxIterations - 1:
         errorMsg = "Maximum iterations reached"
         print(errorMsg)
         success = False
@@ -202,7 +267,7 @@ def topopt_levelset(fe_solver,
         errorMsg = f"vf {volFractionConstraint:0.3f} not reached"
         success = False
 
-    nFEAs = iterNum + 1
+    nFEAs = iterations + 1
     totalTime = time.time() - tStart
     print(f"Final Compliance: {history['objective'][-1]:.4f}, Final Volume: {history['volfrac'][-1]:.3f}")
     print(f"Total Time: {totalTime:.2f} s")
@@ -236,63 +301,4 @@ if __name__ == "__main__":
 	to_problem = StructuralTOExamples.Mitchell_1 # Choose the TO problem
 	#to_problem = ThermalTOExamples.FourCornersThermal # Choose the TO problem
      
-
-	print(f"Running {to_problem.name}...") 
-	print("-" * 50)
-	solver = lin_solv.Solvers.PARDISO # # Choose solver. Typically PARDISO, but DPCG for DOF > 200,000
-	debug = False
-
-	if (to_problem in StructuralTOExamples):
-		mesh, mat_prop, bc,elem_body_force, to_params = getStructuralTOProblem(to_problem)
-	elif (to_problem in ThermalTOExamples):
-		mesh, mat_prop, bc,elem_body_force, to_params = getThermalTOProblem(to_problem)
-
-	dsolver = deflation.DeflationSolver()
-	# initialize the fe solver 
-	if (solver == lin_solv.Solvers.DPCG):
-		nGroups =  min(dsolver.maxGroups,max(dsolver.minGroups,round(3*mesh.num_nodes/dsolver.dofPerGroup)))
-		dsolver.create_deflation_groups(mesh, nGroups)
-		dsolver.create_delfation_matrix(mesh)
-		dsolver.W = dsolver.W[bc.free_dofs, :]
-
-	if (to_problem in StructuralTOExamples):
-		fe_solver = hex_structural_fea.HexStructuralFEA(mesh = mesh,
-					mat_prop = mat_prop,
-					bc = bc,
-					solver = solver,
-					dsolver = dsolver,
-					rtol = 1e-8,
-					elem_body_force = elem_body_force)
-	elif (to_problem in ThermalTOExamples):
-		fe_solver = hex_thermal_fea.HexThermalFEA(mesh = mesh,
-					mat_prop = mat_prop,
-					bc = bc,
-					solver = solver,
-					dsolver = dsolver,
-					rtol = 1e-8,
-					elem_body_force = elem_body_force)
-	
-
-	print('Solver: ', fe_solver.solver.name)
-	print("nDof: ", 3*fe_solver.mesh.num_nodes)
-	print("nElem: ", fe_solver.mesh.num_elems)	
-	
-	title = f'nDOF: {3*fe_solver.mesh.num_nodes}, nElem: {fe_solver.mesh.num_elems}'
-	#plots.plotMesh(mesh, bc,title = title)
-
-
-	startTime = time.time()
-	
-	print("OptimizationMethod: Level Set")
-	u, history, success,errorMsg,nFEAs = topopt_levelset(fe_solver=fe_solver,
-                                                    to_params=to_params,
-                                                    plot_progress = True,
-                                                    print_progress = True,
-                                                    maxIterations=250,
-                                                    debug = False)
-	timeTaken = time.time() - startTime
-	title = f"Level Set: nDOF: {3*fe_solver.mesh.num_nodes}, vol: {history['volfrac'][-1]:0.2f}, J: {history['objective'][-1]:.3g}, time: {timeTaken:.0f} s"	
-
-
-	fe_solver.plot_mesh(title = title, save_path = None)
-
+	run_topopt_levelset(to_problem)
