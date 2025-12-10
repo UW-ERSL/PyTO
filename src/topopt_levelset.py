@@ -8,6 +8,43 @@ from matplotlib import pyplot as plt
 import time
 from hex_mesher import DISTANCE_TYPE
 
+
+def compute_compliance_and_sensitivity(feaMode, sol, rho, fe_solver, KE):
+    """
+    Compute objective and shape sensitivity for level set optimization.
+    
+    
+    Shape sensitivity is negative strain energy density (NO SIMP penalization).
+    """
+    if feaMode == FEA_MODE.STRUCTURAL:
+        dofMat = fe_solver.mesh.edofMatStructural
+    elif feaMode == FEA_MODE.THERMAL:
+        dofMat = fe_solver.mesh.edofMatThermal
+    else:
+        raise ValueError(f"Invalid FEA mode: {feaMode}")
+    
+    num_elems = fe_solver.mesh.num_elems
+    nRows = KE.shape[0]
+    
+    # Element strain energy: u_e^T * K_e * u_e
+    ce = (np.dot(sol[dofMat].reshape(num_elems, nRows), KE) * 
+          sol[dofMat].reshape(num_elems, nRows)).sum(1)
+    
+    # Small stiffness for void 
+    rho_clipped = np.maximum(rho, 0.0001)
+    
+    element_volume = np.prod(fe_solver.mesh.elem_size)
+    # Shape sensitivity: -ρ * ce/element_volume
+    # We divide by element volume to get sensitivity per unit volume
+    # This will be consistent with topological sensitivity units
+    shapeSens = -rho_clipped * ce/element_volume
+    
+    # Compliance 
+    obj = np.sum(rho_clipped * ce)
+    
+    return obj, shapeSens
+    
+
 def  compute_topological_sensitivity(fe_solver):
      
     strains = fe_solver.strainComponents
@@ -94,19 +131,17 @@ def topopt_levelset(feaMode,
                     to_params,
                     maxIterations: int = 250,
                     stepLength: int = 3,
-                    numReinit: int = 5,
-                    topWeight: float = 2.0,
+                    numReinit: int = 10,
+                    topWeight: float = 100,
                     objective_tol: float = 1.e-3,
-                    constraint_tol: float = 1.e-3,
+                    constraint_tol: float = 1.e-2,
                     plot_progress: bool = False,
                     print_progress: bool = False,
                     plotter=None,
                     debug: bool = False) -> tuple[np.ndarray, dict]:
     """
     Level Set Method for Topology Optimization.
-    
-    Implements Challis (2010) algorithm adapted for 3D arbitrary hex meshes.
-    
+
     References:
         Challis, V. J. (2010). A discrete level-set topology optimization code 
         written in Matlab. Structural and Multidisciplinary Optimization, 41(3), 453-464.
@@ -134,16 +169,15 @@ def topopt_levelset(feaMode,
     
     # Determine distance type based on extrusion
     distanceType = DISTANCE_TYPE.DISTANCE_3D
-    # if to_params.ExtrudeX:
-    #     distanceType = DISTANCE_TYPE.DISTANCE_YZ
-    # elif to_params.ExtrudeY:
-    #     distanceType = DISTANCE_TYPE.DISTANCE_XZ
-    # elif to_params.ExtrudeZ:
-    #     distanceType = DISTANCE_TYPE.DISTANCE_XY
-    #     print("Using 2D distance transform in XY plane for level set initialization.")
-    
-    # Initialize level set function (start with full domain)
+    if to_params.ExtrudeX:
+        distanceType = DISTANCE_TYPE.DISTANCE_YZ
+    elif to_params.ExtrudeY:
+        distanceType = DISTANCE_TYPE.DISTANCE_XZ
+    elif to_params.ExtrudeZ:
+        distanceType = DISTANCE_TYPE.DISTANCE_XY
 
+
+    # Initialize level set function (start with full domain)
     rho = np.ones(mesh.num_elems)
     lsf = mesh.compute_signed_distance_function(rho, distance_type=distanceType)
     mesh.setPseudoDensity(np.asarray(rho))
@@ -153,11 +187,6 @@ def topopt_levelset(feaMode,
             fe_solver.mat_prop.youngs_modulus,
             fe_solver.mat_prop.poissons_ratio,
             mesh.elem_size )
-
-    # Augmented Lagrangian parameters (Challis lines 38-39)
-    lambda_lag = -0.01
-    Lambda = 1000.0
-    alpha = 0.9
     
     # Identify load-bearing elements
     elemsWithForces = find_elements_with_forces(mesh, fe_solver.bc.force, nDOFPerNode)
@@ -167,7 +196,7 @@ def topopt_levelset(feaMode,
     success = True
     errorMsg = "No errors."
     
-    # Main optimization loop (Challis line 16: for iterNum = 1:200)
+    # Main optimization loop 
     for iteration in range(maxIterations):
         mesh.setPseudoDensity(np.asarray(rho))
         
@@ -179,16 +208,35 @@ def topopt_levelset(feaMode,
         
         sol = fe_solver.solve(rho, material_model)
         fe_solver.postprocess()
-        obj, shapeSens = compute_levelset_objective_and_gradient(feaMode, sol, rho, fe_solver, KE)
+        obj, shapeSens = compute_compliance_and_sensitivity(feaMode, sol, rho, fe_solver, KE)
+
         T = compute_topological_sensitivity(fe_solver)
         topSens = rho * T # zero out void elements 
-        
-        # 4. Store history (Challis line 28)
+        print(f"Max shapeSens: {np.max(shapeSens):.3g}, Min shapeSens: {np.min(shapeSens):.3g}")
+        print(f"Max topSens: {np.max(topSens):.3g}, Min topSens: {np.min(topSens):.3g}")
+
+        # Scaling of sensitivities; this will alow us to set stepLength and topWeight independent of problem scale
+        if iteration == 0:
+            sensitivityScaling =  max(np.max(np.abs(shapeSens)), 
+                                np.max(np.abs(topSens))) + 1e-12 # Use same scaling for all iterations
+
+
+        shapeSens = shapeSens / sensitivityScaling
+        topSens = topSens / sensitivityScaling
+ 
+        # 3. Load bearing elements must remain solid 
+        if elemsWithForces is not None and len(elemsWithForces) > 0:
+            shapeSens[elemsWithForces] = min(shapeSens)
+            topSens[elemsWithForces] = max(topSens)
+        if (to_params.ElemsToKeep is not None):
+            shapeSens[to_params.ElemsToKeep] = min(shapeSens) # also retain elements that are in the keep list
+            topSens[to_params.ElemsToKeep] = max(topSens)
+        # 4. Store history 
         volCurr = np.mean(rho)
         history['objective'].append(obj)
         history['volfrac'].append(volCurr)
         
-        # 5. Print progress (Challis lines 29-30)
+        # 5. Print progress 
         if print_progress:
             objective_name = getattr(to_params.Objective[0], 'name', str(to_params.Objective[0]))
             print('-' * 50)
@@ -196,42 +244,45 @@ def topopt_levelset(feaMode,
             print(f"Objective ({objective_name}): {obj:.3g}")
             print(f"Volume fraction: {volCurr:.3f} (target: {volFractionConstraint:.3f})")
         
-        # 6. Check convergence (Challis lines 35-36)
+        # 6. Check convergence 
         if iteration > 5:
             obj_err = abs(history['objective'][-1] - history['objective'][-3]) / abs(history['objective'][-3])
-            vol_err = abs(volCurr - volFractionConstraint)
-            
+            vol_err = abs(volCurr - volFractionConstraint)  
             if obj_err < objective_tol and vol_err < constraint_tol:
                 print("Convergence achieved!")
                 break
         
-        # 7. Update Lagrangian parameters (Challis lines 38-42)
+        # 7.  Lagrangian parameters 
         if iteration == 0:
-            # Already initialized above
-            pass
+            lambda_lag = -0.01
+            Lambda = 1000.0
+            alpha = 0.9
         else:
             lambda_lag = lambda_lag - (1 / Lambda) * (volCurr - volFractionConstraint)
             Lambda = alpha * Lambda
-        
-        # 8. Add volume constraint sensitivities (Challis lines 43-44)
+
+        # 8. Add volume constraint sensitivities 
         shapeSens = shapeSens - lambda_lag + (1 / Lambda) * (volCurr - volFractionConstraint)
-        topSens = topSens + np.pi * (lambda_lag - (1 / Lambda) * (volCurr - volFractionConstraint))
-        
-        # 9. Design update (Challis line 46: [struc,lsf] = updateStep(...))
-        rho, lsf = update_step(
-            mesh=mesh,
-            lsf=lsf,
-            shapeSens=shapeSens,
-            topSens=topSens,
-            stepLength=stepLength,
-            topWeight=topWeight,
-            elemsWithForces=elemsWithForces,
-            elemsToKeep=to_params.ElemsToKeep,
-            H=H,
-            Hs=Hs
+        topSens = topSens + 4*np.pi/3*(lambda_lag - (1 / Lambda) * (volCurr - volFractionConstraint))
+
+
+        # 1. Smooth the sensitivities 
+        shapeSens_smooth = (H @ shapeSens) / Hs
+        topSens_smooth = (H @ topSens) / Hs
+
+  
+        # 4. Design update via evolution 
+        rho, lsf = evolveUpWind(
+                mesh=mesh,
+                lsf=lsf,
+                v=-shapeSens_smooth,  # Velocity is negative of shape sensitivity
+                g=topSens_smooth,     # Topological sensitivity (masking happens in evolve)
+                stepLength=stepLength,
+                topWeight=topWeight
         )
-        
-        # 10. Periodic reinitialization (Challis lines 48-50)
+ 
+
+        # 10. Periodic reinitialization 
         if (iteration + 1) % numReinit == 0:
             if print_progress:
                 print("  Reinitializing level set function...")
@@ -241,7 +292,7 @@ def topopt_levelset(feaMode,
     # Final solve
     mesh.setPseudoDensity(np.asarray(rho))
     sol = fe_solver.solve(rho, material_model)
-    obj, _ = compute_levelset_objective_and_gradient(feaMode, sol, rho, fe_solver, KE)
+    obj, _ = compute_compliance_and_sensitivity(feaMode, sol, rho, fe_solver, KE)
     
     history['objective'].append(obj)
     history['volfrac'].append(volCurr)
@@ -269,183 +320,94 @@ def topopt_levelset(feaMode,
     
     return sol, history, success, errorMsg, nFEAs
 
-
-def update_step(mesh, lsf, shapeSens, topSens, stepLength, topWeight,
-                elemsWithForces, elemsToKeep, H, Hs):
+def evolveUpWind(mesh, lsf, v, g, stepLength, topWeight):
     """
-    Design update step (Challis's updateStep function, lines 54-62).
-    
-    Performs:
-    1. Smooth sensitivities
-    2. Enforce boundary conditions
-    3. Evolve level set
-    4. Extract new structure
-    """
-    # 1. Smooth the sensitivities (Challis lines 55-56)
-    shapeSens_smooth = (H @ shapeSens) / Hs
-    topSens_smooth = (H @ topSens) / Hs
-    
-    # 2. Normalize sensitivities (not in Challis, but helps with arbitrary meshes)
-    max_shape = np.max(np.abs(shapeSens_smooth))
-    if max_shape > 1e-10:
-        shapeSens_smooth /= max_shape
-    
-    max_top = np.max(np.abs(topSens_smooth))
-    if max_top > 1e-10:
-        topSens_smooth /= max_top
-    
-    # 3. Load bearing elements must remain solid (Challis lines 58-59)
-    if elemsWithForces is not None and len(elemsWithForces) > 0:
-        shapeSens_smooth[elemsWithForces] = 0
-        topSens_smooth[elemsWithForces] = 0
-    
-    if elemsToKeep is not None and len(elemsToKeep) > 0:
-        shapeSens_smooth[elemsToKeep] = 0
-        topSens_smooth[elemsToKeep] = 0
-    
-    # 4. Design update via evolution (Challis line 61)
-    # [struc,lsf] = evolve(-shapeSens,topSens.*(lsf(2:end-1,2:end-1)<0),lsf,stepLength,topWeight);
-    rho, lsf = evolve(
-        mesh=mesh,
-        lsf=lsf,
-        v=-shapeSens_smooth,  # Velocity is negative of shape sensitivity
-        g=topSens_smooth,     # Topological sensitivity (masking happens in evolve)
-        stepLength=stepLength,
-        topWeight=topWeight
-    )
-    
-    return rho, lsf
-
-
-def evolve(mesh, lsf, v, g, stepLength, topWeight):
-    """
-    Evolution of level set function (Challis's evolve function, lines 64-85).
-    
+    Evolution of level set function.
     Implements Hamilton-Jacobi equation:
         ∂ψ/∂t = -v|∇ψ| - ω*g
     """
-    # Forcing term only in solid region (Challis line 61: topSens.*(lsf<0))
-    # Note: Challis masks at the call site, we mask here - equivalent
+    # Forcing term only in solid region 
     g_masked = g * (lsf < 0)
     
-    # CFL time step (Challis line 71: dt = 0.1/max(abs(v(:))))
+    # CFL time step 
     h = np.min(mesh.elem_size)
     max_v = np.abs(v).max()
     if max_v < 1e-10:
         rho = (lsf < 0).astype(float)
         return rho, lsf
     
-    dt = 0.1 * h / max_v
+    increment = 0.1
+    dt = increment * h / max_v
     
-    # Evolve for total time stepLength * CFL value (Challis line 73: for i = 1:(10*stepLength))
-    num_steps = int(10 * stepLength)
+    # Evolve for total time stepLength * CFL value 
+    num_steps = int( stepLength/increment)
     
-    lsf_new = lsf.copy()
-    for step in range(num_steps):
-        lsf_new = upwind_step_arbitrary_mesh(mesh, lsf_new, v, g_masked, dt, topWeight)
+    for _ in range(num_steps):
+        lsf = upwind_step(mesh, lsf, v, g_masked, dt, topWeight)
+  
     
-    # Extract new structure (Challis lines 84-85)
-    # strucFull = (lsf<0); struc = strucFull(2:end-1,2:end-1);
-    rho = (lsf_new < 0).astype(float)
-    
-    return rho, lsf_new
+    rho = (lsf < 0).astype(float)
+    return rho, lsf
 
 
-def upwind_step_arbitrary_mesh(mesh, lsf, v, g, dt, omega):
+def upwind_step(mesh, lsf, v, g, dt, omega):
     """
-    Single upwind time step for arbitrary hex mesh.
-    
+    Single upwind time step for arbitrary hex mesh (vectorized).
     Implements one time step of Hamilton-Jacobi equation.
-    Challis uses Godunov upwind on regular grid (lines 79-81).
-    We adapt this for arbitrary hex meshes.
     """
     num_elems = mesh.num_elems
-    lsf_new = lsf.copy()
-    eps = 1e-12
     
-    for e in range(num_elems):
-        # Get valid neighbors (excluding self and -1)
-        neighbors = mesh.elemNeighborsArray[e]
-        valid_neighbors = neighbors[(neighbors != -1) & (neighbors != e)]
-        
-        if len(valid_neighbors) == 0:
-            continue
-        
-        # Compute distances
-        elem_center = mesh.elem_centers[e]
-        neighbor_centers = mesh.elem_centers[valid_neighbors]
-        deltas = neighbor_centers - elem_center
-        distances = np.linalg.norm(deltas, axis=1)
-        
-        # Filter out zero distances
-        nonzero_mask = distances > eps
-        if not np.any(nonzero_mask):
-            continue
-        
-        valid_neighbors = valid_neighbors[nonzero_mask]
-        distances = distances[nonzero_mask]
-        
-        # Level set differences
-        lsf_diffs = lsf[valid_neighbors] - lsf[e]
-        
-        # Upwind scheme: compute gradient magnitude
-        # Challis lines 79-81 use separate terms for min(v,0) and max(v,0)
-        # We simplify for arbitrary meshes
-        if v[e] < 0:
-            # Shrinking: use forward differences
-            grads = np.maximum(lsf_diffs / distances, 0)
-        else:
-            # Expanding: use backward differences
-            grads = np.maximum(-lsf_diffs / distances, 0)
-        
-        grad_mag = np.sqrt(np.sum(grads**2))
-        
-        # Update level set (Challis line 81: lsf = lsf - dt*min(vFull,0)*... - dt*max(vFull,0)*... - w*dt*gFull)
-        lsf_new[e] = lsf[e] - dt * v[e] * grad_mag - omega * dt * g[e]
+    # Get all neighbor information at once
+    neighbors = mesh.elemNeighborsArray  # Shape: (num_elems, max_neighbors)
+    
+    # Create mask for valid neighbors (excluding self and -1)
+    valid_mask = (neighbors != -1) & (neighbors != np.arange(num_elems)[:, None])
+    
+    # Compute all element center differences
+    elem_centers = mesh.elem_centers  # Shape: (num_elems, 3)
+    
+    # Broadcast to get all neighbor centers: (num_elems, max_neighbors, 3)
+    neighbor_centers = np.where(
+        valid_mask[..., None],
+        elem_centers[np.where(neighbors >= 0, neighbors, 0)],
+        0
+    )
+    
+    # Compute deltas and distances
+    deltas = neighbor_centers - elem_centers[:, None, :]  # (num_elems, max_neighbors, 3)
+    distances = np.linalg.norm(deltas, axis=2)  # (num_elems, max_neighbors)
+    distances = np.where(valid_mask & (distances > 0), distances, 1)  # Avoid division by zero
+    
+    # Level set differences
+    lsf_neighbors = np.where(neighbors >= 0, lsf[neighbors], lsf[:, None])
+    lsf_diffs = lsf_neighbors - lsf[:, None]  # (num_elems, max_neighbors)
+    
+    # Upwind scheme
+    v_expanded = v[:, None]  # (num_elems, 1)
+
+    # Forward differences (shrinking, v < 0)
+    grads_forward = np.maximum(lsf_diffs / distances, 0)
+    
+    # Backward differences (expanding, v >= 0)
+    grads_backward = np.maximum(-lsf_diffs / distances, 0)
+    # Select based on velocity sign
+    grads = np.where(v_expanded < 0, grads_forward, grads_backward)
+    # Apply valid mask
+    grads = np.where(valid_mask, grads, 0)
+    # Compute gradient magnitude
+    grad_mag = np.sqrt(np.sum(grads**2, axis=1))  # (num_elems,)
+    # Update level set
+    lsf_new = lsf - dt * v * grad_mag - omega * dt * g
     
     return lsf_new
 
-
-def compute_levelset_objective_and_gradient(feaMode, sol, rho, fe_solver, KE):
-    """
-    Compute objective and shape sensitivity for level set optimization.
-    
-    Challis line 24: shapeSens(ely,elx) = -max(struc(ely,elx),0.0001)*Ue'*KE*Ue;
-    
-    Shape sensitivity is negative strain energy density (NO SIMP penalization).
-    """
-    if feaMode == FEA_MODE.STRUCTURAL:
-        dofMat = fe_solver.mesh.edofMatStructural
-    elif feaMode == FEA_MODE.THERMAL:
-        dofMat = fe_solver.mesh.edofMatThermal
-    else:
-        raise ValueError(f"Invalid FEA mode: {feaMode}")
-    
-    num_elems = fe_solver.mesh.num_elems
-    nRows = KE.shape[0]
-    
-    # Element strain energy: u_e^T * K_e * u_e
-    ce = (np.dot(sol[dofMat].reshape(num_elems, nRows), KE) * 
-          sol[dofMat].reshape(num_elems, nRows)).sum(1)
-    
-    # Small stiffness for void (Challis uses 0.0001)
-    rho_clipped = np.maximum(rho, 0.0001)
-    
-    # Shape sensitivity: -ρ * ce (no SIMP penalty!)
-    shapeSens = -rho_clipped * ce
-    
-    # Compliance (Challis line 28: objective(iterNum) = -sum(shapeSens(:)))
-    obj = np.sum(rho_clipped * ce)
-    
-    return obj, shapeSens
-    
 if __name__ == "__main__":    
 	
 	from topopt_structural_benchmarks import *
 	from topopt_thermal_benchmarks import *
 	
 	print("-" * 50)
-	to_problem = StructuralTOExamples.Mitchell_1 # Choose the TO problem
+	to_problem = StructuralTOExamples.CantileverMidLoad # Choose the TO problem
 	#to_problem = ThermalTOExamples.FourCornersThermal # Choose the TO problem
      
 	run_topopt_levelset(to_problem)
