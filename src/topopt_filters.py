@@ -88,34 +88,26 @@ def createXDerivativeFilter(mesh: hex_mesher.HexMesher) -> tuple[coo_matrix, np.
 				right_idx = valid_neighbors[right_mask][0]
 		
 		if left_idx != -1 and right_idx != -1:
-			# Use central difference: (f[right] - f[left]) / (2dx)
-			rows.append(i)
-			cols.append(left_idx)
-			data.append(-1.0 / (2 * dx))
+			# Central difference: df/dx ≈ (f[i+1] - f[i-1]) / (2*dx)
+			rows.extend([i, i])
+			cols.extend([left_idx, right_idx])
+			data.extend([-1.0 / (2.0 * dx), 1.0 / (2.0 * dx)])
 			
-			rows.append(i)
-			cols.append(right_idx)
-			data.append(1.0 / (2 * dx))
 		elif right_idx != -1:
-			# Forward difference: (f[right] - f[i]) / dx
-			rows.append(i)
-			cols.append(i)
-			data.append(-1.0 / dx)
+			# Forward difference: df/dx ≈ (f[i+1] - f[i]) / dx
+			rows.extend([i, i])
+			cols.extend([i, right_idx])
+			data.extend([-1.0 / dx, 1.0 / dx])
 			
-			rows.append(i)
-			cols.append(right_idx)
-			data.append(1.0 / dx)
 		elif left_idx != -1:
-			# Backward difference: (f[i] - f[left]) / dx
-			rows.append(i)
-			cols.append(left_idx)
-			data.append(-1.0 / dx)
+			# Backward difference: df/dx ≈ (f[i] - f[i-1]) / dx
+			rows.extend([i, i])
+			cols.extend([left_idx, i])
+			data.extend([-1.0 / dx, 1.0 / dx])
 			
-			rows.append(i)
-			cols.append(i)
-			data.append(1.0 / dx)
 		else:
-			# No neighbor found in the x direction; set derivative to zero.
+			# No x-direction neighbors found; derivative is zero
+			# This can occur at isolated elements or for certain boundary conditions
 			rows.append(i)
 			cols.append(i)
 			data.append(0.0)

@@ -135,7 +135,7 @@ def topopt_mma(feaMode: FEA_MODE, fe_structural_solver, fe_thermal_solver,
                             constraint_tol: float = 1.e-4,
                             print_progress: bool = True,
                             plot_progress: bool = False,
-                            use_continuation: bool = True,
+                            use_continuation: bool = False,
                             binarize_topology: bool = True,   
                             progress_callback=None, 
                             plotter=None  
@@ -167,6 +167,8 @@ def topopt_mma(feaMode: FEA_MODE, fe_structural_solver, fe_thermal_solver,
         mesh = fe_structural_solver.mesh
         mat_prop = fe_structural_solver.mat_prop
         nDOFPerNode = 3
+        if (not use_continuation):
+            print("Continuation is recommended for thermo-structural problems.")
     else:
         raise ValueError("Either fe_structural_solver or fe_thermal_solver must be provided.")
 
@@ -403,7 +405,7 @@ if __name__ == "__main__":
     print("-" * 50)
 
     # Choose the TO problem
-    to_problem = StructuralTOExamples.LBracketMidLoad 
+    to_problem = StructuralTOExamples.Bridge 
     #to_problem = ThermalTOExamples.FourCornersThermal
     #to_problem = ThermoStructuralTOExamples.MBBBeam
 

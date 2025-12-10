@@ -309,12 +309,12 @@ class HexThermalFEA:
                                        save_path=save_path, annotate_max_min = annotate_max_min)
 
 #################################################################
-  def plot_mesh(self, title = None,plot_bc = True,auto_close = True, save_path=None, plotter=None):
+  def plot_mesh(self, title = None,plot_bc = True,auto_close = True, save_path=None, camera_position = None, plotter=None):
     
     if (title is None):
       title = f'DOF: {self.mesh.num_nodes}'
     return self.plotter.plot_mesh_thermal(self.bc, title = title,plot_bc = plot_bc,
-                auto_close = auto_close, save_path=save_path, plotter=plotter)
+                auto_close = auto_close, save_path=save_path, camera_position = camera_position, plotter=plotter)
 
 #################################################################
   def plot_pseudo_density(self,

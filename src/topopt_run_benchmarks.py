@@ -30,6 +30,8 @@ def runTOMethodOnBenchmarks(optimizationMethod):
 							StructuralTOExamples.MBBBeam,
 							StructuralTOExamples.LBracketTopLoad, 
 							StructuralTOExamples.LBracketMidLoad,
+							StructuralTOExamples.TorquePlate,
+							StructuralTOExamples.Bridge,
 							StructuralTOExamples.TwoBar, 
 							StructuralTOExamples.DistributedLoad,
 							StructuralTOExamples.ThreeHoleBracket,]
@@ -70,7 +72,7 @@ def runTOMethodOnBenchmarks(optimizationMethod):
 					benchmarks_bodyforce_problems + \
 					benchmarks_thermostructural_problems
 	
-	for to_problem in benchmarks_2_5D_problems:
+	for to_problem in  benchmarks_2_5D_thermal_problems:
 		if to_problem in benchmarks_2_5D_problems:
 			subFolder = "Structural-Compliance2.5D"
 		elif to_problem in benchmarks_2_5D_thermal_problems:
@@ -414,7 +416,7 @@ def combine_results():
 if __name__ == "__main__":    
 	
 	optimizationMethods = [TO_METHODS.DENSITYMMA, TO_METHODS.DENSITYOCM,TO_METHODS.PARETO]
-	for optimizationMethod in [TO_METHODS.LEVELSET]:
+	for optimizationMethod in optimizationMethods:
 		runTOMethodOnBenchmarks(optimizationMethod)
 		print("-" * 50)
 		print(f"Finished {optimizationMethod.name} tests.")

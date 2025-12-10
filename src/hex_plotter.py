@@ -186,7 +186,7 @@ class HexFEAPlotter:
         self.camera_position = plotter.camera_position
     
     def plot_mesh_thermal(self, bc, title=None, plot_bc=True,
-                         auto_close=True, save_path=None, plotter=None):
+                         auto_close=True, save_path=None, camera_position = None, plotter=None):
         """Plot thermal mesh with boundary conditions."""
         external_plotter = plotter is not None
         if plotter is None:
@@ -225,6 +225,8 @@ class HexFEAPlotter:
             plotter.camera_position = self.camera_position
         else:
             plotter.camera_position = 'xy'
+        if camera_position is not None:
+            plotter.camera_position = camera_position
         if not external_plotter and (not hasattr(plotter, 'axes_actor') or plotter.axes_actor is None):
             plotter.add_axes()
         

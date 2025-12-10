@@ -369,6 +369,7 @@ class HexMesher:
 		for elem in range(self.num_elems):
 			neighbors = set()
 			# Get all nodes of this element
+			
 			for node in self.elemArray[elem]:
 				# Add all elements connected to this node
 				neighbors.update(node_to_elems[node])
@@ -785,90 +786,141 @@ class HexMesher:
 		
 		return nodes_on_plane
 	
-	def compute_signed_distance_function(self, density_field: np.ndarray =None, 
-									  distance_type: DISTANCE_TYPE = DISTANCE_TYPE.DISTANCE_3D) -> np.ndarray:
-		"""Compute the signed distance function for each element to the boundary face/edge.
+	def compute_signed_distance_function(self, density_field: np.ndarray = None, 
+                                     distance_type: DISTANCE_TYPE = DISTANCE_TYPE.DISTANCE_3D) -> np.ndarray:
+		"""Compute the signed distance function for each element to the boundary.
+		
+		The boundary is determined based on the distance type:
+		- DISTANCE_3D: All mesh boundaries (full 3D)
+		- DISTANCE_XY: XY perimeter (boundaries in X and Y directions)
+		- DISTANCE_XZ: XZ perimeter (boundaries in X and Z directions)
+		- DISTANCE_YZ: YZ perimeter (boundaries in Y and Z directions)
 		
 		Args:
 			density_field: Array of shape (num_elems,) with 0 for outside and 1 for inside.
+			distance_type: Type of distance metric to use.
 			
 		Returns:
-			np.ndarray: Signed distance function for each element.
+			np.ndarray: Signed distance function for each element, normalized by element size.
+			
+		References:
+			Osher, S., & Fedkiw, R. (2003). Level Set Methods and Dynamic Implicit Surfaces. 
+			Springer.
 		"""
-		# Ensure density_field matches the number of elements
 		if density_field is None:
 			density_field = self.elemPseudoDensity
 		if len(density_field) != self.num_elems:
 			raise ValueError("Density field size must match the number of elements.")
-		 # Create a 3D grid of element centers
+		
 		elem_centers = self.elem_centers
-
-		# Convert density field to a 3D grid matching the mesh structure
-		# We'll use a fast method based on distance transforms
-
-		# First, convert neighbors array to a more useful form for fast lookups
-		elem_neighbors = {i: self.elemNeighborsArray[i][self.elemNeighborsArray[i] != -1] 
-						 for i in range(self.num_elems)}
-
+		elem_size = self.elem_size[0]  # Assuming uniform element size
+		
 		# Initialize SDF
 		sdf = np.zeros(self.num_elems)
-
-		# Identify boundary elements (elements with both 0 and 1 density neighbors)
+		
+		# Identify boundary elements based on distance type
 		boundary_elems = []
-
-		for i in range(self.num_elems):
-			# Check if the element is inside the shape and has outside neighbors
-			if density_field[i] == 1:
-				neighbors = elem_neighbors[i]
-				if any(density_field[n] == 0 for n in neighbors):
-					boundary_elems.append(i)
-			
-				# Add elements at the mesh boundary (with -1 as neighbors)
-				if any(self.elemNeighborsArray[i] == -1):
-					boundary_elems.append(i)
-			
-
-		# Remove duplicates
-		boundary_elems = list(set(boundary_elems))
-		# If no boundary elements are found, return zeros
-		if not boundary_elems:
-			print("Warning: No boundary elements found. Returning zero SDF.")
-			return sdf
-
-		# Compute distances from each element to the nearest boundary element
-
-		# Calculate distances from all element centers to all boundary element centers
-		if distance_type == DISTANCE_TYPE.DISTANCE_3D:
-			# Use full 3D distance metric
-			distances = np.linalg.norm(elem_centers[:, np.newaxis, :] - elem_centers[boundary_elems], axis=2)
-		elif distance_type == DISTANCE_TYPE.DISTANCE_XY:	
-			# Use XY distance metric (ignore Z distance)
-			distances = np.linalg.norm(elem_centers[:, np.newaxis, :2] - elem_centers[boundary_elems][:, :2], axis=2)
+		
+		# Define which coordinate indices to check based on distance type
+		if distance_type == DISTANCE_TYPE.DISTANCE_XY:
+			coord_indices = [0, 1]  # X and Y
 		elif distance_type == DISTANCE_TYPE.DISTANCE_XZ:
-			# Use XZ distance metric (ignore Y distance)
-			distances = np.linalg.norm(elem_centers[:, np.newaxis, ::2] - elem_centers[boundary_elems][:, ::2], axis=2)
+			coord_indices = [0, 2]  # X and Z
 		elif distance_type == DISTANCE_TYPE.DISTANCE_YZ:
-			# Use YZ distance metric (ignore X distance)
-			distances = np.linalg.norm(elem_centers[:, np.newaxis, 1:] - elem_centers[boundary_elems][:, 1:], axis=2)
+			coord_indices = [1, 2]  # Y and Z
+		elif distance_type == DISTANCE_TYPE.DISTANCE_3D:
+			coord_indices = [0, 1, 2]  # X, Y, and Z
 		else:
 			raise ValueError("Invalid distance type specified.")
 		
-		# Find the minimum distance for each element
+		# Boundary detection
+		for i in range(self.num_elems):
+			neighbors_full = self.elemNeighborsArray[i]
+			valid_neighbors = neighbors_full[neighbors_full != -1]
+			
+			# Check for material interface (density transition)
+			if len(valid_neighbors) > 0:
+				neighbor_densities = density_field[valid_neighbors]
+				if np.any(neighbor_densities != density_field[i]):
+					boundary_elems.append(i)
+					continue
+			
+			# Check for boundary in the relevant coordinate directions
+			if distance_type == DISTANCE_TYPE.DISTANCE_3D:
+				# For 3D, any missing neighbor indicates boundary
+				if np.any(neighbors_full == -1):
+					boundary_elems.append(i)
+			else:
+				# For planar distances, check neighbors in specific directions
+				if len(valid_neighbors) > 0:
+					my_coords = elem_centers[i, coord_indices]
+					neighbor_coords = elem_centers[valid_neighbors][:, coord_indices]
+					
+					# Check for missing neighbors in each direction
+					is_boundary = False
+					for dim_idx, coord_idx in enumerate(coord_indices):
+						neighbor_vals = neighbor_coords[:, dim_idx]
+						my_val = my_coords[dim_idx]
+						
+						# Check if we have neighbors in both negative and positive directions
+						has_minus = np.any(neighbor_vals < my_val - 0.5 * elem_size)
+						has_plus = np.any(neighbor_vals > my_val + 0.5 * elem_size)
+						
+						# If missing neighbor in either direction, it's a boundary
+						if not (has_minus and has_plus):
+							is_boundary = True
+							break
+					
+					if is_boundary:
+						boundary_elems.append(i)
+				else:
+					# No valid neighbors at all - definitely a boundary
+					boundary_elems.append(i)
+		
+		# Remove duplicates
+		boundary_elems = list(set(boundary_elems))
+		
+		if not boundary_elems:
+			print("Warning: No boundary elements found. Returning zero SDF.")
+			return sdf
+		
+		# Compute distances based on the distance type
+		if distance_type == DISTANCE_TYPE.DISTANCE_3D:
+			# Full 3D Euclidean distance
+			distances = np.linalg.norm(
+				elem_centers[:, np.newaxis, :] - elem_centers[boundary_elems], 
+				axis=2
+			)
+		elif distance_type == DISTANCE_TYPE.DISTANCE_XY:
+			# XY-plane distance (ignore Z)
+			distances = np.linalg.norm(
+				elem_centers[:, np.newaxis, :2] - elem_centers[boundary_elems][:, :2], 
+				axis=2
+			)
+		elif distance_type == DISTANCE_TYPE.DISTANCE_XZ:
+			# XZ-plane distance (ignore Y)
+			distances = np.linalg.norm(
+				elem_centers[:, np.newaxis, ::2] - elem_centers[boundary_elems][:, ::2], 
+				axis=2
+			)
+		elif distance_type == DISTANCE_TYPE.DISTANCE_YZ:
+			# YZ-plane distance (ignore X)
+			distances = np.linalg.norm(
+				elem_centers[:, np.newaxis, 1:] - elem_centers[boundary_elems][:, 1:], 
+				axis=2
+			)
+		
+		# Find minimum distance for each element
 		min_distances = np.min(distances, axis=1)
 		
-		# Handle potential inf values and assign appropriate sign
-		correction = 0.5 * self.elem_size[0]
-		sdf = np.where(density_field == 1, -min_distances - correction, min_distances + correction)
+		# Assign sign: negative inside (density=1), positive outside (density=0)
+		sdf = np.where(density_field == 1, -min_distances, min_distances)
 		
-		# Replace inf values with 0 (if no boundary elements exist)
-		sdf[np.isinf(min_distances)] = 0
-
-		# Normalize SDF by element size for better scaling
+		# Normalize by average element size for dimensionless representation
 		avg_elem_size = np.mean(self.elem_size)
 		sdf /= avg_elem_size
-
+		
 		return sdf
-	
 	def createEdofMatStructural(self):
 		self.dofs_per_node = 3 # structural
 		self.edofMatStructural = np.zeros((self.num_elems, 24), dtype = int)

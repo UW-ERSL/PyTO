@@ -113,7 +113,7 @@ def topopt_optimality_criteria(
 							plot_progress: bool = False,
 							debug: bool = False,
 							binarize_topology: bool = True,
-							use_continuation: bool = True,
+							use_continuation: bool = False,
 							progress_callback=None, 
                             plotter=None  
 							) -> tuple[np.ndarray, dict]:
