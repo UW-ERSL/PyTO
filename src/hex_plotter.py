@@ -730,7 +730,7 @@ class HexFEAPlotter:
                 self._rt_plotter_initialized = False
             plotter = self._rt_plotter
             use_external = False
-        
+
 
         # Create mesh representation
         cells = self.mesh.elemArray.shape[0]
@@ -758,7 +758,9 @@ class HexFEAPlotter:
             line_width=1,
             clim=[0, 1]  # Fix colormap range
         )
-        
+        if (iteration == 0):
+            plotter.camera_position = "xy"
+            plotter.reset_camera_clipping_range()
         # Add title text
         plotter.add_text(
             title, 
@@ -782,6 +784,7 @@ class HexFEAPlotter:
             # Process Qt events for standalone BackgroundPlotter
             if hasattr(self, '_qt_app'):
                 self._qt_app.processEvents()
+            
             
  
     def save_pseudo_density_snapshot(self, filename, title='Pseudo density'):

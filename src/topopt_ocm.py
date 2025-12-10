@@ -130,6 +130,16 @@ def topopt_optimality_criteria(
 	Returns: A tuple containing the displacement field of the optimized structure
 		and a dictionary containing the optimization history.
 	"""
+	objectiveType = to_params.Objective[0]
+	if objectiveType != TO_QOI.COMPLIANCE:
+		raise ValueError(f"Unsupported objective type: {objectiveType}")
+    # Extract volume constraint
+	constraintType = to_params.Constraints[0][0]
+	if constraintType == TO_QOI.VOLUME_FRACTION:
+		volFractionConstraint = to_params.Constraints[0][2]
+	else:
+		raise ValueError(f"Unsupported constraint type: {constraintType}")
+
 	def log_message(msg): # This is a helper function to log messages in GUI or console
 		if progress_callback:
 			progress_callback(str(msg))
@@ -196,7 +206,7 @@ def topopt_optimality_criteria(
 		initialize_SIMP_STRUCTURAL_PENALTY(1)
 	else:
 		initialize_SIMP_STRUCTURAL_PENALTY(3)  
-	for iter in range(maxIterations):
+	for iteration in range(maxIterations):
 		x = np.array(x)
 		fe_solver.mesh.setPseudoDensity(x)
 		if progress_callback is not None:
@@ -204,7 +214,8 @@ def topopt_optimality_criteria(
 	
 		if (plot_progress):
 			fe_solver.plot_pseudo_density_realtime(
-                   title=f"Iter {iter + 1}",
+                   title=f"iteration {iteration}",
+				   iteration = iteration,
                    external_plotter=plotter  # Pass GUI plotter if available
                )
         
@@ -270,7 +281,7 @@ def topopt_optimality_criteria(
 		fraction_grey = (grey_elements / num_elems) 
 
 		if (print_progress):
-			log_message(f"Iteration: {iter+1:d}, obj.: {(obj*objScaling):.3g}, "
+			log_message(f"Iteration: {iteration:d}, obj.: {(obj*objScaling):.3g}, "
 				  	f"vol.: {np.mean(xPhys):.3g}, grey: {fraction_grey:.3f}")
 		if np.isnan(obj):
 			log_message("Objective function became NaN. Exiting optimization.")
@@ -289,10 +300,10 @@ def topopt_optimality_criteria(
 			if (dJ < rel_conv_tol) and (volConstraint < rel_conv_tol) and (change < move_tol): # success
 				log_message("OC optimization converged.")
 				break
-		if (use_continuation) and (iter % 10 == 0):
+		if (use_continuation) and (iteration % 10 == 0):
 			increment_SIMP_THERMAL_PENALTY(0.5)
 			increment_SIMP_STRUCTURAL_PENALTY(0.5)
-	if iter == maxIterations - 1:
+	if iteration == maxIterations - 1:
 		errorMsg = "Maximum iterations reached"
 		log_message(errorMsg)
 		success = False
@@ -326,7 +337,7 @@ def topopt_optimality_criteria(
 		errorMsg =  f"vf {volFractionConstraint:0.3f} not reached"
 		success = False
 
-	nFEAs = iter + 1
+	nFEAs = iteration + 1
 	log_message(f"Final objective: {obj:.4g}, vf: {np.mean(x):.3f}")
 	log_message(f"Total Time: {totalTime:.2f} s")
 	log_message(f"Error: {errorMsg}")

@@ -234,6 +234,15 @@ def topopt_pareto(feaMode,fe_solver,
 	Returns: A tuple containing the displacement field of the optimized structure
 		and a dictionary containing the optimization history.
 	"""
+	objectiveType = to_params.Objective[0]
+	if objectiveType != TO_QOI.COMPLIANCE:
+		raise ValueError(f"Unsupported objective type: {objectiveType}")
+    # Extract volume constraint
+	constraintType = to_params.Constraints[0][0]
+	if constraintType == TO_QOI.VOLUME_FRACTION:
+		volFractionConstraint = to_params.Constraints[0][2]
+	else:
+		raise ValueError(f"Unsupported constraint type: {constraintType}")
 	def log_message(msg): # This is a helper function to log messages in GUI or console
 		if progress_callback:
 			progress_callback(str(msg))
@@ -247,7 +256,7 @@ def topopt_pareto(feaMode,fe_solver,
 	if fe_solver.elem_body_force is not None and (np.linalg.norm(fe_solver.elem_body_force) > 0) and not removeHangingElems:
 		removeHangingElems = True #For body forces, must remove hanging elements in Pareto
 
-	totalIter = 1
+
 
 	# Initialize design field
 	x = np.ones((fe_solver.mesh.num_elems))
@@ -316,9 +325,9 @@ def topopt_pareto(feaMode,fe_solver,
 	if (to_params.ElemsToKeep is not None):
 		T[to_params.ElemsToKeep] = np.max(T)
 	T = (H * T) / Hs
-
+	iteration = 0
 	if (print_progress):
-		log_message(f"Iteration: {totalIter}, vf={history['volfrac'][-1]:.3f}, obj={history['objective'][-1]:.3g},  #FEA={nFEAs:2d}")
+		log_message(f"Iteration: {iteration}, vf={history['volfrac'][-1]:.3f}, obj={history['objective'][-1]:.3g},  #FEA={nFEAs:2d}")
 	vol_decr = vol_decr_max
 
 	success = True
@@ -340,7 +349,8 @@ def topopt_pareto(feaMode,fe_solver,
 			progress_callback()
 		if (plot_progress):
 			fe_solver.plot_pseudo_density_realtime(
-                   title=f"Iter {totalIter + 1}",
+                   title=f"Iter {iteration}",
+				   iteration=iteration,
                    external_plotter=plotter  # Pass GUI plotter if available
                )
 		# Move to next volume fraction
@@ -435,7 +445,7 @@ def topopt_pareto(feaMode,fe_solver,
 				T[to_params.ElemsToKeep] = np.max(T)
 
 			localIter += 1
-			totalIter += 1
+			iteration += 1
 
 
 		if terminatePareto:
@@ -463,7 +473,7 @@ def topopt_pareto(feaMode,fe_solver,
 			scale = (compliance / compliance0)**2
 			vol_decr = max(vol_decr_min,min(vol_decr,vol_decr_max/scale)) # Reduce volume increment for steep increase in compliance
 			if (print_progress):
-				log_message(f"Iteration: {totalIter}, vf={history['volfrac'][-1]:.3f}, obj={history['objective'][-1]:.3g},  #FEA={nFEAs:2d}")
+				log_message(f"Iteration: {iteration}, vf={history['volfrac'][-1]:.3f}, obj={history['objective'][-1]:.3g},  #FEA={nFEAs:2d}")
 			fe_solver.mesh.setPseudoDensity(x.flatten())
 		
 
@@ -480,7 +490,7 @@ if __name__ == "__main__":
 	from topopt_thermal_benchmarks import *
 	
 	print("-" * 50)
-	to_problem = StructuralTOExamples.EdgeCantilever # Choose the TO problem
+	to_problem = StructuralTOExamples.MBBBeam # Choose the TO problem
 	#to_problem = ThermalTOExamples.FourCornersThermal # Choose the TO problem
 
 	if (to_problem in StructuralTOExamples):

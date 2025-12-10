@@ -91,7 +91,7 @@ def run_topopt_mma(to_problem):
                                                     to_params = to_params,
                                                     plot_progress= plot_progress,
                                                     print_progress= print_progress,
-                                                    maxMMAIterations= to_params.MaxIterations,)
+                                                    maxiteration= to_params.MaxIterations,)
     timeTaken = time.time() - startTime
     
 
@@ -127,7 +127,7 @@ def run_topopt_mma(to_problem):
 
 def topopt_mma(feaMode: FEA_MODE, fe_structural_solver, fe_thermal_solver, 
                            to_params,
-                            maxMMAIterations: int = 150, 
+                            maxiteration: int = 150, 
                             timeLimitSecs: float = 36000, #10 hour
                             move_limit: float = 0.05,
                             kkt_tol: float = 1.e-6,
@@ -209,7 +209,7 @@ def topopt_mma(feaMode: FEA_MODE, fe_structural_solver, fe_thermal_solver,
     errorMsg = "No errors."
     nFEAs = 0
     obj0 = None
-    mmaIterations = 0
+    iteration = 0
     
     if (use_continuation):
         initialize_SIMP_STRUCTURAL_PENALTY(1.5)
@@ -218,7 +218,7 @@ def topopt_mma(feaMode: FEA_MODE, fe_structural_solver, fe_thermal_solver,
         initialize_SIMP_STRUCTURAL_PENALTY(3)   
         initialize_SIMP_THERMAL_PENALTY(1)
     def optimizationFunction(x):
-        nonlocal nFEAs, obj0,mmaIterations
+        nonlocal nFEAs, obj0,iteration
         x = np.asarray(x).flatten()
         grey_elements = np.sum((x > 0.1) & (x < 0.9))
         fraction_grey = (grey_elements / num_elems)
@@ -233,7 +233,8 @@ def topopt_mma(feaMode: FEA_MODE, fe_structural_solver, fe_thermal_solver,
             progress_callback()
         if (plot_progress):
            fe_solver.plot_pseudo_density_realtime(
-                   title=f"Iter {mmaIterations + 1}",
+                   title=f"Iter {iteration}",
+                    iteration = iteration,
                    external_plotter=plotter  # Pass GUI plotter if available
                )
         
@@ -296,7 +297,7 @@ def topopt_mma(feaMode: FEA_MODE, fe_structural_solver, fe_thermal_solver,
         if (print_progress):
             # Build combined message
             msg_lines = ['-' * 50]
-            msg_lines.append(f"Iteration: {mmaIterations}")
+            msg_lines.append(f"Iteration: {iteration}")
             msg_lines.append(f"Min. Objective ({objective_name}): {obj*obj0:.3g}")
             
             inequality = '<='
@@ -307,9 +308,9 @@ def topopt_mma(feaMode: FEA_MODE, fe_structural_solver, fe_thermal_solver,
             log_message(status_msg)
             
             
-        mmaIterations += 1
+        iteration += 1
         nFEAs += 1
-        if (use_continuation) and (mmaIterations % 10 == 0):
+        if (use_continuation) and (iteration % 10 == 0):
             increment_SIMP_THERMAL_PENALTY(0.25)
             increment_SIMP_STRUCTURAL_PENALTY(0.25)
 
@@ -335,7 +336,7 @@ def topopt_mma(feaMode: FEA_MODE, fe_structural_solver, fe_thermal_solver,
     if (print_progress):
         log_message("Calling MMA ...")
     [xOptimal,f0val, df0dx, gval, dgdx,nFEAs] = runMMA(nVariables,nConstraints,optimizationFunction,x0,lowerBound,
-			 upperBound, maxIterations = maxMMAIterations,timeLimitSecs= timeLimitSecs, move_limit = move_limit,
+			 upperBound, maxIterations = maxiteration,timeLimitSecs= timeLimitSecs, move_limit = move_limit,
              fTolerance= objective_tol,gTolerance= constraint_tol,kktTol = kkt_tol, verbose = False, 
              progress_callback= progress_callback)
     

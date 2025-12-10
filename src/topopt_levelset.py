@@ -131,7 +131,7 @@ def topopt_levelset(feaMode,
                     to_params,
                     maxIterations: int = 250,
                     stepLength: int = 3,
-                    numReinit: int = 10,
+                    numReinit: int = 5,
                     topWeight: float = 100,
                     objective_tol: float = 1.e-3,
                     constraint_tol: float = 1.e-2,
@@ -157,6 +157,9 @@ def topopt_levelset(feaMode,
     material_model = MaterialModel.SIMP  # Not really used since rho is 0/1
     mesh = fe_solver.mesh
     
+    objectiveType = to_params.Objective[0]
+    if objectiveType != TO_QOI.COMPLIANCE:
+        raise ValueError(f"Unsupported objective type: {objectiveType}")
     # Extract volume constraint
     constraintType = to_params.Constraints[0][0]
     if constraintType == TO_QOI.VOLUME_FRACTION:
@@ -202,18 +205,17 @@ def topopt_levelset(feaMode,
         
         if plot_progress:
             fe_solver.plot_pseudo_density_realtime(
-                title=f"Iter {iteration + 1}",
+                title=f"Iter {iteration }",
+                iteration = iteration,
                 external_plotter=plotter
             )
-        
+        #input("Press Enter to continue...")
         sol = fe_solver.solve(rho, material_model)
         fe_solver.postprocess()
         obj, shapeSens = compute_compliance_and_sensitivity(feaMode, sol, rho, fe_solver, KE)
 
         T = compute_topological_sensitivity(fe_solver)
         topSens = rho * T # zero out void elements 
-        print(f"Max shapeSens: {np.max(shapeSens):.3g}, Min shapeSens: {np.min(shapeSens):.3g}")
-        print(f"Max topSens: {np.max(topSens):.3g}, Min topSens: {np.min(topSens):.3g}")
 
         # Scaling of sensitivities; this will alow us to set stepLength and topWeight independent of problem scale
         if iteration == 0:
@@ -223,7 +225,10 @@ def topopt_levelset(feaMode,
 
         shapeSens = shapeSens / sensitivityScaling
         topSens = topSens / sensitivityScaling
- 
+        # Print max and min of shapeSens
+        print(f"  Shape sensitivity: min: {np.min(shapeSens):.3e}, max: {np.max(shapeSens):.3e}")
+        print(f"  Topological sensitivity: min: {np.min(topSens):.3e}, max: {np.max(topSens):.3e}")
+
         # 3. Load bearing elements must remain solid 
         if elemsWithForces is not None and len(elemsWithForces) > 0:
             shapeSens[elemsWithForces] = min(shapeSens)
@@ -240,7 +245,7 @@ def topopt_levelset(feaMode,
         if print_progress:
             objective_name = getattr(to_params.Objective[0], 'name', str(to_params.Objective[0]))
             print('-' * 50)
-            print(f"Iteration: {iteration + 1}")
+            print(f"Iteration: {iteration}")
             print(f"Objective ({objective_name}): {obj:.3g}")
             print(f"Volume fraction: {volCurr:.3f} (target: {volFractionConstraint:.3f})")
         
@@ -265,11 +270,13 @@ def topopt_levelset(feaMode,
         shapeSens = shapeSens - lambda_lag + (1 / Lambda) * (volCurr - volFractionConstraint)
         topSens = topSens + 4*np.pi/3*(lambda_lag - (1 / Lambda) * (volCurr - volFractionConstraint))
 
-
+        print(f"  Shape sensitivity: min: {np.min(shapeSens):.3e}, max: {np.max(shapeSens):.3e}")
+        print(f"  Topological sensitivity: min: {np.min(topSens):.3e}, max: {np.max(topSens):.3e}")
+        #input("Press Enter to continue...")
         # 1. Smooth the sensitivities 
         shapeSens_smooth = (H @ shapeSens) / Hs
         topSens_smooth = (H @ topSens) / Hs
-
+        
   
         # 4. Design update via evolution 
         rho, lsf = evolveUpWind(
@@ -338,10 +345,10 @@ def evolveUpWind(mesh, lsf, v, g, stepLength, topWeight):
     
     increment = 0.1
     dt = increment * h / max_v
-    
+ 
     # Evolve for total time stepLength * CFL value 
     num_steps = int( stepLength/increment)
-    
+
     for _ in range(num_steps):
         lsf = upwind_step(mesh, lsf, v, g_masked, dt, topWeight)
   
@@ -350,7 +357,7 @@ def evolveUpWind(mesh, lsf, v, g, stepLength, topWeight):
     return rho, lsf
 
 
-def upwind_step(mesh, lsf, v, g, dt, omega):
+def upwind_step(mesh, lsf, v, g, dt, topWeight):
     """
     Single upwind time step for arbitrary hex mesh (vectorized).
     Implements one time step of Hamilton-Jacobi equation.
@@ -376,14 +383,16 @@ def upwind_step(mesh, lsf, v, g, dt, omega):
     # Compute deltas and distances
     deltas = neighbor_centers - elem_centers[:, None, :]  # (num_elems, max_neighbors, 3)
     distances = np.linalg.norm(deltas, axis=2)  # (num_elems, max_neighbors)
+
     distances = np.where(valid_mask & (distances > 0), distances, 1)  # Avoid division by zero
     
+
+    # Upwind scheme
+    v_expanded = v[:, None]  # (num_elems, 1)
+
     # Level set differences
     lsf_neighbors = np.where(neighbors >= 0, lsf[neighbors], lsf[:, None])
     lsf_diffs = lsf_neighbors - lsf[:, None]  # (num_elems, max_neighbors)
-    
-    # Upwind scheme
-    v_expanded = v[:, None]  # (num_elems, 1)
 
     # Forward differences (shrinking, v < 0)
     grads_forward = np.maximum(lsf_diffs / distances, 0)
@@ -397,7 +406,8 @@ def upwind_step(mesh, lsf, v, g, dt, omega):
     # Compute gradient magnitude
     grad_mag = np.sqrt(np.sum(grads**2, axis=1))  # (num_elems,)
     # Update level set
-    lsf_new = lsf - dt * v * grad_mag - omega * dt * g
+
+    lsf_new = lsf - dt * v * grad_mag - topWeight * dt * g
     
     return lsf_new
 
@@ -407,7 +417,7 @@ if __name__ == "__main__":
 	from topopt_thermal_benchmarks import *
 	
 	print("-" * 50)
-	to_problem = StructuralTOExamples.CantileverMidLoad # Choose the TO problem
+	to_problem = StructuralTOExamples.MBBBeam # Choose the TO problem
 	#to_problem = ThermalTOExamples.FourCornersThermal # Choose the TO problem
      
 	run_topopt_levelset(to_problem)
