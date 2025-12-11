@@ -132,7 +132,7 @@ def topopt_levelset(feaMode,
                     maxIterations: int = 250,
                     stepLength: int = 3,
                     numReinit: int = 5,
-                    topWeight: float = 100,
+                    topWeight: float = 200,
                     objective_tol: float = 0.01,
                     constraint_tol: float = 0.01,
                     plot_progress: bool = False,
@@ -199,6 +199,22 @@ def topopt_levelset(feaMode,
     success = True
     errorMsg = "No errors."
     
+    # Check one element's neighbors
+    elem_id = 4534  # Middle element
+    elem_center = mesh.elem_centers[elem_id]
+    neighbors = mesh.elemNeighborsArray[elem_id]
+
+    print(f"Element {elem_id} center: {elem_center}")
+    print(f"Number of neighbors: {np.sum(neighbors >= 0)}")
+
+    for i, n in enumerate(neighbors):
+        if n >= 0:
+            neighbor_center = mesh.elem_centers[n]
+            delta = neighbor_center - elem_center
+            dist = np.linalg.norm(delta)
+            print(f"Neighbor {i:2d}: delta={delta}, dist={dist:.4f}")
+
+    input("Press Enter to continue...")
     # Main optimization loop 
     for iteration in range(maxIterations):
         mesh.setPseudoDensity(np.asarray(rho))
@@ -259,7 +275,7 @@ def topopt_levelset(feaMode,
         if iteration == 0:
             lambda_lag = -0.01
             Lambda = 2000.0
-            alpha = 0.95
+            alpha = 0.9
         else:
             lambda_lag = lambda_lag - (1 / Lambda) * (volCurr - volFractionConstraint)
             Lambda = alpha * Lambda
@@ -360,50 +376,54 @@ def upwind_step(mesh, lsf, v, g, dt, topWeight):
     Implements one time step of Hamilton-Jacobi equation.
     """
     num_elems = mesh.num_elems
+    eps = 1e-12
     
     # Get all neighbor information at once
     neighbors = mesh.elemNeighborsArray  # Shape: (num_elems, max_neighbors)
     
     # Create mask for valid neighbors (excluding self and -1)
-    valid_mask = (neighbors != -1) & (neighbors != np.arange(num_elems)[:, None])
+    elem_indices = np.arange(num_elems)[:, None]  # Shape: (num_elems, 1)
+    valid_mask = (neighbors != -1) & (neighbors != elem_indices)
     
     # Compute all element center differences
     elem_centers = mesh.elem_centers  # Shape: (num_elems, 3)
     
-    # Broadcast to get all neighbor centers: (num_elems, max_neighbors, 3)
-    neighbor_centers = np.where(
-        valid_mask[..., None],
-        elem_centers[np.where(neighbors >= 0, neighbors, 0)],
-        0
-    )
+    # Get neighbor centers (invalid neighbors point to element 0, will be masked)
+    neighbor_indices = np.where(neighbors >= 0, neighbors, 0)
+    neighbor_centers = elem_centers[neighbor_indices]  # Shape: (num_elems, max_neighbors, 3)
     
     # Compute deltas and distances
     deltas = neighbor_centers - elem_centers[:, None, :]  # (num_elems, max_neighbors, 3)
     distances = np.linalg.norm(deltas, axis=2)  # (num_elems, max_neighbors)
-
-    distances = np.where(valid_mask & (distances > 0), distances, 1)  # Avoid division by zero
     
-
-    # Upwind scheme
-    v_expanded = v[:, None]  # (num_elems, 1)
-
-    # Level set differences
-    lsf_neighbors = np.where(neighbors >= 0, lsf[neighbors], lsf[:, None])
+    # Update valid_mask to exclude zero/near-zero distances
+    valid_mask = valid_mask & (distances > eps)
+    
+    # Set invalid distances to 1 to avoid division by zero (will be masked out)
+    distances = np.where(valid_mask, distances, 1.0)
+    
+    # Get level set values at neighbors
+    lsf_neighbors = lsf[neighbor_indices]  # Shape: (num_elems, max_neighbors)
     lsf_diffs = lsf_neighbors - lsf[:, None]  # (num_elems, max_neighbors)
-
-    # Forward differences (shrinking, v < 0)
+    
+    # Compute gradients based on upwind scheme
+    # Forward differences (for v < 0, shrinking)
     grads_forward = np.maximum(lsf_diffs / distances, 0)
     
-    # Backward differences (expanding, v >= 0)
+    # Backward differences (for v >= 0, expanding)
     grads_backward = np.maximum(-lsf_diffs / distances, 0)
+    
     # Select based on velocity sign
+    v_expanded = v[:, None]  # (num_elems, 1)
     grads = np.where(v_expanded < 0, grads_forward, grads_backward)
-    # Apply valid mask
+    
+    # Apply valid mask (set invalid gradients to 0)
     grads = np.where(valid_mask, grads, 0)
+    
     # Compute gradient magnitude
     grad_mag = np.sqrt(np.sum(grads**2, axis=1))  # (num_elems,)
-    # Update level set
-
+    
+    # Update level set (Challis eq. 3: ∂ψ/∂t = -v|∇ψ| - ω*g)
     lsf_new = lsf - dt * v * grad_mag - topWeight * dt * g
     
     return lsf_new
@@ -414,7 +434,7 @@ if __name__ == "__main__":
 	from topopt_thermal_benchmarks import *
 	
 	print("-" * 50)
-	to_problem = StructuralTOExamples.MBBBeam # Choose the TO problem
+	to_problem = StructuralTOExamples.EdgeCantilever # Choose the TO problem
 	#to_problem = ThermalTOExamples.FourCornersThermal # Choose the TO problem
      
 	run_topopt_levelset(to_problem)

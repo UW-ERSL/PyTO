@@ -199,92 +199,7 @@ class HexMesher:
 			self.bbox.z.min += dz
 			self.bbox.z.max += dz
 			
-	def read_pareto_mesh(self, fileName: str):
-		"""Read a Pareto mesh from a binary file.
-
-		The binary file should contain the following data:
-		1. nelx nely nelz (#number of elements in x, y and z)
-		2. X0 Y0 Z0 (origin)
-		3. dx dy dz (deltax, deltay, deltaz)
-		4. h_nNodes
-		5. (i,j,k,l) of all nodes (i ranges from 0 to nelx, etc), l is the label of node
-		6. h_nElems
-		7. (n1,n2,...,n8) of all elements
-		8. (m0 m1 m2 ....) for each element, the id (typically part #), default is 0
-		9. (1 1 0.7 1 0 ....) pseudoDensity for each element
-		"""
-		with open(fileName, mode='rb') as file:
-			
-			self.grid = np.fromfile(file, dtype=np.uint32, count = 3)  
-			self.origin = np.fromfile(file, dtype=np.double, count = 3)  
-			self.elem_size = np.fromfile(file, dtype=np.double, count = 3)
-
-			self.num_nodes = np.fromfile(file, dtype=np.uint32, count = 1)[0]
-			self.node_indices = np.fromfile(file, dtype=np.uint32,
-													count = 4*self.num_nodes).reshape((self.num_nodes,4))
-			self.node_xyz = np.zeros((self.num_nodes, 3))
-			for i in range(3):
-				self.node_xyz[:,i] = self.origin[i] + self.elem_size[i]*self.node_indices[:,i]
-			self.num_elems = np.fromfile(file, dtype=np.uint32, count = 1)[0]
-
-			print("#Nodes = ", self.num_nodes, "\n#Elems = ", self.num_elems)
-			self.elemArray = np.fromfile(file, dtype=np.uint32,
-														count = 8*self.num_elems).reshape((self.num_elems,8))
-			self.elemPartIndex = np.fromfile(file, dtype=np.uint32, count = self.num_elems)
-			self.elemPseudoDensity = np.fromfile(file, dtype=np.double, count = self.num_elems)
-
-			self.elemNeighborsfileName = fileName.replace("msh", "elneigh")
-			try:
-				self.elemNeighborsArray = np.loadtxt(self.elemNeighborsfileName, skiprows = 2)
-			except:
-				print(f"Warning: Could not read element neighbors from {self.elemNeighborsfileName}.")
-				print("Creating element neighbors array from scratch.")
-				# Create element neighbors array from scratch
-				# Build a dictionary mapping each node to its associated elements
-				node_to_elems = {}
-				for elem_idx in range(self.num_elems):
-					for node_idx in self.elemArray[elem_idx]:
-						if node_idx not in node_to_elems:
-							node_to_elems[node_idx] = []
-						node_to_elems[node_idx].append(elem_idx)
-
-				# For each element, find all neighboring elements by looking at shared nodes
-				self.elemNeighborsArray = np.zeros((self.num_elems, 27), dtype=np.int32)
-
-				for elem in range(self.num_elems):
-					neighbors = set()
-					# Get all nodes of this element
-					for node in self.elemArray[elem]:
-						# Add all elements connected to this node
-						neighbors.update(node_to_elems[node])
-					# Convert to list 
-					neighbor_list = list(neighbors)
-					# Take first 27 neighbors (or pad with -1 if fewer exist)
-					self.elemNeighborsArray[elem] = (neighbor_list[:27] + [-1] * 27)[:27]
-				
-				
-
-			self.elem_centers = np.zeros((self.num_elems, 3))
-			
-			for elem in range(self.num_elems):
-				self.elem_centers[elem, :] = np.array(np.sum(self.node_xyz[self.elemArray[elem]],
-																						axis = 0)/8)
-
-			self.bbox = BoundingBox(
-						x=Extent(np.min(self.node_xyz[:,0]), np.max(self.node_xyz[:,0])),
-						y=Extent(np.min(self.node_xyz[:,1]), np.max(self.node_xyz[:,1])),
-						z=Extent(np.min(self.node_xyz[:,2]), np.max(self.node_xyz[:,2])))
-			self.num_components = 1
-			# Create pyvista voxel grid
-			try:
-				cells = np.column_stack(([8] * self.num_elems, self.elemArray)).ravel()
-				self.voxels = pv.UnstructuredGrid(cells, [12] * self.num_elems, self.node_xyz)
-			except MemoryError:
-				print("Memory error when creating mesh. Try reducing the number of elements.")
-				raise
-			file.close()
-
-
+	
 	def createMeshFromSTLFileSingleComponent(self, stlFileName: str,nElemsDesired: int):
 		startTime = time.time()
 		self.stlGeom = STLGeom(stlFileName) # stlGeom functionality is sometimes needed
@@ -355,29 +270,8 @@ class HexMesher:
 
 		self.elemPseudoDensity = np.ones(self.num_elems)
 		# the elemNeighborsArray is needed for creating the filter
-		self.elemNeighborsArray = np.zeros((self.num_elems, 27), dtype = np.int32)
-		# Build a dictionary mapping each node to its associated elements
-		node_to_elems = {}
-		for elem_idx in range(self.num_elems):
-			for node_idx in self.elemArray[elem_idx]:
-				if node_idx not in node_to_elems:
-					node_to_elems[node_idx] = []
-				node_to_elems[node_idx].append(elem_idx)
-
-		# For each element, find all neighboring elements by looking at shared nodes
-
-		for elem in range(self.num_elems):
-			neighbors = set()
-			# Get all nodes of this element
-			
-			for node in self.elemArray[elem]:
-				# Add all elements connected to this node
-				neighbors.update(node_to_elems[node])
-			# Convert to list 
-			neighbor_list = list(neighbors)
-			# Take first 27 neighbors (or pad with -1 if fewer exist)
-			self.elemNeighborsArray[elem] = (neighbor_list[:27] + [-1] * 27)[:27]
-
+		self.elemNeighborsArray = self._create_consistent_neighbors()
+    
 		self.bbox = BoundingBox(
 						x=Extent(bounds[0], bounds[1]),	
 						y=Extent(bounds[2], bounds[3]),	
@@ -391,11 +285,93 @@ class HexMesher:
 		self.meshing_time = endTime - startTime
 		self.volume_error = volume_error
 
-		
 		#print(f"Time taken to create mesh: {endTime - startTime:.2f} seconds")
 		#print(f"Meshing Volume Error: {volume_error:.2f}%")
 
+	def _create_consistent_neighbors(self):
+		"""
+		Create neighbor array with CONSISTENT ORDERING (fully vectorized).
+		================================================================================
+		COMPLETE INDEX TABLE
+		================================================================================
 
+		Index | dx  dy  dz | Position          | Type   | Distance Factor
+		------|------------|-------------------|--------|----------------
+		0   | -1  -1  -1 | back-bottom-left  | corner | √3
+		1   |  0  -1  -1 | back-bottom-mid   | edge   | √2
+		2   | +1  -1  -1 | back-bottom-right | corner | √3
+		3   | -1   0  -1 | back-mid-left     | edge   | √2
+		4   |  0   0  -1 | back-mid-mid      | FACE   | 1.0 (Z-minus)
+		5   | +1   0  -1 | back-mid-right    | edge   | √2
+		6   | -1  +1  -1 | back-top-left     | corner | √3
+		7   |  0  +1  -1 | back-top-mid      | edge   | √2
+		8   | +1  +1  -1 | back-top-right    | corner | √3
+		9   | -1  -1   0 | mid-bottom-left   | edge   | √2
+		10   |  0  -1   0 | mid-bottom-mid    | FACE   | 1.0 (Y-minus)
+		11   | +1  -1   0 | mid-bottom-right  | edge   | √2
+		12   | -1   0   0 | mid-mid-left      | FACE   | 1.0 (X-minus)
+		13   |  0   0   0 | mid-mid-mid       | SELF   | 0.0
+		14   | +1   0   0 | mid-mid-right     | FACE   | 1.0 (X-plus)
+		15   | -1  +1   0 | mid-top-left      | edge   | √2
+		16   |  0  +1   0 | mid-top-mid       | FACE   | 1.0 (Y-plus)
+		17   | +1  +1   0 | mid-top-right     | edge   | √2
+		18   | -1  -1  +1 | front-bottom-left | corner | √3
+		19   |  0  -1  +1 | front-bottom-mid  | edge   | √2
+		20   | +1  -1  +1 | front-bottom-right| corner | √3
+		21   | -1   0  +1 | front-mid-left    | edge   | √2
+		22   |  0   0  +1 | front-mid-mid     | FACE   | 1.0 (Z-plus)
+		23   | +1   0  +1 | front-mid-right   | edge   | √2
+		24   | -1  +1  +1 | front-top-left    | corner | √3
+		25   |  0  +1  +1 | front-top-mid     | edge   | √2
+		26   | +1  +1  +1 | front-top-right   | corner | √3
+		"""
+		from scipy.spatial import cKDTree
+		
+		print(f"Creating consistent neighbors (vectorized)...")
+		print(f"  Number of elements: {self.num_elems}")
+		
+		# Build KD-tree for fast queries
+		tree = cKDTree(self.elem_centers)
+		
+		# Create all 27 relative positions in 3x3x3 stencil
+		relative_positions = []
+		for dz in [-1, 0, 1]:
+			for dy in [-1, 0, 1]:
+				for dx in [-1, 0, 1]:
+					relative_positions.append([
+						dx * self.elem_size[0],
+						dy * self.elem_size[1],
+						dz * self.elem_size[2]
+					])
+		
+		relative_positions = np.array(relative_positions)  # Shape: (27, 3)
+		
+		# Compute all target positions at once
+		# Broadcasting: (num_elems, 1, 3) + (1, 27, 3) = (num_elems, 27, 3)
+		target_positions = self.elem_centers[:, None, :] + relative_positions[None, :, :]
+		
+		# Flatten for batch query: (num_elems * 27, 3)
+		target_positions_flat = target_positions.reshape(-1, 3)
+		
+		# Query all at once (this is the fast part!)
+		distances, nearest_indices = tree.query(target_positions_flat, k=1)
+		
+		# Reshape back: (num_elems, 27)
+		distances = distances.reshape(self.num_elems, 27)
+		nearest_indices = nearest_indices.reshape(self.num_elems, 27)
+		
+		# Set to -1 if too far (not a valid neighbor)
+		threshold = 0.6 * np.min(self.elem_size)
+		elemNeighborsArray = np.where(distances < threshold, nearest_indices, -1)
+		
+		# Statistics
+		num_neighbors = np.sum(elemNeighborsArray >= 0, axis=1)
+		print(f"  Neighbor counts: min={num_neighbors.min()}, max={num_neighbors.max()}, mean={num_neighbors.mean():.1f}")
+		
+		self_check = elemNeighborsArray[:, 13] == np.arange(self.num_elems)
+		print(f"  Self at index 13: {np.sum(self_check)} / {self.num_elems} elements")
+		
+		return elemNeighborsArray
 	def createMeshFromSTLFile(self, stlFileName: str,nElemsDesired: int):
 		#print("Creating mesh from STL file...")
 		startTime = time.time()

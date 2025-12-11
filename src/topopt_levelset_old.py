@@ -330,5 +330,5 @@ if __name__ == "__main__":
 	from topopt_structural_benchmarks import *
 	from topopt_thermal_benchmarks import *
 	
-	to_problem = StructuralTOExamples.CantileverMidLoad # Choose the TO problem
+	to_problem = StructuralTOExamples.MBBBeam # Choose the TO problem
 	run_topopt_levelset(to_problem)
