@@ -202,6 +202,85 @@ def computeThermalTopologicalSensitivity(conductivity,strains,x):
 	return T
 
 
+def run_pareto_topopt(to_problem):
+	if (to_problem in StructuralTOExamples):
+		mesh, mat_prop, bc,elem_body_force, to_params = getStructuralTOProblem(to_problem)
+		feaMode = FEA_MODE.STRUCTURAL
+	elif (to_problem in ThermalTOExamples):
+		mesh, mat_prop, bc,elem_body_force, to_params = getThermalTOProblem(to_problem)
+		feaMode = FEA_MODE.THERMAL
+
+	print(f"Running {to_problem.name}...") 
+	print("-" * 50)
+	
+	plot_progress = True
+	print_progress = True
+	debug = False
+
+	solver = lin_solv.Solvers.PARDISO
+	dsolver = deflation.DeflationSolver()
+	if (to_params.nDOFDesired > DIRECT_SOLVER_DOF_CUTOFF):#  # Choose solver. Typically PARDISO, but DPCG for large DOF problems
+		solver = lin_solv.Solvers.DPCG
+		# DPCG solver is used for large DOF problems
+		# Create deflation solver object
+		nGroups =  min(dsolver.maxGroups,max(dsolver.minGroups,round(3*mesh.num_nodes/dsolver.dofPerGroup)))
+		dsolver.create_deflation_groups(mesh, nGroups)
+		#dsolver.plot_deflation_groups(mesh)
+		dsolver.create_deflation_matrix(mesh)
+		dsolver.W = dsolver.W[bc.free_dofs, :]
+	 
+	
+	if (to_problem in StructuralTOExamples):
+		fe_solver = hex_structural_fea.HexStructuralFEA(mesh = mesh,
+					mat_prop = mat_prop,
+					bc = bc,
+					solver = solver,
+					dsolver = dsolver,
+					elem_body_force = elem_body_force)
+	elif (to_problem in ThermalTOExamples):
+		fe_solver = hex_thermal_fea.HexThermalFEA(mesh = mesh,
+					mat_prop = mat_prop,
+					bc = bc,
+					solver = solver,
+					dsolver = dsolver,
+					elem_body_force = elem_body_force)
+
+	
+	print('Solver: ', fe_solver.solver.name)
+	print("nNodes: ", fe_solver.mesh.num_nodes)
+	print("nElem: ", fe_solver.mesh.num_elems)	
+	#print("Close the plot to continue...")
+	title = f'nNodes: {fe_solver.mesh.num_nodes}, nElem: {fe_solver.mesh.num_elems}'
+	#fe_solver.plot_mesh(title = title, save_path = None)
+	
+	startTime = time.time()
+
+	print("OptimizationMethod: Pareto")
+	sol, history, success,errorMsg,nFEAs = topopt_pareto(feaMode,fe_solver = fe_solver,
+									to_params = to_params,
+									plot_progress= plot_progress,
+									debug = debug)
+	
+	timeTaken = time.time() - startTime
+	print(f"Time taken: {timeTaken:.0f} s")
+	if not success:
+		print(f"Error: {errorMsg}")
+
+	title = f"Pareto: vol: {history['volfrac'][-1]:0.2f}, J: {history['objective'][-1]:.3g}, nFEA: {nFEAs:3d}, time: {timeTaken:.0f} s"
+	fe_solver.plot_mesh(title = title, save_path = None)
+
+		
+	# Plot volume vs compliance history
+	plt.figure()
+	plt.plot(history['volfrac'], history['objective'], marker='o')
+	plt.xlabel('Volume Fraction')
+	plt.ylabel('objective')
+	plt.title('Pareto: Volume vs Compliance History')
+	plt.grid(True)
+	plt.show()
+	
+	
+
 
 def topopt_pareto(feaMode,fe_solver,
 				  to_params,
@@ -493,80 +572,4 @@ if __name__ == "__main__":
 	to_problem = StructuralTOExamples.MBBBeam # Choose the TO problem
 	#to_problem = ThermalTOExamples.FourCornersThermal # Choose the TO problem
 
-	if (to_problem in StructuralTOExamples):
-		mesh, mat_prop, bc,elem_body_force, to_params = getStructuralTOProblem(to_problem)
-		feaMode = FEA_MODE.STRUCTURAL
-	elif (to_problem in ThermalTOExamples):
-		mesh, mat_prop, bc,elem_body_force, to_params = getThermalTOProblem(to_problem)
-		feaMode = FEA_MODE.THERMAL
-
-	print(f"Running {to_problem.name}...") 
-	print("-" * 50)
-	
-	plot_progress = True
-	print_progress = True
-	debug = True
-
-	solver = lin_solv.Solvers.PARDISO
-	dsolver = deflation.DeflationSolver()
-	if (to_params.nDOFDesired > DIRECT_SOLVER_DOF_CUTOFF):#  # Choose solver. Typically PARDISO, but DPCG for large DOF problems
-		solver = lin_solv.Solvers.DPCG
-		# DPCG solver is used for large DOF problems
-		# Create deflation solver object
-		nGroups =  min(dsolver.maxGroups,max(dsolver.minGroups,round(3*mesh.num_nodes/dsolver.dofPerGroup)))
-		dsolver.create_deflation_groups(mesh, nGroups)
-		#dsolver.plot_deflation_groups(mesh)
-		dsolver.create_deflation_matrix(mesh)
-		dsolver.W = dsolver.W[bc.free_dofs, :]
-	 
-	
-	if (to_problem in StructuralTOExamples):
-		fe_solver = hex_structural_fea.HexStructuralFEA(mesh = mesh,
-					mat_prop = mat_prop,
-					bc = bc,
-					solver = solver,
-					dsolver = dsolver,
-					elem_body_force = elem_body_force)
-	elif (to_problem in ThermalTOExamples):
-		fe_solver = hex_thermal_fea.HexThermalFEA(mesh = mesh,
-					mat_prop = mat_prop,
-					bc = bc,
-					solver = solver,
-					dsolver = dsolver,
-					elem_body_force = elem_body_force)
-
-	
-	print('Solver: ', fe_solver.solver.name)
-	print("nNodes: ", fe_solver.mesh.num_nodes)
-	print("nElem: ", fe_solver.mesh.num_elems)	
-	#print("Close the plot to continue...")
-	title = f'nNodes: {fe_solver.mesh.num_nodes}, nElem: {fe_solver.mesh.num_elems}'
-	#fe_solver.plot_mesh(title = title, save_path = None)
-	
-	startTime = time.time()
-
-	print("OptimizationMethod: Pareto")
-	sol, history, success,errorMsg,nFEAs = topopt_pareto(feaMode,fe_solver = fe_solver,
-									to_params = to_params,
-									plot_progress= plot_progress,
-									debug = debug)
-	
-	timeTaken = time.time() - startTime
-	print(f"Time taken: {timeTaken:.0f} s")
-	if not success:
-		print(f"Error: {errorMsg}")
-
-	title = f"Pareto: vol: {history['volfrac'][-1]:0.2f}, J: {history['objective'][-1]:.3g}, nFEA: {nFEAs:3d}, time: {timeTaken:.0f} s"
-	fe_solver.plot_mesh(title = title, save_path = None)
-
-		
-	# Plot volume vs compliance history
-	plt.figure()
-	plt.plot(history['volfrac'], history['objective'], marker='o')
-	plt.xlabel('Volume Fraction')
-	plt.ylabel('objective')
-	plt.title('Pareto: Volume vs Compliance History')
-	plt.grid(True)
-	plt.show()
-	
-	
+	run_pareto_topopt(to_problem)

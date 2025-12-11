@@ -133,8 +133,8 @@ def topopt_levelset(feaMode,
                     stepLength: int = 3,
                     numReinit: int = 5,
                     topWeight: float = 100,
-                    objective_tol: float = 1.e-3,
-                    constraint_tol: float = 1.e-2,
+                    objective_tol: float = 0.01,
+                    constraint_tol: float = 0.01,
                     plot_progress: bool = False,
                     print_progress: bool = False,
                     plotter=None,
@@ -226,9 +226,7 @@ def topopt_levelset(feaMode,
         shapeSens = shapeSens / sensitivityScaling
         topSens = topSens / sensitivityScaling
         # Print max and min of shapeSens
-        print(f"  Shape sensitivity: min: {np.min(shapeSens):.3e}, max: {np.max(shapeSens):.3e}")
-        print(f"  Topological sensitivity: min: {np.min(topSens):.3e}, max: {np.max(topSens):.3e}")
-
+ 
         # 3. Load bearing elements must remain solid 
         if elemsWithForces is not None and len(elemsWithForces) > 0:
             shapeSens[elemsWithForces] = min(shapeSens)
@@ -251,7 +249,7 @@ def topopt_levelset(feaMode,
         
         # 6. Check convergence 
         if iteration > 5:
-            obj_err = abs(history['objective'][-1] - history['objective'][-3]) / abs(history['objective'][-3])
+            obj_err = abs(history['objective'][-1] - history['objective'][-2]) / abs(history['objective'][-2])
             vol_err = abs(volCurr - volFractionConstraint)  
             if obj_err < objective_tol and vol_err < constraint_tol:
                 print("Convergence achieved!")
@@ -260,8 +258,8 @@ def topopt_levelset(feaMode,
         # 7.  Lagrangian parameters 
         if iteration == 0:
             lambda_lag = -0.01
-            Lambda = 1000.0
-            alpha = 0.9
+            Lambda = 2000.0
+            alpha = 0.95
         else:
             lambda_lag = lambda_lag - (1 / Lambda) * (volCurr - volFractionConstraint)
             Lambda = alpha * Lambda
@@ -270,8 +268,7 @@ def topopt_levelset(feaMode,
         shapeSens = shapeSens - lambda_lag + (1 / Lambda) * (volCurr - volFractionConstraint)
         topSens = topSens + 4*np.pi/3*(lambda_lag - (1 / Lambda) * (volCurr - volFractionConstraint))
 
-        print(f"  Shape sensitivity: min: {np.min(shapeSens):.3e}, max: {np.max(shapeSens):.3e}")
-        print(f"  Topological sensitivity: min: {np.min(topSens):.3e}, max: {np.max(topSens):.3e}")
+
         #input("Press Enter to continue...")
         # 1. Smooth the sensitivities 
         shapeSens_smooth = (H @ shapeSens) / Hs

@@ -406,7 +406,7 @@ if __name__ == "__main__":
     print("-" * 50)
 
     # Choose the TO problem
-    to_problem = StructuralTOExamples.CantileverMidLoad 
+    to_problem = StructuralTOExamples.Mitchell_1 
     #to_problem = ThermalTOExamples.FourCornersThermal
     #to_problem = ThermoStructuralTOExamples.MBBBeam
 

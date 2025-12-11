@@ -221,7 +221,8 @@ def getStructuralTOProblem(to_problem: StructuralTOExamples,nDOFDesired = None, 
     elif to_problem == StructuralTOExamples.MBBBeam:
         structural_problem = StructuralExamples.MBBBeam
         to_params.Comment  = "Benchmark 2.5D"
-        to_params.nDOFDesired = 60000 if nDOFDesired is None else nDOFDesired
+        to_params.nDOFDesired = 50000 if nDOFDesired is None else nDOFDesired
+        to_params.ExtrudeZ = True
         to_params.Objective = (TO_QOI.COMPLIANCE, None)
         to_params.Constraints = [(TO_QOI.VOLUME_FRACTION, None, 0.25)]
         to_params.RelativeFilterRadius = 3
