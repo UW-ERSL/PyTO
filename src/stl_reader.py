@@ -738,7 +738,9 @@ if __name__ == "__main__":
 
 
     script_dir = os.path.dirname(os.path.abspath(__file__))
+    print(f"Script directory: {script_dir}")
     stl_file = os.path.join(script_dir, '../Models/ThickPlate/ThickPlate.STL')
+    print(f"STL file path: {stl_file}")
     stl_file = os.path.join(script_dir, '../Models/BliskModel/BliskSection.STL')
     stl_file = os.path.join(script_dir, '../Models/BliskModel/BliskQuarter.STL')
     stl_file = os.path.join(script_dir, '../Models/LBracketThick/LBracketThick.STL')

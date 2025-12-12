@@ -1,0 +1,216 @@
+{
+  "version": "2025.01",
+  "stl_file_path": "BRAKES_BRAKE_PEDAL.STL",
+  "settings": {
+    "unit_system": "MKS",
+    "temperature_unit": "Kelvin",
+    "angle_unit": "Degree"
+  },
+  "analysis_settings": {
+    "n_elements": 51155,
+    "solver_type": "PARDISO"
+  },
+  "material_data": {
+    "name": "Steel",
+    "properties": {
+      "Young's Modulus": 210000000000.0,
+      "Poisson's Ratio": 0.3,
+      "Yield Strength": 250000000.0,
+      "Density": 7850,
+      "Thermal Conductivity": 50,
+      "Thermal Expansion": 1.2e-05,
+      "Specific Heat Capacity": 500,
+      "Price": 0.8
+    }
+  },
+  "structuralBC": {
+    "fixed_faces_indices": [
+      125,
+      126,
+      127,
+      128,
+      129,
+      130,
+      131,
+      132,
+      133,
+      134,
+      135,
+      136,
+      137,
+      138,
+      139,
+      140,
+      141,
+      142,
+      143,
+      144,
+      145,
+      146,
+      147,
+      148,
+      149,
+      150,
+      151,
+      152,
+      153,
+      154,
+      155,
+      156,
+      157,
+      158,
+      159,
+      160,
+      161,
+      162,
+      163,
+      164,
+      165,
+      166,
+      167,
+      168,
+      169,
+      170,
+      171,
+      172,
+      173,
+      174,
+      175,
+      176,
+      177,
+      178,
+      179,
+      180,
+      181,
+      182,
+      183,
+      184,
+      185,
+      186,
+      187,
+      188,
+      189,
+      190,
+      191,
+      192,
+      193,
+      194,
+      195,
+      196,
+      197,
+      198,
+      199,
+      200
+    ],
+    "load_faces_indices": [
+      [
+        569,
+        570,
+        571,
+        572,
+        573,
+        574,
+        575,
+        576,
+        577,
+        578,
+        579,
+        580,
+        581,
+        582,
+        583,
+        584,
+        585,
+        586,
+        587,
+        588,
+        589,
+        590,
+        591,
+        592,
+        593,
+        594,
+        595,
+        596,
+        597,
+        598,
+        599,
+        600,
+        601,
+        602,
+        603,
+        604,
+        605,
+        606,
+        607,
+        608,
+        609,
+        610
+      ]
+    ],
+    "load_forces": [
+      [
+        502.0,
+        0.0,
+        0.0
+      ]
+    ],
+    "constraint_counts": {
+      "fixed_triangles": 76,
+      "loaded_triangles": 42
+    }
+  },
+  "thermalBC": {
+    "fixed_temps": [],
+    "heat_sources": [],
+    "total_heat_sources": [],
+    "thermal_counts": {
+      "fixed_temps": 0,
+      "heat_sources": 0,
+      "total_heat_sources": 0,
+      "convection": 0
+    }
+  },
+  "topopt_options": {
+    "manufacturing": {
+      "extrude": {
+        "enabled": true,
+        "value": "YDir"
+      },
+      "am_build": {
+        "enabled": false,
+        "value": "+XDir"
+      },
+      "draw_direction": {
+        "enabled": false,
+        "value": "XDir"
+      },
+      "cyclic_symmetry": {
+        "enabled": false,
+        "value": "(2) 180 deg"
+      }
+    },
+    "performance": {
+      "stress_safety": {
+        "enabled": false,
+        "value": 1.0
+      },
+      "max_displacement": {
+        "enabled": false,
+        "value": 160.0
+      },
+      "max_temperature": {
+        "enabled": false,
+        "value": 2000.0
+      }
+    },
+    "symmetry": {
+      "x_symmetry": false,
+      "y_symmetry": false,
+      "z_symmetry": false
+    },
+    "other": {
+      "keep_fixed_faces": true
+    }
+  }
+}

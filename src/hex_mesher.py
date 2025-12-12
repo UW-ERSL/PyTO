@@ -327,8 +327,6 @@ class HexMesher:
 		"""
 		from scipy.spatial import cKDTree
 		
-		print(f"Creating consistent neighbors (vectorized)...")
-		print(f"  Number of elements: {self.num_elems}")
 		
 		# Build KD-tree for fast queries
 		tree = cKDTree(self.elem_centers)
@@ -366,11 +364,9 @@ class HexMesher:
 		
 		# Statistics
 		num_neighbors = np.sum(elemNeighborsArray >= 0, axis=1)
-		print(f"  Neighbor counts: min={num_neighbors.min()}, max={num_neighbors.max()}, mean={num_neighbors.mean():.1f}")
-		
+	
 		self_check = elemNeighborsArray[:, 13] == np.arange(self.num_elems)
-		print(f"  Self at index 13: {np.sum(self_check)} / {self.num_elems} elements")
-		
+	
 		return elemNeighborsArray
 	def createMeshFromSTLFile(self, stlFileName: str,nElemsDesired: int):
 		#print("Creating mesh from STL file...")

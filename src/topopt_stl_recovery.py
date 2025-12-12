@@ -1,82 +1,148 @@
 import pyvista as pv
 import numpy as np
 import trimesh
+import torch
+import torch.nn as nn
 from topopt_structural_benchmarks import *
 
-'''
-Comments/Questions:
-1. Can't we use the topopt_structural_benchmarks directly to get the STL and VTU paths?
-2. Understand what each parameter in the extract_isosurface does and explain in simple terms
-3. Should we simplify the final stl?
-'''
-def idw_interpolate_grid(grid, vtu, field="inverted_density", radius=0.1, p=2, null_value=-1):
-    # Convert mesh to points and data array
-    mesh_points = vtu.points
-    mesh_values = vtu.point_data[field]
-    # Prepare grid for output
-    interpolated = np.full(grid.n_points, null_value, dtype=float)
-    
-    for i, pt in enumerate(grid.points):
-        dists = np.linalg.norm(mesh_points - pt, axis=1) # Calculate distances from grid point to mesh points Euclidean Distance, distance = sqrt((x_mesh - x_pt)^2 + (y_mesh - y_pt)^2 + (z_mesh - z_pt)^2), calculates the norm along each row
-        mask = dists <= radius # Mask points within the specified radius, mask is True wherever the distance is less than or equal to radius
-        close_dists = dists[mask] # Get distances of close points
-        close_values = mesh_values[mask] # Get values of close points
-        if close_dists.size == 0: # If no points are close, skip this point
-            continue  
-        close_dists[close_dists == 0] = 1e-12 # Avoid division by zero
-        weights = 1.0 / (close_dists ** p) # IDW weights
-        interpolated[i] = np.sum(weights * close_values) / np.sum(weights) # Weighted average of close values
-    # Attach it to grid
-    grid.point_data[field] = interpolated 
-    return grid
 
-# Isosurface extraction 
-def extract_isosurface(vtu,  isovalue=0.5, resolution=2,null_value=-1):
-    field = "density"
-    if field in vtu.point_data:
-        #data = vtu.point_data[field] # Extract point data if available it checks if the field is in point data
-        vtu = vtu.point_data_to_cell_data() # and if yes it converts point data to cell data
-        data = vtu.cell_data[field]
+class CNN3D(nn.Module):
+    def __init__(self):
+        super().__init__()
+        # A simple 3D Autoencoder-like structure for smoothing
+        # Input: 1 channel (density), Output: 1 channel (smoothed density)
         
-    elif field in vtu.cell_data:
-        data = vtu.cell_data[field] #Grab the field directly if not point and only cell data is available
-    else:
-        raise ValueError(f"{field} not found in mesh.")
-     
-    normalizdedDensity = (data - np.min(data)) / (np.max(data) - np.min(data) + 1e-12)
-    vtu.cell_data["inverted_density"] = 1.0 - normalizdedDensity
-    #first get the bounding box of the vtu mesh for eg. [x max, x min, y max, y min, z max, z min]
-    bounds = vtu.bounds
-   
-    #Calculate padding as 10% of the largest mesh dimension 
-    padding = max(bounds[1]-bounds[0], 
-                  bounds[3]-bounds[2], 
-                  bounds[5]-bounds[4]) * 0.1
-    
-    nVoxels = resolution * vtu.n_cells # n_cells gives the number of cells in the mesh,
-    #vtu.plot(show_edges=True, opacity=0.5, scalars="density")
-    alpha = (nVoxels / np.prod(np.array(bounds[1::2]) - np.array(bounds[0::2])))**(1/3)
-    
-    # Compute number of points (grid dimensions) in x, y, z directions
-    dimensions = int(alpha * (bounds[1] - bounds[0]) ), int(alpha * (bounds[3] - bounds[2]) ),  int(alpha * (bounds[5] - bounds[4]) )
-   
-    spacing = (
-            (bounds[1] - bounds[0] + 2*padding) / (dimensions[0] - 1),
-            (bounds[3] - bounds[2] + 2*padding) / (dimensions[1] - 1),
-            (bounds[5] - bounds[4] + 2*padding) / (dimensions[2] - 1)
+        self.encoder = nn.Sequential(
+            # Layer 1: Input -> 16 channels
+            nn.Conv3d(in_channels=1, out_channels=16, kernel_size=3, padding=1),
+            nn.ReLU(),
+            nn.BatchNorm3d(16),
+            
+            # Layer 2: 16 -> 32 channels
+            nn.Conv3d(16, 32, kernel_size=3, padding=1),
+            nn.ReLU(),
+            nn.BatchNorm3d(32),
+        )
+        
+        self.decoder = nn.Sequential(
+            # Layer 3: 32 -> 16 channels
+            nn.Conv3d(32, 16, kernel_size=3, padding=1),
+            nn.ReLU(),
+            nn.BatchNorm3d(16),
+            
+            # Layer 4: Output layer (1 channel)
+            nn.Conv3d(16, 1, kernel_size=3, padding=1),
+            nn.Sigmoid() # Output between 0 and 1
         )
 
-    origin = (bounds[0] - padding, bounds[2] - padding, bounds[4] - padding)
+        self.device = 'cuda' if torch.cuda.is_available() else 'cpu'
+        self.to(self.device)
 
-    grid = pv.ImageData(dimensions=dimensions, spacing=spacing, origin=origin)
+    def forward(self, x):
+        x = x.to(self.device)
+        x = self.encoder(x)
+        x = self.decoder(x)
+        return x
+    
+def extract_isosurface_cnn(vtu, isovalue=0.5):
+    print("Starting Direct 3D CNN extraction with PADDING...")
+    
+    # --- STEP 1: DETECT GRID DIMENSIONS ---
+    x_coords = np.unique(vtu.points[:, 0])
+    y_coords = np.unique(vtu.points[:, 1])
+    z_coords = np.unique(vtu.points[:, 2])
+    
+    nx, ny, nz = len(x_coords), len(y_coords), len(z_coords)
+    print(f"Original Grid: {nx} x {ny} x {nz}")
+    
+    # Calculate spacing (robustly)
+    dx = (x_coords[-1] - x_coords[0]) / (nx - 1) if nx > 1 else 1.0
+    dy = (y_coords[-1] - y_coords[0]) / (ny - 1) if ny > 1 else 1.0
+    dz = (z_coords[-1] - z_coords[0]) / (nz - 1) if nz > 1 else 1.0
 
-    vtu = vtu.cell_data_to_point_data()
-    radius = padding / 3  # larger value for smoother interpolation but we can loose features
-    #p = 8 # Power parameter for IDW, higher values give more weight to closer points, weight = 1 / (distance ** p)
-    # Interpolate the inverted density field onto the grid
-    #grid = idw_interpolate_grid(grid, vtu, field="inverted_density", radius=radius, p=p, null_value=null_value)
-    grid = grid.interpolate(vtu, radius= radius, null_value=null_value)
-    return grid.contour([isovalue], scalars="inverted_density")
+    # --- STEP 2: PREPARE DATA (RESHAPE OR RESAMPLE) ---
+    if "density" not in vtu.point_data:
+        vtu = vtu.cell_data_to_point_data()
+    
+    raw_density = vtu.point_data["density"]
+    expected_size = nx * ny * nz
+
+    #just giving a chk point to see, to make sure
+    # Check if the VTU is a perfect grid or sparse/unstructured
+    if raw_density.size == expected_size:
+        # structured grid
+        grid_density = raw_density.reshape((nx, ny, nz), order='F')
+        #grid_density = raw_density.reshape((nx, ny, nz), order='C')
+
+    else:
+        print(f"Mismatch: Points {raw_density.size} vs Grid {expected_size}. Resampling to structured grid...")
+        # Create the full target grid
+        grid = pv.ImageData(dimensions=(nx, ny, nz), 
+                            spacing=(dx, dy, dz),
+                            origin=(x_coords[0], y_coords[0], z_coords[0]))
+        
+        # Sample the VTU onto the full structured grid
+        # This maps values from the mesh to the grid points
+        grid = grid.sample(vtu)
+        
+        grid_density = grid.point_data["density"]
+        # Fill NaNs (points outside the mesh) with 0.0 (Void) (Iwant to optimize this step!!)
+        grid_density = np.nan_to_num(grid_density, nan=0.0)
+        
+        # Reshape
+        grid_density = grid_density.reshape((nx, ny, nz), order='F')
+
+    # --- ADD PADDING --- due to marching cubes issues at boundaries and previous code failed for torque plate 
+    # We pad with 1.0 (Solid) so the Void (0.0) is capped inside.
+    # np.pad adds layers around the 3D array.
+    # ((1,1), (1,1), (1,1)) means add 1 layer before and 1 layer after for each axis.
+    padded_density = np.pad(grid_density, ((1,1), (1,1), (1,1)), mode='constant', constant_values=1.0)
+    
+    # Update dimensions for the new padded grid
+    pnx, pny, pnz = padded_density.shape
+    print(f"Padded Grid: {pnx} x {pny} x {pnz}")
+
+    # Normalize and Invert (unnecessary if input is already 0-1)
+    # (If not, normalize first)
+    padded_density = (padded_density - padded_density.min()) / (padded_density.max() - padded_density.min() + 1e-12)
+    padded_density = 1.0 - padded_density # Invert: 1=Void, 0=Material (Padding becomes 0)
+    
+    input_tensor = torch.tensor(padded_density).float().unsqueeze(0).unsqueeze(0)
+
+    # --- STEP 3: TRAIN CNN ---
+    model = CNN3D()
+    optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
+    loss_fn = nn.MSELoss()
+    
+    print("Training CNN...")
+    model.train()
+    for epoch in range(400): # Fast training
+        optimizer.zero_grad()
+        output = model(input_tensor)
+        loss = loss_fn(output, input_tensor.to(model.device))
+        loss.backward()
+        optimizer.step()
+        if loss.item() < 0.0002:
+            print(f"Converged at epoch {epoch}, Loss: {loss.item():.6f}")
+            break
+        if epoch % 20 == 0: print(f"Epoch {epoch}, Loss: {loss.item():.4f}")
+
+    # --- STEP 4: INFERENCE ---
+    model.eval()
+    with torch.no_grad():
+        smoothed = model(input_tensor).cpu().numpy().flatten(order='F')
+
+    # Create Padded PyVista Grid
+    # Origin must be shifted back by one spacing unit
+    origin = (x_coords[0] - dx, y_coords[0] - dy, z_coords[0] - dz)
+    
+    grid = pv.ImageData(dimensions=(pnx, pny, pnz), 
+                        spacing=(dx, dy, dz),
+                        origin=origin)
+    
+    grid.point_data["cnn_density"] = smoothed
+    
+    return grid.contour([isovalue], scalars="cnn_density", method='marching_cubes')
 
 def visualize(original_stl, other_surface,other_surface_label="Void Isosurface"):
     p = pv.Plotter()
@@ -115,73 +181,22 @@ def subtract_voids_from_stl(stl, void_surface):
 
     return result_pv
 
-def runAllExamples():
-    benchmarks_2_5D_problems = [StructuralTOExamples.Mitchell_1, StructuralTOExamples.Mitchell_2,
-						StructuralTOExamples.Mitchell_3, 
-						StructuralTOExamples.ShortCantileverTipLoad, StructuralTOExamples.ShortCantileverMidLoad,
-						StructuralTOExamples.CantileverTipLoad, StructuralTOExamples.CantileverMidLoad,
-						StructuralTOExamples.MBBB,
-						StructuralTOExamples.LBracketTopLoad, StructuralTOExamples.LBracketMidLoad,
-						StructuralTOExamples.TwoBar, 
-						StructuralTOExamples.DistributedLoad,
-						StructuralTOExamples.TorquePlate,
-						StructuralTOExamples.ThreeHoleBracket,]
-
-    benchmarks_3D_problems = [StructuralTOExamples.EdgeCantilever, 
-						   StructuralTOExamples.ThreeHoleBracketThick, 
-						 StructuralTOExamples.Multiload,
-						   StructuralTOExamples.LBracketThickTopLoad,
-						StructuralTOExamples.LBracketThickMidLoad,
-						StructuralTOExamples.Table]
-    
-    for to_problem in benchmarks_2_5D_problems + benchmarks_3D_problems:
-        to_name = to_problem.name
-        print("-" * 50)
-        print(f"Running {to_problem.name} problem")
-        print("-" * 50)
-        model_path = getSTLPath_TOProblem(to_problem)  # Get the STL path for the problem
-        vtu_path = "Results/VTU/" + to_name + ".vtu"
-        output_path = "Results/FinalTopology/" + to_name + "_optimized.stl"
-        
-        try:
-            design_domain_stl = pv.read(model_path).triangulate().compute_normals()  # Read and triangulate the STL file
-        except Exception as e:
-            print(f"Failed to load STL for {to_name}: {e}")
-            continue
-
-        try:
-            vtu = pv.read(vtu_path)
-        except Exception as e:
-            print(f"Failed to load VTU for {to_name}: {e}")
-            continue
-    
-        void_region_stl = extract_isosurface(vtu)
-        optimized_topology_stl = subtract_voids_from_stl(design_domain_stl, void_region_stl)
-      
-        try:
-            optimized_topology_stl.save(output_path)
-        except Exception as e:
-            print(f"Failed to save optimized STL for {to_name}: {e}")
-            continue
-
 if __name__ == "__main__":
 
-    #runAllExamples(); exit(0)  # Uncomment to run all examples 
 
-    to_problem =  StructuralTOExamples.CantileverMidLoad # Change this to any example
-
-    to_name = to_problem.name
-    model_path = getSTLPath_TOProblem(to_problem)  # Get the STL path for the problem
-    vtu_path = "Results/VTU/" + to_name + ".vtu"
-    output_path = "Results/FinalTopology/" + to_name + "_optimized.stl"
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    print(f"Script directory: {script_dir}")
+    design_domain_stl_file = os.path.join(script_dir, '../Models/BrakePedal/BRAKES_BRAKE_PEDAL.STL')
+    print(f"Design Domain STL file: {design_domain_stl_file}")
+    vtu_file= os.path.join(script_dir, '../Models/BrakePedal/BRAKES_BRAKE_PEDAL.vtu')
+    output_file = os.path.join(script_dir, '../Models/BrakePedal/BRAKES_BRAKE_PEDAL_recovered.STL')
     
-    design_domain_stl = pv.read(model_path).triangulate().compute_normals()  # Read and triangulate the STL file
-    vtu = pv.read(vtu_path)
-  
-    void_region_stl = extract_isosurface(vtu)
-    visualize(design_domain_stl, void_region_stl,"Void Isosurface")
+    design_domain = pv.read(design_domain_stl_file).triangulate().compute_normals()  # Read and triangulate the STL file
+    vtu = pv.read(vtu_file)
 
-    optimized_topology_stl = subtract_voids_from_stl(design_domain_stl, void_region_stl)
-    visualize(design_domain_stl, optimized_topology_stl,"Optimized STL")
-    optimized_topology_stl.save(output_path)
+    void_region_stl = extract_isosurface_cnn(vtu)
+    visualize(design_domain, void_region_stl,"Void Isosurface")
 
+    optimized_topology_stl = subtract_voids_from_stl(design_domain, void_region_stl)
+    visualize(design_domain, optimized_topology_stl,"Optimized STL")
+    optimized_topology_stl.save(output_file)

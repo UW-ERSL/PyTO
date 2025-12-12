@@ -9,7 +9,7 @@ import time
 from hex_mesher import DISTANCE_TYPE
 
 
-def compute_compliance_and_sensitivity(feaMode, sol, rho, fe_solver, KE):
+def compute_compliance_and_sensitivity(feaMode, rho, fe_solver):
     """
     Compute objective and shape sensitivity for level set optimization.
     
@@ -18,11 +18,14 @@ def compute_compliance_and_sensitivity(feaMode, sol, rho, fe_solver, KE):
     """
     if feaMode == FEA_MODE.STRUCTURAL:
         dofMat = fe_solver.mesh.edofMatStructural
+        # Get element stiffness matrix
+        KE = fe_solver.elem_stiff[0]
     elif feaMode == FEA_MODE.THERMAL:
         dofMat = fe_solver.mesh.edofMatThermal
     else:
         raise ValueError(f"Invalid FEA mode: {feaMode}")
     
+    sol = fe_solver.sol
     num_elems = fe_solver.mesh.num_elems
     nRows = KE.shape[0]
     
@@ -45,7 +48,7 @@ def compute_compliance_and_sensitivity(feaMode, sol, rho, fe_solver, KE):
     return obj, shapeSens
     
 
-def  compute_topological_sensitivity(fe_solver):
+def  compute_topological_sensitivity(rho,fe_solver):
      
     strains = fe_solver.strainComponents
     stresses = fe_solver.stressComponents
@@ -68,7 +71,7 @@ def  compute_topological_sensitivity(fe_solver):
     T = (4 / (1 + nu) * np.sum(stress_tensor * strain_tensor, axis=(1, 2)) -
 			(1 - 3 * nu) / (1 - nu**2) * trace_stress * trace_strain)
 
-    return T
+    return rho*T
 
 def run_topopt_levelset(to_problem):
      
@@ -125,14 +128,13 @@ def run_topopt_levelset(to_problem):
 
 	fe_solver.plot_mesh(title = title, save_path = None)
 
-
 def topopt_levelset(feaMode,
                     fe_solver,
                     to_params,
                     maxIterations: int = 250,
-                    stepLength: int = 3,
-                    numReinit: int = 5,
-                    topWeight: float = 200,
+                    stepLength: int = 2,
+                    numReinit: int = 10,
+                    topWeight: float = 0,
                     objective_tol: float = 0.01,
                     constraint_tol: float = 0.01,
                     plot_progress: bool = False,
@@ -183,13 +185,8 @@ def topopt_levelset(feaMode,
     # Initialize level set function (start with full domain)
     rho = np.ones(mesh.num_elems)
     lsf = mesh.compute_signed_distance_function(rho, distance_type=distanceType)
-    mesh.setPseudoDensity(np.asarray(rho))
-    
-    # Get element stiffness matrix
-    KE = hex_element_stiffness.hex8_stiffness_matrix_structural(
-            fe_solver.mat_prop.youngs_modulus,
-            fe_solver.mat_prop.poissons_ratio,
-            mesh.elem_size )
+
+    fe_solver.mesh.setPseudoDensity(np.asarray(rho))
     
     # Identify load-bearing elements
     elemsWithForces = find_elements_with_forces(mesh, fe_solver.bc.force, nDOFPerNode)
@@ -199,23 +196,8 @@ def topopt_levelset(feaMode,
     success = True
     errorMsg = "No errors."
     
-    # Check one element's neighbors
-    elem_id = 4534  # Middle element
-    elem_center = mesh.elem_centers[elem_id]
-    neighbors = mesh.elemNeighborsArray[elem_id]
-
-    print(f"Element {elem_id} center: {elem_center}")
-    print(f"Number of neighbors: {np.sum(neighbors >= 0)}")
-
-    for i, n in enumerate(neighbors):
-        if n >= 0:
-            neighbor_center = mesh.elem_centers[n]
-            delta = neighbor_center - elem_center
-            dist = np.linalg.norm(delta)
-            print(f"Neighbor {i:2d}: delta={delta}, dist={dist:.4f}")
-
-    input("Press Enter to continue...")
     # Main optimization loop 
+    volPrev = 1.0
     for iteration in range(maxIterations):
         mesh.setPseudoDensity(np.asarray(rho))
         
@@ -228,19 +210,20 @@ def topopt_levelset(feaMode,
         #input("Press Enter to continue...")
         sol = fe_solver.solve(rho, material_model)
         fe_solver.postprocess()
-        obj, shapeSens = compute_compliance_and_sensitivity(feaMode, sol, rho, fe_solver, KE)
-
-        T = compute_topological_sensitivity(fe_solver)
-        topSens = rho * T # zero out void elements 
+        obj, shapeSens = compute_compliance_and_sensitivity(feaMode, rho, fe_solver)
+       
+        topSens= compute_topological_sensitivity(rho,fe_solver)
+         
 
         # Scaling of sensitivities; this will alow us to set stepLength and topWeight independent of problem scale
         if iteration == 0:
-            sensitivityScaling =  max(np.max(np.abs(shapeSens)), 
-                                np.max(np.abs(topSens))) + 1e-12 # Use same scaling for all iterations
+            shapeScaling = np.max(np.abs(shapeSens)) + 1e-12
+            topoScaling = np.max(np.abs(topSens)) + 1e-12
 
-
-        shapeSens = shapeSens / sensitivityScaling
-        topSens = topSens / sensitivityScaling
+        shapeSens = shapeSens / shapeScaling
+        topSens = topSens / topoScaling
+        # fe_solver.plot_elem_field(shapeSens, title = f"Shape Sensitivity - Iter {iteration}")
+        # fe_solver.plot_elem_field(topSens, title = f"Topological Sensitivity - Iter {iteration}")
         # Print max and min of shapeSens
  
         # 3. Load bearing elements must remain solid 
@@ -272,17 +255,19 @@ def topopt_levelset(feaMode,
                 break
         
         # 7.  Lagrangian parameters 
+        vol_error = volCurr - volFractionConstraint
         if iteration == 0:
-            lambda_lag = -0.01
-            Lambda = 2000.0
-            alpha = 0.9
+            la = -0.01
+            La = 1000
+            alpha = 0.9;  
         else:
-            lambda_lag = lambda_lag - (1 / Lambda) * (volCurr - volFractionConstraint)
-            Lambda = alpha * Lambda
+            la = la - 1/La * vol_error; 
+            La= alpha * La
 
-        # 8. Add volume constraint sensitivities 
-        shapeSens = shapeSens - lambda_lag + (1 / Lambda) * (volCurr - volFractionConstraint)
-        topSens = topSens + 4*np.pi/3*(lambda_lag - (1 / Lambda) * (volCurr - volFractionConstraint))
+        vol_penalty_term =  la - 1/La*vol_error
+
+        shapeSens = shapeSens - vol_penalty_term
+        topSens = topSens + 4*np.pi/3*(vol_penalty_term)
 
 
         #input("Press Enter to continue...")
@@ -290,7 +275,7 @@ def topopt_levelset(feaMode,
         shapeSens_smooth = (H @ shapeSens) / Hs
         topSens_smooth = (H @ topSens) / Hs
         
-  
+    
         # 4. Design update via evolution 
         rho, lsf = evolveUpWind(
                 mesh=mesh,
@@ -301,18 +286,29 @@ def topopt_levelset(feaMode,
                 topWeight=topWeight
         )
  
-
+      
         # 10. Periodic reinitialization 
         if (iteration + 1) % numReinit == 0:
             if print_progress:
                 print("  Reinitializing level set function...")
             lsf = mesh.compute_signed_distance_function(rho, distance_type=distanceType)
 
+        volChangePercent = abs(volPrev - volCurr)/volCurr
+        volPrev = volCurr
+        # if (iteration > 5 and volChangePercent < 0.001):
+        #     topWeight = topWeight * 1.1
+        #     topWeight = min(topWeight,5)
+        # elif volChangePercent > 0.025:
+        #     topWeight = topWeight * 1
+        #     topWeight = max(topWeight,0.1)
     
+        print(f" Volume change: {volChangePercent:.5f}")
+        print(f" Topological weight: {topWeight:.2f}")
     # Final solve
+    
     mesh.setPseudoDensity(np.asarray(rho))
     sol = fe_solver.solve(rho, material_model)
-    obj, _ = compute_compliance_and_sensitivity(feaMode, sol, rho, fe_solver, KE)
+    obj, _ = compute_compliance_and_sensitivity(feaMode, rho, fe_solver)
     
     history['objective'].append(obj)
     history['volfrac'].append(volCurr)
@@ -371,59 +367,50 @@ def evolveUpWind(mesh, lsf, v, g, stepLength, topWeight):
 
 
 def upwind_step(mesh, lsf, v, g, dt, topWeight):
-    """
-    Single upwind time step for arbitrary hex mesh (vectorized).
-    Implements one time step of Hamilton-Jacobi equation.
-    """
-    num_elems = mesh.num_elems
-    eps = 1e-12
+    """Godunov upwind using ONLY face neighbors."""
+    neighbors = mesh.elemNeighborsArray
     
-    # Get all neighbor information at once
-    neighbors = mesh.elemNeighborsArray  # Shape: (num_elems, max_neighbors)
+    # Face neighbor indices (from your 27-neighbor ordering)
+    idx_xminus, idx_xplus = 12, 14
+    idx_yminus, idx_yplus = 10, 16
+    idx_zminus, idx_zplus = 4, 22
     
-    # Create mask for valid neighbors (excluding self and -1)
-    elem_indices = np.arange(num_elems)[:, None]  # Shape: (num_elems, 1)
-    valid_mask = (neighbors != -1) & (neighbors != elem_indices)
+    def get_neighbor_lsf(idx):
+        neighbor_id = neighbors[:, idx]
+        return np.where(neighbor_id >= 0, lsf[neighbor_id], lsf)
     
-    # Compute all element center differences
-    elem_centers = mesh.elem_centers  # Shape: (num_elems, 3)
+    lsf_xm = get_neighbor_lsf(idx_xminus)
+    lsf_xp = get_neighbor_lsf(idx_xplus)
+    lsf_ym = get_neighbor_lsf(idx_yminus)
+    lsf_yp = get_neighbor_lsf(idx_yplus)
+    lsf_zm = get_neighbor_lsf(idx_zminus)
+    lsf_zp = get_neighbor_lsf(idx_zplus)
     
-    # Get neighbor centers (invalid neighbors point to element 0, will be masked)
-    neighbor_indices = np.where(neighbors >= 0, neighbors, 0)
-    neighbor_centers = elem_centers[neighbor_indices]  # Shape: (num_elems, max_neighbors, 3)
+    hx, hy, hz = mesh.elem_size
     
-    # Compute deltas and distances
-    deltas = neighbor_centers - elem_centers[:, None, :]  # (num_elems, max_neighbors, 3)
-    distances = np.linalg.norm(deltas, axis=2)  # (num_elems, max_neighbors)
+    # Finite differences
+    dpx = (lsf_xp - lsf) / hx
+    dmx = (lsf - lsf_xm) / hx
+    dpy = (lsf_yp - lsf) / hy
+    dmy = (lsf - lsf_ym) / hy
+    dpz = (lsf_zp - lsf) / hz
+    dmz = (lsf - lsf_zm) / hz
     
-    # Update valid_mask to exclude zero/near-zero distances
-    valid_mask = valid_mask & (distances > eps)
+    # Godunov upwind (component-wise selection)
+    grad_mag_shrink = np.sqrt(
+        np.minimum(dmx, 0)**2 + np.maximum(dpx, 0)**2 +
+        np.minimum(dmy, 0)**2 + np.maximum(dpy, 0)**2 +
+        np.minimum(dmz, 0)**2 + np.maximum(dpz, 0)**2
+    )
     
-    # Set invalid distances to 1 to avoid division by zero (will be masked out)
-    distances = np.where(valid_mask, distances, 1.0)
+    grad_mag_expand = np.sqrt(
+        np.maximum(dmx, 0)**2 + np.minimum(dpx, 0)**2 +
+        np.maximum(dmy, 0)**2 + np.minimum(dpy, 0)**2 +
+        np.maximum(dmz, 0)**2 + np.minimum(dpz, 0)**2
+    )
     
-    # Get level set values at neighbors
-    lsf_neighbors = lsf[neighbor_indices]  # Shape: (num_elems, max_neighbors)
-    lsf_diffs = lsf_neighbors - lsf[:, None]  # (num_elems, max_neighbors)
+    grad_mag = np.where(v < 0, grad_mag_shrink, grad_mag_expand)
     
-    # Compute gradients based on upwind scheme
-    # Forward differences (for v < 0, shrinking)
-    grads_forward = np.maximum(lsf_diffs / distances, 0)
-    
-    # Backward differences (for v >= 0, expanding)
-    grads_backward = np.maximum(-lsf_diffs / distances, 0)
-    
-    # Select based on velocity sign
-    v_expanded = v[:, None]  # (num_elems, 1)
-    grads = np.where(v_expanded < 0, grads_forward, grads_backward)
-    
-    # Apply valid mask (set invalid gradients to 0)
-    grads = np.where(valid_mask, grads, 0)
-    
-    # Compute gradient magnitude
-    grad_mag = np.sqrt(np.sum(grads**2, axis=1))  # (num_elems,)
-    
-    # Update level set (Challis eq. 3: ∂ψ/∂t = -v|∇ψ| - ω*g)
     lsf_new = lsf - dt * v * grad_mag - topWeight * dt * g
     
     return lsf_new
@@ -434,7 +421,7 @@ if __name__ == "__main__":
 	from topopt_thermal_benchmarks import *
 	
 	print("-" * 50)
-	to_problem = StructuralTOExamples.EdgeCantilever # Choose the TO problem
+	to_problem = StructuralTOExamples.MBBBeam # Choose the TO problem
 	#to_problem = ThermalTOExamples.FourCornersThermal # Choose the TO problem
      
 	run_topopt_levelset(to_problem)

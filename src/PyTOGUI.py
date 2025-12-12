@@ -27,7 +27,7 @@ from topopt_thermostructural_sensitivity import ThermoElasticSensitivity
 from topopt_ocm import topopt_optimality_criteria
 from topopt_pareto import topopt_pareto
 from topopt_levelset import topopt_levelset
-from topopt_stl_recovery import extract_isosurface, subtract_voids_from_stl 
+from topopt_stl_recovery import extract_isosurface_cnn, subtract_voids_from_stl
 """
 
 
@@ -143,7 +143,7 @@ class MainWindow(QtWidgets.QMainWindow):
                 "thermal": False
             },
             "topopt": {
-                "constraints_defined": False,
+                "options_defined": False,
                 "structural_performed": False,
                 "thermal_performed": False
             },
@@ -335,8 +335,8 @@ class MainWindow(QtWidgets.QMainWindow):
                 self.show_workflow_warning("Please apply structural or thermal loads first.")
                 return False
         elif requirement == "topopt_options_defined":
-            if not self.LivVar.get('topopt', {}).get('constraints_defined', False):
-                self.show_workflow_warning("Please define topology optimization constraints first.")
+            if not self.LivVar.get('topopt', {}).get('options_defined', False):
+                self.show_workflow_warning("Please define topology optimization options first.")
                 return False
         elif requirement in ["material_defined", "geometry_loaded"]:
             if not self.LivVar.get(requirement, False):
@@ -368,7 +368,7 @@ class MainWindow(QtWidgets.QMainWindow):
             'structural_loads.forces_applied': self.handle_structural_loads_change,
             'structural_loads.fixed_constraints': self.handle_structural_loads_change,
             'thermal_loads.applied': self.handle_thermal_loads_applied,
-            'topopt.constraints_defined': self.handle_topopt_options_defined,
+            'topopt.options_defined': self.handle_topopt_options_defined,
         }
         
         handler = state_handlers.get(key)
@@ -4030,7 +4030,7 @@ class StructuralTopOptWindow(QtWidgets.QDialog):
                     fe_structural_solver=fe_solver,
                     fe_thermal_solver=None,
                     to_params=self.to_params,
-                    maxMMAIterations=self.to_params.MaxIterations,
+                    maxiteration=self.to_params.MaxIterations,
                     print_progress=True,
                     plot_progress=False,
                     binarize_topology=False,
@@ -4463,69 +4463,26 @@ class TopOptResultsWindow(QtWidgets.QDialog):
     def __init__(self, parent):
         super().__init__(parent)
         self.setWindowTitle("TopOpt Postprocess")
-        self.setFixedSize(320, 180)
+        self.setFixedSize(320, 150)
         self.parent = parent
 
-        # Default values
-        self.default_resolution = 5.0
-        self.default_padding = 0.1
+        # Default values for tet mesh
         self.default_tet_elems = 10000
 
         # Layout
         layout = QtWidgets.QVBoxLayout(self)
 
-        # Resolution control
-        res_layout = QtWidgets.QHBoxLayout()
-        res_layout.addWidget(QtWidgets.QLabel("Resolution"))
-        self.res_spin = QtWidgets.QDoubleSpinBox()
-        self.res_spin.setRange(0.5, 10.0)
-        self.res_spin.setDecimals(2)
-        self.res_spin.setValue(self.default_resolution)
-        res_layout.addWidget(self.res_spin)
-        layout.addLayout(res_layout)
+        # Apply Postprocess button
+        self.apply_btn = QtWidgets.QPushButton("Apply Postprocess")
+        self.apply_btn.clicked.connect(self.apply_recovery)
+        layout.addWidget(self.apply_btn)
 
-        # Padding control
-        pad_layout = QtWidgets.QHBoxLayout()
-        pad_layout.addWidget(QtWidgets.QLabel("Padding"))
-        self.pad_spin = QtWidgets.QDoubleSpinBox()
-        self.pad_spin.setRange(0.0, 1.0)
-        self.pad_spin.setDecimals(3)
-        self.pad_spin.setValue(self.default_padding)
-        pad_layout.addWidget(self.pad_spin)
-        layout.addLayout(pad_layout)
-
-        # TetMesh controls
-        tet_layout = QtWidgets.QHBoxLayout()
-        tet_layout.addWidget(QtWidgets.QLabel("Tet Elements"))
-        self.tet_elem_spin = QtWidgets.QSpinBox()
-        self.tet_elem_spin.setRange(1000, 1000000)
-        self.tet_elem_spin.setValue(self.default_tet_elems)
-        tet_layout.addWidget(self.tet_elem_spin)
-        self.tetmesh_btn = QtWidgets.QPushButton("Generate TetMesh")
-        self.tetmesh_btn.setEnabled(False)  # Initially disabled
-        tet_layout.addWidget(self.tetmesh_btn)
-        layout.addLayout(tet_layout)
-
-        # Apply button
-        apply_btn = QtWidgets.QPushButton("Apply")
-        apply_btn.clicked.connect(self.apply_recovery)
-        layout.addWidget(apply_btn)
-
-        # Connect TetMesh button
-        self.tetmesh_btn.clicked.connect(self.generate_tetmesh)
 
     def apply_recovery(self):
-        # Get parameters
-        resolution = self.res_spin.value()
-        padding = self.pad_spin.value()
-        max_resolution = 50.0
-        max_padding = 0.5
-        step_resolution = 0.5
-        step_padding = 0.05
-
+        """Apply STL recovery postprocessing"""
         topopt_results = getattr(self.parent, "topopt_results", None)
         if not topopt_results or not hasattr(self.parent, "stl_geom"):
-            QtWidgets.QMessageBox.warning(self, "No TopOpt Postprocess", "Please run topology optimization first.")
+            QtWidgets.QMessageBox.warning(self, "No TopOpt Results", "Please run topology optimization first.")
             return
 
         stl_path = self.parent.stl_geom.file_path
@@ -4538,28 +4495,33 @@ class TopOptResultsWindow(QtWidgets.QDialog):
             QtWidgets.QMessageBox.warning(self, "File Error", f"Could not load STL/VTU: {e}")
             return
 
-        success = False
-        while resolution <= max_resolution and padding <= max_padding:
-            try:
-                void_region_stl = extract_isosurface(vtu, resolution=resolution)
-                optimized_topology_stl = subtract_voids_from_stl(design_domain_stl, void_region_stl)
-                success = True
-                self.parent.message_text.append(
-                    f"Recovery succeeded at Resolution {resolution:.2f}, Padding {padding:.2f}."
-                )
-                break  # Success!
-            except ValueError as e:
-                if "Not all meshes are volumes" in str(e):
-                    self.parent.message_text.append(
-                        f"Resolution {resolution:.2f}, Padding {padding:.2f} Iterating"
-                    )
-                    resolution += step_resolution
-                    padding += step_padding
-                else:
-                    QtWidgets.QMessageBox.warning(self, "File Error", f"Could not process STL/VTU: {e}")
-                    return
-        if not success:
-            QtWidgets.QMessageBox.warning(self, "Recovery Failed", "Could not generate a valid volume after retries.")
+        # Disable button during processing
+        self.apply_btn.setEnabled(False)
+        self.apply_btn.setText("Processing...")
+        QtWidgets.QApplication.processEvents()
+
+        self.parent.message_text.append("Starting STL recovery postprocessing...")
+        QtWidgets.QApplication.processEvents()
+
+        try:
+            # Extract void isosurface using CNN
+            self.parent.message_text.append("Extracting void isosurface with CNN...")
+            QtWidgets.QApplication.processEvents()
+            
+            void_region_stl = extract_isosurface_cnn(vtu, isovalue=0.5)
+            
+            self.parent.message_text.append("Performing boolean subtraction...")
+            QtWidgets.QApplication.processEvents()
+            
+            optimized_topology_stl = subtract_voids_from_stl(design_domain_stl, void_region_stl)
+            
+            self.parent.message_text.append("STL recovery completed successfully.")
+            
+        except Exception as e:
+            self.parent.message_text.append(f"STL recovery failed: {e}")
+            QtWidgets.QMessageBox.warning(self, "Recovery Failed", f"Could not generate optimized STL: {e}")
+            self.apply_btn.setEnabled(True)
+            self.apply_btn.setText("Apply Postprocess")
             return
 
         self.parent.optimized_topology_stl = optimized_topology_stl
@@ -4581,7 +4543,7 @@ class TopOptResultsWindow(QtWidgets.QDialog):
         self.parent.plotter.render()
         self.parent.message_text.append("Optimized STL visualized.")
 
-        #save STL
+        # Save STL
         output_path = os.path.splitext(stl_path)[0] + "_optimized.stl"
         try:
             optimized_topology_stl.save(output_path)
@@ -4590,11 +4552,15 @@ class TopOptResultsWindow(QtWidgets.QDialog):
         except Exception as e:
             self.parent.message_text.append(f"Failed to save optimized STL: {e}")
 
-        self.tetmesh_btn.setEnabled(True)
+        # Re-enable buttons
+        self.apply_btn.setEnabled(True)
+        self.apply_btn.setText("Apply Postprocess")
+
 
     def generate_tetmesh(self):
         stl_path = os.path.splitext(self.parent.stl_geom.file_path)[0] + "_optimized.stl"
         n_elems = self.tet_elem_spin.value()
+        
         # Check STL manifoldness and watertightness
         import trimesh
         mesh = trimesh.load(stl_path)
@@ -4620,19 +4586,17 @@ class TopOptResultsWindow(QtWidgets.QDialog):
                 f"Non-manifold edges: {len(non_manifold_edges)}"
             )
             return
+            
         tetmesh = TetMesher()
         tetmesh.createTetMeshFromSTLFile(stl_path, nElemsDesired=n_elems)
         self.parent.tetmesh = tetmesh
+        
         # Visualize tetmesh and keep geometry info
         for name in list(self.parent.plotter.actors.keys()):
             if name != "geometry_info":
                 self.parent.plotter.remove_actor(name, reset_camera=False)
         tetmesh.plot(plotter=self.parent.plotter)
         self.parent.update_geometry_info_text()
-
-        #analysis_window = AnalysisWindow(self.parent)
-        #analysis_window.transfer_structural_loads_to_tetmesh()
-        #analysis_window.visualize_tet_structural_loads()
 #----------------------------------------------------------------------------
 class DisplayOptionsWindow(QtWidgets.QDialog):
     def __init__(self, parent):
@@ -5503,6 +5467,11 @@ class ProjectsWindow(QtWidgets.QDialog):
 
     def restore_structural_loads(self, structuralBC=None):
         """Restore structural loads and visualizations"""
+        # Check if geometry is loaded
+        if not self.parent.stl_geom:
+            self.parent.message_text.append("Warning: Cannot restore structural loads - no geometry loaded.")
+            return
+        
         # Process structuralBC data if provided (new format)
         if structuralBC is not None:
             # Extract constraint data
@@ -5580,6 +5549,11 @@ class ProjectsWindow(QtWidgets.QDialog):
 
     def restore_thermal_loads(self, thermal_data):
         """Restore thermal loads and visualizations from either format"""
+        # Check if geometry is loaded
+        if not self.parent.stl_geom:
+            self.parent.message_text.append("Warning: Cannot restore thermal loads - no geometry loaded.")
+            return
+        
         # Create thermal loads window if needed
         if not getattr(self.parent, 'thermal_loads_window', None):
             self.parent.thermal_loads_window = ThermalLoadsWindow(self.parent)
@@ -5666,20 +5640,30 @@ class ProjectsWindow(QtWidgets.QDialog):
 
     def recreate_triangle_data(self, triangle_indices):
         """Recreate triangle data structure from saved indices"""
+        if not self.parent.stl_geom:
+            self.parent.message_text.append("Warning: Cannot recreate triangle data - no geometry loaded.")
+            return []
+        
         triangle_data = []
         for tri_idx in triangle_indices:
-            triangle_vertices = self.parent.stl_geom.mesh.vectors[tri_idx]
-            center = np.mean(triangle_vertices, axis=0)
-            v1, v2 = triangle_vertices[1] - triangle_vertices[0], triangle_vertices[2] - triangle_vertices[0]
-            normal = np.cross(v1, v2)
-            normal = normal / np.linalg.norm(normal)
-            
-            triangle_data.append({
-                'index': tri_idx,
-                'center': center,
-                'normal': normal,
-                'vertices': triangle_vertices
-            })
+            try:
+                triangle_vertices = self.parent.stl_geom.mesh.vectors[tri_idx]
+                center = np.mean(triangle_vertices, axis=0)
+                v1, v2 = triangle_vertices[1] - triangle_vertices[0], triangle_vertices[2] - triangle_vertices[0]
+                normal = np.cross(v1, v2)
+                norm_length = np.linalg.norm(normal)
+                if norm_length > 0:
+                    normal = normal / norm_length
+                
+                triangle_data.append({
+                    'index': tri_idx,
+                    'center': center,
+                    'normal': normal,
+                    'vertices': triangle_vertices
+                })
+            except (IndexError, KeyError) as e:
+                self.parent.message_text.append(f"Warning: Could not recreate triangle {tri_idx}: {e}")
+                continue
         return triangle_data
 #----------------------------------------------------------------------------
 if __name__ == "__main__":
