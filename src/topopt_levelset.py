@@ -127,7 +127,6 @@ def topopt_levelset(feaMode,
                     fe_solver,
                     to_params,
                     maxIterations: int = 250,
-                    stepLength: int = 3,
                     numReinit: int = 5,
                     numInitialHoles: int = 6,
                     initialVolfraction: float = 0.9,
@@ -154,6 +153,7 @@ def topopt_levelset(feaMode,
     tStart = time.time()
     material_model = MaterialModel.SIMP  # Not really used since rho is 0/1
     mesh = fe_solver.mesh
+
     #fe_solver.plot_mesh(title="Initial Design", save_path=None) 
     objectiveType = to_params.Objective[0]
     if objectiveType != TO_QOI.COMPLIANCE:
@@ -264,13 +264,12 @@ def topopt_levelset(feaMode,
         #input("Press Enter to continue...")
         # 1. Smooth the sensitivities 
         shapeSens_smooth = (H @ shapeSens) / Hs
-    
+      
         # 4. Design update via evolution 
         lsf = evolveUpWind(
                 mesh=mesh,
                 lsf=lsf,
-                v=-shapeSens_smooth,  # Velocity is negative of shape sensitivity
-                stepLength=stepLength,
+                v=-shapeSens_smooth  # Velocity is negative of shape sensitivity
         )
         rho = (lsf < 0).astype(float)
 
@@ -311,7 +310,7 @@ def topopt_levelset(feaMode,
     
     return sol, history, success, errorMsg, nFEAs
 
-def evolveUpWind(mesh, lsf, v, stepLength):
+def evolveUpWind(mesh, lsf, v):
     """
     Evolution of level set function.
     Implements Hamilton-Jacobi equation:
@@ -324,16 +323,14 @@ def evolveUpWind(mesh, lsf, v, stepLength):
         rho = (lsf < 0).astype(float)
         return rho, lsf
     
-    increment = 0.1
-    dt = increment * h / max_v
- 
-    # Evolve for total time stepLength * CFL value 
-    num_steps = int( stepLength/increment)
-
+    cflLimit = 0.1
+    dt = cflLimit * h / max_v
+   
+    num_steps = 30 # fixed for simplicity
+    vol_initial = np.mean(lsf < 0)
     for _ in range(num_steps):
         lsf = upwind_step(mesh, lsf, v, dt)
-  
-    
+        vol_est = np.mean(lsf < 0)
     return  lsf
 
 
@@ -358,7 +355,7 @@ def upwind_step(mesh, lsf, v, dt):
     lsf_zp = get_neighbor_lsf(idx_zplus)
     
     hx, hy, hz = mesh.elem_size
-    
+
     # Finite differences
     dpx = (lsf_xp - lsf) / hx
     dmx = (lsf - lsf_xm) / hx
@@ -380,6 +377,7 @@ def upwind_step(mesh, lsf, v, dt):
         np.maximum(dmz, 0)**2 + np.minimum(dpz, 0)**2
     )
     grad_mag = np.where(v < 0, grad_mag_shrink, grad_mag_expand)
+   
     lsf_new = lsf - dt * v * grad_mag
     return lsf_new
 

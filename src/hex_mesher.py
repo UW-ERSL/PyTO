@@ -891,7 +891,14 @@ class HexMesher:
 		# Normalize by average element size for dimensionless representation
 		avg_elem_size = np.mean(self.elem_size)
 		sdf /= avg_elem_size
-		
+		min_abs_dist = 0.5  # In normalized coordinates
+
+		# For elements with |sdf| < 0.5, push them to ±0.5
+		# Keep the sign but enforce minimum magnitude
+		sdf = np.where(np.abs(sdf) < min_abs_dist,
+					np.sign(sdf) * min_abs_dist,
+					sdf)
+
 		return sdf
 	
 	def initialize_with_holes(self, volFractionConstraint, num_holes=8, 
