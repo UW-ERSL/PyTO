@@ -9,6 +9,7 @@ import time
 from stl_reader import STLGeom
 import enum
 from hex_plotter import HexFEAPlotter
+from scipy.spatial import cKDTree
 @dataclasses.dataclass
 class Extent:
   min: float
@@ -858,30 +859,25 @@ class HexMesher:
 
 		boundary_elems = np.array(boundary_elems)
 
-		# Compute distances from ALL elements to ALL boundary elements
+		# Get boundary coordinates based on distance type
 		if distance_type == DISTANCE_TYPE.DISTANCE_3D:
-			distances = np.linalg.norm(
-				elem_centers[:, np.newaxis, :] - elem_centers[boundary_elems], 
-				axis=2
-			)
+			boundary_coords = elem_centers[boundary_elems]
+			query_coords = elem_centers
 		elif distance_type == DISTANCE_TYPE.DISTANCE_XY:
-			distances = np.linalg.norm(
-				elem_centers[:, np.newaxis, :2] - elem_centers[boundary_elems][:, :2], 
-				axis=2
-			)
+			boundary_coords = elem_centers[boundary_elems][:, :2]
+			query_coords = elem_centers[:, :2]
 		elif distance_type == DISTANCE_TYPE.DISTANCE_XZ:
-			distances = np.linalg.norm(
-				elem_centers[:, np.newaxis, ::2] - elem_centers[boundary_elems][:, ::2], 
-				axis=2
-			)
+			boundary_coords = elem_centers[boundary_elems][:, ::2]
+			query_coords = elem_centers[:, ::2]
 		elif distance_type == DISTANCE_TYPE.DISTANCE_YZ:
-			distances = np.linalg.norm(
-				elem_centers[:, np.newaxis, 1:] - elem_centers[boundary_elems][:, 1:], 
-				axis=2
-			)
+			boundary_coords = elem_centers[boundary_elems][:, 1:]
+			query_coords = elem_centers[:, 1:]
 
-		# Find minimum distance for each element to ANY boundary element
-		min_distances = np.min(distances, axis=1)
+		# Build KD-tree for fast nearest neighbor search
+		tree = cKDTree(boundary_coords)
+
+		# Query nearest boundary for all elements - O(N log M) instead of O(N*M)
+		min_distances, _ = tree.query(query_coords)
 
 		# Assign sign based on original density field: negative inside, positive outside
 		sdf = np.where(density_field > 0.5, -min_distances, min_distances)

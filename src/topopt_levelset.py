@@ -402,7 +402,7 @@ if __name__ == "__main__":
 	from topopt_thermal_benchmarks import *
 	
 	print("-" * 50)
-	to_problem = StructuralTOExamples.CantileverMidLoad # Choose the TO problem
+	to_problem = StructuralTOExamples.GEGrabCAD # Choose the TO problem
 	#to_problem = ThermalTOExamples.FourCornersThermal # Choose the TO problem
      
 	run_topopt_levelset(to_problem)
