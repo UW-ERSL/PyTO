@@ -96,6 +96,31 @@ def run_topopt_levelset(to_problem):
 
 
 	fe_solver.plot_mesh(title = title, save_path = None)
+     
+	fig, ax1 = plt.subplots()
+
+    # Plot compliance on left y-axis
+	ax1.set_xlabel('Iterations')
+	ax1.set_ylabel('objective', color='tab:blue')
+	ax1.plot(history['objective'], color='tab:blue', label='objective')
+	ax1.tick_params(axis='y', labelcolor='tab:blue')
+
+    # Plot volume fraction on right y-axis with dotted line
+	ax2 = ax1.twinx()
+	ax2.set_ylabel('Volume Fraction', color='tab:orange')
+	ax2.plot(history['volfrac'], color='tab:orange', linestyle=':', label='Volume Fraction')
+	ax2.tick_params(axis='y', labelcolor='tab:orange')
+	ax2.yaxis.set_major_formatter(plt.FormatStrFormatter('%.2f'))
+
+	plt.title('OC: Volume and Compliance vs. Iterations')
+
+    # Add legend
+	lines1, labels1 = ax1.get_legend_handles_labels()
+	lines2, labels2 = ax2.get_legend_handles_labels()
+	ax1.legend(lines1 + lines2, labels1 + labels2)
+
+	plt.grid(True)
+	plt.show()
 
 
 def topopt_levelset(feaMode,
@@ -104,6 +129,8 @@ def topopt_levelset(feaMode,
                     maxIterations: int = 250,
                     stepLength: int = 3,
                     numReinit: int = 5,
+                    numInitialHoles: int = 6,
+                    initialVolfraction: float = 0.9,
                     objective_tol: float = 0.001,
                     constraint_tol: float = 0.001,
                     plot_progress: bool = False,
@@ -153,20 +180,17 @@ def topopt_levelset(feaMode,
 
     # Initialize level set function (start with full domain)
     rho = np.ones(mesh.num_elems)
-    rho = mesh.initialize_with_holes(0.9,num_holes= 6, distance_type=distanceType)
+    rho = mesh.initialize_with_holes(initialVolfraction,num_holes= numInitialHoles, distance_type=distanceType)
      # Identify load-bearing elements
     elemsWithForces = find_elements_with_forces(mesh, fe_solver.bc.force, nDOFPerNode)
     
     if elemsWithForces is not None and len(elemsWithForces) > 0:
-            rho[elemsWithForces] = 1
+        rho[elemsWithForces] = 1
     if (to_params.ElemsToKeep is not None):
-            rho[to_params.ElemsToKeep] =1
+        rho[to_params.ElemsToKeep] = 1
     lsf = mesh.compute_signed_distance_function(rho, distance_type=distanceType)
-
-
-    fe_solver.mesh.setPseudoDensity(np.asarray(rho))
     
-   
+
     # History tracking
     history = {'objective': [], 'volfrac': []}
     success = True
@@ -185,7 +209,6 @@ def topopt_levelset(feaMode,
             )
         #input("Press Enter to continue...")
         sol = fe_solver.solve(rho, material_model)
-        fe_solver.postprocess()
         obj, shapeSens = compute_compliance_and_sensitivity(feaMode, rho, fe_solver)
         if (iteration == 0):
              obj0 = obj
@@ -243,19 +266,19 @@ def topopt_levelset(feaMode,
         shapeSens_smooth = (H @ shapeSens) / Hs
     
         # 4. Design update via evolution 
-        rho, lsf = evolveUpWind(
+        lsf = evolveUpWind(
                 mesh=mesh,
                 lsf=lsf,
                 v=-shapeSens_smooth,  # Velocity is negative of shape sensitivity
                 stepLength=stepLength,
         )
+        rho = (lsf < 0).astype(float)
 
         # 10. Periodic reinitialization 
         if (iteration + 1) % numReinit == 0:
             if print_progress:
                 print("  Reinitializing level set function...")
             lsf = mesh.compute_signed_distance_function(rho, distance_type=distanceType)
-
 
     # Final solve
     mesh.setPseudoDensity(np.asarray(rho))
@@ -310,8 +333,8 @@ def evolveUpWind(mesh, lsf, v, stepLength):
     for _ in range(num_steps):
         lsf = upwind_step(mesh, lsf, v, dt)
   
-    rho = (lsf < 0).astype(float)
-    return rho, lsf
+    
+    return  lsf
 
 
 def upwind_step(mesh, lsf, v, dt):
@@ -366,7 +389,7 @@ if __name__ == "__main__":
 	from topopt_thermal_benchmarks import *
 	
 	print("-" * 50)
-	to_problem = StructuralTOExamples.MBBBeam # Choose the TO problem
+	to_problem = StructuralTOExamples.CantileverMidLoad # Choose the TO problem
 	#to_problem = ThermalTOExamples.FourCornersThermal # Choose the TO problem
      
 	run_topopt_levelset(to_problem)
