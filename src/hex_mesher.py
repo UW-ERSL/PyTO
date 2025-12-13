@@ -855,51 +855,65 @@ class HexMesher:
 		if not boundary_elems:
 			print("Warning: No boundary elements found. Returning zero SDF.")
 			return sdf
-		
-		# Compute distances based on the distance type
+
+		boundary_elems = np.array(boundary_elems)
+
+		# Compute distances from ALL elements to ALL boundary elements
 		if distance_type == DISTANCE_TYPE.DISTANCE_3D:
-			# Full 3D Euclidean distance
 			distances = np.linalg.norm(
 				elem_centers[:, np.newaxis, :] - elem_centers[boundary_elems], 
 				axis=2
 			)
 		elif distance_type == DISTANCE_TYPE.DISTANCE_XY:
-			# XY-plane distance (ignore Z)
 			distances = np.linalg.norm(
 				elem_centers[:, np.newaxis, :2] - elem_centers[boundary_elems][:, :2], 
 				axis=2
 			)
 		elif distance_type == DISTANCE_TYPE.DISTANCE_XZ:
-			# XZ-plane distance (ignore Y)
 			distances = np.linalg.norm(
 				elem_centers[:, np.newaxis, ::2] - elem_centers[boundary_elems][:, ::2], 
 				axis=2
 			)
 		elif distance_type == DISTANCE_TYPE.DISTANCE_YZ:
-			# YZ-plane distance (ignore X)
 			distances = np.linalg.norm(
 				elem_centers[:, np.newaxis, 1:] - elem_centers[boundary_elems][:, 1:], 
 				axis=2
 			)
-		
-		# Find minimum distance for each element
+
+		# Find minimum distance for each element to ANY boundary element
 		min_distances = np.min(distances, axis=1)
-		
-		# Assign sign: negative inside (density=1), positive outside (density=0)
-		sdf = np.where(density_field == 1, -min_distances, min_distances)
-		
-		# Normalize by average element size for dimensionless representation
+
+		# Assign sign based on original density field: negative inside, positive outside
+		sdf = np.where(density_field > 0.5, -min_distances, min_distances)
+
+		# Normalize by average element size
 		avg_elem_size = np.mean(self.elem_size)
 		sdf /= avg_elem_size
-		min_abs_dist = 0.5  # In normalized coordinates
 
-		# For elements with |sdf| < 0.5, push them to ±0.5
-		# Keep the sign but enforce minimum magnitude
-		sdf = np.where(np.abs(sdf) < min_abs_dist,
-					np.sign(sdf) * min_abs_dist,
-					sdf)
+		# NEW: Only apply minimum distance to NON-boundary elements
+		# Boundary elements should keep their small (near-zero) distances
+		is_boundary_elem = np.isin(np.arange(self.num_elems), boundary_elems)
 
+		# For non-boundary elements, ensure minimum absolute distance
+		min_abs_dist = 0.5
+		non_boundary_mask = ~is_boundary_elem
+		sdf[non_boundary_mask] = np.where(
+			np.abs(sdf[non_boundary_mask]) < min_abs_dist,
+			np.sign(sdf[non_boundary_mask]) * min_abs_dist,
+			sdf[non_boundary_mask]
+		)
+
+		# For boundary elements, give them a small non-zero value based on their phase
+		# Use a small fraction of element size (0.1) to keep them near zero but non-zero
+		boundary_mask = is_boundary_elem
+		sdf[boundary_mask] = np.where(
+			density_field[boundary_mask] > 0.5,
+			-0.1,  # Solid boundary elements: slightly inside
+			0.1    # Void boundary elements: slightly outside
+		)
 		return sdf
+
+		
 	
 	def initialize_with_holes(self, volFractionConstraint, num_holes=8, 
                          distance_type=DISTANCE_TYPE.DISTANCE_3D):

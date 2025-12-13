@@ -130,7 +130,7 @@ def topopt_levelset(feaMode,
                     numReinit: int = 5,
                     numInitialHoles: int = 6,
                     initialVolfraction: float = 0.9,
-                    objective_tol: float = 0.001,
+                    objective_tol: float = 0.005,
                     constraint_tol: float = 0.001,
                     plot_progress: bool = False,
                     print_progress: bool = False,
@@ -181,15 +181,17 @@ def topopt_levelset(feaMode,
     # Initialize level set function (start with full domain)
     rho = np.ones(mesh.num_elems)
     rho = mesh.initialize_with_holes(initialVolfraction,num_holes= numInitialHoles, distance_type=distanceType)
-     # Identify load-bearing elements
+
+    # Ensure load-bearing elements are solid
     elemsWithForces = find_elements_with_forces(mesh, fe_solver.bc.force, nDOFPerNode)
     
     if elemsWithForces is not None and len(elemsWithForces) > 0:
         rho[elemsWithForces] = 1
     if (to_params.ElemsToKeep is not None):
         rho[to_params.ElemsToKeep] = 1
+
     lsf = mesh.compute_signed_distance_function(rho, distance_type=distanceType)
-    
+    vol_est = np.mean(lsf < 0)
 
     # History tracking
     history = {'objective': [], 'volfrac': []}
@@ -266,12 +268,16 @@ def topopt_levelset(feaMode,
         shapeSens_smooth = (H @ shapeSens) / Hs
       
         # 4. Design update via evolution 
+        rho = (lsf < 0).astype(float)
+        vol_est = np.mean(rho)
+
         lsf = evolveUpWind(
                 mesh=mesh,
                 lsf=lsf,
                 v=-shapeSens_smooth  # Velocity is negative of shape sensitivity
         )
         rho = (lsf < 0).astype(float)
+        vol_est = np.mean(rho)
 
         # 10. Periodic reinitialization 
         if (iteration + 1) % numReinit == 0:
@@ -323,14 +329,23 @@ def evolveUpWind(mesh, lsf, v):
         rho = (lsf < 0).astype(float)
         return rho, lsf
     
-    cflLimit = 0.1
+    cflLimit = 0.25
     dt = cflLimit * h / max_v
    
-    num_steps = 30 # fixed for simplicity
+    max_steps = 100 
     vol_initial = np.mean(lsf < 0)
-    for _ in range(num_steps):
+    lsf_prev = lsf.copy()
+    for _ in range(max_steps):
         lsf = upwind_step(mesh, lsf, v, dt)
         vol_est = np.mean(lsf < 0)
+        diff = np.max(np.abs(lsf - lsf_prev))
+        if diff == 0:
+            break
+        lsf_prev = lsf.copy()
+        vol_diff = np.abs(vol_est - vol_initial)
+        if (vol_diff > 0.05): # do not let volume change too much in one evolve
+            break
+       
     return  lsf
 
 
@@ -387,7 +402,7 @@ if __name__ == "__main__":
 	from topopt_thermal_benchmarks import *
 	
 	print("-" * 50)
-	to_problem = StructuralTOExamples.CantileverMidLoad # Choose the TO problem
+	to_problem = StructuralTOExamples.DistributedLoad # Choose the TO problem
 	#to_problem = ThermalTOExamples.FourCornersThermal # Choose the TO problem
      
 	run_topopt_levelset(to_problem)
