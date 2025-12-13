@@ -128,7 +128,7 @@ def topopt_levelset(feaMode,
                     to_params,
                     maxIterations: int = 250,
                     numReinit: int = 5,
-                    numInitialHoles: int = 6,
+                    numInitialHoles: int =10,
                     initialVolfraction: float = 0.9,
                     objective_tol: float = 0.005,
                     constraint_tol: float = 0.001,
@@ -402,7 +402,7 @@ if __name__ == "__main__":
 	from topopt_thermal_benchmarks import *
 	
 	print("-" * 50)
-	to_problem = StructuralTOExamples.DistributedLoad # Choose the TO problem
+	to_problem = StructuralTOExamples.CantileverMidLoad # Choose the TO problem
 	#to_problem = ThermalTOExamples.FourCornersThermal # Choose the TO problem
      
 	run_topopt_levelset(to_problem)
