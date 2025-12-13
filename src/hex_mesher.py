@@ -893,6 +893,166 @@ class HexMesher:
 		sdf /= avg_elem_size
 		
 		return sdf
+	
+	def initialize_with_holes(self, volFractionConstraint, num_holes=8, 
+                         distance_type=DISTANCE_TYPE.DISTANCE_3D):
+		"""
+		Initialize design with holes distributed throughout the domain.
+		
+		Handles different distance types properly:
+		- DISTANCE_3D: Full 3D spherical holes
+		- DISTANCE_XY: 2D circular holes (through-holes in Z direction)
+		- DISTANCE_XZ: 2D circular holes (through-holes in Y direction)
+		- DISTANCE_YZ: 2D circular holes (through-holes in X direction)
+		
+		Args:
+			mesh: HexMesher object
+			volFractionConstraint: Target volume fraction (e.g., 0.5)
+			num_holes: Number of holes to create (default: 8 for 2x2x2)
+			distance_type: Type of distance function
+			
+		Returns:
+			rho: Initial density field with holes
+		"""
+		
+		# Start with full solid
+		rho = np.ones(self.num_elems)
+		
+		# Get element centers
+		# Get element centers for hole placement
+		elem_centers = self.elem_centers  # Shape: (num_elems, 3)
+		
+		# Get domain bounds from NODES (not element centers!)
+		# This is critical for extruded geometries
+		node_xyz = self.node_xyz  # Shape: (num_nodes, 3)
+		# Get domain bounds
+		x_min, x_max = node_xyz[:, 0].min(), node_xyz[:, 0].max()
+		y_min, y_max = node_xyz[:, 1].min(), node_xyz[:, 1].max()
+		z_min, z_max = node_xyz[:, 2].min(), node_xyz[:, 2].max()
+		
+		x_range = x_max - x_min
+		y_range = y_max - y_min
+		z_range = z_max - z_min
+		
+		# Margin from boundaries (don't put holes too close to edges)
+		margin = 0.15  # 15% margin
+		
+		# Determine hole distribution based on distance type
+		if distance_type == DISTANCE_TYPE.DISTANCE_3D:
+			# Full 3D problem - distribute holes in 3D grid
+			# For num_holes=8: 2x2x2 grid
+			# For num_holes=27: 3x3x3 grid
+			n_per_dim = int(np.ceil(num_holes ** (1/3)))
+			
+			# Create 3D grid of hole centers
+			x_positions = np.linspace(x_min + margin*x_range, 
+									x_max - margin*x_range, n_per_dim)
+			y_positions = np.linspace(y_min + margin*y_range, 
+									y_max - margin*y_range, n_per_dim)
+			z_positions = np.linspace(z_min + margin*z_range, 
+									z_max - margin*z_range, n_per_dim)
+			
+			# Compute hole radius to achieve target volume
+			# Volume of sphere: (4/3)πr³
+			domain_volume = x_range * y_range * z_range
+			vol_to_remove = domain_volume * (1.0 - volFractionConstraint) * 0.9  # 90% via holes
+			vol_per_hole = vol_to_remove / (n_per_dim**3)
+			hole_radius = (3 * vol_per_hole / (4 * np.pi)) ** (1/3)
+			
+			# Create spherical holes
+			for xc in x_positions:
+				for yc in y_positions:
+					for zc in z_positions:
+						# Distance from hole center (3D Euclidean)
+						dist = np.sqrt((elem_centers[:, 0] - xc)**2 + 
+									(elem_centers[:, 1] - yc)**2 + 
+									(elem_centers[:, 2] - zc)**2)
+						
+						# Remove material inside hole
+						rho[dist < hole_radius] = 0.0
+			
+
+		elif distance_type == DISTANCE_TYPE.DISTANCE_XY:
+			# 2D in XY plane, extruded in Z
+			# Create cylindrical through-holes spanning entire Z
+			n_per_dim = int(np.ceil(np.sqrt(num_holes)))
+			
+			# Create 2D grid of hole centers in XY plane
+			x_positions = np.linspace(x_min + margin*x_range, 
+									x_max - margin*x_range, n_per_dim)
+			y_positions = np.linspace(y_min + margin*y_range, 
+									y_max - margin*y_range, n_per_dim)
+			
+			# Compute hole radius for cylinders
+			# Volume of cylinder: πr²h where h = z_range
+			domain_volume = x_range * y_range * z_range
+			vol_to_remove = domain_volume * (1.0 - volFractionConstraint) * 0.9
+			vol_per_hole = vol_to_remove / (n_per_dim**2)
+			hole_radius = np.sqrt(vol_per_hole / (np.pi * z_range))
+			
+			# Create cylindrical through-holes
+			for xc in x_positions:
+				for yc in y_positions:
+					# Distance in XY plane only (ignore Z)
+					dist_xy = np.sqrt((elem_centers[:, 0] - xc)**2 + 
+									(elem_centers[:, 1] - yc)**2)
+					
+					# Remove material inside cylinder (all Z levels)
+					rho[dist_xy < hole_radius] = 0.0
+			
+	
+		elif distance_type == DISTANCE_TYPE.DISTANCE_XZ:
+			# 2D in XZ plane, extruded in Y
+			# Create cylindrical through-holes spanning entire Y
+			n_per_dim = int(np.ceil(np.sqrt(num_holes)))
+			
+			x_positions = np.linspace(x_min + margin*x_range, 
+									x_max - margin*x_range, n_per_dim)
+			z_positions = np.linspace(z_min + margin*z_range, 
+									z_max - margin*z_range, n_per_dim)
+			
+			domain_volume = x_range * y_range * z_range
+			vol_to_remove = domain_volume * (1.0 - volFractionConstraint) * 0.9
+			vol_per_hole = vol_to_remove / (n_per_dim**2)
+			hole_radius = np.sqrt(vol_per_hole / (np.pi * y_range))
+			
+			for xc in x_positions:
+				for zc in z_positions:
+					# Distance in XZ plane only (ignore Y)
+					dist_xz = np.sqrt((elem_centers[:, 0] - xc)**2 + 
+									(elem_centers[:, 2] - zc)**2)
+					
+					rho[dist_xz < hole_radius] = 0.0
+			
+	
+		elif distance_type == DISTANCE_TYPE.DISTANCE_YZ:
+			# 2D in YZ plane, extruded in X
+			# Create cylindrical through-holes spanning entire X
+			n_per_dim = int(np.ceil(np.sqrt(num_holes)))
+			
+			y_positions = np.linspace(y_min + margin*y_range, 
+									y_max - margin*y_range, n_per_dim)
+			z_positions = np.linspace(z_min + margin*z_range, 
+									z_max - margin*z_range, n_per_dim)
+			
+			domain_volume = x_range * y_range * z_range
+			vol_to_remove = domain_volume * (1.0 - volFractionConstraint) * 0.9
+			vol_per_hole = vol_to_remove / (n_per_dim**2)
+			hole_radius = np.sqrt(vol_per_hole / (np.pi * x_range))
+			
+			for yc in y_positions:
+				for zc in z_positions:
+					# Distance in YZ plane only (ignore X)
+					dist_yz = np.sqrt((elem_centers[:, 1] - yc)**2 + 
+									(elem_centers[:, 2] - zc)**2)
+					
+					rho[dist_yz < hole_radius] = 0.0
+		else:
+			raise ValueError(f"Unknown distance type: {distance_type}")
+		
+
+		return rho
+
 	def createEdofMatStructural(self):
 		self.dofs_per_node = 3 # structural
 		self.edofMatStructural = np.zeros((self.num_elems, 24), dtype = int)

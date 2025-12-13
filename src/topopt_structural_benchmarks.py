@@ -224,7 +224,7 @@ def getStructuralTOProblem(to_problem: StructuralTOExamples,nDOFDesired = None, 
         to_params.nDOFDesired = 50000 if nDOFDesired is None else nDOFDesired
         to_params.ExtrudeZ = True
         to_params.Objective = (TO_QOI.COMPLIANCE, None)
-        to_params.Constraints = [(TO_QOI.VOLUME_FRACTION, None, 0.25)]
+        to_params.Constraints = [(TO_QOI.VOLUME_FRACTION, None, 0.5)]
         to_params.RelativeFilterRadius = 3
     elif to_problem == StructuralTOExamples.Bridge:
         structural_problem = StructuralExamples.Bridge
