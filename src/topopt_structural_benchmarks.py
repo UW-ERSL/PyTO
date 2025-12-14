@@ -291,7 +291,7 @@ def getStructuralTOProblem(to_problem: StructuralTOExamples,nDOFDesired = None, 
     elif to_problem == StructuralTOExamples.TorquePlate:
         structural_problem = StructuralExamples.TorquePlate
         to_params.Comment  = "Benchmark 2.5D"
-        to_params.ZAxisAngularSymmetry = 6
+        to_params.ZAxisAngularSymmetry = 4
         to_params.ExtrudeZ = True
         to_params.nDOFDesired = 50000 if nDOFDesired is None else nDOFDesired
         to_params.Objective = (TO_QOI.COMPLIANCE, None)

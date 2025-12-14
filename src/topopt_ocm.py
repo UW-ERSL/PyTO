@@ -349,7 +349,7 @@ if __name__ == "__main__":
 	from topopt_thermal_benchmarks import *
 
 	print("-" * 50)
-	to_problem = StructuralTOExamples.MBBBeam # Choose the TO problem
+	to_problem = StructuralTOExamples.TorquePlate # Choose the TO problem
 	#to_problem = ThermalTOExamples.FourCornersThermal
 
 	run_topopt_ocm(to_problem)

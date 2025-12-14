@@ -72,7 +72,7 @@ def runTOMethodOnBenchmarks(optimizationMethod):
 					benchmarks_bodyforce_problems + \
 					benchmarks_thermostructural_problems
 	
-	for to_problem in  benchmarks_2_5D_thermal_problems:  
+	for to_problem in  benchmarks_2_5D_problems:  
 		if to_problem in benchmarks_2_5D_problems:
 			subFolder = "Structural-Compliance2.5D"
 		elif to_problem in benchmarks_2_5D_thermal_problems:
@@ -413,10 +413,129 @@ def combine_results():
 		plt.savefig(f"{results_dir}/volume_comparison.png", dpi=300, bbox_inches='tight')
 		plt.close()
 
+def create_summary_tables():
+	subfolders = [
+		"Structural-Compliance2.5D",
+		"Structural-Compliance3D",
+		"Structural-NonCompliance",
+		"Structural-BodyForce",
+		"ThermoStructural",
+		"Thermal-Compliance2.5D",
+	]
+
+	for subFolder in subfolders:
+		results_dirs = sorted(glob.glob(f"./Results/Results_{time.strftime('%Y-%m-%d')}/{subFolder}"))
+		if not results_dirs:
+			print(f"No results directory found for {subFolder}. Skipping...")
+			continue
+
+		results_dir = results_dirs[-1]
+		method_dfs = {}
+
+		for method in TO_METHODS:
+			csv_path = f"{results_dir}/{method.name}/{method.name}_summary.csv"
+			if os.path.exists(csv_path):
+				df = pd.read_csv(csv_path)
+				df = df[['name', 'volfrac', 'objective', 'time (s)']]
+				df.rename(columns={
+					'volfrac': f'{method.name}_volfrac',
+					'objective': f'{method.name}_objective',
+					'time (s)': f'{method.name}_time (s)'
+				}, inplace=True)
+				method_dfs[method.name] = df
+
+		if not method_dfs:
+			print(f"No method CSVs found in {results_dir}. Skipping...")
+			continue
+
+		# Start from the DENSITYMMA dataframe to get the problem list
+		base_df = method_dfs.get('DENSITYMMA', next(iter(method_dfs.values()))).copy()
+		for m, df in method_dfs.items():
+			base_df = base_df.merge(df, on='name', how='outer')
+
+		# Formatting strings for fallback text
+		def fmt_val(x, fmt):
+			try:
+				return fmt.format(float(x))
+			except Exception:
+				return ""
+
+		# Build rows and compute image paths per method
+		rows = []
+		methods = list(TO_METHODS)
+		for _, row in base_df.iterrows():
+			name = row['name']
+			entry = {'Problem': name, 'cells': {}}
+			for method in methods:
+				# Image saved earlier at Line ~197:
+				# image_path = f"{output_dir}/{to_problem.name}.png"
+				img_path = f"{results_dir}/{method.name}/{name}.png"
+				entry['cells'][method.name] = {
+					'img': img_path if os.path.exists(img_path) else None,
+					'text': ""
+				}
+			rows.append(entry)
+
+		# Create a grid figure with images per cell
+		n_rows = len(rows)
+		n_cols = 1 + len(methods)  # Problem + methods
+		if n_rows == 0:
+			print(f"No rows to plot for {results_dir}. Skipping...")
+			continue
+
+		cell_h = 1.8  # height per row in inches
+		cell_w = 2.2  # width per image cell
+		problem_col_w = 2.8
+		fig_w = problem_col_w + len(methods) * cell_w
+		fig_h = max(3, n_rows * cell_h)
+		fig, axes = plt.subplots(n_rows, n_cols, figsize=(fig_w, fig_h))
+		# Normalize axes to 2D array
+		if n_rows == 1:
+			axes = np.array([axes])
+		if n_cols == 1:
+			axes = axes.reshape(n_rows, 1)
+
+		# Header row using a top suptitle-like strip
+		# Draw column headers in the first row's axes titles
+		axes[0, 0].set_title("Problem", fontsize=10, fontweight='bold')
+		for ci, method in enumerate(methods, start=1):
+			axes[0, ci].set_title(method.name, fontsize=10, fontweight='bold')
+
+		for ri, entry in enumerate(rows):
+			# Problem name cell
+			ax0 = axes[ri, 0]
+			ax0.axis('off')
+			ax0.text(0.02, 0.5, entry['Problem'], fontsize=9, va='center', ha='left')
+
+			# Method cells: show figure if available, else text
+			for ci, method in enumerate(methods, start=1):
+				ax = axes[ri, ci]
+				ax.axis('off')
+				cell = entry['cells'][method.name]
+				if cell['img'] is not None:
+					try:
+						img = plt.imread(cell['img'])
+						ax.imshow(img)
+						# Optional overlay text at bottom
+						if cell['text']:
+							ax.text(0.02, 0.02, cell['text'], fontsize=8, va='bottom', ha='left',
+									color='white', bbox=dict(facecolor='black', alpha=0.4, pad=2),
+									transform=ax.transAxes)
+					except Exception:
+						# Fallback to text if image fails
+						ax.text(0.02, 0.5, cell['text'] or "Image load error", fontsize=8, va='center', ha='left')
+				else:
+					ax.text(0.02, 0.5, cell['text'] or "No image", fontsize=8, va='center', ha='left')
+
+		plt.tight_layout()
+		out_path = f"{results_dir}/methods_results_table.png"
+		plt.savefig(out_path, dpi=300, bbox_inches='tight')
+		plt.close()
+
 if __name__ == "__main__":    
 	
 	optimizationMethods = [TO_METHODS.DENSITYMMA, TO_METHODS.DENSITYOCM,TO_METHODS.PARETO,TO_METHODS.LEVELSET]
-	for optimizationMethod in [TO_METHODS.LEVELSET]:
+	for optimizationMethod in []:
 		runTOMethodOnBenchmarks(optimizationMethod)
 		print("-" * 50)
 		print(f"Finished {optimizationMethod.name} tests.")
@@ -425,3 +544,5 @@ if __name__ == "__main__":
 	
 	# Combine results from all methods
 	combine_results() 
+
+	create_summary_tables()
