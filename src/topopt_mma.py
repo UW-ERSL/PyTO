@@ -76,8 +76,8 @@ def run_topopt_mma(to_problem):
         nNodes = fe_structural_solver.mesh.num_nodes
         nElems = fe_structural_solver.mesh.num_elems  
            
-        # fe_structural_solver.plot_mesh(title = "Structural Load", plot_bc = True, save_path = None)
-        # fe_thermal_solver.plot_mesh(title = "Thermal Load", plot_bc = True, save_path = None)
+    fe_structural_solver.plot_mesh(title = "Structural Load", plot_bc = True, camera_position = 'xy', save_path = None)
+    # fe_thermal_solver.plot_mesh(title = "Thermal Load", plot_bc = True, save_path = None)
 
     print("nNodes: ", nNodes )
     print("nElem: ", nElems) 
@@ -406,7 +406,7 @@ if __name__ == "__main__":
     print("-" * 50)
 
     # Choose the TO problem
-    to_problem = StructuralTOExamples.TorquePlate 
+    to_problem = StructuralTOExamples.LBracketMidLoad 
     #to_problem = ThermalTOExamples.FourCornersThermal
     #to_problem = ThermoStructuralTOExamples.MBBBeam
 

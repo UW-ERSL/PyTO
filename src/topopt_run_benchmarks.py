@@ -20,19 +20,16 @@ def runTOMethodOnBenchmarks(optimizationMethod):
 	results_list = []
 	dsolver = deflation.DeflationSolver()
 	feaMode = FEA_MODE.STRUCTURAL
-	benchmarks_2_5D_problems = [StructuralTOExamples.Mitchell_1, 
-							StructuralTOExamples.Mitchell_2,
-							StructuralTOExamples.Mitchell_3, 
-							StructuralTOExamples.ShortCantileverTipLoad, 
-							StructuralTOExamples.ShortCantileverMidLoad,
+	benchmarks_2_5D_problems_1 = [StructuralTOExamples.Mitchell_1, 
 							StructuralTOExamples.CantileverTipLoad, 
 							StructuralTOExamples.CantileverMidLoad,
 							StructuralTOExamples.MBBBeam,
-							StructuralTOExamples.LBracketTopLoad, 
+							StructuralTOExamples.Bridge,
+							StructuralTOExamples.TwoBar,]
+	
+	benchmarks_2_5D_problems_2 = [StructuralTOExamples.LBracketTopLoad, 
 							StructuralTOExamples.LBracketMidLoad,
 							StructuralTOExamples.TorquePlate,
-							StructuralTOExamples.Bridge,
-							StructuralTOExamples.TwoBar, 
 							StructuralTOExamples.DistributedLoad,
 							StructuralTOExamples.ThreeHoleBracket,]
 
@@ -65,16 +62,19 @@ def runTOMethodOnBenchmarks(optimizationMethod):
 						StructuralTOExamples.EdgeCantilever,StructuralTOExamples.GravityPlate,ThermoStructuralTOExamples.MBBBeam,
 						ThermalTOExamples.FourCornersThermal]
 	
-	allBenchmarks = benchmarks_2_5D_problems + \
+	allBenchmarks = benchmarks_2_5D_problems_1 + \
+					benchmarks_2_5D_problems_2 + \
 					benchmarks_2_5D_thermal_problems + \
 					benchmarks_3D_problems  + \
 					benchmarks_noncompliance_problems + \
 					benchmarks_bodyforce_problems + \
 					benchmarks_thermostructural_problems
 	
-	for to_problem in  benchmarks_2_5D_problems:  
-		if to_problem in benchmarks_2_5D_problems:
-			subFolder = "Structural-Compliance2.5D"
+	for to_problem in  benchmarks_2_5D_thermal_problems:  
+		if to_problem in benchmarks_2_5D_problems_1:
+			subFolder = "Structural-Compliance2.5D_1"
+		elif to_problem in benchmarks_2_5D_problems_2:
+			subFolder = "Structural-Compliance2.5D_2"
 		elif to_problem in benchmarks_2_5D_thermal_problems:
 			subFolder = "Thermal-Compliance2.5D"
 		elif to_problem in benchmarks_3D_problems:
@@ -151,7 +151,23 @@ def runTOMethodOnBenchmarks(optimizationMethod):
 						rtol = 1e-8)
 			fe_solver = fe_structural_solver  # primary solver is structural
 			
+		# Ensure the output directory exists
+		output_base = f"./Results/Results_{time.strftime('%Y-%m-%d')}/{subFolder}/Problems/"
+		os.makedirs(output_base, exist_ok=True)
 
+		if to_problem in benchmarks_2_5D_problems_1 or to_problem in benchmarks_2_5D_problems_2 or to_problem in benchmarks_2_5D_thermal_problems:
+			fe_solver.plot_mesh(
+				title="Structural Load",
+				plot_bc=True,
+				camera_position='xy',
+				save_path=f"{output_base}/{to_problem.name}_problem.png"
+			)
+		else:
+			fe_solver.plot_mesh(
+				title="Structural Load",
+				plot_bc=True,
+				save_path=f"{output_base}/{to_problem.name}_problem.png"
+			)
 		startTime = time.time()
 		print("-" * 50)
 		print(f"Running {to_problem.name} problem using {optimizationMethod.name} method and {solver.name} solver")
@@ -188,12 +204,10 @@ def runTOMethodOnBenchmarks(optimizationMethod):
 													to_params = to_params)
 		timeTaken = time.time() - startTime
 
-		
-
 		image_path = f"{output_dir}/{to_problem.name}.png"
 		title = f"{optimizationMethod.name}: vol: {history['volfrac'][-1]:0.2f}, J: {history['objective'][-1]:.3g}, nFEA: {len(history['objective']):3d}, time: {timeTaken:.0f} s"
 	
-		if to_problem in benchmarks_2_5D_problems or to_problem in benchmarks_2_5D_thermal_problems:
+		if to_problem in benchmarks_2_5D_problems_1 or to_problem in benchmarks_2_5D_problems_2 or to_problem in benchmarks_2_5D_thermal_problems:
 			fe_solver.plot_mesh(save_path=image_path, plot_bc = None, title=title, camera_position='xy')
 		else:
 			fe_solver.plot_mesh(save_path=image_path, plot_bc = None, title=title)
@@ -276,7 +290,8 @@ def runTOMethodOnBenchmarks(optimizationMethod):
 
 def combine_results():
 	# Get the latest results directory
-	for subFolder in ["Structural-Compliance2.5D", 
+	for subFolder in ["Structural-Compliance2.5D_1",
+				   "Structural-Compliance2.5D_2",
 				   "Structural-Compliance3D",
 				   "Structural-NonCompliance", 
 				   "Structural-BodyForce",
@@ -368,7 +383,7 @@ def combine_results():
 		plt.grid(True, alpha=0.3)
 		plt.subplots_adjust(right=0.85)  # Make room for legend
 		plt.tight_layout()
-		plt.savefig(f"{results_dir}/compliance_comparison.png", dpi=300, bbox_inches='tight')
+		plt.savefig(f"{results_dir}/{subFolder}_compliance_comparison.png", dpi=300, bbox_inches='tight')
 		plt.close()
 
 		# Plot normalized time
@@ -380,7 +395,7 @@ def combine_results():
 		plt.legend(title='Method', fontsize=8, bbox_to_anchor=(1.05, 1), loc='upper left')
 		plt.grid(True, alpha=0.3)
 		plt.tight_layout()
-		plt.savefig(f"{results_dir}/time_comparison.png", dpi=300, bbox_inches='tight')
+		plt.savefig(f"{results_dir}/{subFolder}_time_comparison.png", dpi=300, bbox_inches='tight')
 		plt.close()
 
 		# Plot number of FEAs
@@ -392,7 +407,7 @@ def combine_results():
 		plt.legend(title='Method', fontsize=8, bbox_to_anchor=(1.05, 1), loc='upper left')
 		plt.grid(True, alpha=0.3)
 		plt.tight_layout()
-		plt.savefig(f"{results_dir}/fea_comparison.png", dpi=300, bbox_inches='tight')
+		plt.savefig(f"{results_dir}/{subFolder}_fea_comparison.png", dpi=300, bbox_inches='tight')
 		plt.close()
 
 		# Create and plot normalized volume fraction summary
@@ -410,12 +425,13 @@ def combine_results():
 		plt.legend(title='Method', fontsize=8, bbox_to_anchor=(1.05, 1), loc='upper left')
 		plt.grid(True, alpha=0.3)
 		plt.tight_layout()
-		plt.savefig(f"{results_dir}/volume_comparison.png", dpi=300, bbox_inches='tight')
+		plt.savefig(f"{results_dir}/{subFolder}_volume_comparison.png", dpi=300, bbox_inches='tight')
 		plt.close()
 
 def create_summary_tables():
 	subfolders = [
-		"Structural-Compliance2.5D",
+		"Structural-Compliance2.5D_1",
+		"Structural-Compliance2.5D_2",
 		"Structural-Compliance3D",
 		"Structural-NonCompliance",
 		"Structural-BodyForce",
@@ -453,22 +469,18 @@ def create_summary_tables():
 		for m, df in method_dfs.items():
 			base_df = base_df.merge(df, on='name', how='outer')
 
-		# Formatting strings for fallback text
-		def fmt_val(x, fmt):
-			try:
-				return fmt.format(float(x))
-			except Exception:
-				return ""
-
 		# Build rows and compute image paths per method
 		rows = []
 		methods = list(TO_METHODS)
+
+		# Use the problem image saved in the Problems folder
 		for _, row in base_df.iterrows():
 			name = row['name']
-			entry = {'Problem': name, 'cells': {}}
+			entry = {'Name': name, 'cells': {}}
+			# Problem column uses the problem image generated in runTOMethodOnBenchmarks
+			problem_img_path = f"{results_dir}/Problems/{name}_problem.png"
+			entry['problem_img'] = problem_img_path if os.path.exists(problem_img_path) else None
 			for method in methods:
-				# Image saved earlier at Line ~197:
-				# image_path = f"{output_dir}/{to_problem.name}.png"
 				img_path = f"{results_dir}/{method.name}/{name}.png"
 				entry['cells'][method.name] = {
 					'img': img_path if os.path.exists(img_path) else None,
@@ -478,15 +490,17 @@ def create_summary_tables():
 
 		# Create a grid figure with images per cell
 		n_rows = len(rows)
-		n_cols = 1 + len(methods)  # Problem + methods
+		# Columns: Name | Problem | per-method images
+		n_cols = 2 + len(methods)
 		if n_rows == 0:
 			print(f"No rows to plot for {results_dir}. Skipping...")
 			continue
 
 		cell_h = 1.8  # height per row in inches
 		cell_w = 2.2  # width per image cell
-		problem_col_w = 2.8
-		fig_w = problem_col_w + len(methods) * cell_w
+		name_col_w = 2.8
+		problem_col_w = 3.0
+		fig_w = name_col_w + problem_col_w + len(methods) * cell_w
 		fig_h = max(3, n_rows * cell_h)
 		fig, axes = plt.subplots(n_rows, n_cols, figsize=(fig_w, fig_h))
 		# Normalize axes to 2D array
@@ -495,20 +509,32 @@ def create_summary_tables():
 		if n_cols == 1:
 			axes = axes.reshape(n_rows, 1)
 
-		# Header row using a top suptitle-like strip
-		# Draw column headers in the first row's axes titles
-		axes[0, 0].set_title("Problem", fontsize=10, fontweight='bold')
-		for ci, method in enumerate(methods, start=1):
+		# Column headers in the first row's axes titles
+		axes[0, 0].set_title("Name", fontsize=10, fontweight='bold')
+		axes[0, 1].set_title("Problem", fontsize=10, fontweight='bold')
+		for ci, method in enumerate(methods, start=2):
 			axes[0, ci].set_title(method.name, fontsize=10, fontweight='bold')
 
 		for ri, entry in enumerate(rows):
-			# Problem name cell
+			# Name cell
 			ax0 = axes[ri, 0]
 			ax0.axis('off')
-			ax0.text(0.02, 0.5, entry['Problem'], fontsize=9, va='center', ha='left')
+			ax0.text(0.02, 0.5, entry['Name'], fontsize=9, va='center', ha='left')
+
+			# Problem image cell
+			ax_prob = axes[ri, 1]
+			ax_prob.axis('off')
+			if entry['problem_img'] is not None:
+				try:
+					img = plt.imread(entry['problem_img'])
+					ax_prob.imshow(img)
+				except Exception:
+					ax_prob.text(0.02, 0.5, "Problem image load error", fontsize=8, va='center', ha='left')
+			else:
+				ax_prob.text(0.02, 0.5, "No problem image", fontsize=8, va='center', ha='left')
 
 			# Method cells: show figure if available, else text
-			for ci, method in enumerate(methods, start=1):
+			for ci, method in enumerate(methods, start=2):
 				ax = axes[ri, ci]
 				ax.axis('off')
 				cell = entry['cells'][method.name]
@@ -516,26 +542,24 @@ def create_summary_tables():
 					try:
 						img = plt.imread(cell['img'])
 						ax.imshow(img)
-						# Optional overlay text at bottom
 						if cell['text']:
 							ax.text(0.02, 0.02, cell['text'], fontsize=8, va='bottom', ha='left',
 									color='white', bbox=dict(facecolor='black', alpha=0.4, pad=2),
 									transform=ax.transAxes)
 					except Exception:
-						# Fallback to text if image fails
 						ax.text(0.02, 0.5, cell['text'] or "Image load error", fontsize=8, va='center', ha='left')
 				else:
 					ax.text(0.02, 0.5, cell['text'] or "No image", fontsize=8, va='center', ha='left')
 
 		plt.tight_layout()
-		out_path = f"{results_dir}/methods_results_table.png"
+		out_path = f"{results_dir}/{subFolder}_summary_table.png"
 		plt.savefig(out_path, dpi=300, bbox_inches='tight')
 		plt.close()
 
 if __name__ == "__main__":    
 	
 	optimizationMethods = [TO_METHODS.DENSITYMMA, TO_METHODS.DENSITYOCM,TO_METHODS.PARETO,TO_METHODS.LEVELSET]
-	for optimizationMethod in []:
+	for optimizationMethod in optimizationMethods:
 		runTOMethodOnBenchmarks(optimizationMethod)
 		print("-" * 50)
 		print(f"Finished {optimizationMethod.name} tests.")

@@ -157,11 +157,16 @@ class HexFEAPlotter:
         pv_mesh.cell_data['density'] = face_densities
         
         plotter.add_mesh(pv_mesh, show_edges=True, color='lightgreen', 
-                        edge_color='black', line_width=1)
+                        edge_color='black', line_width=1,opacity=0.1)
         
         if plot_bc:
+            plotter.add_mesh(pv_mesh,  show_edges = None, color='lightgreen', 
+                        edge_color=None, line_width=0,opacity=0.1)
             self._add_structural_boundary_conditions(plotter, bc, rel_arrow_scale, offsetArrow)
         
+        else:
+            plotter.add_mesh(pv_mesh, show_edges=True, color='lightgreen', 
+                        edge_color='black', line_width=1)
         if title:
             self._safe_add_title(title, font_size=8)
         
@@ -847,62 +852,71 @@ class HexFEAPlotter:
 
         vertices = self.mesh.node_xyz
         
-        # Add black spheres for label 1 (fixed nodes)
-        label1_nodes = np.where(self.mesh.node_indices[:, 3] == 1)[0]
+        # Add black spheres for fixed nodes (from structural fixed DOFs)
+        fixed_nodes = np.array([], dtype=int)
+        if bc is not None and hasattr(bc, 'fixed_dofs') and bc.fixed_dofs is not None:
+            fixed_dofs = np.asarray(bc.fixed_dofs, dtype=int)
+            # Structural FEA: 3 DOFs per node (ux, uy, uz)
+            fixed_nodes = np.unique(fixed_dofs // 3)
+
+        if fixed_nodes.size > 0:
+            points1 = vertices[fixed_nodes]
+            pts = pv.PolyData(points1)
+            plotter.add_points(pts, color='black', point_size=20,
+                       render_points_as_spheres=True)
         
-        if len(label1_nodes) > 0 and bc is not None:
-            points1 = vertices[label1_nodes]
-            pts = pv.PointSet(points1)
-            plotter.add_mesh(pts, color='black', point_size=10, 
-                            render_points_as_spheres=True)
-        
-        # Add red force arrows for label 2 (loaded nodes)
-        label2_nodes = np.where(self.mesh.node_indices[:, 3] == 2)[0]
-        
-        if len(label2_nodes) > 0 and bc is not None:
-            # Calculate average force norm for scaling
-            force_norms = []
-            for node in label2_nodes:
-                fx = bc.force[3*node]
-                fy = bc.force[3*node + 1]
-                fz = bc.force[3*node + 2]
-                force_vec = np.array([fx, fy, fz])
-                force_norm = np.linalg.norm(force_vec)
-                if force_norm > 0:
-                    force_norms.append(force_norm)
+        # Add red force arrows for nodes with non-zero applied forces
+        if bc is not None and hasattr(bc, "force") and bc.force is not None:
+            # Identify nodes that have any non-zero force component
+
+            num_nodes = vertices.shape[0]
+            force = np.asarray(bc.force, dtype=float)
+            if force.size == 3 * num_nodes:
+                force_reshaped = force.reshape((num_nodes, 3))
+                nodes_with_force = np.where(np.linalg.norm(force_reshaped, axis=1) > 0)[0]
+            else:
+                # Fallback: infer nodes from non-zero indices assuming 3 DOFs per node
+                nonzero_dofs = np.nonzero(force)[0]
+                nodes_with_force = np.unique(nonzero_dofs // 3)
+           
+            if len(nodes_with_force) > 0:
+                # Calculate average force norm for scaling
+                force_norms = []
+                for node in nodes_with_force:
+                    fx, fy, fz = force[3 * node:3 * node + 3]
+                    force_vec = np.array([fx, fy, fz], dtype=float)
+                    norm = np.linalg.norm(force_vec)
+                    if norm > 0:
+                        force_norms.append(norm)
+
+           
             
             if len(force_norms) > 0:
-                force_norm_avg = np.mean(force_norms)
-                
+                force_norm_avg = float(np.mean(force_norms))
                 # Add arrows for each loaded node
-                for node in label2_nodes:
-                    # Get force components for this node
-                    fx = bc.force[3*node]
-                    fy = bc.force[3*node + 1]
-                    fz = bc.force[3*node + 2]
-                    force_vec = np.array([fx, fy, fz])
-                    
+                for node in nodes_with_force:
+                    fx, fy, fz = force[3 * node:3 * node + 3]
+                    force_vec = np.array([fx, fy, fz], dtype=float)
                     force_norm = np.linalg.norm(force_vec)
-                    
+                    print(force_vec, force_norm)
                     # Only add arrow if force is non-zero
                     if force_norm > 0:
                         # Scale arrow based on relative force magnitude
-                        arrow_scale = rel_arrow_scale * self.mesh.bbox.diag_length * \
-                                    force_norm / force_norm_avg
-                        
+                        arrow_scale = rel_arrow_scale * float(self.mesh.bbox.diag_length) * (
+                        force_norm / force_norm_avg if force_norm_avg > 0 else 1.0
+                        )
+
                         # Normalize force vector for direction
                         force_vec_dir = force_vec / force_norm
-                        
+
                         # Determine start point
                         start_point = vertices[node].copy()
                         if offsetArrow:
                             # Offset start point so arrow is visible outside mesh
                             start_point = start_point - force_vec_dir * arrow_scale
-                        
+
                         # Create and add arrow
-                        arrow = pv.Arrow(start=start_point,
-                                        direction=force_vec_dir,
-                                        scale=arrow_scale)
+                        arrow = pv.Arrow(start=start_point, direction=force_vec_dir, scale=arrow_scale)
                         plotter.add_mesh(arrow, color='red')
 
 
@@ -912,7 +926,7 @@ class HexFEAPlotter:
             return
         
         vertices = self.mesh.node_xyz
-        point_size = 10
+        point_size = 30
         
         # For thermal problems, BC info is in bc.fixed_dofs, not node labels
         if not hasattr(bc, 'fixed_dofs') or bc.fixed_dofs is None:
@@ -937,7 +951,7 @@ class HexFEAPlotter:
                 points_cold = vertices[cold_nodes]
                 dots_cold = pv.PolyData(points_cold)
                 plotter.add_points(dots_cold,
-                                color='blue',
+                                color='lightblue',
                                 point_size=point_size,
                                 render_points_as_spheres=True)
             
@@ -946,6 +960,52 @@ class HexFEAPlotter:
                 points_hot = vertices[hot_nodes]
                 dots_hot = pv.PolyData(points_hot)
                 plotter.add_points(dots_hot,
-                                color='red',
+                                color='blue',
                                 point_size=point_size,
                                 render_points_as_spheres=True)
+                
+        # Add prescribed thermal flux (Neumann BC) as arrows if available
+        # Supported attribute patterns (first match wins):
+        # - flux_nodes + flux_vectors
+        # - heat_flux_nodes + heat_flux_vectors
+        # - flux_nodes + flux_values + flux_dirs
+        flux_nodes = None
+        flux_dirs = None
+        flux_vectors = None
+
+        # Thermal flux specified via bc.force (1 component per node for thermal)
+        if hasattr(bc, "force") and bc.force is not None:
+            force = np.asarray(bc.force, dtype=float)
+            num_nodes = vertices.shape[0]
+
+            if force.size == num_nodes:
+                # Direct 1-to-1 mapping: one scalar flux per node
+                nz = np.abs(force) > 0
+                flux_nodes = np.where(nz)[0]
+                # For thermal, flux is scalar - use normal direction or default z-direction
+                flux_vectors = np.column_stack([np.zeros(np.sum(nz)), 
+                                np.zeros(np.sum(nz)), 
+                                force[nz]])
+            else:
+                # Fallback: if force array doesn't match expected size
+                flux_nodes = None
+                flux_vectors = None
+
+        if flux_nodes is not None and flux_vectors is not None and len(flux_nodes) > 0:
+            # Compute a scale based on average magnitude and model size
+            norms = np.linalg.norm(flux_vectors, axis=1)
+            avg_norm = np.mean(norms[norms > 0]) if np.any(norms > 0) else 1.0
+            rel_scale = 0.08  # relative arrow length vs bounding-box diagonal
+            arrow_scale = rel_scale * float(self.mesh.bbox.diag_length)
+
+            for n, v in zip(flux_nodes, flux_vectors):
+                mag = np.linalg.norm(v)
+                if mag <= 0:
+                    continue
+                direction = v / mag
+                scale = arrow_scale * (mag / avg_norm)
+                start = vertices[n]
+                # Slightly offset into the arrow direction for visibility
+                start = start - 0.25 * scale * direction
+                arrow = pv.Arrow(start=start, direction=direction, scale=scale)
+                plotter.add_mesh(arrow, color='red')

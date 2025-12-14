@@ -18,6 +18,8 @@ def getThermalTOProblem(to_problem: ThermalTOExamples,nDOFDesired = None, **kwar
         to_params.Comment = "Benchmark 2.5D"
         to_params.ExtrudeZ = True
         to_params.nDOFDesired = 25000 if nDOFDesired is None else nDOFDesired
+        to_params.Objective = (TO_QOI.COMPLIANCE, None)
+        to_params.Constraints = [(TO_QOI.VOLUME_FRACTION, None, 0.25)]
     elif to_problem == ThermalTOExamples.FourCornersThermal:
         thermal_problem = HexThermalExamples.FourCornersThermal
         to_params.Comment = "Benchmark 2.5D"
@@ -29,6 +31,8 @@ def getThermalTOProblem(to_problem: ThermalTOExamples,nDOFDesired = None, **kwar
         to_params.Comment = "Benchmark 2.5D"
         to_params.ExtrudeZ = True
         to_params.nDOFDesired = 25000 if nDOFDesired is None else nDOFDesired
+        to_params.Objective = (TO_QOI.COMPLIANCE, None)
+        to_params.Constraints = [(TO_QOI.VOLUME_FRACTION, None, 0.5)]
     elif to_problem == ThermalTOExamples.BiClamp:
         thermal_problem = HexThermalExamples.BiClamp
         to_params.Comment  = "Thermoelastic"
