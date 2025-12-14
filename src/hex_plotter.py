@@ -898,7 +898,6 @@ class HexFEAPlotter:
                     fx, fy, fz = force[3 * node:3 * node + 3]
                     force_vec = np.array([fx, fy, fz], dtype=float)
                     force_norm = np.linalg.norm(force_vec)
-                    print(force_vec, force_norm)
                     # Only add arrow if force is non-zero
                     if force_norm > 0:
                         # Scale arrow based on relative force magnitude

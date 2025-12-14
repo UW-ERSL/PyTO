@@ -20,20 +20,20 @@ def runTOMethodOnBenchmarks(optimizationMethod):
 	results_list = []
 	dsolver = deflation.DeflationSolver()
 	feaMode = FEA_MODE.STRUCTURAL
-	benchmarks_2_5D_problems_1 = [StructuralTOExamples.Mitchell_1, 
+	benchmarks_structural_2_5D_problems_1 = [StructuralTOExamples.Mitchell_1, 
 							StructuralTOExamples.CantileverTipLoad, 
 							StructuralTOExamples.CantileverMidLoad,
 							StructuralTOExamples.MBBBeam,
 							StructuralTOExamples.Bridge,
 							StructuralTOExamples.TwoBar,]
 	
-	benchmarks_2_5D_problems_2 = [StructuralTOExamples.LBracketTopLoad, 
+	benchmarks_structural_2_5D_problems_2 = [StructuralTOExamples.LBracketTopLoad, 
 							StructuralTOExamples.LBracketMidLoad,
 							StructuralTOExamples.TorquePlate,
 							StructuralTOExamples.DistributedLoad,
 							StructuralTOExamples.ThreeHoleBracket,]
 
-	benchmarks_3D_problems = [StructuralTOExamples.EdgeCantilever, 
+	benchmarks_structural_3D_problems = [StructuralTOExamples.EdgeCantilever, 
 							StructuralTOExamples.ThreeHoleBracketThick, 
 							StructuralTOExamples.Multiload,
 							StructuralTOExamples.LBracketThickTopLoad,
@@ -55,29 +55,29 @@ def runTOMethodOnBenchmarks(optimizationMethod):
 	benchmarks_thermostructural_problems = [ThermoStructuralTOExamples.BiClamp,
 						ThermoStructuralTOExamples.MBBBeam]
 	
-	benchmarks_2_5D_thermal_problems = [ThermalTOExamples.HeatPlate, ThermalTOExamples.FourCornersThermal,
+	benchmarks_thermal_2_5_problems = [ThermalTOExamples.HeatPlate, ThermalTOExamples.FourCornersThermal,
 							 ThermalTOExamples.BridgeThermal]	
 	
 	sampleBenchmarks = [StructuralTOExamples.Mitchell_1, StructuralTOExamples.LBracketTopLoad_Stress_Vol,
 						StructuralTOExamples.EdgeCantilever,StructuralTOExamples.GravityPlate,ThermoStructuralTOExamples.MBBBeam,
 						ThermalTOExamples.FourCornersThermal]
 	
-	allBenchmarks = benchmarks_2_5D_problems_1 + \
-					benchmarks_2_5D_problems_2 + \
-					benchmarks_2_5D_thermal_problems + \
-					benchmarks_3D_problems  + \
+	allBenchmarks = benchmarks_structural_2_5D_problems_1 + \
+					benchmarks_structural_2_5D_problems_2 + \
+					benchmarks_thermal_2_5_problems + \
+					benchmarks_structural_3D_problems  + \
 					benchmarks_noncompliance_problems + \
 					benchmarks_bodyforce_problems + \
 					benchmarks_thermostructural_problems
 	
-	for to_problem in  benchmarks_2_5D_thermal_problems:  
-		if to_problem in benchmarks_2_5D_problems_1:
+	for to_problem in  benchmarks_structural_2_5D_problems_2:  
+		if to_problem in benchmarks_structural_2_5D_problems_1:
 			subFolder = "Structural-Compliance2.5D_1"
-		elif to_problem in benchmarks_2_5D_problems_2:
+		elif to_problem in benchmarks_structural_2_5D_problems_2:
 			subFolder = "Structural-Compliance2.5D_2"
-		elif to_problem in benchmarks_2_5D_thermal_problems:
+		elif to_problem in benchmarks_thermal_2_5_problems:
 			subFolder = "Thermal-Compliance2.5D"
-		elif to_problem in benchmarks_3D_problems:
+		elif to_problem in benchmarks_structural_3D_problems:
 			subFolder = "Structural-Compliance3D"
 		elif to_problem in benchmarks_noncompliance_problems:
 			subFolder = "Structural-NonCompliance"
@@ -155,7 +155,7 @@ def runTOMethodOnBenchmarks(optimizationMethod):
 		output_base = f"./Results/Results_{time.strftime('%Y-%m-%d')}/{subFolder}/Problems/"
 		os.makedirs(output_base, exist_ok=True)
 
-		if to_problem in benchmarks_2_5D_problems_1 or to_problem in benchmarks_2_5D_problems_2 or to_problem in benchmarks_2_5D_thermal_problems:
+		if to_problem in benchmarks_structural_2_5D_problems_1 or to_problem in benchmarks_structural_2_5D_problems_2 or to_problem in benchmarks_thermal_2_5_problems:
 			fe_solver.plot_mesh(
 				title="Structural Load",
 				plot_bc=True,
@@ -207,7 +207,7 @@ def runTOMethodOnBenchmarks(optimizationMethod):
 		image_path = f"{output_dir}/{to_problem.name}.png"
 		title = f"{optimizationMethod.name}: vol: {history['volfrac'][-1]:0.2f}, J: {history['objective'][-1]:.3g}, nFEA: {len(history['objective']):3d}, time: {timeTaken:.0f} s"
 	
-		if to_problem in benchmarks_2_5D_problems_1 or to_problem in benchmarks_2_5D_problems_2 or to_problem in benchmarks_2_5D_thermal_problems:
+		if to_problem in benchmarks_structural_2_5D_problems_1 or to_problem in benchmarks_structural_2_5D_problems_2 or to_problem in benchmarks_thermal_2_5_problems:
 			fe_solver.plot_mesh(save_path=image_path, plot_bc = None, title=title, camera_position='xy')
 		else:
 			fe_solver.plot_mesh(save_path=image_path, plot_bc = None, title=title)

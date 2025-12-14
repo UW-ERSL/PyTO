@@ -217,17 +217,35 @@ def topopt_levelset(feaMode,
         idx_yminus, idx_yplus = 10, 16
         idx_zminus, idx_zplus = 4, 22
         
-        def get_neighbor_lsf(idx):
+        # Get neighbor LSF values with FIRST-ORDER EXTRAPOLATION for boundaries
+        def get_neighbor_lsf(idx, opp_idx):
             neighbor_id = neighbors[:, idx]
-            return np.where(neighbor_id >= 0, lsf[neighbor_id], lsf)
+            opposite_id = neighbors[:, opp_idx]
+            
+            result = lsf.copy()
+            valid = neighbor_id >= 0
+            
+            # Use actual neighbor where available
+            result[valid] = lsf[neighbor_id[valid]]
+            
+            # For domain boundaries, extrapolate from opposite direction
+            # This allows boundary to move freely
+            boundary = ~valid
+            has_opposite = opposite_id >= 0
+            can_extrapolate = boundary & has_opposite
+            
+            # Linear extrapolation: φ_boundary = 2*φ_center - φ_opposite
+            result[can_extrapolate] = 2*lsf[can_extrapolate] - lsf[opposite_id[can_extrapolate]]
+            
+            return result
         
-        lsf_xm = get_neighbor_lsf(idx_xminus)
-        lsf_xp = get_neighbor_lsf(idx_xplus)
-        lsf_ym = get_neighbor_lsf(idx_yminus)
-        lsf_yp = get_neighbor_lsf(idx_yplus)
-        lsf_zm = get_neighbor_lsf(idx_zminus)
-        lsf_zp = get_neighbor_lsf(idx_zplus)
-        
+        lsf_xm = get_neighbor_lsf(idx_xminus, idx_xplus)
+        lsf_xp = get_neighbor_lsf(idx_xplus, idx_xminus)
+        lsf_ym = get_neighbor_lsf(idx_yminus, idx_yplus)
+        lsf_yp = get_neighbor_lsf(idx_yplus, idx_yminus)
+        lsf_zm = get_neighbor_lsf(idx_zminus, idx_zplus)
+        lsf_zp = get_neighbor_lsf(idx_zplus, idx_zminus)
+            
         hx, hy, hz = mesh.elem_size
 
         # Finite differences
@@ -324,7 +342,7 @@ def topopt_levelset(feaMode,
             shapeScaling = np.max(np.abs(shapeSens)) + 1e-12
    
         shapeSens = shapeSens / shapeScaling
-        
+       
         #  Load bearing elements must remain solid 
         if elemsWithForces is not None and len(elemsWithForces) > 0:
             shapeSens[elemsWithForces] = min(shapeSens)
@@ -369,7 +387,7 @@ def topopt_levelset(feaMode,
 
         # Smooth the sensitivities 
         shapeSens_smooth = (H @ shapeSens) / Hs
-      
+        #fe_solver.plot_elem_field(shapeSens_smooth, title=f"Shape Sensitivity - Iter {iteration}", save_path=None)
         # Design update via evolution 
         lsf = evolveUpWind(
                 mesh=mesh,
@@ -421,7 +439,7 @@ if __name__ == "__main__":
 	from topopt_thermal_benchmarks import *
 	
 	print("-" * 50)
-	to_problem = StructuralTOExamples.TorquePlate # Choose the TO problem
+	to_problem = StructuralTOExamples.LBracketMidLoad # Choose the TO problem
 	#to_problem = ThermalTOExamples.FourCornersThermal # Choose the TO problem
      
 	run_topopt_levelset(to_problem)
