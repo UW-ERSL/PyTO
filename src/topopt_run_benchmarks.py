@@ -72,7 +72,7 @@ def runTOMethodOnBenchmarks(optimizationMethod):
 					benchmarks_bodyforce_problems + \
 					benchmarks_thermostructural_problems
 	
-	for to_problem in  benchmarks_3D_problems:  
+	for to_problem in  benchmarks_2_5D_thermal_problems:  
 		if to_problem in benchmarks_2_5D_problems:
 			subFolder = "Structural-Compliance2.5D"
 		elif to_problem in benchmarks_2_5D_thermal_problems:
@@ -184,7 +184,7 @@ def runTOMethodOnBenchmarks(optimizationMethod):
 					to_problem in benchmarks_bodyforce_problems or \
 					to_problem in benchmarks_thermostructural_problems:
 				continue
-			u, history, success,errorMsg,nFEAs = topopt_levelset(feaMode,  fe_structural_solver,
+			u, history, success,errorMsg,nFEAs = topopt_levelset(feaMode,  fe_solver,
 													to_params = to_params)
 		timeTaken = time.time() - startTime
 

@@ -20,6 +20,7 @@ def compute_compliance_and_sensitivity(feaMode, rho, fe_solver):
         KE = fe_solver.elem_stiff[0]
     elif feaMode == FEA_MODE.THERMAL:
         dofMat = fe_solver.mesh.edofMatThermal
+        KE = fe_solver.elem_stiff[0]
     else:
         raise ValueError(f"Invalid FEA mode: {feaMode}")
     
@@ -72,15 +73,22 @@ def run_topopt_levelset(to_problem):
 					dsolver = dsolver,
 					rtol = 1e-8,
 					elem_body_force = elem_body_force)
+		nDof = 3*fe_solver.mesh.num_nodes
 	elif (feaMode == FEA_MODE.THERMAL):
-		print("Thermal not fully supported for level set method yet.")
-	
+		fe_solver = hex_thermal_fea.HexThermalFEA(mesh = mesh,
+                    mat_prop = mat_prop,
+                    bc = bc,
+                    solver = solver,
+                    dsolver = dsolver,
+                    rtol = 1e-8,
+                    elem_body_force = elem_body_force)
+		nDof = fe_solver.mesh.num_nodes
 
 	print('Solver: ', fe_solver.solver.name)
-	print("nDof: ", 3*fe_solver.mesh.num_nodes)
+	print("nDof: ", nDof)
 	print("nElem: ", fe_solver.mesh.num_elems)	
 	
-	title = f'nDOF: {3*fe_solver.mesh.num_nodes}, nElem: {fe_solver.mesh.num_elems}'
+	title = f'nDOF: {nDof}, nElem: {fe_solver.mesh.num_elems}'
 	#plots.plotMesh(mesh, bc,title = title)
 
 	startTime = time.time()
@@ -92,7 +100,7 @@ def run_topopt_levelset(to_problem):
                                                     maxIterations=250,
                                                     debug = debug)
 	timeTaken = time.time() - startTime
-	title = f"Level Set: nDOF: {3*fe_solver.mesh.num_nodes}, vol: {history['volfrac'][-1]:0.2f}, J: {history['objective'][-1]:.3g}, time: {timeTaken:.0f} s"	
+	title = f"Level Set: nDOF: {nDof}, vol: {history['volfrac'][-1]:0.2f}, J: {history['objective'][-1]:.3g}, time: {timeTaken:.0f} s"	
 
 
 	fe_solver.plot_mesh(title = title, save_path = None)
@@ -128,8 +136,7 @@ def topopt_levelset(feaMode,
                     to_params,
                     maxIterations: int = 250,
                     numReinit: int = 5,
-                    numInitialHoles: int =10,
-                    initialVolfraction: float = 0.9,
+                    numInitialHoles: int = 10,
                     objective_tol: float = 0.005,
                     constraint_tol: float = 0.001,
                     plot_progress: bool = False,
@@ -138,17 +145,120 @@ def topopt_levelset(feaMode,
                     debug: bool = False) -> tuple[np.ndarray, dict]:
     """
     Level Set Method for Topology Optimization.
-
+    
     References:
-        Challis, V. J. (2010). A discrete level-set topology optimization code 
-        written in Matlab. Structural and Multidisciplinary Optimization, 41(3), 453-464.
     """
     
+    def evolveUpWind(mesh, lsf, v):
+        """
+        Evolution of level set function.
+        Implements Hamilton-Jacobi equation:
+            ∂ψ/∂t = -v|∇ψ| - ω*g
+        """
+        # CFL time step 
+        h = np.min(mesh.elem_size)
+        max_v = np.abs(v).max()
+        if max_v < 1e-10:
+            rho = (lsf < 0).astype(float)
+            return rho, lsf
+        
+        cflLimit = 0.25
+        dt = cflLimit * h / max_v
+        max_steps = 100 
+        vol_initial = np.mean(lsf < 0)
+        lsf_prev = lsf.copy()
+        for _ in range(max_steps):
+            lsf = upwind_step(mesh, lsf, v, dt)
+            vol_est = np.mean(lsf < 0)
+            diff = np.max(np.abs(lsf - lsf_prev))
+            if diff == 0: # no change
+                break
+            lsf_prev = lsf.copy()
+            vol_diff = np.abs(vol_est - vol_initial)
+            if (vol_diff > 0.05): # do not let volume change too much in one evolve
+                break
+        return  lsf
+
+    def upwind_step(mesh, lsf, v, dt):
+        """
+        Godunov upwind scheme for Hamilton-Jacobi equations using first-order differences.
+        
+        Implements the upwind finite difference scheme for evolving the level set equation:
+            ∂φ/∂t + v|∇φ| = 0
+        
+        Uses face neighbors only (6-connected in 3D) and selects upwind direction based on
+        the sign of velocity to ensure stability and entropy satisfaction.
+        
+        Args:
+            mesh: Hexahedral mesh object
+            lsf: Current level set function values
+            v: Velocity field (negative of shape sensitivity)
+            dt: Time step (CFL condition enforced)
+        
+        Returns:
+            np.ndarray: Updated level set function values
+        
+        References:
+            Osher, S., & Sethian, J. A. (1988). Fronts propagating with curvature-dependent 
+            speed: Algorithms based on Hamilton-Jacobi formulations. Journal of Computational 
+            Physics, 79(1), 12-49.
+            
+            Sethian, J. A. (1999). Level Set Methods and Fast Marching Methods: Evolving 
+            Interfaces in Computational Geometry, Fluid Mechanics, Computer Vision, and 
+            Materials Science. Cambridge University Press.
+            
+            Osher, S., & Fedkiw, R. (2003). Level Set Methods and Dynamic Implicit Surfaces. 
+            Springer. (Chapter 6: Hamilton-Jacobi Equations)
+        """
+        neighbors = mesh.elemNeighborsArray
+        
+        # Face neighbor indices (from your 27-neighbor ordering)
+        idx_xminus, idx_xplus = 12, 14
+        idx_yminus, idx_yplus = 10, 16
+        idx_zminus, idx_zplus = 4, 22
+        
+        def get_neighbor_lsf(idx):
+            neighbor_id = neighbors[:, idx]
+            return np.where(neighbor_id >= 0, lsf[neighbor_id], lsf)
+        
+        lsf_xm = get_neighbor_lsf(idx_xminus)
+        lsf_xp = get_neighbor_lsf(idx_xplus)
+        lsf_ym = get_neighbor_lsf(idx_yminus)
+        lsf_yp = get_neighbor_lsf(idx_yplus)
+        lsf_zm = get_neighbor_lsf(idx_zminus)
+        lsf_zp = get_neighbor_lsf(idx_zplus)
+        
+        hx, hy, hz = mesh.elem_size
+
+        # Finite differences
+        dpx = (lsf_xp - lsf) / hx
+        dmx = (lsf - lsf_xm) / hx
+        dpy = (lsf_yp - lsf) / hy
+        dmy = (lsf - lsf_ym) / hy
+        dpz = (lsf_zp - lsf) / hz
+        dmz = (lsf - lsf_zm) / hz
+        
+        # Godunov upwind (component-wise selection)
+        grad_mag_shrink = np.sqrt(
+            np.minimum(dmx, 0)**2 + np.maximum(dpx, 0)**2 +
+            np.minimum(dmy, 0)**2 + np.maximum(dpy, 0)**2 +
+            np.minimum(dmz, 0)**2 + np.maximum(dpz, 0)**2
+        )
+        
+        grad_mag_expand = np.sqrt(
+            np.maximum(dmx, 0)**2 + np.minimum(dpx, 0)**2 +
+            np.maximum(dmy, 0)**2 + np.minimum(dpy, 0)**2 +
+            np.maximum(dmz, 0)**2 + np.minimum(dpz, 0)**2
+        )
+        grad_mag = np.where(v < 0, grad_mag_shrink, grad_mag_expand)
+    
+        lsf_new = lsf - dt * v * grad_mag
+        return lsf_new
+
     if (feaMode == FEA_MODE.STRUCTURAL):
         nDOFPerNode = 3
     else:
-        print("Thermal FEA not fully supported for level set method yet.")
-        return
+        nDOFPerNode = 1
     
     tStart = time.time()
     material_model = MaterialModel.SIMP  # Not really used since rho is 0/1
@@ -177,21 +287,17 @@ def topopt_levelset(feaMode,
     elif to_params.ExtrudeZ:
         distanceType = DISTANCE_TYPE.DISTANCE_XY
 
-
+    initialVolfraction = min([volFractionConstraint+0.5,0.9]) # heuristic for initial vol fraction
     # Initialize level set function (start with full domain)
-    rho = np.ones(mesh.num_elems)
     rho = mesh.initialize_with_holes(initialVolfraction,num_holes= numInitialHoles, distance_type=distanceType)
-
     # Ensure load-bearing elements are solid
     elemsWithForces = find_elements_with_forces(mesh, fe_solver.bc.force, nDOFPerNode)
-    
     if elemsWithForces is not None and len(elemsWithForces) > 0:
         rho[elemsWithForces] = 1
     if (to_params.ElemsToKeep is not None):
         rho[to_params.ElemsToKeep] = 1
 
     lsf = mesh.compute_signed_distance_function(rho, distance_type=distanceType)
-    vol_est = np.mean(lsf < 0)
 
     # History tracking
     history = {'objective': [], 'volfrac': []}
@@ -199,17 +305,15 @@ def topopt_levelset(feaMode,
     errorMsg = "No errors."
     
     # Main optimization loop 
- 
     for iteration in range(maxIterations):
         mesh.setPseudoDensity(np.asarray(rho))
-        
         if plot_progress:
             fe_solver.plot_pseudo_density_realtime(
                 title=f"Iter {iteration }",
                 iteration = iteration,
                 external_plotter=plotter
             )
-        #input("Press Enter to continue...")
+
         sol = fe_solver.solve(rho, material_model)
         obj, shapeSens = compute_compliance_and_sensitivity(feaMode, rho, fe_solver)
         if (iteration == 0):
@@ -220,8 +324,8 @@ def topopt_levelset(feaMode,
             shapeScaling = np.max(np.abs(shapeSens)) + 1e-12
    
         shapeSens = shapeSens / shapeScaling
-   
-        # 3. Load bearing elements must remain solid 
+        
+        #  Load bearing elements must remain solid 
         if elemsWithForces is not None and len(elemsWithForces) > 0:
             shapeSens[elemsWithForces] = min(shapeSens)
          
@@ -258,28 +362,23 @@ def topopt_levelset(feaMode,
             alpha = 0.95
         else:
             la = la - 1/La * vol_error; 
-            La= alpha * La
+            La  = alpha * La
 
         vol_penalty_term =  la - 1/La*vol_error
         shapeSens = shapeSens - vol_penalty_term
 
-        #input("Press Enter to continue...")
-        # 1. Smooth the sensitivities 
+        # Smooth the sensitivities 
         shapeSens_smooth = (H @ shapeSens) / Hs
       
-        # 4. Design update via evolution 
-        rho = (lsf < 0).astype(float)
-        vol_est = np.mean(rho)
-
+        # Design update via evolution 
         lsf = evolveUpWind(
                 mesh=mesh,
                 lsf=lsf,
                 v=-shapeSens_smooth  # Velocity is negative of shape sensitivity
         )
         rho = (lsf < 0).astype(float)
-        vol_est = np.mean(rho)
 
-        # 10. Periodic reinitialization 
+        # Periodic reinitialization 
         if (iteration + 1) % numReinit == 0:
             if print_progress:
                 print("  Reinitializing level set function...")
@@ -292,7 +391,6 @@ def topopt_levelset(feaMode,
     
     history['objective'].append(obj)
     history['volfrac'].append(volCurr)
-
 
     # Check final state
     if iteration == maxIterations - 1:
@@ -316,85 +414,6 @@ def topopt_levelset(feaMode,
     
     return sol, history, success, errorMsg, nFEAs
 
-def evolveUpWind(mesh, lsf, v):
-    """
-    Evolution of level set function.
-    Implements Hamilton-Jacobi equation:
-        ∂ψ/∂t = -v|∇ψ| - ω*g
-    """
-    # CFL time step 
-    h = np.min(mesh.elem_size)
-    max_v = np.abs(v).max()
-    if max_v < 1e-10:
-        rho = (lsf < 0).astype(float)
-        return rho, lsf
-    
-    cflLimit = 0.25
-    dt = cflLimit * h / max_v
-   
-    max_steps = 100 
-    vol_initial = np.mean(lsf < 0)
-    lsf_prev = lsf.copy()
-    for _ in range(max_steps):
-        lsf = upwind_step(mesh, lsf, v, dt)
-        vol_est = np.mean(lsf < 0)
-        diff = np.max(np.abs(lsf - lsf_prev))
-        if diff == 0:
-            break
-        lsf_prev = lsf.copy()
-        vol_diff = np.abs(vol_est - vol_initial)
-        if (vol_diff > 0.05): # do not let volume change too much in one evolve
-            break
-       
-    return  lsf
-
-
-def upwind_step(mesh, lsf, v, dt):
-    """Godunov upwind using ONLY face neighbors."""
-    neighbors = mesh.elemNeighborsArray
-    
-    # Face neighbor indices (from your 27-neighbor ordering)
-    idx_xminus, idx_xplus = 12, 14
-    idx_yminus, idx_yplus = 10, 16
-    idx_zminus, idx_zplus = 4, 22
-    
-    def get_neighbor_lsf(idx):
-        neighbor_id = neighbors[:, idx]
-        return np.where(neighbor_id >= 0, lsf[neighbor_id], lsf)
-    
-    lsf_xm = get_neighbor_lsf(idx_xminus)
-    lsf_xp = get_neighbor_lsf(idx_xplus)
-    lsf_ym = get_neighbor_lsf(idx_yminus)
-    lsf_yp = get_neighbor_lsf(idx_yplus)
-    lsf_zm = get_neighbor_lsf(idx_zminus)
-    lsf_zp = get_neighbor_lsf(idx_zplus)
-    
-    hx, hy, hz = mesh.elem_size
-
-    # Finite differences
-    dpx = (lsf_xp - lsf) / hx
-    dmx = (lsf - lsf_xm) / hx
-    dpy = (lsf_yp - lsf) / hy
-    dmy = (lsf - lsf_ym) / hy
-    dpz = (lsf_zp - lsf) / hz
-    dmz = (lsf - lsf_zm) / hz
-    
-    # Godunov upwind (component-wise selection)
-    grad_mag_shrink = np.sqrt(
-        np.minimum(dmx, 0)**2 + np.maximum(dpx, 0)**2 +
-        np.minimum(dmy, 0)**2 + np.maximum(dpy, 0)**2 +
-        np.minimum(dmz, 0)**2 + np.maximum(dpz, 0)**2
-    )
-    
-    grad_mag_expand = np.sqrt(
-        np.maximum(dmx, 0)**2 + np.minimum(dpx, 0)**2 +
-        np.maximum(dmy, 0)**2 + np.minimum(dpy, 0)**2 +
-        np.maximum(dmz, 0)**2 + np.minimum(dpz, 0)**2
-    )
-    grad_mag = np.where(v < 0, grad_mag_shrink, grad_mag_expand)
-   
-    lsf_new = lsf - dt * v * grad_mag
-    return lsf_new
 
 if __name__ == "__main__":    
 	
@@ -402,7 +421,7 @@ if __name__ == "__main__":
 	from topopt_thermal_benchmarks import *
 	
 	print("-" * 50)
-	to_problem = StructuralTOExamples.GEGrabCAD # Choose the TO problem
+	to_problem = StructuralTOExamples.TorquePlate # Choose the TO problem
 	#to_problem = ThermalTOExamples.FourCornersThermal # Choose the TO problem
      
 	run_topopt_levelset(to_problem)
