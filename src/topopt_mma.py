@@ -103,7 +103,8 @@ def run_topopt_mma(to_problem):
     elif (feaMode == FEA_MODE.THERMAL):
         fe_thermal_solver.postprocess()
         fe_thermal_solver.plot_temperature()
-   
+
+    plt.close('all') 
     plt.figure()
     plt.plot(history['objective'], label='Objective')
     plt.xlabel('Iterations')
@@ -121,7 +122,7 @@ def run_topopt_mma(to_problem):
         plt.axhline(y=to_params.Constraints[idx][2], color='r', linestyle='--')
         plt.grid(True)
         plt.show()
-    
+    plt.close('all') 
 
 ##########################################################
 
@@ -406,7 +407,7 @@ if __name__ == "__main__":
     print("-" * 50)
 
     # Choose the TO problem
-    to_problem = StructuralTOExamples.LBracketMidLoad 
+    to_problem = StructuralTOExamples.Multiload 
     #to_problem = ThermalTOExamples.FourCornersThermal
     #to_problem = ThermoStructuralTOExamples.MBBBeam
 

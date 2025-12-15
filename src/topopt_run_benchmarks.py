@@ -38,10 +38,11 @@ def runTOMethodOnBenchmarks(optimizationMethod):
 							StructuralTOExamples.Multiload,
 							StructuralTOExamples.LBracketThickTopLoad,
 							StructuralTOExamples.LBracketThickMidLoad,
-							StructuralTOExamples.Table,
-							StructuralTOExamples.GEGrabCAD,]
+							StructuralTOExamples.Table]
 	
-	benchmarks_noncompliance_problems = [StructuralTOExamples.CantileverMidLoadVolumeCompliance,
+	benchmarks_structural_casestudies = [StructuralTOExamples.GEGrabCAD,]
+	
+	benchmarks_structural_noncompliance = [StructuralTOExamples.CantileverMidLoadVolumeCompliance,
 						StructuralTOExamples.LBracketTopLoad_Stress_Vol, 
 						StructuralTOExamples.LBracketTopLoad_Vol_Stress, 
 						StructuralTOExamples.LBracketThickTopLoad_Vol_Stress,
@@ -49,13 +50,13 @@ def runTOMethodOnBenchmarks(optimizationMethod):
 						StructuralTOExamples.LBracketTopLoad_Mass_StressFF,
 						StructuralTOExamples.Inverter]
 		
-	benchmarks_bodyforce_problems = [StructuralTOExamples.GravityPlate,
+	benchmarks_structural_bodyforce = [StructuralTOExamples.GravityPlate,
 						StructuralTOExamples.CentrifugalPlate]
 
 	benchmarks_thermostructural_problems = [ThermoStructuralTOExamples.BiClamp,
 						ThermoStructuralTOExamples.MBBBeam]
 	
-	benchmarks_thermal_2_5_problems = [ThermalTOExamples.HeatPlate, ThermalTOExamples.FourCornersThermal,
+	benchmarks_thermal_2_5D_problems = [ThermalTOExamples.HeatPlate, ThermalTOExamples.FourCornersThermal,
 							 ThermalTOExamples.BridgeThermal]	
 	
 	sampleBenchmarks = [StructuralTOExamples.Mitchell_1, StructuralTOExamples.LBracketTopLoad_Stress_Vol,
@@ -64,24 +65,25 @@ def runTOMethodOnBenchmarks(optimizationMethod):
 	
 	allBenchmarks = benchmarks_structural_2_5D_problems_1 + \
 					benchmarks_structural_2_5D_problems_2 + \
-					benchmarks_thermal_2_5_problems + \
+					benchmarks_thermal_2_5D_problems + \
 					benchmarks_structural_3D_problems  + \
-					benchmarks_noncompliance_problems + \
-					benchmarks_bodyforce_problems + \
-					benchmarks_thermostructural_problems
+					benchmarks_structural_noncompliance + \
+					benchmarks_structural_bodyforce + \
+					benchmarks_thermostructural_problems  + \
+					benchmarks_structural_casestudies
 	
-	for to_problem in  benchmarks_structural_2_5D_problems_2:  
+	for to_problem in  benchmarks_structural_2_5D_problems_1 + benchmarks_structural_2_5D_problems_2 + benchmarks_thermal_2_5D_problems + benchmarks_structural_3D_problems:  
 		if to_problem in benchmarks_structural_2_5D_problems_1:
 			subFolder = "Structural-Compliance2.5D_1"
 		elif to_problem in benchmarks_structural_2_5D_problems_2:
 			subFolder = "Structural-Compliance2.5D_2"
-		elif to_problem in benchmarks_thermal_2_5_problems:
+		elif to_problem in benchmarks_thermal_2_5D_problems:
 			subFolder = "Thermal-Compliance2.5D"
 		elif to_problem in benchmarks_structural_3D_problems:
 			subFolder = "Structural-Compliance3D"
-		elif to_problem in benchmarks_noncompliance_problems:
+		elif to_problem in benchmarks_structural_noncompliance:
 			subFolder = "Structural-NonCompliance"
-		elif to_problem in benchmarks_bodyforce_problems:
+		elif to_problem in benchmarks_structural_bodyforce:
 			subFolder = "Structural-BodyForce"
 		elif to_problem in benchmarks_thermostructural_problems:
 			subFolder = "ThermoStructural"
@@ -155,7 +157,7 @@ def runTOMethodOnBenchmarks(optimizationMethod):
 		output_base = f"./Results/Results_{time.strftime('%Y-%m-%d')}/{subFolder}/Problems/"
 		os.makedirs(output_base, exist_ok=True)
 
-		if to_problem in benchmarks_structural_2_5D_problems_1 or to_problem in benchmarks_structural_2_5D_problems_2 or to_problem in benchmarks_thermal_2_5_problems:
+		if to_problem in benchmarks_structural_2_5D_problems_1 or to_problem in benchmarks_structural_2_5D_problems_2 or to_problem in benchmarks_thermal_2_5D_problems:
 			fe_solver.plot_mesh(
 				title="Structural Load",
 				plot_bc=True,
@@ -182,22 +184,22 @@ def runTOMethodOnBenchmarks(optimizationMethod):
 			u, history,success,errorMsg,nFEAs = topopt_mma(feaMode, fe_structural_solver,fe_thermal_solver,binarize_topology = binarize_topology,
 									to_params = to_params,print_progress = print_progress)
 		elif optimizationMethod == TO_METHODS.DENSITYOCM:
-			if to_problem in benchmarks_noncompliance_problems or \
-					to_problem in benchmarks_bodyforce_problems or \
+			if to_problem in benchmarks_structural_noncompliance or \
+					to_problem in benchmarks_structural_bodyforce or \
 					to_problem in benchmarks_thermostructural_problems:
 				continue
 			u, history, success,errorMsg,nFEAs = topopt_optimality_criteria(feaMode, fe_solver,binarize_topology = binarize_topology,
 											to_params = to_params,print_progress = print_progress)
 		elif optimizationMethod == TO_METHODS.PARETO:
-			if to_problem in benchmarks_noncompliance_problems or \
-					to_problem in benchmarks_bodyforce_problems or \
+			if to_problem in benchmarks_structural_noncompliance or \
+					to_problem in benchmarks_structural_bodyforce or \
 					to_problem in benchmarks_thermostructural_problems:
 				continue
 			u, history, success,errorMsg,nFEAs = topopt_pareto(feaMode, fe_solver,
 													to_params = to_params,print_progress = print_progress)
 		elif optimizationMethod == TO_METHODS.LEVELSET:
-			if to_problem in benchmarks_noncompliance_problems or \
-					to_problem in benchmarks_bodyforce_problems or \
+			if to_problem in benchmarks_structural_noncompliance or \
+					to_problem in benchmarks_structural_bodyforce or \
 					to_problem in benchmarks_thermostructural_problems:
 				continue
 			u, history, success,errorMsg,nFEAs = topopt_levelset(feaMode,  fe_solver,
@@ -207,7 +209,7 @@ def runTOMethodOnBenchmarks(optimizationMethod):
 		image_path = f"{output_dir}/{to_problem.name}.png"
 		title = f"{optimizationMethod.name}: vol: {history['volfrac'][-1]:0.2f}, J: {history['objective'][-1]:.3g}, nFEA: {len(history['objective']):3d}, time: {timeTaken:.0f} s"
 	
-		if to_problem in benchmarks_structural_2_5D_problems_1 or to_problem in benchmarks_structural_2_5D_problems_2 or to_problem in benchmarks_thermal_2_5_problems:
+		if to_problem in benchmarks_structural_2_5D_problems_1 or to_problem in benchmarks_structural_2_5D_problems_2 or to_problem in benchmarks_thermal_2_5D_problems:
 			fe_solver.plot_mesh(save_path=image_path, plot_bc = None, title=title, camera_position='xy')
 		else:
 			fe_solver.plot_mesh(save_path=image_path, plot_bc = None, title=title)
@@ -286,7 +288,7 @@ def runTOMethodOnBenchmarks(optimizationMethod):
 	results_path = f"{output_dir}/{optimizationMethod.name}_summary.png"
 
 	plt.savefig(results_path, bbox_inches='tight')
-
+	plt.close()  
 
 def combine_results():
 	# Get the latest results directory
@@ -440,6 +442,7 @@ def create_summary_tables():
 	]
 
 	for subFolder in subfolders:
+		plt.close('all')
 		results_dirs = sorted(glob.glob(f"./Results/Results_{time.strftime('%Y-%m-%d')}/{subFolder}"))
 		if not results_dirs:
 			print(f"No results directory found for {subFolder}. Skipping...")
@@ -559,7 +562,7 @@ def create_summary_tables():
 if __name__ == "__main__":    
 	
 	optimizationMethods = [TO_METHODS.DENSITYMMA, TO_METHODS.DENSITYOCM,TO_METHODS.PARETO,TO_METHODS.LEVELSET]
-	for optimizationMethod in optimizationMethods:
+	for optimizationMethod in [TO_METHODS.LEVELSET]:
 		runTOMethodOnBenchmarks(optimizationMethod)
 		print("-" * 50)
 		print(f"Finished {optimizationMethod.name} tests.")

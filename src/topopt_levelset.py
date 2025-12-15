@@ -104,7 +104,7 @@ def run_topopt_levelset(to_problem):
 
 
 	fe_solver.plot_mesh(title = title, save_path = None)
-     
+	plt.close('all')  
 	fig, ax1 = plt.subplots()
 
     # Plot compliance on left y-axis
@@ -136,7 +136,7 @@ def topopt_levelset(feaMode,
                     to_params,
                     maxIterations: int = 250,
                     numReinit: int = 5,
-                    numInitialHoles: int = 10,
+                    numHolesAlongEachDimension: int = 3,
                     objective_tol: float = 0.005,
                     constraint_tol: float = 0.001,
                     plot_progress: bool = False,
@@ -149,7 +149,7 @@ def topopt_levelset(feaMode,
     References:
     """
     
-    def evolveUpWind(mesh, lsf, v):
+    def evolveUpWind(mesh, lsf, v, volFractionConstraint):
         """
         Evolution of level set function.
         Implements Hamilton-Jacobi equation:
@@ -165,8 +165,10 @@ def topopt_levelset(feaMode,
         cflLimit = 0.25
         dt = cflLimit * h / max_v
         max_steps = 100 
-        vol_initial = np.mean(lsf < 0)
+        vol_current = np.mean(lsf < 0)
         lsf_prev = lsf.copy()
+        maxVolChange = 0.05
+        
         for _ in range(max_steps):
             lsf = upwind_step(mesh, lsf, v, dt)
             vol_est = np.mean(lsf < 0)
@@ -174,8 +176,8 @@ def topopt_levelset(feaMode,
             if diff == 0: # no change
                 break
             lsf_prev = lsf.copy()
-            vol_diff = np.abs(vol_est - vol_initial)
-            if (vol_diff > 0.05): # do not let volume change too much in one evolve
+            vol_diff = np.abs(vol_est - vol_current)
+            if (vol_diff > maxVolChange): # do not let volume change too much in one evolve
                 break
         return  lsf
 
@@ -298,16 +300,20 @@ def topopt_levelset(feaMode,
     
     # Determine distance type based on extrusion
     distanceType = DISTANCE_TYPE.DISTANCE_3D
+
     if to_params.ExtrudeX:
         distanceType = DISTANCE_TYPE.DISTANCE_YZ
+
     elif to_params.ExtrudeY:
         distanceType = DISTANCE_TYPE.DISTANCE_XZ
+
     elif to_params.ExtrudeZ:
         distanceType = DISTANCE_TYPE.DISTANCE_XY
 
-    initialVolfraction = min([volFractionConstraint+0.5,0.9]) # heuristic for initial vol fraction
+
+    initialVolfraction =  min([volFractionConstraint+0.5,0.9]) # heuristic for initial vol fraction
     # Initialize level set function (start with full domain)
-    rho = mesh.initialize_with_holes(initialVolfraction,num_holes= numInitialHoles, distance_type=distanceType)
+    rho = mesh.initialize_with_holes(initialVolfraction,holes_per_dim= numHolesAlongEachDimension, distance_type=distanceType)
     # Ensure load-bearing elements are solid
     elemsWithForces = find_elements_with_forces(mesh, fe_solver.bc.force, nDOFPerNode)
     if elemsWithForces is not None and len(elemsWithForces) > 0:
@@ -316,7 +322,7 @@ def topopt_levelset(feaMode,
         rho[to_params.ElemsToKeep] = 1
 
     lsf = mesh.compute_signed_distance_function(rho, distance_type=distanceType)
-
+    
     # History tracking
     history = {'objective': [], 'volfrac': []}
     success = True
@@ -392,8 +398,10 @@ def topopt_levelset(feaMode,
         lsf = evolveUpWind(
                 mesh=mesh,
                 lsf=lsf,
-                v=-shapeSens_smooth  # Velocity is negative of shape sensitivity
+                v=-shapeSens_smooth,  # Velocity is negative of shape sensitivity
+                volFractionConstraint = volFractionConstraint
         )
+   
         rho = (lsf < 0).astype(float)
 
         # Periodic reinitialization 
@@ -439,7 +447,7 @@ if __name__ == "__main__":
 	from topopt_thermal_benchmarks import *
 	
 	print("-" * 50)
-	to_problem = StructuralTOExamples.LBracketMidLoad # Choose the TO problem
+	to_problem = StructuralTOExamples.Mitchell_1 # Choose the TO problem
 	#to_problem = ThermalTOExamples.FourCornersThermal # Choose the TO problem
      
 	run_topopt_levelset(to_problem)
