@@ -9,7 +9,7 @@ import time
 from hex_mesher import DISTANCE_TYPE
 
 
-def compute_compliance_and_sensitivity(feaMode, rho, fe_solver):
+def compute_compliance_and_sensitivity(feaMode, rho, fe_solver,void = 0.0001):
     """
     Compute objective and shape sensitivity for level set optimization.
     Shape sensitivity is negative strain energy density (NO SIMP penalization).
@@ -33,7 +33,7 @@ def compute_compliance_and_sensitivity(feaMode, rho, fe_solver):
           sol[dofMat].reshape(num_elems, nRows)).sum(1)
     
     # Small stiffness for void 
-    rho_clipped = np.maximum(rho, 0.0001)
+    rho_clipped = np.maximum(rho, void)
     
     element_volume = np.prod(fe_solver.mesh.elem_size)
     # Shape sensitivity: -ρ * ce/element_volume
@@ -97,7 +97,7 @@ def run_topopt_levelset(to_problem):
                                                     to_params=to_params,
                                                     plot_progress = True,
                                                     print_progress = True,
-                                                    maxIterations=250,
+                                                    maxIterations=150,
                                                     debug = debug)
 	timeTaken = time.time() - startTime
 	title = f"Level Set: nDOF: {nDof}, vol: {history['volfrac'][-1]:0.2f}, J: {history['objective'][-1]:.3g}, time: {timeTaken:.0f} s"	
@@ -134,11 +134,12 @@ def run_topopt_levelset(to_problem):
 def topopt_levelset(feaMode,
                     fe_solver,
                     to_params,
-                    maxIterations: int = 250,
+                    maxIterations: int = 150,
                     numReinit: int = 5,
-                    numHolesAlongEachDimension: int = 3,
+                    numHolesAlongEachDimension: int = 4,
                     objective_tol: float = 0.005,
                     constraint_tol: float = 0.001,
+                    void: float = 0.0001,
                     plot_progress: bool = False,
                     print_progress: bool = False,
                     plotter=None,
@@ -149,7 +150,7 @@ def topopt_levelset(feaMode,
     References:
     """
     
-    def evolveUpWind(mesh, lsf, v, volFractionConstraint):
+    def evolveUpWind(mesh, lsf, v, maxVolChange=0.02):
         """
         Evolution of level set function.
         Implements Hamilton-Jacobi equation:
@@ -167,8 +168,6 @@ def topopt_levelset(feaMode,
         max_steps = 100 
         vol_current = np.mean(lsf < 0)
         lsf_prev = lsf.copy()
-        maxVolChange = 0.05
-        
         for _ in range(max_steps):
             lsf = upwind_step(mesh, lsf, v, dt)
             vol_est = np.mean(lsf < 0)
@@ -311,7 +310,7 @@ def topopt_levelset(feaMode,
         distanceType = DISTANCE_TYPE.DISTANCE_XY
 
 
-    initialVolfraction =  min([volFractionConstraint+0.5,0.9]) # heuristic for initial vol fraction
+    initialVolfraction =   min([volFractionConstraint+0.5,0.9]) # heuristic for initial vol fraction
     # Initialize level set function (start with full domain)
     rho = mesh.initialize_with_holes(initialVolfraction,holes_per_dim= numHolesAlongEachDimension, distance_type=distanceType)
     # Ensure load-bearing elements are solid
@@ -339,7 +338,7 @@ def topopt_levelset(feaMode,
             )
 
         sol = fe_solver.solve(rho, material_model)
-        obj, shapeSens = compute_compliance_and_sensitivity(feaMode, rho, fe_solver)
+        obj, shapeSens = compute_compliance_and_sensitivity(feaMode, rho, fe_solver,void)
         if (iteration == 0):
              obj0 = obj
        
@@ -347,7 +346,8 @@ def topopt_levelset(feaMode,
         if iteration == 0:
             shapeScaling = np.max(np.abs(shapeSens)) + 1e-12
    
-        shapeSens = shapeSens / shapeScaling
+        rho_anstaz = void + (1 - void) * rho
+        shapeSens = rho_anstaz * shapeSens / shapeScaling
        
         #  Load bearing elements must remain solid 
         if elemsWithForces is not None and len(elemsWithForces) > 0:
@@ -384,11 +384,15 @@ def topopt_levelset(feaMode,
             la = -0.01
             La = 1000
             alpha = 0.95
+            maxVolChange = 0.05
         else:
             la = la - 1/La * vol_error; 
             La  = alpha * La
+            maxVolChange = max(0.01, alpha * maxVolChange)
 
-        vol_penalty_term =  la - 1/La*vol_error
+  
+        vol_penalty_term = la - 1/La*vol_error
+ 
         shapeSens = shapeSens - vol_penalty_term
 
         # Smooth the sensitivities 
@@ -399,7 +403,7 @@ def topopt_levelset(feaMode,
                 mesh=mesh,
                 lsf=lsf,
                 v=-shapeSens_smooth,  # Velocity is negative of shape sensitivity
-                volFractionConstraint = volFractionConstraint
+                maxVolChange = maxVolChange
         )
    
         rho = (lsf < 0).astype(float)
@@ -447,7 +451,7 @@ if __name__ == "__main__":
 	from topopt_thermal_benchmarks import *
 	
 	print("-" * 50)
-	to_problem = StructuralTOExamples.Mitchell_1 # Choose the TO problem
+	to_problem = StructuralTOExamples.TensilePlate # Choose the TO problem
 	#to_problem = ThermalTOExamples.FourCornersThermal # Choose the TO problem
      
 	run_topopt_levelset(to_problem)

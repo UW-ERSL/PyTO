@@ -1383,7 +1383,7 @@ def createGravityBarProblem(nDOFDesired: int = 10000, material_density = 7700):
 
   # ----------------------------------------
   
-def createTensilePlateProblem(nDOFDesired: int = 10000, L: float = [1.0, 0.01, 1.0]):
+def createTensilePlateProblem(nDOFDesired: int = 10000, L: float = [1.0, 1, 0.01]):
   nVoxelsDesired = nDOFDesired/3    
   # Let the number of voxels be proportional to the length in each direction
   alpha = (nVoxelsDesired/(L[0]*L[1]*L[2]))**(1/3)
@@ -1396,7 +1396,7 @@ def createTensilePlateProblem(nDOFDesired: int = 10000, L: float = [1.0, 0.01, 1
   mesh.createEdofMatStructural()
 
 
-  fixed_nodes =np.intersect1d(mesh.getNodesOnBoundingBoxPlane(0,True), mesh.getNodesOnBoundingBoxPlane(2,False))
+  fixed_nodes =np.intersect1d(mesh.getNodesOnBoundingBoxPlane(0,True), mesh.getNodesOnBoundingBoxPlane(1,False))
 
   fixed_dofs = np.array([3 * fixed_nodes,
               3 * fixed_nodes + 1,
@@ -1404,11 +1404,11 @@ def createTensilePlateProblem(nDOFDesired: int = 10000, L: float = [1.0, 0.01, 1
   dirichlet_values = 0*np.ones_like(fixed_dofs, dtype = float)
 
   mesh.node_indices[fixed_nodes, 3] = 1
-  force_nodes =np.intersect1d(mesh.getNodesOnBoundingBoxPlane(0,False), mesh.getNodesOnBoundingBoxPlane(2,False))
+  force_nodes =np.intersect1d(mesh.getNodesOnBoundingBoxPlane(0,False), mesh.getNodesOnBoundingBoxPlane(1,False))
   force_dofs = np.array([3 * force_nodes])
   boundary_force = np.zeros(3*mesh.num_nodes)
   boundary_force[force_dofs] = 10000/len(force_nodes)
-  elem_body_force = np.zeros(3*mesh.num_elems)
+  elem_body_force = None
   mat_prop = mat_lib.get_material("Steel") 
  
   mesh.node_indices[force_nodes, 3] = 2 # for plotting

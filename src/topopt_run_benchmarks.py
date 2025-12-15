@@ -72,7 +72,7 @@ def runTOMethodOnBenchmarks(optimizationMethod):
 					benchmarks_thermostructural_problems  + \
 					benchmarks_structural_casestudies
 	
-	for to_problem in  benchmarks_structural_2_5D_problems_1 + benchmarks_structural_2_5D_problems_2 + benchmarks_thermal_2_5D_problems + benchmarks_structural_3D_problems:  
+	for to_problem in  benchmarks_structural_2_5D_problems_1:  
 		if to_problem in benchmarks_structural_2_5D_problems_1:
 			subFolder = "Structural-Compliance2.5D_1"
 		elif to_problem in benchmarks_structural_2_5D_problems_2:
@@ -378,7 +378,7 @@ def combine_results():
 		# Plot normalized compliance
 		plt.figure(figsize=(12, 6))
 		compliance_df.plot(kind='bar', width=0.8)
-		plt.title('Relative Compliance', fontsize=12, fontweight='bold')
+		plt.title('Relative Compliance', fontsize=14, fontweight='bold')
 		plt.ylabel('Relative to DENSITYMMA', fontsize=10)
 		plt.xticks(rotation=45, fontsize=8, ha='right')
 		plt.legend(title='Method', fontsize=8, bbox_to_anchor=(1.05, 1), loc='upper left')
@@ -391,7 +391,7 @@ def combine_results():
 		# Plot normalized time
 		plt.figure(figsize=(10, 6))
 		time_df.plot(kind='bar', width=0.8)
-		plt.title('Relative Computation Time', fontsize=12, fontweight='bold') 
+		plt.title('Relative Computation Time', fontsize=14, fontweight='bold') 
 		plt.ylabel('Relative to DENSITYMMA', fontsize=10)
 		plt.xticks(rotation=45, fontsize=8, ha='right')
 		plt.legend(title='Method', fontsize=8, bbox_to_anchor=(1.05, 1), loc='upper left')
@@ -403,7 +403,7 @@ def combine_results():
 		# Plot number of FEAs
 		plt.figure(figsize=(10, 6))
 		fea_df.plot(kind='bar', width=0.8)
-		plt.title('Relative Num. of FEAs', fontsize=12, fontweight='bold')
+		plt.title('Relative Num. of FEAs', fontsize=14, fontweight='bold')
 		plt.ylabel('Relative to DENSITYMMA', fontsize=10)
 		plt.xticks(rotation=45, fontsize=8, ha='right')
 		plt.legend(title='Method', fontsize=8, bbox_to_anchor=(1.05, 1), loc='upper left')
@@ -421,7 +421,7 @@ def combine_results():
 		
 		plt.figure(figsize=(10, 6))
 		volume_df.plot(kind='bar', width=0.8)
-		plt.title('Volume Fraction', fontsize=12, fontweight='bold')
+		plt.title('Volume Fraction', fontsize=14, fontweight='bold')
 		plt.ylabel('Volume Fraction', fontsize=10)
 		plt.xticks(rotation=45, fontsize=8, ha='right')
 		plt.legend(title='Method', fontsize=8, bbox_to_anchor=(1.05, 1), loc='upper left')
@@ -469,7 +469,7 @@ def create_summary_tables():
 
 		# Start from the DENSITYMMA dataframe to get the problem list
 		base_df = method_dfs.get('DENSITYMMA', next(iter(method_dfs.values()))).copy()
-		for m, df in method_dfs.items():
+		for _, df in method_dfs.items():
 			base_df = base_df.merge(df, on='name', how='outer')
 
 		# Build rows and compute image paths per method
@@ -513,16 +513,16 @@ def create_summary_tables():
 			axes = axes.reshape(n_rows, 1)
 
 		# Column headers in the first row's axes titles
-		axes[0, 0].set_title("Name", fontsize=10, fontweight='bold')
-		axes[0, 1].set_title("Problem", fontsize=10, fontweight='bold')
+		axes[0, 0].set_title("Name", fontsize=14, fontweight='bold')
+		axes[0, 1].set_title("Problem", fontsize=14, fontweight='bold')
 		for ci, method in enumerate(methods, start=2):
-			axes[0, ci].set_title(method.name, fontsize=10, fontweight='bold')
+			axes[0, ci].set_title(method.name, fontsize=14, fontweight='bold')
 
 		for ri, entry in enumerate(rows):
 			# Name cell
 			ax0 = axes[ri, 0]
 			ax0.axis('off')
-			ax0.text(0.02, 0.5, entry['Name'], fontsize=9, va='center', ha='left')
+			ax0.text(0.02, 0.5, entry['Name'], fontsize=14, va='center', ha='left')
 
 			# Problem image cell
 			ax_prob = axes[ri, 1]
@@ -532,9 +532,9 @@ def create_summary_tables():
 					img = plt.imread(entry['problem_img'])
 					ax_prob.imshow(img)
 				except Exception:
-					ax_prob.text(0.02, 0.5, "Problem image load error", fontsize=8, va='center', ha='left')
+					ax_prob.text(0.02, 0.5, "Problem image load error", fontsize=14, va='center', ha='left')
 			else:
-				ax_prob.text(0.02, 0.5, "No problem image", fontsize=8, va='center', ha='left')
+				ax_prob.text(0.02, 0.5, "No problem image", fontsize=14, va='center', ha='left')
 
 			# Method cells: show figure if available, else text
 			for ci, method in enumerate(methods, start=2):
@@ -546,13 +546,13 @@ def create_summary_tables():
 						img = plt.imread(cell['img'])
 						ax.imshow(img)
 						if cell['text']:
-							ax.text(0.02, 0.02, cell['text'], fontsize=8, va='bottom', ha='left',
+							ax.text(0.02, 0.02, cell['text'], fontsize=14, va='bottom', ha='left',
 									color='white', bbox=dict(facecolor='black', alpha=0.4, pad=2),
 									transform=ax.transAxes)
 					except Exception:
-						ax.text(0.02, 0.5, cell['text'] or "Image load error", fontsize=8, va='center', ha='left')
+						ax.text(0.02, 0.5, cell['text'] or "Image load error", fontsize=14, va='center', ha='left')
 				else:
-					ax.text(0.02, 0.5, cell['text'] or "No image", fontsize=8, va='center', ha='left')
+					ax.text(0.02, 0.5, cell['text'] or "No image", fontsize=14, va='center', ha='left')
 
 		plt.tight_layout()
 		out_path = f"{results_dir}/{subFolder}_summary_table.png"

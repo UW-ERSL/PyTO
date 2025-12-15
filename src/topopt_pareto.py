@@ -395,7 +395,7 @@ def topopt_pareto(feaMode,fe_solver,
 	if (nodal_body_force is not None):
 		T_body = np.zeros(fe_solver.mesh.num_elems)
 		for elem in range(fe_solver.mesh.num_elems):
-			edof = fe_solver.mesh.edofMat[elem]
+			edof = fe_solver.mesh.edofMatStructural[elem]
 			T_body[elem] =  (x[elem]*sol[edof] * nodal_body_force[edof]).sum()
 		T += 2*T_body
 
@@ -508,7 +508,7 @@ def topopt_pareto(feaMode,fe_solver,
 			if (nodal_body_force is not None):
 				T_body = np.zeros(fe_solver.mesh.num_elems)
 				for elem in range(fe_solver.mesh.num_elems):
-					edof = fe_solver.mesh.edofMat[elem]
+					edof = fe_solver.mesh.edofMatStructural[elem]
 					T_body[elem] =  (x[elem]*sol[edof] * nodal_body_force[edof]).sum()
 				T += 2*T_body
 
@@ -569,7 +569,7 @@ if __name__ == "__main__":
 	from topopt_thermal_benchmarks import *
 	
 	print("-" * 50)
-	to_problem = StructuralTOExamples.MBBBeam # Choose the TO problem
+	to_problem = StructuralTOExamples.TensilePlate # Choose the TO problem
 	#to_problem = ThermalTOExamples.FourCornersThermal # Choose the TO problem
 
 	run_pareto_topopt(to_problem)

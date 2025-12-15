@@ -773,15 +773,7 @@ class HexFEAPlotter:
             font_size=10,
             color='black'
         )
-        if hasattr(self, 'camera_position'):
-            self._rt_plotter.camera_position = self.camera_position
-            self._rt_plotter.reset_camera_clipping_range()
-        else:
-            self._rt_plotter.camera_position = "xy"
-            self._rt_plotter.reset_camera_clipping_range()
-            # # self._rt_plotter.camera.azimuth = 25  # Rotate around
-            # # self._rt_plotter.camera.elevation = 25  # Adjust angle
-            # self._rt_plotter.reset_camera_clipping_range()
+
 
         # Mark as initialized for future updates
         if not use_external:
