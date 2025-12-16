@@ -176,7 +176,7 @@ class HexFEAPlotter:
                 plotter.camera.Azimuth(45)  # rotate about y-axis
                 plotter.camera.Elevation(30)  # rotate  about x-axis
                 plotter.reset_camera()  # Recalculate bounds after rotation
-                plotter.camera.zoom(1.1)  # Fine-tune to minimize white space
+                plotter.camera.zoom(1.25)  # Fine-tune to minimize white space
             elif (camera_position == 'xy'):
                 plotter.view_xy()
                 plotter.camera.tight()
@@ -853,6 +853,7 @@ class HexFEAPlotter:
         vertices = self.mesh.node_xyz
         
         # Add black spheres for fixed nodes (from structural fixed DOFs)
+        point_size = 30
         fixed_nodes = np.array([], dtype=int)
         if bc is not None and hasattr(bc, 'fixed_dofs') and bc.fixed_dofs is not None:
             fixed_dofs = np.asarray(bc.fixed_dofs, dtype=int)
@@ -862,7 +863,7 @@ class HexFEAPlotter:
         if fixed_nodes.size > 0:
             points1 = vertices[fixed_nodes]
             pts = pv.PolyData(points1)
-            plotter.add_points(pts, color='black', point_size=20,
+            plotter.add_points(pts, color='black', point_size=point_size,
                        render_points_as_spheres=True)
         
         # Add red force arrows for nodes with non-zero applied forces
@@ -888,9 +889,7 @@ class HexFEAPlotter:
                     norm = np.linalg.norm(force_vec)
                     if norm > 0:
                         force_norms.append(norm)
-
-           
-            
+                        
             if len(force_norms) > 0:
                 force_norm_avg = float(np.mean(force_norms))
                 # Add arrows for each loaded node
