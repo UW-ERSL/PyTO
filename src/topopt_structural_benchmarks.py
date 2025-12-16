@@ -316,10 +316,10 @@ def getStructuralTOProblem(to_problem: StructuralTOExamples,nDOFDesired = None, 
     elif to_problem == StructuralTOExamples.EdgeCantilever:
         structural_problem = StructuralExamples.EdgeCantilever
         to_params.Comment = "Benchmark 3D"
-        to_params.YSymmetry = True
+        to_params.ZSymmetry = True
         to_params.nDOFDesired = 75000 if nDOFDesired is None else nDOFDesired
         to_params.Objective = (TO_QOI.COMPLIANCE, None)
-        to_params.Constraints = [(TO_QOI.VOLUME_FRACTION, None, 0.5)] 
+        to_params.Constraints = [(TO_QOI.VOLUME_FRACTION, None, 0.25)] 
     elif to_problem == StructuralTOExamples.EdgeCantileverConstraintMatrix:
         structural_problem = StructuralExamples.EdgeCantileverConstraintMatrix
         to_params.Comment = "Benchmark 3D"

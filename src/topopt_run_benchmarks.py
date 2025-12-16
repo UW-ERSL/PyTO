@@ -72,7 +72,7 @@ def runTOMethodOnBenchmarks(optimizationMethod):
 					benchmarks_thermostructural_problems  + \
 					benchmarks_structural_casestudies
 	
-	for to_problem in  benchmarks_structural_2_5D_problems_1:  
+	for to_problem in  benchmarks_structural_3D_problems:
 		if to_problem in benchmarks_structural_2_5D_problems_1:
 			subFolder = "Structural-Compliance2.5D_1"
 		elif to_problem in benchmarks_structural_2_5D_problems_2:
@@ -168,9 +168,11 @@ def runTOMethodOnBenchmarks(optimizationMethod):
 			fe_solver.plot_mesh(
 				title="Structural Load",
 				plot_bc=True,
+				camera_position='iso',
 				save_path=f"{output_base}/{to_problem.name}_problem.png"
 			)
 		startTime = time.time()
+
 		print("-" * 50)
 		print(f"Running {to_problem.name} problem using {optimizationMethod.name} method and {solver.name} solver")
 		print("-" * 50)
@@ -208,11 +210,11 @@ def runTOMethodOnBenchmarks(optimizationMethod):
 
 		image_path = f"{output_dir}/{to_problem.name}.png"
 		title = f"{optimizationMethod.name}: vol: {history['volfrac'][-1]:0.2f}, J: {history['objective'][-1]:.3g}, nFEA: {len(history['objective']):3d}, time: {timeTaken:.0f} s"
-	
+		title = None
 		if to_problem in benchmarks_structural_2_5D_problems_1 or to_problem in benchmarks_structural_2_5D_problems_2 or to_problem in benchmarks_thermal_2_5D_problems:
 			fe_solver.plot_mesh(save_path=image_path, plot_bc = None, title=title, camera_position='xy')
 		else:
-			fe_solver.plot_mesh(save_path=image_path, plot_bc = None, title=title)
+			fe_solver.plot_mesh(save_path=image_path, plot_bc = None, title=title,camera_position='iso')
 	
 		results_list.append({
 			'name': to_problem.name,
@@ -499,13 +501,13 @@ def create_summary_tables():
 			print(f"No rows to plot for {results_dir}. Skipping...")
 			continue
 
-		cell_h = 1.8  # height per row in inches
-		cell_w = 2.2  # width per image cell
-		name_col_w = 2.8
-		problem_col_w = 3.0
+		cell_h = 1.5  # height per row in inches
+		cell_w = 1.8  # width per image cell
+		name_col_w = 2.0
+		problem_col_w = 2.0
 		fig_w = name_col_w + problem_col_w + len(methods) * cell_w
 		fig_h = max(3, n_rows * cell_h)
-		fig, axes = plt.subplots(n_rows, n_cols, figsize=(fig_w, fig_h))
+		_, axes = plt.subplots(n_rows, n_cols, figsize=(fig_w, fig_h))
 		# Normalize axes to 2D array
 		if n_rows == 1:
 			axes = np.array([axes])
@@ -513,16 +515,16 @@ def create_summary_tables():
 			axes = axes.reshape(n_rows, 1)
 
 		# Column headers in the first row's axes titles
-		axes[0, 0].set_title("Name", fontsize=14, fontweight='bold')
-		axes[0, 1].set_title("Problem", fontsize=14, fontweight='bold')
+		axes[0, 0].set_title(" ", fontsize=12, fontweight='bold')
+		axes[0, 1].set_title("Problem", fontsize=12, fontweight='bold')
 		for ci, method in enumerate(methods, start=2):
-			axes[0, ci].set_title(method.name, fontsize=14, fontweight='bold')
+			axes[0, ci].set_title(method.name, fontsize=12, fontweight='bold')
 
 		for ri, entry in enumerate(rows):
 			# Name cell
 			ax0 = axes[ri, 0]
 			ax0.axis('off')
-			ax0.text(0.02, 0.5, entry['Name'], fontsize=14, va='center', ha='left')
+			ax0.text(0.02, 0.5, entry['Name'], fontsize=12, va='center', ha='left')
 
 			# Problem image cell
 			ax_prob = axes[ri, 1]
@@ -532,9 +534,9 @@ def create_summary_tables():
 					img = plt.imread(entry['problem_img'])
 					ax_prob.imshow(img)
 				except Exception:
-					ax_prob.text(0.02, 0.5, "Problem image load error", fontsize=14, va='center', ha='left')
+					ax_prob.text(0.02, 0.5, "Problem image load error", fontsize=10, va='center', ha='left')
 			else:
-				ax_prob.text(0.02, 0.5, "No problem image", fontsize=14, va='center', ha='left')
+				ax_prob.text(0.02, 0.5, "No problem image", fontsize=10, va='center', ha='left')
 
 			# Method cells: show figure if available, else text
 			for ci, method in enumerate(methods, start=2):
@@ -546,15 +548,15 @@ def create_summary_tables():
 						img = plt.imread(cell['img'])
 						ax.imshow(img)
 						if cell['text']:
-							ax.text(0.02, 0.02, cell['text'], fontsize=14, va='bottom', ha='left',
+							ax.text(0.02, 0.02, cell['text'], fontsize=10, va='bottom', ha='left',
 									color='white', bbox=dict(facecolor='black', alpha=0.4, pad=2),
 									transform=ax.transAxes)
 					except Exception:
-						ax.text(0.02, 0.5, cell['text'] or "Image load error", fontsize=14, va='center', ha='left')
+						ax.text(0.02, 0.5, cell['text'] or "Image load error", fontsize=10, va='center', ha='left')
 				else:
-					ax.text(0.02, 0.5, cell['text'] or "No image", fontsize=14, va='center', ha='left')
+					ax.text(0.02, 0.5, cell['text'] or "No image", fontsize=10, va='center', ha='left')
 
-		plt.tight_layout()
+		plt.tight_layout(pad=0.5)
 		out_path = f"{results_dir}/{subFolder}_summary_table.png"
 		plt.savefig(out_path, dpi=300, bbox_inches='tight')
 		plt.close()
@@ -562,7 +564,7 @@ def create_summary_tables():
 if __name__ == "__main__":    
 	
 	optimizationMethods = [TO_METHODS.DENSITYMMA, TO_METHODS.DENSITYOCM,TO_METHODS.PARETO,TO_METHODS.LEVELSET]
-	for optimizationMethod in [TO_METHODS.LEVELSET]:
+	for optimizationMethod in optimizationMethods:
 		runTOMethodOnBenchmarks(optimizationMethod)
 		print("-" * 50)
 		print(f"Finished {optimizationMethod.name} tests.")

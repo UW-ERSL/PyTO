@@ -150,7 +150,7 @@ def topopt_levelset(feaMode,
     References:
     """
     
-    def evolveUpWind(mesh, lsf, v, maxVolChange=0.02):
+    def evolveUpWind(mesh, lsf, v, maxVolChange=0.05):
         """
         Evolution of level set function.
         Implements Hamilton-Jacobi equation:
@@ -346,8 +346,8 @@ def topopt_levelset(feaMode,
         if iteration == 0:
             shapeScaling = np.max(np.abs(shapeSens)) + 1e-12
    
-        rho_anstaz = void + (1 - void) * rho
-        shapeSens = rho_anstaz * shapeSens / shapeScaling
+       
+        shapeSens = shapeSens / shapeScaling
        
         #  Load bearing elements must remain solid 
         if elemsWithForces is not None and len(elemsWithForces) > 0:
@@ -384,11 +384,9 @@ def topopt_levelset(feaMode,
             la = -0.01
             La = 1000
             alpha = 0.95
-            maxVolChange = 0.05
         else:
             la = la - 1/La * vol_error; 
             La  = alpha * La
-            maxVolChange = max(0.01, alpha * maxVolChange)
 
   
         vol_penalty_term = la - 1/La*vol_error
@@ -402,8 +400,7 @@ def topopt_levelset(feaMode,
         lsf = evolveUpWind(
                 mesh=mesh,
                 lsf=lsf,
-                v=-shapeSens_smooth,  # Velocity is negative of shape sensitivity
-                maxVolChange = maxVolChange
+                v=-shapeSens_smooth  # Velocity is negative of shape sensitivity
         )
    
         rho = (lsf < 0).astype(float)

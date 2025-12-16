@@ -669,9 +669,9 @@ def createEdgeCantileverProblem(nDOFDesired: int = 10000, L: float = [0.4, 0.2, 
   dirichlet_values = 0*np.ones_like(fixed_dofs, dtype = float)
 
   mesh.node_indices[fixed_nodes, 3] = 1
-  # line defined by x = xMax, and z = 0 
-  load_nodes = np.intersect1d(mesh.getNodesOnBoundingBoxPlane(0,False), mesh.getNodesOnBoundingBoxPlane(2,True))
-  load_dofs = 3 * load_nodes + 2  # z direction
+  # line defined by x = xMax, and y = 0 
+  load_nodes = np.intersect1d(mesh.getNodesOnBoundingBoxPlane(0,False), mesh.getNodesOnBoundingBoxPlane(1,True))
+  load_dofs = 3 * load_nodes + 1  # y direction
 
   mesh.node_indices[load_nodes, 3] = 2
   load_per_dof = -totalLoad/len(load_nodes)

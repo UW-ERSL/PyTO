@@ -128,7 +128,7 @@ class HexFEAPlotter:
         self._safe_show(plotter)
         
     def plot_mesh_structural(self, bc, title=None, plot_bc=True, 
-                           rel_arrow_scale=0.1, offsetArrow=False,
+                           rel_arrow_scale=0.1, offsetArrow=False,axis = False,
                            save_path=None, camera_position = None, plotter=None):
         """Plot structural mesh with boundary conditions."""
         external_plotter = plotter is not None
@@ -169,16 +169,18 @@ class HexFEAPlotter:
                         edge_color='black', line_width=1)
         if title:
             self._safe_add_title(title, font_size=8)
-        
-        
-        if hasattr(self, 'camera_position'):
-            plotter.camera_position = self.camera_position
-        else:
-            plotter.camera_position = 'xy'
-            
+       
         if camera_position is not None:
-            plotter.camera_position = camera_position
-        if not external_plotter and (not hasattr(plotter, 'axes_actor') or plotter.axes_actor is None):
+            if (camera_position == 'iso'):
+                plotter.view_xy()
+                plotter.camera.Azimuth(45)  # rotate about y-axis
+                plotter.camera.Elevation(30)  # rotate  about x-axis
+                plotter.reset_camera()  # Recalculate bounds after rotation
+                plotter.camera.zoom(1.1)  # Fine-tune to minimize white space
+            elif (camera_position == 'xy'):
+                plotter.view_xy()
+                plotter.camera.tight()
+        if axis and not external_plotter and (not hasattr(plotter, 'axes_actor') or plotter.axes_actor is None):
             plotter.add_axes()
         
         if save_path:
@@ -191,7 +193,7 @@ class HexFEAPlotter:
         self.camera_position = plotter.camera_position
     
     def plot_mesh_thermal(self, bc, title=None, plot_bc=True,
-                         auto_close=True, save_path=None, camera_position = None, plotter=None):
+                         auto_close=True, save_path=None, axis = False, camera_position = None, plotter=None):
         """Plot thermal mesh with boundary conditions."""
         external_plotter = plotter is not None
         if plotter is None:
@@ -226,13 +228,17 @@ class HexFEAPlotter:
         if title:
             self._safe_add_title(plotter, title, font_size=8)
         
-        if hasattr(self, 'camera_position'):
-            plotter.camera_position = self.camera_position
-        else:
-            plotter.camera_position = 'xy'
         if camera_position is not None:
-            plotter.camera_position = camera_position
-        if not external_plotter and (not hasattr(plotter, 'axes_actor') or plotter.axes_actor is None):
+            if (camera_position == 'iso'):
+                plotter.view_xy()
+                plotter.camera.Azimuth(45)  # rotate about y-axis
+                plotter.camera.Elevation(30)  # rotate  about x-axis
+                plotter.reset_camera()  # Recalculate bounds after rotation
+                plotter.camera.zoom(1.1)  # Fine-tune to minimize white space
+            elif (camera_position == 'xy'):
+                plotter.view_xy()
+                plotter.camera.tight()
+        if axis and not external_plotter and (not hasattr(plotter, 'axes_actor') or plotter.axes_actor is None):
             plotter.add_axes()
         
         if save_path:
@@ -306,7 +312,9 @@ class HexFEAPlotter:
         if not external_plotter and (not hasattr(plotter, 'axes_actor') or plotter.axes_actor is None):
             plotter.add_axes()
         
+        
         if save_path:
+            plotter.camera.tight()
             plotter.screenshot(save_path)
             plotter.close()
         else:
