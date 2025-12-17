@@ -227,8 +227,7 @@ def run_pareto_topopt(to_problem):
 		dsolver.create_deflation_groups(mesh, nGroups)
 		#dsolver.plot_deflation_groups(mesh)
 		dsolver.create_deflation_matrix(mesh)
-		dsolver.W = dsolver.W[bc.free_dofs, :]
-	 
+
 	
 	if (to_problem in StructuralTOExamples):
 		fe_solver = hex_structural_fea.HexStructuralFEA(mesh = mesh,

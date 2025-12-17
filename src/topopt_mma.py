@@ -29,7 +29,6 @@ def run_topopt_mma(to_problem):
         nGroups =  min(dsolver.maxGroups,max(dsolver.minGroups,round(3*mesh.num_nodes/dsolver.dofPerGroup)))
         dsolver.create_deflation_groups(mesh, nGroups)
         dsolver.create_deflation_matrix(mesh)
-        dsolver.W = dsolver.W[bc.free_dofs, :]
 
     print('Solver: ', solver.name)
     fe_structural_solver = None
@@ -45,6 +44,7 @@ def run_topopt_mma(to_problem):
                     elem_body_force = elem_body_force)
         nNodes = fe_structural_solver.mesh.num_nodes
         nElems = fe_structural_solver.mesh.num_elems
+        nDOF = 3*nNodes
         #fe_structural_solver.plot_mesh(title = "Structural Load", plot_bc = True, save_path = None)
     elif (feaMode == FEA_MODE.THERMAL):
         fe_thermal_solver = hex_thermal_fea.HexThermalFEA(mesh = mesh,
@@ -56,6 +56,7 @@ def run_topopt_mma(to_problem):
                     elem_body_force = elem_body_force)
         nNodes = fe_thermal_solver.mesh.num_nodes
         nElems = fe_thermal_solver.mesh.num_elems
+        nDOF = nNodes
 
         fe_thermal_solver.plot_mesh(title = "Thermal Load", plot_bc = True, save_path = None)
     elif (feaMode == FEA_MODE.THERMO_STRUCTURAL):
@@ -72,16 +73,16 @@ def run_topopt_mma(to_problem):
                     solver = solver,
                     dsolver = dsolver,
                     rtol = 1e-8)
-
+        nDOF = 3*nNodes
         nNodes = fe_structural_solver.mesh.num_nodes
         nElems = fe_structural_solver.mesh.num_elems  
-           
-
-    
     
 
     print("nNodes: ", nNodes )
     print("nElem: ", nElems) 
+    print("nDOF: ", nDOF) 
+
+     # Run the optimization
     plot_progress = True
     print_progress = True
     startTime = time.time()
@@ -408,7 +409,7 @@ if __name__ == "__main__":
     print("-" * 50)
 
     # Choose the TO problem
-    to_problem = StructuralTOExamples.EdgeCantilever 
+    to_problem = StructuralTOExamples.LBracketMidLoad 
     #to_problem = ThermalTOExamples.FourCornersThermal
     #to_problem = ThermoStructuralTOExamples.MBBBeam
 

@@ -31,7 +31,6 @@ def run_topopt_ocm(to_problem):
 		nGroups =  min(dsolver.maxGroups,max(dsolver.minGroups,round(3*mesh.num_nodes/dsolver.dofPerGroup)))
 		dsolver.create_deflation_groups(mesh, nGroups)
 		dsolver.create_deflation_matrix(mesh)
-		dsolver.W = dsolver.W[bc.free_dofs, :]
 
 	if (to_problem in StructuralTOExamples):
 		fe_solver = hex_structural_fea.HexStructuralFEA(mesh = mesh,

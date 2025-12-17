@@ -25,6 +25,7 @@ class StructuralTOExamples(enum.Enum):
 
     # 3D Examples
 	EdgeCantilever = enum.auto()
+	EdgeCantileverLargeDOF = enum.auto()
 	EdgeCantileverConstraintMatrix = enum.auto()
 	Multiload = enum.auto()
 	ThreeHoleBracketThick = enum.auto()
@@ -92,6 +93,8 @@ def getSTLPath_TOProblem(to_problem: StructuralTOExamples):
     elif to_problem == StructuralTOExamples.ThreeHoleBracket:
         stl_file = "Models/ThreeHoleBracket/ThreeHoleBracket.STL"
     elif to_problem == StructuralTOExamples.EdgeCantilever:
+        stl_file = "Models/EdgeCantilever/EdgeCantilever.STL"
+    elif to_problem == StructuralTOExamples.EdgeCantileverLargeDOF:
         stl_file = "Models/EdgeCantilever/EdgeCantilever.STL"
     elif to_problem == StructuralTOExamples.EdgeCantileverConstraintMatrix:
         stl_file = "Models/EdgeCantilever/EdgeCantilever.STL"
@@ -317,14 +320,21 @@ def getStructuralTOProblem(to_problem: StructuralTOExamples,nDOFDesired = None, 
         structural_problem = StructuralExamples.EdgeCantilever
         to_params.Comment = "Benchmark 3D"
         to_params.ZSymmetry = True
-        to_params.nDOFDesired = 75000 if nDOFDesired is None else nDOFDesired
+        to_params.nDOFDesired = 1000000 if nDOFDesired is None else nDOFDesired
+        to_params.Objective = (TO_QOI.COMPLIANCE, None)
+        to_params.Constraints = [(TO_QOI.VOLUME_FRACTION, None, 0.25)] 
+    elif to_problem == StructuralTOExamples.EdgeCantileverLargeDOF:
+        structural_problem = StructuralExamples.EdgeCantilever
+        to_params.Comment = "Benchmark 3D"
+        to_params.ZSymmetry = True
+        to_params.nDOFDesired = 2000000 if nDOFDesired is None else nDOFDesired
         to_params.Objective = (TO_QOI.COMPLIANCE, None)
         to_params.Constraints = [(TO_QOI.VOLUME_FRACTION, None, 0.25)] 
     elif to_problem == StructuralTOExamples.EdgeCantileverConstraintMatrix:
         structural_problem = StructuralExamples.EdgeCantileverConstraintMatrix
         to_params.Comment = "Benchmark 3D"
         to_params.YSymmetry = True
-        to_params.nDOFDesired = 75000 if nDOFDesired is None else nDOFDesired
+        to_params.nDOFDesired = 50000 if nDOFDesired is None else nDOFDesired
         to_params.Objective = (TO_QOI.COMPLIANCE, None)
         to_params.Constraints = [(TO_QOI.VOLUME_FRACTION, None, 0.5)] 
     elif to_problem == StructuralTOExamples.ThreeHoleBracketThick:

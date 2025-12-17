@@ -75,6 +75,7 @@ def runTOMethodOnBenchmarks(optimizationMethod):
 	for to_problem in  benchmarks_structural_3D_problems:
 		if to_problem in benchmarks_structural_2_5D_problems_1:
 			subFolder = "Structural-Compliance2.5D_1"
+			subFolder = "Structural-Compliance2.5D_1"
 		elif to_problem in benchmarks_structural_2_5D_problems_2:
 			subFolder = "Structural-Compliance2.5D_2"
 		elif to_problem in benchmarks_thermal_2_5D_problems:
@@ -113,7 +114,6 @@ def runTOMethodOnBenchmarks(optimizationMethod):
 			nGroups =  min(dsolver.maxGroups,max(dsolver.minGroups,round(3*mesh.num_nodes/dsolver.dofPerGroup)))
 			dsolver.create_deflation_groups(mesh, nGroups)
 			dsolver.create_deflation_matrix(mesh)
-			dsolver.W = dsolver.W[bc.free_dofs, :]
 
 		if (feaMode == FEA_MODE.STRUCTURAL):
 			fe_structural_solver = hex_structural_fea.HexStructuralFEA(mesh = mesh,

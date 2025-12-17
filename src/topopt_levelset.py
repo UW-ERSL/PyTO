@@ -63,7 +63,6 @@ def run_topopt_levelset(to_problem):
 		nGroups =  min(dsolver.maxGroups,max(dsolver.minGroups,round(3*mesh.num_nodes/dsolver.dofPerGroup)))
 		dsolver.create_deflation_groups(mesh, nGroups)
 		dsolver.create_delfation_matrix(mesh)
-		dsolver.W = dsolver.W[bc.free_dofs, :]
 
 	if (feaMode == FEA_MODE.STRUCTURAL):
 		fe_solver = hex_structural_fea.HexStructuralFEA(mesh = mesh,
