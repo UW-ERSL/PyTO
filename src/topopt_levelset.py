@@ -387,9 +387,7 @@ def topopt_levelset(feaMode,
             la = la - 1/La * vol_error; 
             La  = alpha * La
 
-  
         vol_penalty_term = la - 1/La*vol_error
- 
         shapeSens = shapeSens - vol_penalty_term
 
         # Smooth the sensitivities 

@@ -13,6 +13,7 @@ import numpy as np
 import scipy.sparse as spy_sprs
 import scipy.linalg as spy_linalg
 from hex_mesher import HexMesher
+
 try:
 	import cupy as cp
 except ImportError:
@@ -66,6 +67,21 @@ class DeflationSolver:
 		"""
 		self.elemPseudoDensity = rho.copy()
 
+	def getRecommendedNumberOfGroups(self, nDOF: int = 100000) -> int:
+		"""Estimate recommended number of deflation groups.
+
+		This method suggests a suitable number of deflation groups based on
+		the mesh size and minimum nodes per group.
+
+		Args:
+			meshData: Mesh data object containing node and element information
+		Returns:
+			int: Recommended number of deflation groups	"""
+		
+		nGroupsRecommended = int(nDOF / self.dofPerGroup)
+		nGroupsRecommended = min(nGroupsRecommended, self.maxGroups)	
+		nGroupsRecommended = max(nGroupsRecommended, self.minGroups)
+		return nGroupsRecommended
 
 	def create_deflation_groups(self, meshData, nGroupsDesired: int):
 		"""Create deflation groups using geometric partitioning.
@@ -497,8 +513,7 @@ class DeflationSolver:
 
 		n = f.shape[0]
 		WT = W.transpose(copy=True)
-		
-		# Pre-compute matrices
+	
 		KW = K @ W
 		WKW = (WT @ KW).toarray()
 		WKW = csr_matrix((WKW + WKW.T) / 2)

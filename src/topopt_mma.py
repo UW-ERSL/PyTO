@@ -26,7 +26,7 @@ def run_topopt_mma(to_problem):
     dsolver = deflation.DeflationSolver(use_gpu=False)
     if (to_params.nDOFDesired > DIRECT_SOLVER_DOF_CUTOFF):# Typically PARDISO, but DPCG for large DOF problems
         solver = lin_solv.Solvers.DPCG
-        nGroups =  min(dsolver.maxGroups,max(dsolver.minGroups,round(3*mesh.num_nodes/dsolver.dofPerGroup)))
+        nGroups = dsolver.getRecommendedNumberOfGroups(nDOF = 3*mesh.num_nodes)
         dsolver.create_deflation_groups(mesh, nGroups)
         dsolver.create_deflation_matrix(mesh)
 
@@ -220,8 +220,10 @@ def topopt_mma(feaMode: FEA_MODE, fe_structural_solver, fe_thermal_solver,
     else:
         initialize_SIMP_STRUCTURAL_PENALTY(3)   
         initialize_SIMP_THERMAL_PENALTY(1)
+
     def optimizationFunction(x):
         nonlocal nFEAs, obj0,iteration
+        tIterationStart = time.time()
         x = np.asarray(x).flatten()
         grey_elements = np.sum((x > 0.1) & (x < 0.9))
         fraction_grey = (grey_elements / num_elems)
@@ -307,6 +309,7 @@ def topopt_mma(feaMode: FEA_MODE, fe_structural_solver, fe_thermal_solver,
             for idx, val in enumerate(c.flatten()):
                 msg_lines.append(f"Constraint {idx+1} ({constraint_names[idx]}): {(val+1)*to_params.Constraints[idx][2]:.3g} {inequality} {to_params.Constraints[idx][2]:.3g}?")
             
+            msg_lines.append(f"Time for iteration {iteration}: {time.time() - tIterationStart:.2f} s")
             status_msg = '\n'.join(msg_lines)
             log_message(status_msg)
             
@@ -317,6 +320,7 @@ def topopt_mma(feaMode: FEA_MODE, fe_structural_solver, fe_thermal_solver,
             increment_SIMP_THERMAL_PENALTY(0.25)
             increment_SIMP_STRUCTURAL_PENALTY(0.25)
 
+        
         return obj, grad_obj, c, dcdx
 
 
@@ -409,7 +413,7 @@ if __name__ == "__main__":
     print("-" * 50)
 
     # Choose the TO problem
-    to_problem = StructuralTOExamples.LBracketMidLoad 
+    to_problem = StructuralTOExamples.Inverter 
     #to_problem = ThermalTOExamples.FourCornersThermal
     #to_problem = ThermoStructuralTOExamples.MBBBeam
 

@@ -176,11 +176,11 @@ def solve(A0: spy_sprs.coo_matrix,
 
     elif solver == Solvers.DPCG:
       dsolver = kwargs['dsolver']
-      print(f"W shape: {dsolver.W.shape}")
-      print(f"free_dofs type: {type(bc.free_dofs)}")
-      print(f"free_dofs shape/length: {bc.free_dofs.shape if hasattr(bc.free_dofs, 'shape') else len(bc.free_dofs)}")
-      print(f"free_dofs range: [{bc.free_dofs.min()}, {bc.free_dofs.max()}]")
-      print(f"Number of rows in W: {dsolver.W.shape[0]}")
+      # print(f"W shape: {dsolver.W.shape}")
+      # print(f"free_dofs type: {type(bc.free_dofs)}")
+      # print(f"free_dofs shape/length: {bc.free_dofs.shape if hasattr(bc.free_dofs, 'shape') else len(bc.free_dofs)}")
+      # print(f"free_dofs range: [{bc.free_dofs.min()}, {bc.free_dofs.max()}]")
+      # print(f"Number of rows in W: {dsolver.W.shape[0]}")
       W = dsolver.W[bc.free_dofs, :]
       rtol = kwargs.get('rtol', DEFAULT_TOL) # for iterative solvers
       M = _jacobi_preconditioner(A)

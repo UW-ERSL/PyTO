@@ -261,8 +261,7 @@ def getStructuralTOProblem(to_problem: StructuralTOExamples,nDOFDesired = None, 
         to_params.YSymmetry = True
         to_params.ExtrudeZ = True
         to_params.nDOFDesired = 40000 if nDOFDesired is None else nDOFDesired
-        to_params.Constraints = [(TO_QOI.VOLUME_FRACTION, None, 0.35)]
-        to_params.RelativeFilterRadius = 1.5
+        to_params.Constraints = [(TO_QOI.VOLUME_FRACTION, None, 0.3)]
         to_params.APPLY_FILTER_TO_SENSITIVITY = True # Apply filter to sensitivity
         #to_params.APPLY_FILTER_TO_DENSITY = True # Apply filter to density
     elif to_problem == StructuralTOExamples.LBracketTopLoad:
@@ -327,7 +326,7 @@ def getStructuralTOProblem(to_problem: StructuralTOExamples,nDOFDesired = None, 
         structural_problem = StructuralExamples.EdgeCantilever
         to_params.Comment = "Benchmark 3D"
         to_params.ZSymmetry = True
-        to_params.nDOFDesired = 2000000 if nDOFDesired is None else nDOFDesired
+        to_params.nDOFDesired = 50000 if nDOFDesired is None else nDOFDesired
         to_params.Objective = (TO_QOI.COMPLIANCE, None)
         to_params.Constraints = [(TO_QOI.VOLUME_FRACTION, None, 0.25)] 
     elif to_problem == StructuralTOExamples.EdgeCantileverConstraintMatrix:
