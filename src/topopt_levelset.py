@@ -8,6 +8,10 @@ from matplotlib import pyplot as plt
 import time
 from hex_mesher import DISTANCE_TYPE
 
+from topopt_structural_benchmarks import *
+from topopt_thermal_benchmarks import *
+from topopt_thermostructural_benchmarks import *
+    
 
 def compute_compliance_and_sensitivity(feaMode, rho, fe_solver,void = 0.0001):
     """

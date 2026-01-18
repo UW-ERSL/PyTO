@@ -6,6 +6,9 @@ import matplotlib.pyplot as plt
 from mmaWrapper import runMMA
 from topopt_thermostructural_sensitivity import ThermoElasticSensitivity
 
+from topopt_structural_benchmarks import *
+from topopt_thermal_benchmarks import *
+from topopt_thermostructural_benchmarks import *
 
 def run_topopt_mma(to_problem):
 

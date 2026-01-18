@@ -4,6 +4,10 @@ from topopt_material_model import *
 from topopt_obj_cons_sensitivities import *
 import time
 
+from topopt_structural_benchmarks import *
+from topopt_thermal_benchmarks import *
+from topopt_thermostructural_benchmarks import *
+    
 def run_topopt_ocm(to_problem):
 	"""Run topology optimization using Optimality Criteria method.
 

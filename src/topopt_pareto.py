@@ -2,6 +2,10 @@ from topopt_common import *
 import time
 import numpy as np
 
+from topopt_structural_benchmarks import *
+from topopt_thermal_benchmarks import *
+from topopt_thermostructural_benchmarks import *
+    
 
 #################################################################
 
