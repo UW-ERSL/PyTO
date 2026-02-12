@@ -34,8 +34,8 @@ class MaterialModel(enum.Enum):
 
 def set_SIMP_STRUCTURAL_PENALTY(value: float) -> None:
 	"""Set the maximum SIMP penalty value."""
-	global SIMP_STUCTURAL_PENALTY
-	SIMP_STUCTURAL_PENALTY = value
+	global _SIMP_STRUCTURAL_PENALTY
+	_SIMP_STRUCTURAL_PENALTY = value
 
 def update_SIMP_STUCTURAL_PENALTY_for_body_force(fraction_grey: float) -> None:
 	"""Update the SIMP penalty value. This is heuristic for problems with body force"""

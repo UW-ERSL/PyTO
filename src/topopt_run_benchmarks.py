@@ -20,7 +20,7 @@ def runTOMethodOnBenchmarks(optimizationMethod):
 	results_list = []
 	dsolver = deflation.DeflationSolver()
 	feaMode = FEA_MODE.STRUCTURAL
-	benchmarks_structural_2_5D_problems_1 = [StructuralTOExamples.Mitchell_1, 
+	benchmarks_structural_2_5D_problems_1 = [StructuralTOExamples.Mitchell, 
 							StructuralTOExamples.CantileverTipLoad, 
 							StructuralTOExamples.CantileverMidLoad,
 							StructuralTOExamples.MBBBeam,
@@ -45,7 +45,6 @@ def runTOMethodOnBenchmarks(optimizationMethod):
 	benchmarks_structural_noncompliance = [StructuralTOExamples.CantileverMidLoadVolumeCompliance,
 						StructuralTOExamples.LBracketTopLoad_Stress_Vol, 
 						StructuralTOExamples.LBracketTopLoad_Vol_Stress, 
-						StructuralTOExamples.LBracketThickTopLoad_Vol_Stress,
 						StructuralTOExamples.LBracketMidLoad_Vol_Stress,
 						StructuralTOExamples.LBracketTopLoad_Mass_StressFF,
 						StructuralTOExamples.Inverter]
@@ -59,7 +58,7 @@ def runTOMethodOnBenchmarks(optimizationMethod):
 	benchmarks_thermal_2_5D_problems = [ThermalTOExamples.HeatPlate, ThermalTOExamples.FourCornersThermal,
 							 ThermalTOExamples.BridgeThermal]	
 	
-	sampleBenchmarks = [StructuralTOExamples.Mitchell_1, StructuralTOExamples.LBracketTopLoad_Stress_Vol,
+	sampleBenchmarks = [StructuralTOExamples.Mitchell, StructuralTOExamples.LBracketTopLoad_Stress_Vol,
 						StructuralTOExamples.EdgeCantilever,StructuralTOExamples.GravityPlate,ThermoStructuralTOExamples.MBBBeam,
 						ThermalTOExamples.FourCornersThermal]
 	
@@ -72,7 +71,7 @@ def runTOMethodOnBenchmarks(optimizationMethod):
 					benchmarks_thermostructural_problems  + \
 					benchmarks_structural_casestudies
 	
-	for to_problem in  benchmarks_structural_3D_problems:
+	for to_problem in  benchmarks_structural_2_5D_problems_2:
 		if to_problem in benchmarks_structural_2_5D_problems_1:
 			subFolder = "Structural-Compliance2.5D_1"
 			subFolder = "Structural-Compliance2.5D_1"
@@ -157,7 +156,7 @@ def runTOMethodOnBenchmarks(optimizationMethod):
 		output_base = f"./Results/Results_{time.strftime('%Y-%m-%d')}/{subFolder}/Problems/"
 		os.makedirs(output_base, exist_ok=True)
 
-		if to_problem in benchmarks_structural_2_5D_problems_1 or to_problem in benchmarks_structural_2_5D_problems_2 or to_problem in benchmarks_thermal_2_5D_problems:
+		if to_params.ExtrudeZ:
 			fe_solver.plot_mesh(
 				title="Structural Load",
 				plot_bc=True,
@@ -563,7 +562,7 @@ def create_summary_tables():
 
 if __name__ == "__main__":    
 	
-	optimizationMethods = [ TO_METHODS.DENSITYOCM,TO_METHODS.PARETO,TO_METHODS.LEVELSET]
+	optimizationMethods = [TO_METHODS.DENSITYMMA]
 	for optimizationMethod in optimizationMethods:
 		runTOMethodOnBenchmarks(optimizationMethod)
 		print("-" * 50)

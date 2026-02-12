@@ -5,7 +5,7 @@ from topopt_common import *
 class StructuralTOExamples(enum.Enum):
 
     # 2.5D Examples
-	Mitchell_1 = enum.auto()
+	Mitchell = enum.auto()
 	Mitchell_2 = enum.auto()
 	Mitchell_3 = enum.auto()       
 	ShortCantileverTipLoad = enum.auto()
@@ -60,7 +60,7 @@ class StructuralTOExamples(enum.Enum):
 	KnuckleAssembly = enum.auto()
 
 def getSTLPath_TOProblem(to_problem: StructuralTOExamples):
-    if to_problem == StructuralTOExamples.Mitchell_1:
+    if to_problem == StructuralTOExamples.Mitchell:
         stl_file = "Models/Mitchell/Mitchell.STL"
     elif to_problem == StructuralTOExamples.Mitchell_2:
         stl_file = "Models/Mitchell/Mitchell.STL"
@@ -157,7 +157,7 @@ def getStructuralTOProblem(to_problem: StructuralTOExamples,nDOFDesired = None, 
     """
     
     to_params = TOParams()
-    if to_problem == StructuralTOExamples.Mitchell_1:
+    if to_problem == StructuralTOExamples.Mitchell:
         structural_problem = StructuralExamples.Mitchell
         kwargs['load1'] = 5.6e4
         kwargs['load2'] = 0
@@ -471,7 +471,7 @@ def getStructuralTOProblem(to_problem: StructuralTOExamples,nDOFDesired = None, 
         to_params.ExtrudeZ = True
         to_params.nDOFDesired = 30000 if nDOFDesired is None else nDOFDesired
         to_params.Objective = (TO_QOI.VOLUME_FRACTION, None) 
-        to_params.Constraints = [ (TO_QOI.MAX_VONMISES_STRESS, None, 225e6), (TO_QOI.COMPLIANCE, None, 400)] 
+        to_params.Constraints = [ (TO_QOI.MAX_VONMISES_STRESS, None, 225e6)] 
     elif to_problem == StructuralTOExamples.LBracketMidLoad_Vol_StresssFailureFactor_Compliance:
         structural_problem = StructuralExamples.LBracket
         kwargs['topload'] = 0
