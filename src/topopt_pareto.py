@@ -572,7 +572,7 @@ if __name__ == "__main__":
 	from topopt_thermal_benchmarks import *
 	
 	print("-" * 50)
-	to_problem = StructuralTOExamples.TensilePlate # Choose the TO problem
+	to_problem = StructuralTOExamples.Mitchell # Choose the TO problem
 	#to_problem = ThermalTOExamples.FourCornersThermal # Choose the TO problem
 
 	run_pareto_topopt(to_problem)

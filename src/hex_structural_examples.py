@@ -606,7 +606,7 @@ def createInverterProblem(nDOFDesired: int = 10000):
   load_dof = 3*load_nodes # x direction
 
   ## Add spring to output node and input nodes
-  mesh.externalSprings = [(0.1,3*node) for node in np.concatenate((outputNodes, load_nodes))]
+  mesh.externalSprings = [(0.01,3*node) for node in np.concatenate((outputNodes, load_nodes))]
    
    # Apply forces according to node type
   force = np.zeros(3*mesh.num_nodes)

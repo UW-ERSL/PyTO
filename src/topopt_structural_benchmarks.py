@@ -261,9 +261,7 @@ def getStructuralTOProblem(to_problem: StructuralTOExamples,nDOFDesired = None, 
         to_params.YSymmetry = True
         to_params.ExtrudeZ = True
         to_params.nDOFDesired = 40000 if nDOFDesired is None else nDOFDesired
-        to_params.Constraints = [(TO_QOI.VOLUME_FRACTION, None, 0.3)]
-        to_params.APPLY_FILTER_TO_SENSITIVITY = True # Apply filter to sensitivity
-        #to_params.APPLY_FILTER_TO_DENSITY = True # Apply filter to density
+        to_params.Constraints = [(TO_QOI.VOLUME_FRACTION, None, 0.3), (TO_QOI.COMPLIANCE, None, 1.5)]
     elif to_problem == StructuralTOExamples.LBracketTopLoad:
         structural_problem = StructuralExamples.LBracket
         kwargs['topload'] = 1.5e4
@@ -319,7 +317,7 @@ def getStructuralTOProblem(to_problem: StructuralTOExamples,nDOFDesired = None, 
         structural_problem = StructuralExamples.EdgeCantilever
         to_params.Comment = "Benchmark 3D"
         to_params.ZSymmetry = True
-        to_params.nDOFDesired = 1000000 if nDOFDesired is None else nDOFDesired
+        to_params.nDOFDesired = 75000 if nDOFDesired is None else nDOFDesired
         to_params.Objective = (TO_QOI.COMPLIANCE, None)
         to_params.Constraints = [(TO_QOI.VOLUME_FRACTION, None, 0.25)] 
     elif to_problem == StructuralTOExamples.EdgeCantileverLargeDOF:
@@ -527,10 +525,11 @@ def getStructuralTOProblem(to_problem: StructuralTOExamples,nDOFDesired = None, 
         xMin = np.min(node_pts[:,0]) 
         xMax = np.max(node_pts[:,0]) 
         yMid = (np.max(node_pts[:,1]) + np.min(node_pts[:,1]))/2
+   
+        h = mesh.elem_size[0]/2
+        outputNodes = np.where((abs(node_pts[:, 0] - xMax) < h) & (abs(node_pts[:, 1] - yMid) < h))[0]
 
-        outputNodes = np.where((abs(node_pts[:, 0] - xMax) < mesh.elem_size[0]/2) & (abs(node_pts[:, 1] - yMid) < mesh.elem_size[1]/2))[0]
-
-        load_nodes = np.where((abs(node_pts[:, 0] - np.min(node_pts[:, 0])) < mesh.elem_size[0]/2) & (abs(node_pts[:, 1] - np.mean(node_pts[:,1])) < mesh.elem_size[1]))[0]
+        load_nodes = np.where((abs(node_pts[:, 0] - np.min(node_pts[:, 0])) < h) & (abs(node_pts[:, 1] - np.mean(node_pts[:,1])) < h))[0]
         dof_input = 3*load_nodes # x dof
         dof_output= 3*outputNodes # x dof
 

@@ -55,8 +55,7 @@ class TOParams: # These are the default parameters
         default_factory=lambda: [(TO_QOI.VOLUME_FRACTION, None, 0.5)]
     )# Collection of tuples of constraint type, auxiliary scalar/vector/function, and upper bound
     nDOFDesired: int = 25000 # Desired number of degrees of freedom in the finite element problem
-    APPLY_FILTER_TO_SENSITIVITY: bool = True # Apply filter to density
-    APPLY_FILTER_TO_DENSITY: bool = False # Apply filter to density
+    APPLY_FILTER_TO_DENSITY: bool = True # Apply filter to density
     RelativeFilterRadius: float = 1.5 #relative to the element size
     XSymmetry: bool = False # Desired symmetry in YZ plane
     YSymmetry: bool = False

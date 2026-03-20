@@ -359,7 +359,7 @@ if __name__ == "__main__":
   from hex_structural_examples import StructuralExamples,getStructuralProblem
  
 
-  problem = StructuralExamples.Mitchell
+  problem = StructuralExamples.LBracket
   nDOFDesired = 30000
   mesh, mat_prop, bc,elem_body_force = getStructuralProblem(problem,nDOFDesired = nDOFDesired)
   solver = linear_solvers.Solvers.DPCG # typically DPCG or PARDISO

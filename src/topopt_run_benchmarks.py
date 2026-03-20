@@ -71,7 +71,7 @@ def runTOMethodOnBenchmarks(optimizationMethod):
 					benchmarks_thermostructural_problems  + \
 					benchmarks_structural_casestudies
 	
-	for to_problem in  benchmarks_structural_2_5D_problems_2:
+	for to_problem in  benchmarks_thermal_2_5D_problems:
 		if to_problem in benchmarks_structural_2_5D_problems_1:
 			subFolder = "Structural-Compliance2.5D_1"
 			subFolder = "Structural-Compliance2.5D_1"
@@ -562,7 +562,7 @@ def create_summary_tables():
 
 if __name__ == "__main__":    
 	
-	optimizationMethods = [TO_METHODS.DENSITYMMA]
+	optimizationMethods = [TO_METHODS.DENSITYMMA,TO_METHODS.DENSITYOCM, TO_METHODS.PARETO, TO_METHODS.LEVELSET]
 	for optimizationMethod in optimizationMethods:
 		runTOMethodOnBenchmarks(optimizationMethod)
 		print("-" * 50)

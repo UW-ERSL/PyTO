@@ -86,7 +86,7 @@ class HexThermalFEA:
     elem_material_scaling = get_thermal_material_model_scaling(x, material_model)
 
      # Multi-material support
-    if self.elem_stiff.shape[0] == 1 or elem_mat_id is None:
+    if self.elem_stiff.shape[0] == 1:
         # Single material case
         elem_stiff_mtrx = np.einsum('ij, e -> eij',
                                     self.elem_stiff[0], elem_material_scaling).flatten(order='C')

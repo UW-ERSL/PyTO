@@ -235,8 +235,8 @@ def topopt_optimality_criteria(
 			ce_body_force = (sol[fe_solver.mesh.edofMat].reshape(num_elems, 24) * nodal_body_force[fe_solver.mesh.edofMat].reshape(num_elems, 24)).sum(1)
 			grad_obj +=  2*ce_body_force
 			
-		if (to_params.APPLY_FILTER_TO_SENSITIVITY):
-			grad_obj = (H *(x* grad_obj))/Hs/x # apply filter
+		# we apply sensitivity filter on the gradient in OCM
+		grad_obj = (H *(x* grad_obj))/Hs/x # apply filter
 
 		if (elemsWithForces.size > 0):
 			grad_obj[elemsWithForces] = min(grad_obj) # retain elements that have nodes with external forces
@@ -269,8 +269,6 @@ def topopt_optimality_criteria(
 		x = xnew.copy()
 		xPhys = x.copy()
 		
-		if (to_params.APPLY_FILTER_TO_DENSITY):
-			x = H *x/Hs # apply filter
 		# Calculate change and update densities
 		change = np.max(np.abs(x - xold))
 

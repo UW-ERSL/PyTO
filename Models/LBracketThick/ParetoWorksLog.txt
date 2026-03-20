@@ -1,0 +1,27 @@
+Date: 2,3(month), 2026  
+Model name: lbracketthick 
+ParetoWorks Version 2024.01 
+Build Date 4.22 
+-------------------------------------------------------- 
+Total bodies = 1 
+Total faces = 11  
+ParetoWorks: Tesselating body 0 
+ParetoWorks: Tesselation triangles = 596  
+Scale = 1.6; volume = 0.22; SW Area = 2.7  
+Minimum radius in model: 1.000000e+20  
+Recommended number of elements = 10000 
+After you close this msg, you should see "ParetoWorks Initialized!" in two places: (a) on your screen and (b) in the status bar.
+
+If not, please enable BufferSwapNotify under Tools->Addin 
+-----------------------------------------------------------
+ 
+-----------------------------------------------------------
+ 
+-----------------------------------------------------------
+ 
+-----------------------------------------------------------
+ 
+-----------------------------------------------------------
+ 
+-----------------------------------------------------------
+ 

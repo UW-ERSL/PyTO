@@ -3,6 +3,8 @@
 *.node
 *.msh
 *.vtu
+*.stl
+*.bin
 *_optimized.stl
 /PyTOSlides
 /Results

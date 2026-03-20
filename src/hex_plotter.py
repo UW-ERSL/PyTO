@@ -879,10 +879,9 @@ class HexFEAPlotter:
                 # Fallback: infer nodes from non-zero indices assuming 3 DOFs per node
                 nonzero_dofs = np.nonzero(force)[0]
                 nodes_with_force = np.unique(nonzero_dofs // 3)
-           
+            force_norms = []
             if len(nodes_with_force) > 0:
                 # Calculate average force norm for scaling
-                force_norms = []
                 for node in nodes_with_force:
                     fx, fy, fz = force[3 * node:3 * node + 3]
                     force_vec = np.array([fx, fy, fz], dtype=float)
