@@ -953,8 +953,15 @@ class GeometryWindow(QtWidgets.QDialog):
 
     def get_stl_from_solidworks(self):
         """Get STL from currently open SolidWorks part using solidworks_interface.py"""
+
+        if 'SolidWorksInterface' not in globals():
+            return
+        
         try:
-            sw = SolidWorksInterface()
+            sw_cls = globals().get('SolidWorksInterface')
+            if sw_cls is None:
+                return
+            sw = sw_cls()
             stl_geom = sw.getSTL()
             if not stl_geom:
                 QtWidgets.QMessageBox.warning(self, "SolidWorks Error", "Failed to get STL from SolidWorks.")

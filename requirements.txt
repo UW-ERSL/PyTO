@@ -26,5 +26,6 @@ mmapy
 pyvistaqt
 manifold3d
 cupy-cuda11x
+vtk
 PyQt5
 torch
