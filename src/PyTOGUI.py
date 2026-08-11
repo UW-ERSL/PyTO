@@ -11,7 +11,7 @@ from PyQt5.QtGui import QIcon
 from pyvistaqt import QtInteractor
 from PyQt5.QtCore import pyqtSignal, QObject
 from stl_reader import STLGeom
-from solidworks_interface import SolidWorksInterface
+
 import bound_cond
 import mat_lib
 import linear_solvers
@@ -28,6 +28,9 @@ from topopt_ocm import topopt_optimality_criteria
 from topopt_pareto import topopt_pareto
 from topopt_levelset import topopt_levelset
 from topopt_stl_recovery import extract_isosurface_cnn, subtract_voids_from_stl
+
+#This is optional; requires win32com
+#from solidworks_interface import SolidWorksInterface
 """
 
 
@@ -974,29 +977,6 @@ class GeometryWindow(QtWidgets.QDialog):
         except Exception as e:
             QtWidgets.QMessageBox.warning(self, "SolidWorks Error", f"Error: {str(e)}")
 
-    def update_geometry_info_text(self):
-        """Update the geometry info text in the upper left corner with current units and material."""
-        if not self.stl_geom:
-            return
-        area, volume, _, _ = self.stl_geom.compute_mass_properties()
-        bounds = self.stl_geom.get_bounding_box()
-        length_unit = self.settings.get_length_unit_string()
-        material_name = self.applied_material.get("name", "None") if getattr(self, "applied_material", None) else "None"
-        info_lines = [
-            f"Model: {os.path.basename(self.stl_geom.file_path)}",
-            f"Volume: {volume:.2e} {length_unit}³",
-            f"Length: {bounds[1] - bounds[0]:.2e} {length_unit}" if bounds else "Length: N/A",
-            f"Material: {material_name}"
-        ]
-        self.plotter.remove_actor("geometry_info")
-        self.plotter.add_text(
-            "\n".join(info_lines),
-            position="upper_left",
-            font_size=12,
-            color="black",
-            name="geometry_info",
-            font="arial"
-        )
 #---------------------------------------------------------------------------
 class MaterialWindow(QtWidgets.QDialog):
     """Dialog for selecting and editing material properties."""
@@ -2537,6 +2517,75 @@ class BodyForceWindow(QtWidgets.QDialog):
         self.parent.set_sidebar_icon("Structural Loads", "check")
         self.parent.set_sidebar_icon("Analysis", "arrow")
         self.close()
+
+    BODY_FORCE_SCALE_FACTOR = 0.25   # arrow length as a fraction of model size
+    BODY_FORCE_COLOR = "green"
+
+    def clear_body_force_actors(self):
+        """Remove any previously drawn body-force arrow/label actors."""
+        for name in list(getattr(self.parent, "body_force_actors", [])):
+            try:
+                self.parent.plotter.remove_actor(name, reset_camera=False)
+            except Exception:
+                pass
+        self.parent.body_force_actors = []
+
+    def visualize_body_force(self, ax, ay, az):
+        """Draw a single arrow through the model centre showing the body-force vector.
+
+        A body force acts on the whole domain, so it is drawn once at the centre of
+        the model rather than per-face like the surface tractions in
+        StructuralLoadsWindow.
+        """
+        self.clear_body_force_actors()
+
+        vec = np.array([ax, ay, az], dtype=float)
+        magnitude = float(np.linalg.norm(vec))
+        if magnitude <= 0.0:
+            self.parent.plotter.render()
+            return
+
+        bounds = self.parent.plotter.bounds
+        if not bounds:
+            return
+        model_size = max(bounds[1] - bounds[0], bounds[3] - bounds[2], bounds[5] - bounds[4])
+        if model_size <= 0:
+            model_size = 1.0
+        arrow_scale = model_size * self.BODY_FORCE_SCALE_FACTOR
+
+        centre = np.array([
+            0.5 * (bounds[0] + bounds[1]),
+            0.5 * (bounds[2] + bounds[3]),
+            0.5 * (bounds[4] + bounds[5]),
+        ])
+        unit_dir = vec / magnitude
+        tail = centre - unit_dir * (arrow_scale / 2.0)
+
+        arrows = pv.PolyData(np.array([tail]))
+        arrows["vectors"] = np.array([unit_dir * arrow_scale])
+        glyph = arrows.glyph(orient="vectors", scale="vectors", factor=1.0)
+
+        arrow_name = "body_force_arrow"
+        self.parent.plotter.add_mesh(
+            glyph, color=self.BODY_FORCE_COLOR, name=arrow_name, show_scalar_bar=False
+        )
+        self.parent.body_force_actors.append(arrow_name)
+
+        label_name = "body_force_label"
+        tip = tail + unit_dir * arrow_scale
+        self.parent.plotter.add_point_labels(
+            [tip.tolist()],
+            [f"Body force: {magnitude:.3g} m/s²"],
+            name=label_name,
+            font_size=12,
+            text_color=self.BODY_FORCE_COLOR,
+            shape=None,
+            show_points=False,
+            always_visible=True,
+        )
+        self.parent.body_force_actors.append(label_name)
+
+        self.parent.plotter.render()
 #--------------------------------------------------------------------------
 class AnalysisWindow(QtWidgets.QDialog):
     def __init__(self, parent):
@@ -4463,7 +4512,7 @@ class TopOptResultsWindow(QtWidgets.QDialog):
     def __init__(self, parent):
         super().__init__(parent)
         self.setWindowTitle("TopOpt Postprocess")
-        self.setFixedSize(320, 150)
+        self.setFixedSize(320, 220)
         self.parent = parent
 
         # Default values for tet mesh
@@ -4476,6 +4525,21 @@ class TopOptResultsWindow(QtWidgets.QDialog):
         self.apply_btn = QtWidgets.QPushButton("Apply Postprocess")
         self.apply_btn.clicked.connect(self.apply_recovery)
         layout.addWidget(self.apply_btn)
+
+        # Tet mesh controls
+        tet_layout = QtWidgets.QHBoxLayout()
+        tet_layout.addWidget(QtWidgets.QLabel("Tet elements"))
+        self.tet_elem_spin = QtWidgets.QSpinBox()
+        self.tet_elem_spin.setMinimum(100)
+        self.tet_elem_spin.setMaximum(10000000)
+        self.tet_elem_spin.setSingleStep(1000)
+        self.tet_elem_spin.setValue(self.default_tet_elems)
+        tet_layout.addWidget(self.tet_elem_spin)
+        layout.addLayout(tet_layout)
+
+        self.tetmesh_btn = QtWidgets.QPushButton("Generate TetMesh")
+        self.tetmesh_btn.clicked.connect(self.generate_tetmesh)
+        layout.addWidget(self.tetmesh_btn)
 
 
     def apply_recovery(self):
@@ -4558,7 +4622,16 @@ class TopOptResultsWindow(QtWidgets.QDialog):
 
 
     def generate_tetmesh(self):
+        if not getattr(self.parent, "stl_geom", None):
+            QtWidgets.QMessageBox.warning(self, "No Geometry", "Please load a geometry first.")
+            return
         stl_path = os.path.splitext(self.parent.stl_geom.file_path)[0] + "_optimized.stl"
+        if not os.path.exists(stl_path):
+            QtWidgets.QMessageBox.warning(
+                self, "No Optimized STL",
+                "Run 'Apply Postprocess' first to generate the optimized STL."
+            )
+            return
         n_elems = self.tet_elem_spin.value()
         
         # Check STL manifoldness and watertightness
@@ -4605,26 +4678,6 @@ class DisplayOptionsWindow(QtWidgets.QDialog):
         self.setFixedSize(300, 680)
         self.parent = parent
 
-        self.display_state = {
-            'geometry': 'InitialDesign',
-            'field': 'None',
-            'display_on': 'Geometry',
-            'x_cutting_percent': 0,
-            'y_cutting_percent': 0,
-            'z_cutting_percent': 0,
-            'eigen_number': 1,
-            'show_bounding_box': False,
-            'show_triangles': False,
-            'show_text': True,
-            'scale_deformation': False,
-            'show_transparent_geometry': False,
-            'show_axis': True,
-            'show_structural_loads': False,
-            'show_thermal_loads': False,
-            'show_topopt_options': False,
-            'show_non_design_parts': False
-        }
-
         self.setup_ui()
         self.connect_signals()
 
@@ -4635,7 +4688,7 @@ class DisplayOptionsWindow(QtWidgets.QDialog):
         geometry_layout = QtWidgets.QHBoxLayout()
         geometry_layout.addWidget(QtWidgets.QLabel("Geometry"))
         self.geometry_combo = QtWidgets.QComboBox()
-        self.geometry_combo.addItems(["InitialDesign"])
+        self.geometry_combo.addItems(["Initial Design"])
         geometry_layout.addWidget(self.geometry_combo)
         layout.addLayout(geometry_layout)
 
@@ -4729,7 +4782,7 @@ class DisplayOptionsWindow(QtWidgets.QDialog):
         self.y_cutting_spin.valueChanged.connect(self.update_cutting)
         self.z_cutting_spin.valueChanged.connect(self.update_cutting)
         for checkbox in [self.show_bounding_box_checkbox, self.show_triangles, self.show_text,
-                         self.scale_deformation, self.show_transparent_geometry, 
+                         self.show_transparent_geometry,
                          self.show_structural_loads_checkbox, self.show_thermal_loads_checkbox,
                          self.show_topopt_options_checkbox]:
             checkbox.stateChanged.connect(self.update_display)

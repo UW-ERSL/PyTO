@@ -1,11 +1,20 @@
-# pyTOLib.txt
+###
+# conda create -n PyTO python=3.11
+# conda activate PyTO
+# python -m pip install ipykernel
+# python -m ipykernel install --user --name PyTO
+# git clone https://github.com/UW-ERSL/PyTO
+# cd PyTO
+# python -m pip install -r requirements.txt
+
+# Requirements for PyTO
 numpy
 scipy
 matplotlib
 scikit-learn
 pypardiso
 absl-py
-pyvista
+pyvista<0.46
 numpy-stl
 tetgen
 pandas
@@ -17,4 +26,5 @@ mmapy
 pyvistaqt
 manifold3d
 cupy-cuda11x
-
+PyQt5
+torch
