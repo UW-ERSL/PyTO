@@ -5,11 +5,15 @@ Working log of an in-progress effort: land `src/` on a proper package structure
 while fixing the autodiff bugs found along the way, one gated phase at a time. Kept in the
 repo so the state and reasoning survive across sessions, not just in local planning tools.
 
-**Status:** Phases 0-5 complete — all four optimizer drivers (MMA, OC, Pareto, Levelset) now
-run correctly for both structural and (where applicable) thermal physics. Everything staged
-but **not committed** (holding until explicitly asked). `main` and `automatic_differentiation`
-are untouched throughout —
+**Status:** Phases 0, 2, 3-5, and 6 are **committed** locally on `AutoPyTO`
+(commits `df57d87`, `c8be271`, `9efef66`, `09cb5ee` — see `git log`). **Not pushed.**
+Phase 7 has NOT been started — see its own section below for exactly what's blocking it and
+why it wasn't rushed. `main` and `automatic_differentiation` are untouched throughout —
 everything lives on `AutoPyTO`, created off `main` and merged with `automatic_differentiation`.
+
+**If you're picking this up cold** (new session, compacted context, etc.): read this whole
+file top to bottom, then `git log --oneline` to confirm which commits are actually present,
+then jump to "Phase 7 — status and what's left" near the end for the precise next action.
 
 ## Context
 
@@ -81,8 +85,8 @@ sites keep working until Phase 7 removes the shims.
 | 3 | Move `solve/`+`autodiff` core, unify `Solvers` enum | gradcheck green + numeric equivalence verified |
 | 4 | Fix + relocate QOI/material-model layer (bug-fixing) | `test_qoi_gradients.py` green, both physics, vs. oracle |
 | 5 | Unify + relocate optimizer drivers | `test_drivers_smoke.py` green, both physics |
-| 6 | Relocate I/O, examples/benchmarks, GUI (last) | tests green + manual GUI checklist |
-| 7 | Remove shims, finalize | full suite green with shims removed |
+| 6 | Relocate I/O, examples/benchmarks, GUI (last) | tests green (met); manual GUI checklist (pending human) |
+| 7 | Remove shims, finalize | NOT STARTED — blocked on moving `physics/`+`core/` files first, see below |
 
 ---
 
@@ -153,7 +157,7 @@ Committed as `c8be271`.
 
 ## Phase 3 — Move `solve/` + `autodiff` core, unify `Solvers`
 
-Staged, **not committed**.
+Committed as part of `9efef66`.
 
 1. New `src/pyto/solve/solvers.py`: the single canonical `Solvers` enum (7 members —
    `linear_solvers.Solvers` was already the superset of `torch_spsolve.Solvers`).
@@ -185,7 +189,7 @@ explicitly verified.
 
 ## Phase 4 — Fix and relocate the QOI / material-model layer
 
-Staged, **not committed**. The biggest phase so far — real content changes, not just moves.
+Committed as part of `9efef66`. The biggest phase so far — real content changes, not just moves.
 
 **Thermal made torch-native:**
 - Added `get_thermal_material_model_scaling_torch` to `pyto/autodiff/material_model.py`,
@@ -245,7 +249,7 @@ to Phase 5).
 
 ## Phase 5 — Unify and relocate optimizer drivers
 
-Staged, **not committed**. Larger than expected: two of the four drivers turned out to have
+Committed as part of `9efef66`. Larger than expected: two of the four drivers turned out to have
 a second, deeper problem beyond what Phase 0's `xfail`s had already caught.
 
 **Foundational moves (done):**
@@ -393,3 +397,145 @@ confirms directly, not just by code inspection, that Pareto and Levelset's own
 topological-sensitivity and shape-sensitivity formulas were genuinely left untouched — the
 fix only changed the torch/NumPy interface at the `solve()`/`setPseudoDensity()` boundary, as
 intended, with zero effect on the actual optimization algorithm or its result.
+
+---
+
+## Phase 6 — Relocate I/O, examples/benchmarks, and the GUI (last)
+
+Committed as `09cb5ee` (file renames landed a commit earlier, in `9efef66`, because `git mv`
+stages both sides of a rename immediately — the shims/fixes/`__main__` bug landed in `09cb5ee`).
+
+**Moved:**
+- `io/`: `stl_reader.py`, `project_manager.py`, `solidworks_interface.py`,
+  `testSolidWorksInterface.py`, `topopt_stl_recovery.py`.
+- `examples_benchmarks/`: all 12 `*_examples.py`/`*_benchmarks.py`/`topopt_run_benchmarks.py`/
+  `topopt_solver_comparison.py` files. None define `__all__` or use underscore-prefixed
+  public names, so their shims are plain `from pyto.examples_benchmarks.X import *` — no
+  explicit re-export lists needed, unlike earlier phases' shims.
+- `gui/` (last, as planned): `PyTOGUI.py`, `PyTO_demos.py`, `hex_plotter.py`, and the 3 icon
+  PNGs. Icons moved **alongside** `PyTOGUI.py` itself (not a `resources/` subfolder as Phase
+  1's mapping guessed before reading the code) — its `get_icon()` method does
+  `os.path.dirname(__file__)` directly, no subfolder.
+
+**Found and fixed while moving:**
+- **`__file__`-relative `'../Models/...'` paths broke** in 4 places, since these files moved
+  2 directories deeper than `script_dir = os.path.dirname(os.path.abspath(__file__))`
+  assumed: all 7 `examples_benchmarks/` files with that pattern, `project_manager.py`'s two
+  `Models/` lookups, and the `__main__`-block demo paths in `stl_reader.py`/
+  `topopt_stl_recovery.py`. Fixed by adding the right number of extra `os.path.dirname(...)`
+  calls (verified precisely with a throwaway Python snippet before applying, not by
+  eyeballing path arithmetic) so each resolves to the same absolute `Models/` path as before
+  the move.
+- **A systemic bug across every driver/script shim from Phases 5-6**: a shim doing
+  `from pyto.X.Y import *` does NOT make `python <flatfile>.py` run `Y`'s own
+  `if __name__ == "__main__":` block — under a plain import, `__name__` inside `Y` is
+  `"pyto.X.Y"`, never `"__main__"`. Found while writing `PyTOGUI.py`'s shim more carefully
+  than the earlier ones. Fixed in every affected shim (`mma.py`, `oc.py`, `pareto.py`,
+  `levelset.py`, `stl_reader.py`, `project_manager.py`, `solidworks_interface.py`,
+  `topopt_run_benchmarks.py`, `topopt_stl_recovery.py`, `PyTOGUI.py`) by adding
+  `runpy.run_module("pyto.X.Y", run_name="__main__")` inside the shim's own
+  `if __name__ == "__main__":` block. This had been silently broken since Phase 5 — worth
+  remembering as a general lesson for Phase 7's remaining moves: **every new shim for a file
+  with a real `__main__` block needs this pattern, not just `from X import *`.**
+- **`PyTOGUI.py` was wrongly marked untestable back in Phase 0**: `_SKIP`'s reason said "opens
+  a Qt/VTK window at import time," but `QApplication` creation is properly guarded behind
+  `if __name__ == "__main__":` (line ~5729). Verified directly (subprocess import with a
+  timeout, no window opened) rather than trusting the old assumption, then removed it from
+  `test_imports_smoke.py`'s `_SKIP` set — it now gets real import coverage.
+
+**Result:** 59 passed, 1 xfailed (unchanged pre-existing issue; +1 test from `PyTOGUI` now
+being genuinely covered).
+
+**Known gap, not fixed here:** `main.ipynb` needs no import changes (its flat imports resolve
+through the shims unchanged), but it does `from topopt_mma import run_topopt_mma` — and no
+`run_topopt_mma` function exists anywhere in `mma.py` (only `topopt_mma(...)` does; the other
+three drivers each have a `run_*` convenience wrapper, `mma.py` never got one). This is
+pre-existing and unrelated to the restructuring — not introduced or worsened here, just
+flagged since it was noticed while checking the notebook's imports for this phase.
+
+**Gate:** automated tests green (met). The manual GUI smoke-test checklist (launch the app,
+run one structural and one thermal optimization end-to-end through the UI) has **not** been
+run — it needs a human; there's no way to drive a PyQt5/VTK desktop app from this environment.
+Suggested checklist for whoever does this:
+1. `cd src && python PyTOGUI.py` (or the equivalent launch path) — does the window open at all?
+2. Load or define a structural problem, run a short MMA or OC optimization through the UI —
+   does it complete and show a result?
+3. Same for a thermal problem.
+4. Anything involving `hex_plotter`/`HexFEAPlotter` (mesh, deformation, stress plots) — do
+   plots render?
+
+---
+
+## Phase 7 — status and what's left
+
+**Not started.** Phase 7's actual gate, as originally scoped, is: *"Once `grep -rn` for the
+old flat import style outside `pyto/` returns nothing, delete the shims."* That grep does
+**not** return nothing right now — and won't until every remaining flat file's own internal
+imports are converted from `import mat_lib` / `from bound_cond import ...` / etc. to
+`pyto`-qualified paths. That's a materially different, larger task than "delete the shims,"
+and it was correctly out of scope to rush at the end of an already-long session.
+
+### What's actually blocking it
+
+Twelve files are still flat, unmoved, with real content (not shims), and every one of them
+imports at least one already-moved module by its old flat name:
+
+| File | Target bucket (per Phase 1's mapping) |
+|---|---|
+| `hex_mesher.py` (1,513 lines) | `core/hex_mesher.py` |
+| `tet_mesher.py` (593 lines) | `core/tet_mesher.py` |
+| `hex_element_stiffness.py` | `physics/` (shared structural+thermal formulas) |
+| `hex_structural_fea.py` (788 lines) | `physics/structural/` |
+| `hex_thermal_fea.py` (412 lines) | `physics/thermal/` |
+| `tet_structural_fea.py` | `physics/structural/` (tet variant) |
+| `tet_thermal_fea.py` | `physics/thermal/` (tet variant) |
+| `hex_largeDeformationFEA.py` | `physics/structural/` (nonlinear variant) |
+| `hex_modal_fea.py` | `physics/structural/` (modal variant) |
+| `hex_transient_thermal.py` | `physics/thermal/` (transient variant) |
+| `tet_transient_thermal.py` | `physics/thermal/` (transient variant, tet) |
+| `check_thermoelasticity_sensitivity.py` | `physics/thermoelastic/` |
+| `topopt_thermostructural_sensitivity.py` | `physics/thermoelastic/` |
+
+### Why this wasn't rushed in this session
+
+`hex_mesher.py` alone is 1,513 lines and is imported by nearly everything in the codebase
+(mesh generation, voxelization, hole patterns, STL loading, connected-components, distance
+fields — a lot of surface area). None of these 13 files have been read in full this session.
+Moving them carries real risk of the exact class of bug Phase 6 already hit twice
+(`__file__`-relative path breakage, and the shim `__main__`/runpy gap) — but at a much larger
+blast radius, since `hex_mesher.py`/`hex_structural_fea.py`/`hex_thermal_fea.py` are
+load-bearing for literally every test in the suite. Given uncertain remaining capacity in
+this session, rushing a 13-file, ~6,000-line move without adequate review was the wrong
+trade-off — a partially-reviewed mistake here would be much more expensive to find and fix
+later than simply not starting.
+
+### Recommended next steps (in order, each individually gated the same way every prior phase was)
+
+1. **Read `hex_mesher.py`, `hex_element_stiffness.py` in full** before touching them — they're
+   the two most-depended-on files in this list.
+2. Move `hex_mesher.py`, `tet_mesher.py` → `pyto/core/` first (lowest conceptual risk despite
+   the line count — no torch/NumPy boundary concerns, "just" relocation + `__file__`-relative
+   path audit). Test after each, exactly like every previous phase.
+3. Move `hex_element_stiffness.py` → `pyto/physics/` (shared structural+thermal formulas).
+   Test.
+4. Move the structural physics files (`hex_structural_fea.py`, `tet_structural_fea.py`,
+   `hex_largeDeformationFEA.py`, `hex_modal_fea.py`) → `pyto/physics/structural/` one at a
+   time, each with its own `__file__`-relative-path audit (check for the same class of bug
+   Phase 6 found) and shim (remembering the `runpy` pattern for any with a real `__main__`
+   block). Test after each.
+5. Move the thermal physics files (`hex_thermal_fea.py`, `tet_thermal_fea.py`,
+   `hex_transient_thermal.py`, `tet_transient_thermal.py`) → `pyto/physics/thermal/`
+   similarly.
+6. Move `check_thermoelasticity_sensitivity.py`, `topopt_thermostructural_sensitivity.py` →
+   `pyto/physics/thermoelastic/`.
+7. **Only then** does the actual Phase 7 gate become checkable: grep every file under
+   `src/pyto/` for old-style flat imports (`import mat_lib`, `from bound_cond import`, etc.)
+   and convert each to a `pyto`-qualified import. This is its own pass, separate from the
+   file moves above — every moved file's *content* still does flat imports of other
+   already-moved modules today (that's precisely what the shims exist to paper over), and
+   Phase 7 proper means going back through all of `pyto/` and fixing that, not just moving
+   the remaining 13 files.
+8. Once that grep is clean, delete the shims and do one final full-suite run.
+
+This file (and `git log` on `AutoPyTO`) is the authoritative record of exactly how far this
+got — pick up at step 1-2 above.
