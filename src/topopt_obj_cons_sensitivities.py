@@ -4,99 +4,8 @@ from topopt_filters import *
 from topopt_material_model import *
 from topopt_common import *
 import linear_solvers
-import bound_cond
 
 stress_scaling = 1.0 # Global scaling factor for stress constraints/objectives
-#################################################################	
-def compute_objective_and_gradient(feaMode: FEA_MODE, to_params, sol: np.ndarray, x: np.ndarray,fe_solver, KE) -> tuple:
-	
-					
-	objectiveType  = to_params.Objective[0]	# first entry is the type of objective
-	optionalParam = to_params.Objective[1] # second entry is an optional parameter	
-	material_model = to_params.materialModel
-	if (objectiveType == TO_QOI.COMPLIANCE): 
-		compliance, compliance_grad = compute_compliance_and_gradient(feaMode, sol, x, fe_solver, KE, material_model)
-		return compliance, compliance_grad
-	elif (objectiveType == TO_QOI.VOLUME_FRACTION):
-		volfracObj = np.mean(x)
-		volFrac_gradient = np.ones_like(x) / x.size
-		return volfracObj, volFrac_gradient
-	elif (objectiveType == TO_QOI.MASS): 
-		elemVolume =  fe_solver.mesh.elem_size[0] * fe_solver.mesh.elem_size[1] * fe_solver.mesh.elem_size[2]
-		totalMass = np.sum(x * elemVolume * fe_solver.mat_prop.mass_density) 
-		mass_gradient = np.ones_like(x) * (elemVolume * fe_solver.mat_prop.mass_density)
-		return totalMass, mass_gradient
-	elif (objectiveType == TO_QOI.PNORM_STRESS):
-		[stressObj, stress_gradient,max_von_mises] = compute_pnorm_stress_and_sensitivity(sol, x, fe_solver,KE,material_model)
-		return stressObj, stress_gradient
-	elif (objectiveType == TO_QOI.MAX_VONMISES_STRESS):
-		[stressObj, stress_gradient,max_von_mises] = compute_pnorm_stress_and_sensitivity(sol, x, fe_solver,KE,material_model)
-		return max_von_mises, stress_gradient
-	elif (objectiveType == TO_QOI.GVECTOR):
-		g = optionalParam
-		compliance, compliance_grad = compute_solution_dotproduct_and_gradient(sol, x, fe_solver, KE,material_model,g)
-		return compliance, compliance_grad
-	else:
-		raise NotImplementedError(f"Objective {objectiveType} is not implemented yet.")
-
-#################################################################
-def compute_constraint_and_gradient(feaMode: FEA_MODE, to_params, sol: np.ndarray, x: np.ndarray,	fe_solver, KE) -> tuple:
-	
-	nConstraints = len(to_params.Constraints)
-	c = np.zeros((nConstraints,1))	
-	dc = np.zeros((nConstraints,x.size))
-	material_model = to_params.materialModel
-	for m in range(nConstraints):
-		constraintType  = to_params.Constraints[m][0]	# first entry is the type of constraint	
-		optionalParam = to_params.Constraints[m][1] # second entry is an optional parameter	
-		constraintLimit = to_params.Constraints[m][2] # third entry is the constraint value	
-		if (constraintType == TO_QOI.COMPLIANCE): 
-			compliance, compliance_grad = compute_compliance_and_gradient(feaMode,sol, x, fe_solver, KE, material_model)
-			complianceConstraint =  (compliance/constraintLimit - 1.0)
-			complianceConstraint_gradient =  (compliance_grad/constraintLimit)
-			c[m,0],dc[m,:] = complianceConstraint, complianceConstraint_gradient[np.newaxis]
-		elif (constraintType == TO_QOI.MASS): 
-			elemVolume =  fe_solver.mesh.elem_size[0] * fe_solver.mesh.elem_size[1] * fe_solver.mesh.elem_size[2]
-			totalMass = np.sum(x * elemVolume * fe_solver.mat_prop.mass_density) 
-			massConstraint = ((totalMass / constraintLimit) - 1.0)
-			c[m, 0] = massConstraint
-			dc[m, :] = np.ones_like(x) * (elemVolume * fe_solver.mat_prop.mass_density / constraintLimit)
-		elif (constraintType == TO_QOI.VOLUME_FRACTION):
-			volConstraint, volConstraint_gradient = compute_volume_constraint_and_gradient(x,to_params.Constraints[m][2])
-			c[m,0], dc[m,:] = volConstraint, volConstraint_gradient[np.newaxis]
-		elif (constraintType == TO_QOI.PNORM_STRESS):
-			pnorm_stress, pnorm_stress_gradient, max_von_mises= compute_pnorm_stress_and_sensitivity(sol, x, fe_solver,KE,material_model)
-			c[m,0] = (pnorm_stress/constraintLimit - 1.0)
-			dc[m,:] = (pnorm_stress_gradient/constraintLimit)
-		elif (constraintType == TO_QOI.MAX_VONMISES_STRESS):
-			# See De Leon, D.M., Alexandersen, J., O. Fonseca, J.S. and Sigmund, O., 2015. 
-			# Stress-constrained topology optimization for compliant mechanism design. 
-			# Structural and Multidisciplinary Optimization, 52(5), pp.929-943
-			pnorm_stress, pnorm_stress_gradient, max_von_mises = compute_pnorm_stress_and_sensitivity(sol, x, fe_solver,KE,material_model)
-			normalized_pnorm = compute_constraint_and_gradient.stress_scaling*pnorm_stress
-			c[m,0] = (normalized_pnorm/constraintLimit - 1.0)
-			dc[m,:] = (compute_constraint_and_gradient.stress_scaling*pnorm_stress_gradient/constraintLimit)
-			compute_constraint_and_gradient.stress_scaling = 0.25*max_von_mises/pnorm_stress + 0.75*compute_constraint_and_gradient.stress_scaling
-			
-			#print(f"Updated stress scaling to {compute_constraint_and_gradient.stress_scaling:.4f}")
-		elif (constraintType == TO_QOI.STRESS_FAILURE_FACTOR):
-			pnorm_stress, pnorm_stress_gradient, max_von_mises = compute_pnorm_stress_and_sensitivity(sol, x, fe_solver,KE,material_model)
-			yieldStrength = fe_solver.mat_prop.yield_strength
-			normalized_pnorm = compute_constraint_and_gradient.stress_scaling*pnorm_stress
-			normalized_pnorm_gradient = compute_constraint_and_gradient.stress_scaling*pnorm_stress_gradient
-			c[m,0] = (normalized_pnorm/yieldStrength/constraintLimit - 1.0)
-			dc[m,:] =  (normalized_pnorm_gradient/yieldStrength/constraintLimit)
-			compute_constraint_and_gradient.stress_scaling = 0.25*max_von_mises/pnorm_stress + 0.75*compute_constraint_and_gradient.stress_scaling
-			#print(f"Updated stress scaling to {compute_constraint_and_gradient.stress_scaling:.4f}")
-		else:
-			raise NotImplementedError(f"Constraint {constraintType} is not implemented yet.")
-	return c, dc
-#################################################################
-# initialize parameter associated with this function
-compute_constraint_and_gradient.stress_scaling = 1.0
-
-	
-#################################################################
 def compute_volume_constraint_and_gradient(x: np.ndarray,
 											 volfracUpper: float,
 											 )-> np.ndarray:
@@ -114,10 +23,31 @@ def compute_volume_constraint_and_gradient(x: np.ndarray,
 	volConstraint = ((np.mean(x)/volfracUpper) - 1.0)
 	volConstraint_gradient = np.ones_like(x) / volfracUpper/ x.size
 	return volConstraint, volConstraint_gradient
-#################################################################
+
+def compute_volume_constraint_torch(
+    x: torch.Tensor,
+    volfrac_upper: float,
+) -> torch.Tensor:
+    """Compute the volume-fraction constraint using Torch.
+
+    The constraint is defined as:
+        c(x) = mean(x) / volfrac_upper - 1,
+    so c(x) <= 0 corresponds to satisfying the volume-fraction upper bound.
+
+    Args:
+        x: Array of shape (num_elems,) containing the element densities (or filtered densities).
+        volfrac_upper: The target upper bound on the volume fraction.
+
+    Returns:
+        The volume-fraction constraint value as a scalar Torch tensor.
+    """
+    x = x.flatten()
+    return x.mean() / volfrac_upper - 1.0
+
+
 def compute_compliance(sol: np.ndarray, x: np.ndarray,
 				fe_solver, KE,
-				material_model) -> np.ndarray:
+				material_model = None) -> np.ndarray:
 	"""Compute the  compliance objective.
 
 	Args:
@@ -127,7 +57,7 @@ def compute_compliance(sol: np.ndarray, x: np.ndarray,
 
 	Returns: The compliance objective value.
 	"""
-	dofMat = fe_solver.mesh.edofMatStructural  # assumes structural FEA
+	dofMat = fe_solver.mesh.edofMat
 	num_elems = fe_solver.mesh.num_elems
 	nRows = KE.shape[0]
 	ce = (np.dot(sol[dofMat].reshape(num_elems, nRows), KE) * sol[dofMat].reshape(num_elems, nRows)).sum(1)
@@ -144,10 +74,162 @@ def compute_compliance(sol: np.ndarray, x: np.ndarray,
 
 	return compliance
 	
-#################################################################
-def compute_compliance_and_gradient(feaMode: FEA_MODE, sol: np.ndarray, x: np.ndarray,
+def compute_compliance_torch(
+    sol: torch.Tensor,
+    x: torch.Tensor,
+    fe_solver,
+    KE: torch.Tensor,
+    material_model=None,
+) -> torch.Tensor:
+    """Compute the compliance objective using Torch given an existing solution and density field.
+
+    Args:
+        sol: Array of shape (n_dof,) containing the global displacement/solution vector.
+        x: Array of shape (num_elems,) containing the element densities (or pseudo-densities).
+        fe_solver: The structural FEA solver object, providing mesh and connectivity (mesh.edofMat).
+        KE: Element stiffness matrix of shape (nRows, nRows) used for all elements.
+        material_model: Material model object used to compute the element-wise material scaling.
+
+    Returns:
+        The compliance value as a scalar Torch tensor.
+    """
+    x = x.flatten() # (E,)
+    dofMat = torch.as_tensor(
+        fe_solver.mesh.edofMat,
+        dtype=torch.long,
+        device=sol.device,
+    )  # (E, nRows)
+
+    # Element DOFs: (E, nRows)
+    u_e = sol[dofMat]
+
+    # Element energies: ce_e = u_eᵀ KE u_e
+    # u_e: (E, nRows), KE: (nRows, nRows) → ce: (E,)
+    ce = torch.einsum("ei,ij,ej->e", u_e, KE, u_e)
+    material_scaling = get_structural_material_model_scaling_torch(x, material_model)# (E,)
+
+    return (material_scaling * ce).sum()
+
+def compute_pnorm_stress_autograd(
+    sol_t: torch.Tensor,          # (ndof,) torch, requires_grad=True
+    x_filtered_t: torch.Tensor,   # (nelems,) torch
+    fe_solver,                    # HexStructuralFEA with .mesh and .mat_prop
+) -> tuple[torch.Tensor, torch.Tensor]:
+    """Compute p-norm von Mises stress and max von Mises stress using PyTorch autograd.
+    Args:
+        sol_t: Torch tensor of shape (ndof,) containing the global displacement/solution vector.  
+        x_filtered_t: Torch tensor of shape (nelems,) containing the filtered element densities.
+        fe_solver: The structural FEA solver object, providing mesh and connectivity 
+				  (mesh.edofMat) and material properties (mat_prop).
+    Returns:
+        pnorm_stress_t: Torch scalar tensor containing the p-norm von Mises stress.
+        max_vm_t: Torch scalar tensor containing the maximum von Mises stress.
+    """
+    device = sol_t.device
+    dtype = sol_t.dtype
+
+    mesh = fe_solver.mesh
+    nelems = mesh.num_elems
+
+    # ---------- 1) gradN at element center (same as postprocess, but torch) ----------
+    gradN_np = (1.0 / 8.0) * np.array([
+        [-1,  1,  1, -1, -1,  1,  1, -1],
+        [-1, -1,  1,  1, -1, -1,  1,  1],
+        [-1, -1, -1, -1,  1,  1,  1,  1],
+    ], dtype=np.float64)
+
+    gradN = torch.tensor(gradN_np, dtype=dtype, device=device)  # (3, 8)
+
+    elem_size = torch.as_tensor(
+        mesh.elem_size, dtype=dtype, device=device
+    )  # (3,)
+    gradN = gradN * (2.0 / elem_size.view(3, 1))  # (3,8)
+
+    # ---------- 2) Gather DOFs per element ----------
+    edof_np = mesh.edofMat  # (nelems, 24) int
+    edof = torch.as_tensor(edof_np, dtype=torch.long, device=device)
+
+    # x, y, z components per node:
+    u_e = sol_t[edof[:, 0::3]]  # (nelems, 8)
+    v_e = sol_t[edof[:, 1::3]]  # (nelems, 8)
+    w_e = sol_t[edof[:, 2::3]]  # (nelems, 8)
+
+    gradN_T = gradN.t()  # (8, 3)
+
+    # ---------- 3) Displacement gradients ----------
+    uGrad = u_e @ gradN_T  # (nelems, 3)
+    vGrad = v_e @ gradN_T
+    wGrad = w_e @ gradN_T
+
+    # ---------- 4) Engineering strains ----------
+    eps_xx = uGrad[:, 0]
+    eps_yy = vGrad[:, 1]
+    eps_zz = wGrad[:, 2]
+    gamma_yz = uGrad[:, 1] + vGrad[:, 0]
+    gamma_xz = uGrad[:, 2] + wGrad[:, 0]
+    gamma_xy = vGrad[:, 2] + wGrad[:, 1]
+
+    strain = torch.stack(
+        [eps_xx, eps_yy, eps_zz, gamma_yz, gamma_xz, gamma_xy],
+        dim=1,
+    )  # (nelems, 6)
+
+    # ---------- 5) Constitutive matrix D (single material) ----------
+    mat = fe_solver.mat_prop
+    E = float(mat.youngs_modulus)
+    nu = float(mat.poissons_ratio)
+
+    D_np = E / ((1 + nu) * (1 - 2 * nu)) * np.array([
+        [1 - nu,   nu,     nu,     0,                        0,                        0],
+        [nu,       1 - nu, nu,     0,                        0,                        0],
+        [nu,       nu,     1 - nu, 0,                        0,                        0],
+        [0,        0,      0,     (1 - 2 * nu) / 2,          0,                        0],
+        [0,        0,      0,      0,                       (1 - 2 * nu) / 2,         0],
+        [0,        0,      0,      0,                        0,                       (1 - 2 * nu) / 2],
+    ], dtype=np.float64)
+
+    D = torch.tensor(D_np, dtype=dtype, device=device)  # (6,6)
+
+    # ---------- 6) Cauchy stress per element ----------
+    stress = strain @ D.t()  # (nelems, 6)
+
+    # ---------- 7) STRESS_RELAXATION correction ----------
+    q = 0.5  # same q as in postprocess
+    x = x_filtered_t.view(nelems)
+    x = torch.clamp(x, min=1e-12)
+    correction = EVOID_RELATIVE + (1.0 - EVOID_RELATIVE) * x.pow(q)  # (nelems,)
+    correction = correction.unsqueeze(1)  # (nelems, 1)
+
+    eStress = correction * stress  # (nelems, 6)
+
+    # ---------- 8) Von Mises per element ----------
+    sxx = eStress[:, 0]
+    syy = eStress[:, 1]
+    szz = eStress[:, 2]
+    syz = eStress[:, 3]
+    sxz = eStress[:, 4]
+    sxy = eStress[:, 5]
+
+    vm_sq = 0.5 * (
+        (sxx - syy) ** 2 +
+        (syy - szz) ** 2 +
+        (szz - sxx) ** 2
+    ) + 3.0 * (syz ** 2 + sxz ** 2 + sxy ** 2)
+
+    vm = torch.sqrt(vm_sq + 1e-16)  # (nelems,)
+
+    # max von Mises (for reporting or a separate constraint)
+    max_vm_t = vm.max()  # scalar
+
+    # ---------- 9) p-norm of von Mises ----------
+    p = float(PNORM_EXPONENT)
+    pnorm_stress_t = vm.pow(p).sum().pow(1.0 / p)  # scalar
+
+    return pnorm_stress_t, max_vm_t
+
+def compute_compliance_and_gradient(sol: np.ndarray, x: np.ndarray,
 				fe_solver, KE,
-				material_model) -> np.ndarray:
+				material_model = None) -> np.ndarray:
 	"""Compute the  compliance objective.
 
 	Args:
@@ -157,19 +239,16 @@ def compute_compliance_and_gradient(feaMode: FEA_MODE, sol: np.ndarray, x: np.nd
 
 	Returns: The compliance objective value.
 	"""
-	if (feaMode == FEA_MODE.STRUCTURAL):
-		dofMat = fe_solver.mesh.edofMatStructural
-	elif (feaMode == FEA_MODE.THERMAL):
-		dofMat = fe_solver.mesh.edofMatThermal
+	dofMat = fe_solver.mesh.edofMat
 	num_elems = fe_solver.mesh.num_elems
 	nRows = KE.shape[0]
 	ce = (np.dot(sol[dofMat].reshape(num_elems, nRows), KE) * sol[dofMat].reshape(num_elems, nRows)).sum(1)
 	
-	if (feaMode == FEA_MODE.STRUCTURAL): # structural hex
+	if (nRows == 24): # structural hex
 		materialScaling = get_structural_material_model_scaling(x, material_model)
 		compliance_grad = -get_structural_material_model_sensitivity(x,material_model) * ce
 	
-	elif (feaMode == FEA_MODE.THERMAL): # thermal hex
+	elif (nRows == 8): # thermal hex
 		materialScaling = get_thermal_material_model_scaling(x, material_model)
 		compliance_grad = -get_thermal_material_model_sensitivity(x,material_model) * ce
 	else:
@@ -177,7 +256,7 @@ def compute_compliance_and_gradient(feaMode: FEA_MODE, sol: np.ndarray, x: np.nd
 
 	compliance = np.sum(materialScaling * ce)
 	return compliance, compliance_grad
-#################################################################
+
 def compute_pnorm_stress_and_sensitivity(sol: np.ndarray, x, fe_solver, KE, material_model):
     """
     Compute von Mises stress and sensitivity with respect to x for p-norm stress.
@@ -189,6 +268,10 @@ def compute_pnorm_stress_and_sensitivity(sol: np.ndarray, x, fe_solver, KE, mate
     mesh = fe_solver.mesh
     nelems = mesh.num_elems
 
+    qStress = 0.5  # STRESS relaxation factor
+    pSIMP = 3    # SIMP penalization
+    p = PNORM_EXPONENT  # p-norm exponent
+    
     E = fe_solver.mat_prop.youngs_modulus 
     nu = fe_solver.mat_prop.poissons_ratio
     D = E / ((1 + nu) * (1 - 2*nu)) * np.array([
@@ -204,11 +287,9 @@ def compute_pnorm_stress_and_sensitivity(sol: np.ndarray, x, fe_solver, KE, mate
     gradN = (1 / 8) * np.array([
         [-1, 1, 1, -1, -1, 1, 1, -1],
         [-1, -1, 1, 1, -1, -1, 1, 1],
-        [-1, -1, -1, -1, 1, 1, 1, 1]])
-    for i in range(3):
-     gradN[i, :] = 2*gradN[i,:] / fe_solver.mesh.elem_size[i]
-
-
+        [-1, -1, -1, -1, 1, 1, 1, 1]
+    ])
+    
     B = np.zeros((6, 24))
     Bi = np.zeros((6, 3, 8))
     Bi[0, 0, :] = gradN[0, :]
@@ -230,8 +311,7 @@ def compute_pnorm_stress_and_sensitivity(sol: np.ndarray, x, fe_solver, KE, mate
     vm_pnorm = fe_solver.pNormStress
     
     # Compute dpn_dvms = (sum(vm^p))^(1/p - 1)
-    pNormExponent = get_pNorm_exponent()
-    dpn_dvms = (np.sum(vm_elems **pNormExponent )) ** (1/pNormExponent - 1)
+    dpn_dvms = (np.sum(vm_elems ** p)) ** (1/p - 1)
     
     # Pre-compute DvmDs for all elements
     DvmDs_all = np.zeros((nelems, 6))
@@ -250,19 +330,18 @@ def compute_pnorm_stress_and_sensitivity(sol: np.ndarray, x, fe_solver, KE, mate
     # Compute T1 (direct sensitivity)
     beta = np.zeros(nelems)
     x = np.maximum(x, 1e-12) # avoid division by zero
-	
     for e in range(nelems):
-        edof = mesh.edofMatStructural[e]
+        edof = mesh.edofMat[e]
         u_e = sol[edof]
-        beta[e] = get_stress_relaxation_factor_sensitivity(x[e]) * (vm_elems[e]**(pNormExponent-1)) * DvmDs_all[e] @ D @ B @ u_e
+        beta[e] = qStress * (x[e]**(qStress-1)) * (vm_elems[e]**(p-1)) * DvmDs_all[e] @ D @ B @ u_e
     
     T1 = dpn_dvms * beta
     
     # Compute adjoint right-hand side using pre-computed DvmDs
     g = np.zeros(fe_solver.bc.num_dofs)
     for e in range(nelems):
-        edof = mesh.edofMatStructural[e]
-        g_e = get_stress_relaxation_correction(x[e]) * dpn_dvms * B.T @ D.T @ DvmDs_all[e] * (vm_elems[e]**(pNormExponent-1))
+        edof = mesh.edofMat[e]
+        g_e = (x[e]**qStress) * dpn_dvms * B.T @ D.T @ DvmDs_all[e] * (vm_elems[e]**(p-1))
         g[edof] += g_e
     
     # Solve adjoint equation
@@ -274,20 +353,20 @@ def compute_pnorm_stress_and_sensitivity(sol: np.ndarray, x, fe_solver, KE, mate
                                        **fe_solver.kwargs)
     
     # Compute T2 (indirect sensitivity via adjoint)
-    dofMat = fe_solver.mesh.edofMatStructural
+    dofMat = fe_solver.mesh.edofMat
     nRows = KE.shape[0]
     ce = (np.dot(adjointSol[dofMat].reshape(nelems, nRows), KE) * 
           sol[dofMat].reshape(nelems, nRows)).sum(1)
     
-    T2 = -get_structural_material_model_sensitivity(x, material_model) * ce  # Note the negative sign from MATLAB
+    T2 = -pSIMP * (x**(pSIMP-1)) * ce  # Note the negative sign from MATLAB
     
     vm_pnorm_sensitivity = T1 + T2
     max_vm = np.max(vm_elems)
     
     return vm_pnorm, vm_pnorm_sensitivity, max_vm
-#################################################################
-def compute_solution_dotproduct_and_gradient(sol: np.ndarray, x,fe_solver,KE,
-											 material_model,g: np.ndarray,) -> np.ndarray:
+
+def compute_solution_dotproduct_and_gradient(sol: np.ndarray, x,fe_solver,KE,material_model,g: np.ndarray,
+				) -> np.ndarray:
 	"""Compute the objective g'* sol, and its gradient.
 
 	Args:	
@@ -299,6 +378,7 @@ def compute_solution_dotproduct_and_gradient(sol: np.ndarray, x,fe_solver,KE,
 	"""
 	obj = np.dot(sol, g)
 	
+
 	adjointSol =  -linear_solvers.solve(fe_solver.stiff_mtrx,
                       g,
                       fe_solver.solver,
@@ -306,7 +386,7 @@ def compute_solution_dotproduct_and_gradient(sol: np.ndarray, x,fe_solver,KE,
                       dsolver = fe_solver.dsolver,
                       **fe_solver.kwargs)
 	
-	dofMat = fe_solver.mesh.edofMatStructural
+	dofMat = fe_solver.mesh.edofMat
 	num_elems = fe_solver.mesh.num_elems
 	nRows = KE.shape[0]
 	ce = (np.dot(adjointSol[dofMat].reshape(num_elems, nRows), KE) * sol[dofMat].reshape(num_elems, nRows)).sum(1)
@@ -317,154 +397,286 @@ def compute_solution_dotproduct_and_gradient(sol: np.ndarray, x,fe_solver,KE,
 	elif (nRows == 8): # thermal hex
 		compliance_grad = get_thermal_material_model_sensitivity(x,material_model) * ce
 	return obj, compliance_grad
-#################################################################
+	
+def compute_objective_and_gradient(to_params, sol: np.ndarray, x: np.ndarray,	fe_solver, KE,
+				material_model = None) -> tuple:
+							
+	objectiveType  = to_params.Objective[0]	# first entry is the type of objective
+	optionalParam = to_params.Objective[1] # second entry is an optional parameter	
+	if (objectiveType == TO_QOI.COMPLIANCE): 
+		compliance_t = compute_compliance_torch(sol, x, fe_solver, KE, material_model)
+		return compliance_t
+	elif (objectiveType == TO_QOI.VOLUME_FRACTION):
+		volfracObj = torch.mean(x)
+		return volfracObj
+	elif (objectiveType == TO_QOI.MASS): 
+		elemVolume =  fe_solver.mesh.elem_size[0] * fe_solver.mesh.elem_size[1] * fe_solver.mesh.elem_size[2]
+		totalMass = np.sum(x * elemVolume * fe_solver.mat_prop.mass_density) 
+		mass_gradient = np.ones_like(x) * (elemVolume * fe_solver.mat_prop.mass_density)
+		return totalMass, mass_gradient
+	elif (objectiveType == TO_QOI.PNORM_STRESS):
+		# [stressObj, stress_gradient,max_von_mises] = compute_pnorm_stress_and_sensitivity(sol, x, fe_solver,KE,material_model)
+		stressObj, max_von_mises = compute_pnorm_stress_autograd( sol, x, fe_solver)
+		return stressObj
+	elif (objectiveType == TO_QOI.MAX_VONMISES_STRESS):
+		[stressObj, stress_gradient,max_von_mises] = compute_pnorm_stress_and_sensitivity(sol, x, fe_solver,KE,material_model)
+		return max_von_mises, stress_gradient
+	elif (objectiveType == TO_QOI.GVECTOR):
+		g = optionalParam
+		compliance, compliance_grad = compute_solution_dotproduct_and_gradient(sol, x, fe_solver, KE,material_model,g)
+		return compliance, compliance_grad
+	else:
+		raise NotImplementedError(f"Objective {objectiveType} is not implemented yet.")
 
-def solve_thermal_adjoint(x,d,fe_thermal_solver,fe_structural_solver,material_model):
-	"""
-	Solve the thermal adjoint equation:
-	K_T^T * lambda_T = -sum_e (xi_e^p * E0 * alpha * H^T * d_e)
+
+def compute_constraint_and_gradient(to_params, sol: np.ndarray, x: np.ndarray,	fe_solver, KE,
+				material_model = None) -> tuple:
 	
-	Since K_T is symmetric, this reduces to:
-	K_T * lambda_T = -sum_e (xi_e^p * E0 * alpha * H^T * d_e)
+	nConstraints = len(to_params.Constraints)
+	c = torch.zeros((nConstraints,1))	
+	dc = torch.zeros((nConstraints,x.flatten().shape[0]))
 	
-	Parameters:
-	-----------
-	d : ndarray (num_dofs_structural,)
-		Displacement field
-	x : ndarray (num_elems,)
-		Design variables
-	p : float
-		Structural SIMP penalty
-	solver : linear_solvers.Solvers
-		Linear solver to use
-	verbose : bool
-		Print information
+	for m in range(nConstraints):
+		constraintType  = to_params.Constraints[m][0]	# first entry is the type of constraint	
+		optionalParam = to_params.Constraints[m][1] # second entry is an optional parameter	
+		constraintLimit = to_params.Constraints[m][2] # third entry is the constraint value	
+		if (constraintType == TO_QOI.COMPLIANCE): 
+			compliance, compliance_grad = compute_compliance_and_gradient(sol, x, fe_solver, KE, material_model)
+			complianceConstraint =  (compliance/constraintLimit - 1.0)
+			complianceConstraint_gradient =  (compliance_grad/constraintLimit)
+			c[m,0],dc[m,:] = complianceConstraint, complianceConstraint_gradient[np.newaxis]
+		elif (constraintType == TO_QOI.MASS): 
+			elemVolume =  fe_solver.mesh.elem_size[0] * fe_solver.mesh.elem_size[1] * fe_solver.mesh.elem_size[2]
+			totalMass = np.sum(x * elemVolume * fe_solver.mat_prop.mass_density) 
+			massConstraint = ((totalMass / constraintLimit) - 1.0)
+			c[m, 0] = massConstraint
+			dc[m, :] = np.ones_like(x) * (elemVolume * fe_solver.mat_prop.mass_density / constraintLimit)
+		elif (constraintType == TO_QOI.VOLUME_FRACTION):
+			volConstraint = compute_volume_constraint_torch(x,to_params.Constraints[m][2])
+			c[m,0] = volConstraint
+		elif (constraintType == TO_QOI.PNORM_STRESS):
+			pnorm_stress, pnorm_stress_gradient, max_von_mises= compute_pnorm_stress_and_sensitivity(sol, x, fe_solver,KE,material_model)
+			c[m,0] = (pnorm_stress/constraintLimit - 1.0)
+			dc[m,:] = (pnorm_stress_gradient/constraintLimit)
+		elif (constraintType == TO_QOI.MAX_VONMISES_STRESS):
+			# See De Leon, D.M., Alexandersen, J., O. Fonseca, J.S. and Sigmund, O., 2015. 
+			# Stress-constrained topology optimization for compliant mechanism design. 
+			# Structural and Multidisciplinary Optimization, 52(5), pp.929-943
+			pnorm_stress, pnorm_stress_gradient, max_von_mises = compute_pnorm_stress_and_sensitivity(sol, x, fe_solver,KE,material_model)
+			normalized_pnorm = compute_constraint_and_gradient.stress_scaling*pnorm_stress
+			c[m,0] = (normalized_pnorm/constraintLimit - 1.0)
+			dc[m,:] = (compute_constraint_and_gradient.stress_scaling*pnorm_stress_gradient/constraintLimit)
+			if (max_von_mises > constraintLimit):
+				compute_constraint_and_gradient.stress_scaling = 0.5*max_von_mises/pnorm_stress + 0.5*compute_constraint_and_gradient.stress_scaling
+			
+			#print(f"Updated stress scaling to {compute_constraint_and_gradient.stress_scaling:.4f}")
+		elif (constraintType == TO_QOI.STRESS_SAFETY_FACTOR):
+			pnorm_stress, max_von_mises = compute_pnorm_stress_autograd( sol, x, fe_solver)
+			yieldStrength = fe_solver.mat_prop.yield_strength
+			normalized_pnorm = compute_constraint_and_gradient.stress_scaling*pnorm_stress
+			c[m,0] = (normalized_pnorm/yieldStrength - 1.0/constraintLimit)
+			if (max_von_mises > yieldStrength/constraintLimit):
+				compute_constraint_and_gradient.stress_scaling = 0.5*max_von_mises/pnorm_stress + 0.5*compute_constraint_and_gradient.stress_scaling
+			#print(f"Updated stress scaling to {compute_constraint_and_gradient.stress_scaling:.4f}")
+		else:
+			raise NotImplementedError(f"Constraint {constraintType} is not implemented yet.")
+	return c, dc
+
+# initialize parameter associated with this function
+compute_constraint_and_gradient.stress_scaling = 1.0
+
+###########################################
+
+def compute_objective_topological_sensitivity_compliance(to_params, sol: np.ndarray, x: np.ndarray,	fe_solver, KE,
+				material_model = None):
+	
+	
+	# Compute the compliance independent of objective
+	dofMat = fe_solver.mesh.edofMat
+	num_elems = fe_solver.mesh.num_elems
+	nRows = KE.shape[0]
+	ce = (np.dot(sol[dofMat].reshape(num_elems, nRows), KE) * sol[dofMat].reshape(num_elems, nRows)).sum(1)
+	if (nRows == 24): # structural hex
+		materialScaling = get_structural_material_model_scaling(x, material_model)
+	elif (nRows == 8): # thermal hex
+		materialScaling = get_thermal_material_model_scaling(x, material_model)
+	else:
+		raise ValueError("Invalid number of rows in element stiffness matrix.")
+	compliance = np.sum(materialScaling * ce)		
+
+	# depending on the objective type, compute the topological sensitivity
+	objectiveType  = to_params.Objective[0]	# first entry is the type of objective	
+	if (objectiveType == TO_QOI.COMPLIANCE): 
+		if (nRows == 24): # structural hex
+			T = computeStructuralTopologicalSensitivity(fe_solver.mat_prop.poissons_ratio,fe_solver.strainComponents,fe_solver.stressComponents,x)
+		elif (nRows == 8): # thermal hex
+			T = computeThermalTopologicalSensitivity(fe_solver.mat_prop.thermal_conductivity,fe_solver.strain,x)
+		else:
+			raise ValueError("Invalid number of rows in element stiffness matrix.")
+		obj = compliance
+		return obj,T,compliance
+	elif (objectiveType == TO_QOI.PNORM_STRESS):
+		pNormValue = to_params.Objective[1] or 16
+		[stressObj, T] = compute_pnorm_stress_and_TS(sol, x, fe_solver,KE,material_model,pNormValue)
+		return stressObj, T, compliance
+	elif (objectiveType == TO_QOI.GVECTOR):
+		g = to_params.Objective[1]
+		obj = np.dot(fe_solver.sol, g)
+	
+		print("Not implemented yet")
+		adjointSol =  -linear_solvers.solve(fe_solver.stiff_mtrx,
+                      g,
+                      fe_solver.solver,
+                      fe_solver.bc,
+                      dsolver = fe_solver.dsolver,
+                      **fe_solver.kwargs)
+		return obj,T, compliance
+	
+
+def computeStructuralTopologicalSensitivity(poissons_ratio,strains,stresses,x):
+	stress_tensor = x[:, None, None] * np.array([
+		[stresses[:, 0], stresses[:, 3], stresses[:, 4]],
+		[stresses[:, 3], stresses[:, 1], stresses[:, 5]],
+		[stresses[:, 4], stresses[:, 5], stresses[:, 2]]
+	]).transpose(2, 0, 1)  # Shape: (num_elems, 3, 3)
+	
+	strain_tensor = np.array([
+		[strains[:, 0], strains[:, 3]/2, strains[:, 4]/2],
+		[strains[:, 3]/2, strains[:, 1], strains[:, 5]/2],
+		[strains[:, 4]/2, strains[:, 5]/2, strains[:, 2]]
+	]).transpose(2, 0, 1)  # Shape: (num_elems, 3, 3)
+	
+	# Compute topological sensitivity
+	trace_stress = np.trace(stress_tensor, axis1=1, axis2=2)
+	trace_strain = np.trace(strain_tensor, axis1=1, axis2=2)
+	if isinstance(poissons_ratio, list):
+		# Handle multiple materials based on element component ID
 		
-	Returns:
-	--------
-	lambda_T : ndarray (num_nodes,)
-		Thermal adjoint variable
-	"""
-	nelem = fe_thermal_solver.mesh.num_elems
-	num_thermal_dofs = fe_thermal_solver.mesh.num_nodes
-	
-	# Assemble RHS: -sum_e (xi_e^p * E0 * alpha * H^T * d_e)
-	rhs = np.zeros(num_thermal_dofs)
-	dx, dy, dz = fe_structural_solver.mesh.elem_size
-	nu = fe_structural_solver.mat_prop.poissons_ratio
-	HMatrix = fe_thermal_solver.getHMatrix(dx, dy, dz, nu)
-
-	E = fe_structural_solver.mat_prop.youngs_modulus 
-	alpha = fe_structural_solver.mat_prop.thermal_expansion_coefficient
-	for e in range(nelem):
-		edof_s = fe_structural_solver.mesh.edofMatStructural[e, :]
-		edof_t = fe_thermal_solver.mesh.edofMatThermal[e, :]
-		# Contribution from this element
-		rhs_e = -2*E*alpha*(get_structural_material_model_scaling(x[e], material_model)) * HMatrix.T @ d[edof_s]
+		# This needs to be fixed to handle different nu values
+		nu = poissons_ratio[0]
 		
-		# Assemble into global RHS
-		rhs[edof_t] += rhs_e
+		T = (4 / (1 + nu) * np.sum(stress_tensor * strain_tensor, axis=(1,2)) -
+			 (1 - 3 * nu) / (1 - nu**2) * trace_stress * trace_strain)
+	else:
+		# Single material case
+		nu = poissons_ratio
+		T = (4 / (1 + nu) * np.sum(stress_tensor * strain_tensor, axis=(1, 2)) -
+			(1 - 3 * nu) / (1 - nu**2) * trace_stress * trace_strain)
+	return T
 
-	# Get thermal stiffness matrix from thermal FEA
-	# We need to assemble it with current design variables
-	K_T = fe_thermal_solver.stiff_mtrx
-	# Boundary conditions have to be zero for adjoint problem
-	bcAdjoint = bound_cond.BC(force = 0*fe_thermal_solver.bc.force,fixed_dofs = fe_thermal_solver.bc.fixed_dofs,
-								dirichlet_values = 0.0*fe_thermal_solver.bc.dirichlet_values) 
-	# Solve adjoint system
-	lambda_T = linear_solvers.solve(
-		K_T,
-		rhs,
-		fe_thermal_solver.solver,
-		bcAdjoint,
-		**fe_thermal_solver.kwargs
-	)
 
-	return lambda_T
-
-#################################################################
-def compute_thermoelastic_compliance_and_gradient(x, temperature, displacement,to_params,
-												  fe_thermal_solver, fe_structural_solver):
+def compute_pnorm_stress_and_TS(sol: np.ndarray, x,
+										  fe_solver,KE,material_model, p=6):
 	"""
-	Compute compliance sensitivity: dJ_S / dx_e
-
-	Uses J =  d^T K d (strain energy definition).
-
-	The sensitivity includes three terms:
-	1. Structural stiffness: -p * xi^(p-1) * (1/2) * d_e^T * ke_bar * d_e
-	2. Thermal force: p * xi^(p-1) * E0 * alpha * d_e^T * H * (T_e - T_ref)
-	3. Thermal adjoint: q * xi^(q-1) * lambda_T_e^T * kt_bar * T_e
-
-	Parameters:
-	-----------
-	x : ndarray (num_elems,)
-	Design variables (pseudo-densities)
-	T : ndarray (num_nodes,)
-	Temperature field
-	d : ndarray (num_dofs_structural,)
-	Displacement field
-	p : float
-	Structural SIMP penalty (default: 3.0)
-	q : float
-	Thermal SIMP penalty (default: 1.0)
-	material_model : MaterialModel
-	Material interpolation model
-	solver : linear_solvers.Solvers
-	Linear solver for adjoint system
-	verbose : bool
-	Print detailed information
-
-	Returns:
-	--------
-	dJdx : ndarray (num_elems,)
-	Compliance sensitivity with respect to design variables
-	"""
-
-	material_model = to_params.materialModel
-	J = displacement.T @ fe_structural_solver.stiff_mtrx @ displacement
-	nelem = fe_structural_solver.mesh.num_elems
-
-	dJdx = np.zeros(nelem)
-
-	# Step 1: Solve thermal adjoint equation
-	# K_T^T * lambda_T = -sum_e (xi_e^p * E0 * alpha * H^T * d_e)
-	lambda_T = solve_thermal_adjoint(x,displacement,fe_thermal_solver,fe_structural_solver,material_model)
+    Compute von Mises stress and topological sensitivity for p-norm stress.
+    """
+	# "An efficient 146-line 3D sensitivity analysis code of 
+	# stress based topology optimization written in MATLAB"
+	# Optimization and Engineering (2022) 23:1733–1757
+	# The sensitivity of pnorm von mises stress with respect to x has 2 terms: T1 and T2
+	# T1 arises due to the stress relaxation: x**STRESS_RELAXATION
+	# T2 arises indirectly via the solution sensitivity via the adjoint
+	# T1 is small and can be ignored for large p, so we can use the adjoint sensitivity
+	# to compute the topological sensitivity
+	mesh = fe_solver.mesh
+	nelems = mesh.num_elems
+	q = 2 # STRESS_RELAXATION factor
 	
+	E = fe_solver.mat_prop.youngs_modulus 
+	nu = fe_solver.mat_prop.poissons_ratio
+	D = E / ((1 + nu) * (1 - 2*nu)) * np.array([
+		[1-nu, nu, nu, 0, 0, 0],
+		[nu, 1-nu, nu, 0, 0, 0],
+		[nu, nu, 1-nu, 0, 0, 0],
+		[0, 0, 0, (1-2*nu)/2, 0, 0],
+		[0, 0, 0, 0, (1-2*nu)/2, 0],
+		[0, 0, 0, 0, 0, (1-2*nu)/2]
+	])
+	gradN = (1 / 8) * np.array([
+		[-1, 1, 1, -1, -1, 1, 1, -1],
+		[-1, -1, 1, 1, -1, -1, 1, 1],
+		[-1, -1, -1, -1, 1, 1, 1, 1]
+	])
+	# Define the B matrix (strain-displacement matrix) for a hexahedral element at the center (xi=0, eta=0, zeta=0)
+	B = np.zeros((6, 24))
+	# Vectorized construction of B matrix for all 8 nodes at once
+	Bi = np.zeros((6, 3, 8))
+	Bi[0, 0, :] = gradN[0, :]
+	Bi[1, 1, :] = gradN[1, :]
+	Bi[2, 2, :] = gradN[2, :]
+	Bi[3, 0, :] = gradN[1, :]
+	Bi[3, 1, :] = gradN[0, :]
+	Bi[4, 0, :] = gradN[2, :]
+	Bi[4, 2, :] = gradN[0, :]
+	Bi[5, 1, :] = gradN[2, :]
+	Bi[5, 2, :] = gradN[1, :]
+	# Vectorized assignment to B
+	idx = np.arange(8)
+	B[:, (3 * idx)[:, None] + np.arange(3)] = Bi.transpose(0, 2, 1)
+	F = D @ B  # shape (6, 24)
+	g_elem = np.zeros((nelems, 24))
+	vm_elems = np.zeros(nelems)
 	
-	# Step 2: Compute element-wise sensitivities
-	E = fe_structural_solver.mat_prop.youngs_modulus 
-	alpha = fe_structural_solver.mat_prop.thermal_expansion_coefficient
-	dx, dy, dz = fe_structural_solver.mesh.elem_size
-	nu = fe_structural_solver.mat_prop.poissons_ratio
-	HMatrix = fe_thermal_solver.getHMatrix(dx, dy, dz, nu)
-	KE_structural = fe_structural_solver.elem_stiff[0]
-	KE_Thermal = fe_thermal_solver.elem_stiff[0]
+
+	for e in range(nelems):
+
+		#  compute the stress with relaxation for sensitivity term T2 and pnorm stress
+		stress_elem = (x[e]**q)* fe_solver.stressComponents[e]
+		sigma11, sigma22, sigma33, sigma12, sigma13, sigma23 = stress_elem
+		vm_elems[e] = np.sqrt(0.5*((sigma11 - sigma22)**2 +(sigma22-sigma33)**2 + (sigma33-sigma11)**2) +
+                3*(sigma12**2 + sigma13**2 + sigma23**2))
+
+		g_e = ((sigma11 - sigma22) * (F[0] - F[1]) +
+    	(sigma11 - sigma33) * (F[0] - F[2]) +
+    	(sigma22 - sigma33) * (F[1] - F[2]) +
+    	6 * sigma12 * F[3] + 6 * sigma13 * F[4] + 6 * sigma23 * F[5]) / np.sqrt(2)
+		g_elem[e] = p * vm_elems[e] ** (p - 2) * g_e
 	
-	term1 = np.zeros(nelem)
-	term2 = np.zeros(nelem) 
-	term3 = np.zeros(nelem)
-
-	for e in range(nelem):
-		# Get element DOFs
-		edof_s = fe_structural_solver.mesh.edofMatStructural[e, :]
-		edof_t = fe_thermal_solver.mesh.edofMatThermal[e, :]
-		d_e = displacement[edof_s]  # Total displacement
-		T_e = temperature[edof_t]
-		lambda_T_e = lambda_T[edof_t]
-
-		# Term 1: Direct structural stiffness contribution 
-		term1[e] = -get_structural_material_model_sensitivity(x[e], material_model) * d_e.T @ KE_structural @ d_e
-
-		# Term 2: Direct thermal force contribution
-		T_diff = T_e - fe_thermal_solver.thermoElasticReferenceTemperature
-
-		term2[e] = 2* get_thermal_material_model_sensitivity(x[e], material_model) * E * alpha * d_e.T @ HMatrix @ T_diff
-
-		# Term 3: Adjoint thermal contribution
-		#term3[e] = q * x[e]**(q - 1) * lambda_T_e.T @ self.kt_bar_thermal @ T_e
-		term3[e] = get_thermal_material_model_sensitivity(x[e], material_model) * lambda_T_e.T @ KE_Thermal @ T_e
-
-		dJdx[e] = term1[e] + term2[e] + term3[e]
+	# Note that we are using the relaxed von Mises below
+	vm_pnorm = np.sum(vm_elems**p)**(1/p)
 	
-	#print(f"Max sensitivity terms: Term1={np.max(np.abs(term1)):.4e}, Term2={np.max(np.abs(term2)):.4e}, Term3={np.max(np.abs(term3)):.4e}")
-	return J, dJdx
+
+	# Now compute the rhs of adjoint eqn 
+	g = np.zeros(fe_solver.bc.num_dofs)
+	for e in range(nelems): # assemble  g vector
+		edof = mesh.edofMat[e]
+		g[edof] += g_elem[e]
+	g *= -(1 / p) * (np.sum(vm_elems ** p) ** (1/p - 1) )
+
+    # Solve the adjoint	
+	adjointSol =  -linear_solvers.solve(fe_solver.stiff_mtrx,
+                      g,
+                      fe_solver.solver,
+                      fe_solver.bc,
+                      dsolver = fe_solver.dsolver,
+                      **fe_solver.kwargs)
+	
+	dofMat = fe_solver.mesh.edofMat
+	num_elems = fe_solver.mesh.num_elems
+	strain_adj = np.zeros((num_elems, 6))
+	for e in range(num_elems):
+		edof = dofMat[e]
+		u_e = adjointSol[edof]
+		strain_adj[e] = np.dot(B, u_e)
+	
+	T = computeStructuralTopologicalSensitivity(nu,strain_adj,fe_solver.stressComponents,x)
+	
+
+	return vm_pnorm,T
+
+def computeThermalTopologicalSensitivity(conductivity,strains,x):
+	# For thermal problems, topological sensitivity is related to conductivity * gradient^2
+	# Multiply by density (x) to scale based on material distribution
+	if isinstance(conductivity, list):
+		# Handle multiple materials
+		# Using the first conductivity value for now - this would need to be updated
+		# to properly handle multiple materials
+		k = conductivity[0]
+	else:
+		# Single material case
+		k = conductivity
+		
+	T = x * k * np.sum(strains**2, axis=0)
+
+	return T
+

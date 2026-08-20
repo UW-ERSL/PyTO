@@ -1427,6 +1427,7 @@ class HexMesher:
 		return boundary_nodes
 	
 	def setPseudoDensity(self, rho):
+		rho = rho.detach().cpu().numpy()
 		self.elemPseudoDensity = rho.copy()
 
 	def plot(self,plot_stl = None, plotter = None):
