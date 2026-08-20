@@ -5,7 +5,7 @@ import hex_mesher
 import mat_lib
 import os
 import enum
-script_dir = os.path.dirname(os.path.abspath(__file__))
+script_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))  # points at src/, matching pre-Phase-6 location (this file moved from src/ to src/pyto/examples_benchmarks/)
 
 class HexThermalExamples(enum.Enum):
     ThermalBar = enum.auto()

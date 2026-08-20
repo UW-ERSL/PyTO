@@ -7,7 +7,7 @@ import enum
 import scipy.sparse as spy_sprs
 from stl_reader import STLGeom
 from scipy.sparse import lil_matrix
-script_dir = os.path.dirname(os.path.abspath(__file__))
+script_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))  # points at src/, matching pre-Phase-6 location (this file moved from src/ to src/pyto/examples_benchmarks/)
 
 
 class StructuralExamples(enum.Enum):

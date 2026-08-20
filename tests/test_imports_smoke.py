@@ -13,15 +13,20 @@ import pytest
 
 SRC_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "src")
 
-# Scripts with heavy top-level side effects (open a Qt window, run a
-# multi-minute benchmark sweep, expect argv, etc.) are exercised elsewhere
-# (or manually) rather than via a bare import here.
+# Scripts with heavy top-level side effects (run a multi-minute benchmark
+# sweep, an interactive input() loop, expect argv, a Windows-only COM
+# dependency, etc.) are exercised elsewhere (or manually) rather than via
+# a bare import here.
 _SKIP = {
-    "PyTOGUI",  # opens a Qt/VTK window at import time via module-level setup
     "PyTO_demos",  # runs an interactive input() prompt loop at import time
     "testSolidWorksInterface",  # requires a live SolidWorks COM connection
     "solidworks_interface",  # Windows-only: imports win32com.client
     "topopt_solver_comparison",  # runs a multi-minute benchmark sweep at import time
+    # NOTE: PyTOGUI was in this set through Phase 5 on the (wrong) assumption
+    # that it opens a Qt/VTK window at import time -- verified in Phase 6
+    # that QApplication creation is properly guarded behind
+    # `if __name__ == "__main__":`, so importing it is actually safe. Removed
+    # from _SKIP so it gets real coverage instead of being assumed untestable.
 }
 
 # Modules with a known, currently-broken import unrelated to the autodiff

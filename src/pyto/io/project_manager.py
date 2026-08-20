@@ -292,7 +292,9 @@ class ProjectManager:
                 else:
                     model_name = os.path.basename(project_dir)
                     script_dir = os.path.dirname(os.path.abspath(__file__))
-                    pyto_root = os.path.dirname(script_dir)
+                    # 3x dirname (was 1x before this file moved from src/ to
+                    # src/pyto/io/ in Phase 6): script_dir -> pyto -> src -> repo root.
+                    pyto_root = os.path.dirname(os.path.dirname(os.path.dirname(script_dir)))
                     models_path = os.path.join(pyto_root, "Models")
                     candidate_path = os.path.join(models_path, model_name, stl_file)
                     if os.path.exists(candidate_path):
@@ -371,7 +373,9 @@ class ProjectManager:
 
 def execute_all_projects_in_models():
     script_dir = os.path.dirname(os.path.abspath(__file__))
-    models_dir = os.path.join(os.path.dirname(script_dir), "Models")
+    # 3x dirname (was 1x before this file moved from src/ to src/pyto/io/ in
+    # Phase 6): script_dir -> pyto -> src -> repo root.
+    models_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(script_dir))), "Models")
     # Search recursively for all .pyto files
     pyto_files = glob.glob(os.path.join(models_dir, "**", "*.pyto"), recursive=True)
     print(f"Found {len(pyto_files)} project files in {models_dir}")

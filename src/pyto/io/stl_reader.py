@@ -737,7 +737,9 @@ if __name__ == "__main__":
     import os
 
 
-    script_dir = os.path.dirname(os.path.abspath(__file__))
+    # 3x dirname (was 1x before this file moved from src/ to src/pyto/io/ in
+    # Phase 6): points back at src/, matching the '../Models/...' joins below.
+    script_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
     print(f"Script directory: {script_dir}")
     stl_file = os.path.join(script_dir, '../Models/ThickPlate/ThickPlate.STL')
     print(f"STL file path: {stl_file}")

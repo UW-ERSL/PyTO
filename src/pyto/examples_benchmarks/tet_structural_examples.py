@@ -4,7 +4,7 @@ from tet_mesher import TetMesher
 import mat_lib
 import bound_cond
 import enum
-script_dir = os.path.dirname(os.path.abspath(__file__))
+script_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))  # points at src/, matching pre-Phase-6 location (this file moved from src/ to src/pyto/examples_benchmarks/)
 
 class TetStructuralExamples(enum.Enum):
 	TensileBar = enum.auto()
