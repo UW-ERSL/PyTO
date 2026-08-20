@@ -1,6 +1,7 @@
 """Structural Finite Element Analysis."""
 
 from topopt_material_model import *
+from topopt_material_model import _EVOID_RELATIVE, _PNORM_EXPONENT
 import numpy as np
 import os
 import pyvista as pv
@@ -253,7 +254,7 @@ class HexStructuralFEA:
         self.stressComponents = np.einsum('ij,ej->ei', D, strain)
 
 
-      correction = (EVOID_RELATIVE + (1-EVOID_RELATIVE) * (x_np**q)).reshape((-1,1))
+      correction = (_EVOID_RELATIVE + (1-_EVOID_RELATIVE) * (x_np**q)).reshape((-1,1))
       eStress = correction * self.stressComponents
       self.vonMisesStress = np.sqrt(0.5*((eStress[:,0]-eStress[:,1])**2 +
                 (eStress[:,1]-eStress[:,2])**2 +
@@ -261,7 +262,7 @@ class HexStructuralFEA:
                 3*(eStress[:,3]**2 + eStress[:,4]**2 +
                    eStress[:,5]**2))
       
-      self.pNormStress = (np.sum(self.vonMisesStress**PNORM_EXPONENT))**(1/PNORM_EXPONENT)  
+      self.pNormStress = (np.sum(self.vonMisesStress**_PNORM_EXPONENT))**(1/_PNORM_EXPONENT)  
      
 
       self.elemStrainEnergy = 0.5 * np.sum(strain * eStress, axis=1)  # Element-wise strain energy
@@ -779,7 +780,7 @@ if __name__ == "__main__":
   fe_solver.postprocess()
   print(f"Maximum deformation: {fe_solver.max_deformation:.4e}")
   print(f"Maximum von Mises stress: {np.max(fe_solver.vonMisesStress):.4e}")
-  print(f"Maximum p-norm stress (PNORM = {PNORM_EXPONENT}): {fe_solver.pNormStress:.4e}")
+  print(f"Maximum p-norm stress (PNORM = {_PNORM_EXPONENT}): {fe_solver.pNormStress:.4e}")
 
   fe_solver.plot_deformation(show_geometry=True)
   fe_solver.plot_vonMisesStress()

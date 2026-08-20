@@ -99,3 +99,14 @@ def thermal_fe_solver(thermal_problem):
         dsolver=deflation.DeflationSolver(use_gpu=False),
         elem_body_force=elem_body_force,
     )
+
+
+@pytest.fixture(scope="session")
+def thermal_KE(thermal_problem):
+    import torch
+    mesh, mat_prop, _, _, _ = thermal_problem
+    return torch.tensor(
+        hex_element_stiffness.hex8_stiffness_matrix_thermal(
+            mat_prop.thermal_conductivity, mesh.elem_size
+        )
+    )

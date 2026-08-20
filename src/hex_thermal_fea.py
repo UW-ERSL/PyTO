@@ -6,13 +6,16 @@ import linear_solvers as lin_sol
 import hex_element_stiffness as elem_stiff
 import mat_lib
 import bound_cond
+from bound_cond import apply_dirichlet_bc_torch
 import os
 import pyvista as pv
 import scipy.sparse as sp
 import deflation
+import torch_spsolve
+from torch_spsolve import solve as sparse_spsolve
 from topopt_material_model import *
 from hex_thermal_examples import HexThermalExamples
-from hex_plotter import HexFEAPlotter 
+from hex_plotter import HexFEAPlotter
 
 script_dir = os.path.dirname(os.path.abspath(__file__))
 
@@ -23,7 +26,7 @@ class HexThermalFEA:
 							 mesh,
 							 mat_prop: mat_lib.Material,
 							 bc: bound_cond.BC,
-							 solver: lin_sol.Solvers,
+							 solver: torch_spsolve.Solvers,
                dsolver: deflation.DeflationSolver = None,
                 elem_body_force: np.ndarray = None,
                 thermoElasticReferenceTemperature = 23.0,
@@ -42,16 +45,33 @@ class HexThermalFEA:
     else:
       self.elem_stiff = np.expand_dims(
         elem_stiff.hex8_stiffness_matrix_thermal(mat_prop.thermal_conductivity, mesh.elem_size), axis=0)
-      
+    self.elem_stiff_torch = torch.tensor(self.elem_stiff, dtype=torch.float64)
 
     self.node_idx = np.stack((
                       np.kron(self.mesh.edofMatThermal, np.ones((8, 1))).flatten(),
                       np.kron(self.mesh.edofMatThermal, np.ones((1, 8))).flatten())
                       ).T.astype(int)
-    
-    self.elem_body_force = elem_body_force
 
-    self.plotter = HexFEAPlotter(mesh) 
+    # Precomputed sparse-assembly indices (constant across solves), same
+    # dedup-and-scatter pattern as HexStructuralFEA.__init__.
+    ndof = bc.num_dofs
+    node_idx_np = self.node_idx.astype(np.int64)
+    rows_np = node_idx_np[:, 0]
+    cols_np = node_idx_np[:, 1]
+    keys = rows_np * ndof + cols_np
+
+    uniq_keys, inv = np.unique(keys, return_inverse=True)
+    uniq_rows = (uniq_keys // ndof).astype(np.int64)
+    uniq_cols = (uniq_keys %  ndof).astype(np.int64)
+
+    self._unique_indices  = torch.from_numpy(np.stack([uniq_rows, uniq_cols], axis=0))
+    self._scatter_inverse = torch.from_numpy(inv.astype(np.int64))
+    self._n_unique        = self._unique_indices.shape[1]
+
+    self.elem_body_force = elem_body_force
+    self._bc_force_torch = torch.tensor(self.bc.force, dtype=torch.float64)
+
+    self.plotter = HexFEAPlotter(mesh)
 
 
 ##################################################################
@@ -71,48 +91,48 @@ class HexThermalFEA:
       self.elem_stiff = np.expand_dims(
         elem_stiff.hex8_stiffness_matrix_thermal(mat_prop.thermal_conductivity, self.mesh.elem_size), axis=0)   
 #################################################################
-  def solve(self, x: np.ndarray = None,material_model: MaterialModel = None, elem_mat_id: np.ndarray = None) -> np.ndarray:
+  def solve(self, x: torch.Tensor = None, material_model: MaterialModel = None, elem_mat_id: np.ndarray = None) -> torch.Tensor:
     """Solve the thermal finite element problem.
 
+    Torch-differentiable, mirroring HexStructuralFEA.solve() -- x must be a
+    torch tensor (grad-tracked when used inside an autodiff optimization
+    chain). Multi-material problems use only the first material's element
+    stiffness (elem_stiff_torch broadcasts against elem_material_scaling),
+    same simplification already made by the structural solve and by the
+    optimization drivers (which use KE_list[0] for multi-material meshes).
+
     Args:
-       x: Array of (num_elems,) of the material scaling.
+       x: Torch tensor of (num_elems,) of the material scaling.
       This is used in SIMP topology optimization
 
-    Returns: Array of (num_dofs,) of the solution to the finite element problem.
+    Returns: Torch tensor of (num_dofs,) of the solution to the finite element problem.
     """
     if x is None:
-      x = np.ones((self.mesh.num_elems,))
+      x = torch.ones(self.mesh.num_elems, dtype=torch.float64)
 
-    elem_material_scaling = get_thermal_material_model_scaling(x, material_model)
+    self.x = x
+    device, dtype = x.device, x.dtype
+    ndof = self.bc.num_dofs
 
-     # Multi-material support
-    if self.elem_stiff.shape[0] == 1:
-        # Single material case
-        elem_stiff_mtrx = np.einsum('ij, e -> eij',
-                                    self.elem_stiff[0], elem_material_scaling).flatten(order='C')
-    else:
-        # Multi-material case: select correct stiffness for each element
-        # elem_mat_id: array of shape (num_elems,) with values in [0, num_materials-1]
-        # elem_stiff_mtrx = np.zeros((self.mesh.num_elems, 8, 8))
-        # for e in range(self.mesh.num_elems):
-        #   mat_idx = elem_mat_id[e]
-        #   elem_stiff_mtrx[e] = self.elem_stiff[mat_idx] * elem_material_scaling[e]
-        # elem_stiff_mtrx = elem_stiff_mtrx.flatten(order='C')
-        elem_stiff_mtrx = np.einsum('mij, m -> mij',
-                    self.elem_stiff,
-                    elem_material_scaling).flatten(order = 'C')
+    elem_material_scaling = get_thermal_material_model_scaling_torch(x, material_model)
 
-    stiff_mtrx = sp.coo_matrix((elem_stiff_mtrx, (self.node_idx[:, 0], self.node_idx[:, 1])),
-                                shape=(self.bc.num_dofs, self.bc.num_dofs))
-    
-    self.stiff_mtrx = stiff_mtrx
+    elem_stiff_mtrx = torch.einsum("mij,m->mij", self.elem_stiff_torch, elem_material_scaling)
+    vals = elem_stiff_mtrx.reshape(-1)
 
-    sol =  lin_sol.solve(stiff_mtrx,
-                      self.bc.force,
-                      self.solver,
-                      self.bc,
-                      **self.kwargs)
-    self.sol = sol.copy()
+    agg_vals = torch.zeros(self._n_unique, dtype=dtype, device=device)
+    agg_vals.index_add_(0, self._scatter_inverse, vals)
+
+    self.stiff_mtrx = torch.sparse_coo_tensor(
+        self._unique_indices, agg_vals, (ndof, ndof), device=device, dtype=dtype
+    )
+
+    f = self._bc_force_torch
+
+    K_bc, f_bc = apply_dirichlet_bc_torch(self.stiff_mtrx, f, self.bc)
+
+    sol = sparse_spsolve(K_bc, f_bc, solver=self.solver)
+
+    self.sol = sol
     return sol
   #################################################################
   def getHMatrix(self, dx, dy, dz, nu):
@@ -214,6 +234,11 @@ class HexThermalFEA:
     elem_material_scaling = get_structural_material_model_scaling(x, material_model)
     dx, dy, dz = self.mesh.elem_size
 
+    # self.sol is a torch tensor since solve() became torch-native; this
+    # method's own math (elem_material_scaling, HMatrix, f_thermoelastic)
+    # is deliberately plain NumPy, so convert once at the boundary.
+    sol_np = self.sol.detach().cpu().numpy() if hasattr(self.sol, "detach") else self.sol
+
     f_thermoelastic = np.zeros(3 * self.mesh.num_nodes)  # Elastic force vector
 
     # Multi-material support
@@ -225,7 +250,7 @@ class HexThermalFEA:
             nu = mp.poissons_ratio
             HMatrix = self.getHMatrix(dx, dy, dz, nu)
             elem_nodes = self.mesh.elemArray[elem]
-            node_temp = self.sol[elem_nodes]
+            node_temp = sol_np[elem_nodes]
             f_thermal_elem = elem_material_scaling[elem] * E * alpha * HMatrix @ (node_temp - self.thermoElasticReferenceTemperature)
             for j in range(8):
                 f_thermoelastic[3 * elem_nodes[j]] += f_thermal_elem[3 * j]
@@ -238,7 +263,7 @@ class HexThermalFEA:
         HMatrix = self.getHMatrix(dx, dy, dz, nu)
         for elem in range(self.mesh.num_elems):
             elem_nodes = self.mesh.elemArray[elem]
-            node_temp = self.sol[elem_nodes]
+            node_temp = sol_np[elem_nodes]
             f_thermal_elem = elem_material_scaling[elem] * E * alpha * HMatrix @ (node_temp - self.thermoElasticReferenceTemperature)
             for j in range(8):
                 f_thermoelastic[3 * elem_nodes[j]] += f_thermal_elem[3 * j]
@@ -265,12 +290,15 @@ class HexThermalFEA:
         [-1, -1, 1, 1, -1, -1, 1, 1],
         [-1, -1, -1, -1, 1, 1, 1, 1]
       ])
-      
+
+      # self.sol is a torch tensor since solve() became torch-native.
+      sol_np = self.sol.detach().cpu().numpy() if hasattr(self.sol, "detach") else self.sol
+
       # Get element degrees of freedom
       edof = self.mesh.edofMatThermal
-      
+
       # Compute displacement gradients
-      self.strain = gradN @ self.sol[edof].T
+      self.strain = gradN @ sol_np[edof].T
 
 #################################################################
   def plot_elem_field(self,

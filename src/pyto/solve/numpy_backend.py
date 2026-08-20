@@ -1,0 +1,218 @@
+"""Linear solvers for finite element analysis."""
+
+import enum
+import numpy as np
+import scipy.sparse as spy_sprs
+import scipy.sparse.linalg as spy_linalg
+from scipy.sparse.linalg import splu
+from scipy.sparse.linalg import spilu, LinearOperator
+import pyamg # pip install pyamg
+
+try:# Mac does not support pypardiso, so we skip 
+  import pypardiso # pip install pypardiso
+except ImportError:
+  pypardiso = None
+
+
+try:# Windows does not support petsc, so we skip 
+  import petsc4py.PETSc as PETSc # type: ignore # pip install petsc
+except ImportError:
+  PETSc = None
+
+import bound_cond
+from scipy.linalg import null_space
+
+class Preconditioners(enum.Enum):
+  JACOBI = enum.auto()
+  ILU = enum.auto()
+
+DEFAULT_TOL = 1.e-6 # Default tolerance for iterative solvers
+
+def _petsc_solve(
+  A: spy_sprs.csr_matrix, b: np.ndarray, solver_options: dict) -> np.ndarray:
+    """Solve for u = A^{-1}b using PETSc.
+  
+    Args:
+      A: A sparse CSR matrix of shape (m,m).
+      b: The rhs vector of shape (m,).
+      solver_options: A dictionary containing PETSc solver options.
+  
+    Returns: The solution vector of shape (m,).
+    """
+    
+    ksp_type = "bcgsl" 
+    pc_type = "ilu"
+  
+    A = PETSc.Mat().createAIJ(
+      size=A.shape,
+      csr=(
+        A.indptr.astype(PETSc.IntType, copy=False),
+        A.indices.astype(PETSc.IntType, copy=False),
+        A.data,
+      ),
+    )
+  
+    rhs = PETSc.Vec().createSeq(len(b))
+    rhs.setValues(range(len(b)), np.array(b))
+    ksp = PETSc.KSP().create()
+    ksp.setOperators(A)
+    ksp.setFromOptions()
+    ksp.setType(ksp_type)
+    ksp.pc.setType(pc_type)
+  
+    if ksp_type == "tfqmr":
+      ksp.pc.setFactorSolverType("mumps")
+  
+    x = PETSc.Vec().createSeq(len(b))
+    ksp.solve(rhs, x)
+  
+    return x.getArray()
+
+def _jacobi_preconditioner(A: spy_sprs.coo_matrix,
+                          eps_tol: float = 1.e-12,
+                          ) -> spy_sprs.coo_matrix:
+  """Compute the Jacobi preconditioner for a sparse matrix A.
+
+  Args:
+    A: The sparse stiffness matrix in COO format.
+    eps_tol: The tolerance for the diagonal entries of A. If the absolute value
+      of the diagonal entry is less than this value, it is set to 1.0 to avoid
+      division by zero.
+
+  Returns: The Jacobi preconditioner in COO format.
+  """
+  diag_data = A.diagonal()
+  diag_data[np.abs(diag_data) < eps_tol] = 1.0  # Avoid division by zero
+  diag_idxs = np.arange(A.shape[0])
+  return spy_sprs.coo_matrix((1.0 / diag_data, (diag_idxs, diag_idxs)),
+                                shape=A.shape)
+
+
+def _ilu_preconditioner(A: spy_sprs.coo_matrix,
+                        drop_tol: float = 1.e-1,
+                        ) -> spy_linalg.LinearOperator:
+  """Compute the ILU preconditioner for a sparse matrix A.
+  
+  Args:
+    A: The sparse stiffness matrix in COO format.
+    drop_tol: The tolerance for dropping small entries in the ILU factorization.
+  """
+  ilu = spy_linalg.spilu(A, drop_tol = drop_tol)
+  return spy_linalg.LinearOperator(A.shape, matvec= ilu.solve)
+
+
+def get_preconditioner(A: spy_sprs.coo_matrix,
+                      preconditioner: Preconditioners,
+                      **kwargs,
+                      ) -> spy_linalg.LinearOperator:
+  """Get the preconditioner for the linear solver.
+
+  Args:
+    A: The sparse stiffness matrix in COO format.
+    preconditioner: The preconditioner from `Preconditioners` to use.
+
+  Returns: The preconditioner as a linear operator.
+  """
+  if preconditioner == Preconditioners.JACOBI:
+    return _jacobi_preconditioner(A, **kwargs)
+
+  elif preconditioner == Preconditioners.ILU:
+    return _ilu_preconditioner(A,  drop_tol=1e-2, fill_factor=5, permc_spec='COLAMD',**kwargs)
+
+  else:
+    return spy_sprs.eye(A.shape[0])
+
+
+from pyto.solve.solvers import Solvers
+
+
+def solve(A0: spy_sprs.coo_matrix, 
+					b0: np.ndarray,
+		      solver: Solvers,
+          bc: bound_cond.BC,
+					**kwargs,
+					)-> np.ndarray:
+  """Solve a linear system of equations.
+
+      Solve for x in Ax = b for x using the specified solver.
+
+  Args:
+    A: The stiffness matrix of the system of shape (n,n).
+    b: The right hand side of the system of shape (n,).
+    solver: The solver from `Solvers` to use.
+
+  Returns: The solution x of the system of shape (n,).
+  """
+
+  if (bc.constraint_matrix is None): # No Lagrange multipliers, eliminate fixed DOFs
+    A, b = bound_cond.impose_dirichlet_bc(A0.tocsr(), b0, bc)
+    
+    if solver == Solvers.SPSOLVE:
+      x = spy_linalg.spsolve(A, b) # very slow for large problems
+    elif solver == Solvers.SPLU:
+      lu = splu(A)
+      x = lu.solve(b)
+    elif solver == Solvers.PETSC:
+      x = _petsc_solve(A.tocsr(), np.asarray(b), kwargs)
+    elif solver == Solvers.PCG:
+      rtol = kwargs.get('rtol', DEFAULT_TOL) # for iterative solvers
+      M = _jacobi_preconditioner(A)
+      #M = _ilu_preconditioner(A) # ILU preconditioner takes too long
+      x, _ = spy_linalg.cg(A, b, M = M, rtol = rtol)
+
+    elif solver == Solvers.PYAMG:
+      # Smoothed Aggregation solver gives the wrong result
+      #ml = pyamg.smoothed_aggregation_solver(A, B=b, smooth='energy')
+      #x = ml.solve(b, tol=kwargs['rtol'])
+      rtol = kwargs.get('rtol', DEFAULT_TOL) # for iterative solvers
+      x = pyamg.solve(A, b,tol= rtol, verb = False)
+
+    elif solver == Solvers.DPCG:
+      dsolver = kwargs['dsolver']
+      # print(f"W shape: {dsolver.W.shape}")
+      # print(f"free_dofs type: {type(bc.free_dofs)}")
+      # print(f"free_dofs shape/length: {bc.free_dofs.shape if hasattr(bc.free_dofs, 'shape') else len(bc.free_dofs)}")
+      # print(f"free_dofs range: [{bc.free_dofs.min()}, {bc.free_dofs.max()}]")
+      # print(f"Number of rows in W: {dsolver.W.shape[0]}")
+      W = dsolver.W[bc.free_dofs, :]
+      rtol = kwargs.get('rtol', DEFAULT_TOL) # for iterative solvers
+      M = _jacobi_preconditioner(A)
+      x = dsolver.deflatedPCG(A,
+                              b,
+                              W = W,
+                              M = M,
+                              rtol = rtol)
+
+    elif solver == Solvers.PARDISO:
+      x = pypardiso.spsolve(A, np.array(b))
+      pypardiso.ps.free_memory()
+    else:
+      raise ValueError('Unknown solver type')
+
+    u = np.zeros(b0.shape)
+    u[bc.fixed_dofs] = bc.dirichlet_values
+    u[bc.free_dofs] = x
+    return u
+  
+  else: # constraints with Lagrange multipliers
+    if solver == Solvers.PARDISO:
+      # When using Lagrange multipliers, we do not eliminate any DOFs
+      num_constraints = bc.constraint_matrix.shape[0]
+      num_dofs = A0.shape[0]
+      
+      # Build directly as CSR (avoid expensive tolil conversion)
+      top_row = spy_sprs.hstack([A0, bc.constraint_matrix.T], format='csr')
+      bottom_row = spy_sprs.hstack([bc.constraint_matrix, spy_sprs.csr_matrix((num_constraints, num_constraints))], format='csr')
+      A_modified = spy_sprs.vstack([top_row, bottom_row], format='csr')
+      
+      # Build RHS directly
+      b_modified = np.concatenate([b0, bc.constraint_rhs])
+      
+      # Solve
+      sol = pypardiso.spsolve(A_modified, b_modified)
+      pypardiso.ps.free_memory()
+
+      # Extract displacement part
+      return sol[:num_dofs]
+    else:
+      raise ValueError('Only Pardiso and DPCG solvers support Lagrange multipliers currently.')
