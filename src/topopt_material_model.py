@@ -111,9 +111,9 @@ def get_structural_material_model_scaling_torch(x: Tensor,
 
     Returns: Array of Young's moduli for each element.
     """
-    Evoid = torch.tensor(EVOID_RELATIVE, device=_tdev, dtype=torch.float64)
-    p     = torch.tensor(SIMP_PENALTY,     device=_tdev, dtype=torch.float64)
-    ramp  = torch.tensor(RAMP_PENALTY,     device=_tdev, dtype=torch.float64)
+    Evoid = torch.tensor(_EVOID_RELATIVE, device=_tdev, dtype=torch.float64)
+    p     = torch.tensor(_SIMP_STRUCTURAL_PENALTY, device=_tdev, dtype=torch.float64)
+    ramp  = torch.tensor(_RAMP_PENALTY,     device=_tdev, dtype=torch.float64)
 
     if material_model is None:
         return x

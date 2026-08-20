@@ -2,6 +2,7 @@
 import numpy as np
 from topopt_filters import *
 from topopt_material_model import *
+from topopt_material_model import _EVOID_RELATIVE, _PNORM_EXPONENT
 from topopt_common import *
 import linear_solvers
 
@@ -197,7 +198,7 @@ def compute_pnorm_stress_autograd(
     q = 0.5  # same q as in postprocess
     x = x_filtered_t.view(nelems)
     x = torch.clamp(x, min=1e-12)
-    correction = EVOID_RELATIVE + (1.0 - EVOID_RELATIVE) * x.pow(q)  # (nelems,)
+    correction = _EVOID_RELATIVE + (1.0 - _EVOID_RELATIVE) * x.pow(q)  # (nelems,)
     correction = correction.unsqueeze(1)  # (nelems, 1)
 
     eStress = correction * stress  # (nelems, 6)
@@ -222,7 +223,7 @@ def compute_pnorm_stress_autograd(
     max_vm_t = vm.max()  # scalar
 
     # ---------- 9) p-norm of von Mises ----------
-    p = float(PNORM_EXPONENT)
+    p = float(_PNORM_EXPONENT)
     pnorm_stress_t = vm.pow(p).sum().pow(1.0 / p)  # scalar
 
     return pnorm_stress_t, max_vm_t
@@ -270,7 +271,7 @@ def compute_pnorm_stress_and_sensitivity(sol: np.ndarray, x, fe_solver, KE, mate
 
     qStress = 0.5  # STRESS relaxation factor
     pSIMP = 3    # SIMP penalization
-    p = PNORM_EXPONENT  # p-norm exponent
+    p = _PNORM_EXPONENT  # p-norm exponent
     
     E = fe_solver.mat_prop.youngs_modulus 
     nu = fe_solver.mat_prop.poissons_ratio

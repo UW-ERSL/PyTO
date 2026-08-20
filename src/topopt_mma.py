@@ -56,6 +56,17 @@ def topopt_mma(fe_solver, #hex_structural_fea.HexStructuralFEA or hex_thermal_fe
     # Element-wise density filter matrices
     H, Hs = createFilters(fe_solver, to_params)
 
+    # Torch-sparse copies of the (constant) filter, used inside the autograd
+    # chain below -- H is a scipy sparse matrix, which can't be matmul'd
+    # against a grad-tracked torch tensor directly.
+    H_coo = H.tocoo()
+    H_torch = torch.sparse_coo_tensor(
+        torch.tensor(np.vstack([H_coo.row, H_coo.col]), dtype=torch.long),
+        torch.tensor(H_coo.data, dtype=torch.float64),
+        H_coo.shape,
+    ).coalesce()
+    Hs_torch = torch.tensor(np.asarray(Hs).flatten(), dtype=torch.float64)
+
     # Elements attached to any externally forced nodes (for retaining)
     elemsWithForces = find_elements_with_forces(
         fe_solver.mesh, fe_solver.bc.force, nDOFPerNode
@@ -138,7 +149,9 @@ def topopt_mma(fe_solver, #hex_structural_fea.HexStructuralFEA or hex_thermal_fe
 
         def chain(x_raw: torch.Tensor):
             # Density filtering for ANALYSIS
-            x_filtered = (H @ x_raw / Hs) if to_params.APPLY_FILTER_TO_DENSITY else x_raw
+            x_filtered = (
+                torch.sparse.mm(H_torch, x_raw.unsqueeze(1)).squeeze(1) / Hs_torch
+            ) if to_params.APPLY_FILTER_TO_DENSITY else x_raw
 
             # Set filtered density on mesh for FE + plotting
             with torch.no_grad():
@@ -224,10 +237,10 @@ def topopt_mma(fe_solver, #hex_structural_fea.HexStructuralFEA or hex_thermal_fe
             )
 
         # Sensitivity filtering/mapping (FILTERED -> RAW design variables)
-        if to_params.APPLY_FILTER_TO_SENSITIVITY and (to_params.Objective[0] is TO_QOI.COMPLIANCE):
+        if to_params.APPLY_FILTER_TO_DENSITY and (to_params.Objective[0] is TO_QOI.COMPLIANCE):
             # Weighted filter
             grad_obj = (H @ (x_filtered * grad_obj)) / Hs / x_filtered
-        elif to_params.APPLY_FILTER_TO_SENSITIVITY and (
+        elif to_params.APPLY_FILTER_TO_DENSITY and (
             to_params.Objective[0] is not TO_QOI.VOLUME_FRACTION
         ):
             # Regular filter
@@ -241,7 +254,7 @@ def topopt_mma(fe_solver, #hex_structural_fea.HexStructuralFEA or hex_thermal_fe
 
 
         # Sensitivity filtering for constraints (FILTERED -> RAW)
-        if to_params.APPLY_FILTER_TO_SENSITIVITY:
+        if to_params.APPLY_FILTER_TO_DENSITY:
             for m in range(len(to_params.Constraints)):
                 if to_params.Constraints[m][0] is TO_QOI.COMPLIANCE:
                     dcdx_filt[m] = (H @ (x_filtered * dcdx_filt[m])) / Hs / x_filtered

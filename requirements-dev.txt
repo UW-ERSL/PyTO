@@ -1,0 +1,11 @@
+# Additional packages needed to run the test suite (tests/), on top of requirements.txt.
+#
+#   conda activate PyToLib
+#   pip install --index-url https://download.pytorch.org/whl/cpu torch
+#   pip install pytest
+#
+# torch is installed separately from the CPU-only wheel index since no GPU
+# is required for the gradient-correctness tests.
+
+torch
+pytest
