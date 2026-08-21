@@ -186,7 +186,30 @@ def solve(
         solver_kind = "petsc"
     elif solver_name == "PARDISO":
         solver_kind = "pardiso"
+    elif solver_name in (None, "SPSOLVE"):
+        solver_kind = "spsolve"
     else:
+        # Every other named solver in pyto.solve.solvers.Solvers (DPCG, PCG,
+        # PYAMG, SPLU) is implemented for pyto.solve.numpy_backend's
+        # free-DOF-elimination BC formulation, but not for this module's
+        # identity-row BC formulation (apply_dirichlet_bc_torch) -- porting
+        # them, DPCG especially, needs reconciling those two different
+        # boundary-condition strategies, not a one-line dispatch addition.
+        # oc.py/pareto.py/levelset.py all auto-select DPCG above
+        # DIRECT_SOLVER_DOF_CUTOFF DOFs, so this used to silently substitute
+        # a full direct factorization for the requested iterative solver --
+        # still correct, but defeats the whole point of choosing DPCG for
+        # large problems (memory/time), and did so without telling anyone.
+        # Warn instead of silently substituting.
+        import warnings
+        warnings.warn(
+            f"Solvers.{solver_name} is not implemented for the torch-autodiff "
+            "sparse solve path (pyto.autodiff.sparse_solve) -- falling back "
+            "to a direct SPSOLVE factorization. This is still correct but "
+            "loses whatever performance benefit the requested solver was "
+            "chosen for on large problems.",
+            stacklevel=2,
+        )
         solver_kind = "spsolve"
 
     # Pass an empty dict if None, to be handled gracefully downstream

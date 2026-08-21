@@ -47,6 +47,16 @@ class HexThermalFEA:
         elem_stiff.hex8_stiffness_matrix_thermal(mat_prop.thermal_conductivity, mesh.elem_size), axis=0)
     self.elem_stiff_torch = torch.tensor(self.elem_stiff, dtype=torch.float64)
 
+    # mesh.edofMat is the generic name the shared torch QOI code
+    # (pyto.autodiff.qoi.*) reads regardless of physics -- populate it here
+    # from the thermal-specific edofMatThermal rather than requiring every
+    # caller to remember `mesh.edofMat = mesh.edofMatThermal` themselves
+    # (previously only done by tests/conftest.py and PyTOGUI.py; see the
+    # matching fix in HexStructuralFEA.__init__).
+    if not hasattr(mesh, "edofMatThermal"):
+      mesh.createEdofMatThermal()
+    mesh.edofMat = mesh.edofMatThermal
+
     self.node_idx = np.stack((
                       np.kron(self.mesh.edofMatThermal, np.ones((8, 1))).flatten(),
                       np.kron(self.mesh.edofMatThermal, np.ones((1, 8))).flatten())
@@ -377,10 +387,10 @@ class HexThermalFEA:
 
 #################################################################
 if __name__ == "__main__":
-    import hex_thermal_fea as fea
-    import linear_solvers as lin_solv
+    import pyto.physics.thermal.hex_thermal_fea as fea
+    import pyto.solve.numpy_backend as lin_solv
     import time	
-    from hex_thermal_examples import *
+    from pyto.examples_benchmarks.hex_thermal_examples import *
 
     problem = HexThermalExamples.LBracket
     solver = lin_solv.Solvers.PARDISO

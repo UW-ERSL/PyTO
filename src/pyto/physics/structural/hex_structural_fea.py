@@ -4,6 +4,7 @@ from pyto.autodiff.material_model import *
 from pyto.autodiff.material_model import _EVOID_RELATIVE, _PNORM_EXPONENT
 import numpy as np
 import os
+import time
 import pyvista as pv
 import pyto.core.mat_lib as mat_lib
 import pyto.core.bc as bound_cond
@@ -11,7 +12,9 @@ from pyto.core.bc import apply_dirichlet_bc_torch
 import pyto.physics.hex_element_stiffness as hex_element_stiffness
 import pyto.solve.deflation as deflation
 import pyto.autodiff.sparse_solve as torch_spsolve
+import pyto.solve.numpy_backend as linear_solvers
 from pyto.autodiff.sparse_solve import solve as sparse_spsolve
+from pyto.gui.hex_plotter import HexFEAPlotter
 
 
 script_dir = os.path.dirname(os.path.abspath(__file__))
@@ -45,7 +48,17 @@ class HexStructuralFEA:
           hex_element_stiffness.hex8_stiffness_matrix_structural(mat_prop.youngs_modulus,mat_prop.poissons_ratio, mesh.elem_size), axis=0)
     self.elem_stiff_torch = torch.tensor(self.elem_stiff, dtype=torch.float64)
 
-   
+    # mesh.edofMat is the generic name the shared torch QOI code
+    # (pyto.autodiff.qoi.*) reads regardless of physics -- populate it here
+    # from the structural-specific edofMatStructural rather than requiring
+    # every caller to remember `mesh.edofMat = mesh.edofMatStructural`
+    # themselves (previously only done by tests/conftest.py and
+    # PyTOGUI.py; every other caller, e.g. topopt_run_benchmarks.py, hit
+    # an AttributeError here).
+    if not hasattr(mesh, "edofMatStructural"):
+      mesh.createEdofMatStructural()
+    mesh.edofMat = mesh.edofMatStructural
+
     self.node_idx = np.stack((
             np.kron(self.mesh.edofMat, np.ones((24, 1))).flatten(),
             np.kron(self.mesh.edofMat, np.ones((1, 24))).flatten())
@@ -93,6 +106,7 @@ class HexStructuralFEA:
                     (offset, offset, 0),   # Focus point - right and bottom
                     (0, 0.8, 0.4)]         # Up vector - Y axis up
     self.create_pyvista_plotter()
+    self.plotter = HexFEAPlotter(mesh)
 
 #################################################################
   def create_pyvista_plotter(self):
@@ -744,10 +758,36 @@ class HexStructuralFEA:
     self.plot_elem_field(self.mesh.elemPseudoDensity, colormap='gray_r', auto_close = auto_close,
                          mask_low_pseudodensity=False, title= title,
                 save_path=save_path, fontsize=fontsize,plotter = plotter)
-    
+
+  def plot_pseudo_density_realtime(self, title='Pseudo density', iteration=0, external_plotter=None):
+    """
+    Real-time visualization with proper Qt event loop handling.
+
+    Args:
+        title: Title for the visualization
+        iteration: Current iteration number
+        external_plotter: Optional external plotter (e.g., from GUI)
+
+    Notes:
+        Mirrors HexThermalFEA.plot_pseudo_density_realtime -- this method
+        was previously missing here, so any driver's plot_progress=True
+        path (topopt_optimality_criteria/topopt_pareto/topopt_levelset all
+        call fe_solver.plot_pseudo_density_realtime(...) generically for
+        both physics) raised an AttributeError for structural problems.
+        Delegates to the HexFEAPlotter, which handles the actual
+        visualization. When external_plotter is provided (GUI mode), it
+        will use that plotter instead of creating a new BackgroundPlotter
+        window.
+    """
+    return self.plotter.plot_pseudo_density_realtime(
+        title=title,
+        iteration=iteration,
+        external_plotter=external_plotter
+    )
+
 #################################################################
-if __name__ == "__main__":    
-  from hex_structural_examples import StructuralExamples,getStructuralProblem
+if __name__ == "__main__":
+  from pyto.examples_benchmarks.hex_structural_examples import StructuralExamples,getStructuralProblem
 
   problem = StructuralExamples.LBracketThick
   nDOFDesired = 10000

@@ -222,7 +222,7 @@ class ThermoElasticSensitivity:
         K_S : sp.coo_matrix
             Global structural stiffness matrix
         """
-        from topopt_material_model import get_structural_material_model_scaling
+        from pyto.autodiff.material_model import get_structural_material_model_scaling
         
         nelem = self.structuralMesh.num_elems
         
@@ -268,7 +268,7 @@ class ThermoElasticSensitivity:
         K_T : sp.coo_matrix
             Global thermal stiffness matrix
         """
-        from topopt_material_model import get_thermal_material_model_scaling
+        from pyto.autodiff.material_model import get_thermal_material_model_scaling
         
         # Get material scaling
         elem_material_scaling = get_thermal_material_model_scaling(x, material_model)

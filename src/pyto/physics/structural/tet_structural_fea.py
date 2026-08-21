@@ -205,7 +205,7 @@ class TetStructuralFEA:
 
 if __name__ == "__main__":
     import time	
-    from tet_structural_examples import TetStructuralExamples, getTetStructuralProblem
+    from pyto.examples_benchmarks.tet_structural_examples import TetStructuralExamples, getTetStructuralProblem
    
     problem = TetStructuralExamples.BliskModel 
     quadratic_tet_mesh, mat_prop, bc, elem_body_force  = getTetStructuralProblem(problem,nDOFDesired = 10000)

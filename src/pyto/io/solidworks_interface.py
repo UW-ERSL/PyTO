@@ -173,7 +173,7 @@ class SolidWorksInterface:
             return False
         
 if __name__ == "__main__":
-    from stl_reader import STLGeom
+    from pyto.io.stl_reader import STLGeom
 
     input("Is SolidWorks open with the part Models/ThreeHolesBracket?\nPress Enter to continue...")
     script_dir = os.path.dirname(os.path.abspath(__file__))

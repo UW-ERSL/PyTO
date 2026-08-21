@@ -21,6 +21,7 @@ from pyto.autodiff.qoi import (
     compute_pnorm_stress_autograd,
     compute_mass_torch,
     compute_gvector_torch,
+    compute_constraint_and_gradient,
 )
 from pyto.autodiff.reference_adjoint import (
     compute_compliance,
@@ -325,3 +326,45 @@ def test_pareto_compliance_value_matches_compute_compliance_torch(structural_fe_
     compliance_torch = compute_compliance_torch(sol_t, x0_t, fe, structural_KE, MaterialModel.SIMP).item()
 
     assert abs(compliance_pareto - compliance_torch) / abs(compliance_torch) < 1e-8
+
+
+def test_stress_failure_factor_constraint_direction(structural_fe_solver):
+    # Regression test for a sign/reciprocal bug fixed after being flagged
+    # (not fixed) in Phase 4: STRESS_FAILURE_FACTOR's constraint used
+    # `1.0 / constraintLimit` where it should use `constraintLimit`. Per
+    # topopt_common.py's TO_QOI enum comment and
+    # topopt_structural_benchmarks.py's own comment ("failure limit is the
+    # opposite of safety factor"), failure_factor = stress/yieldStrength,
+    # and the constraint failure_factor <= constraintLimit means
+    # stress <= yieldStrength * constraintLimit. The old formula instead
+    # allowed stress up to yieldStrength / constraintLimit -- with a
+    # constraintLimit of 0.5 (the benchmark's own value), that permitted
+    # stress up to *2x* yield strength instead of limiting it to half.
+    #
+    # This test doesn't need an independent ground truth for the actual
+    # stress value: it finds the constraintLimit at which the constraint
+    # is exactly at the boundary (c == 0) by construction, then checks c's
+    # sign moves the right direction on either side of it -- self-
+    # consistent regardless of the mesh/material specifics.
+    fe = structural_fe_solver
+    x0 = 0.5 * torch.ones(fe.mesh.num_elems, dtype=torch.float64, requires_grad=True)
+    sol = fe.solve(x0, MaterialModel.SIMP)
+
+    pnorm_stress, _max_vm = compute_pnorm_stress_autograd(sol, x0, fe)
+    yield_strength = fe.mat_prop.yield_strength
+    # constraintLimit at which allowed_stress == pnorm_stress exactly (c == 0)
+    boundary_limit = (pnorm_stress / yield_strength).item()
+
+    def constraint_value(constraint_limit):
+        to_params = TOParams()
+        to_params.Constraints = [(TO_QOI.STRESS_FAILURE_FACTOR, None, constraint_limit)]
+        c, _dc = compute_constraint_and_gradient(to_params, sol, x0, fe, None, MaterialModel.SIMP)
+        return c[0, 0].item()
+
+    c_at_boundary = constraint_value(boundary_limit)
+    c_looser = constraint_value(boundary_limit * 2.0)   # more allowed stress -> should satisfy (c <= 0)
+    c_tighter = constraint_value(boundary_limit * 0.5)  # less allowed stress -> should violate (c > 0)
+
+    assert abs(c_at_boundary) < 1e-8, f"expected c==0 at the boundary limit, got {c_at_boundary}"
+    assert c_looser < 0, f"looser constraintLimit should satisfy the constraint, got c={c_looser}"
+    assert c_tighter > 0, f"tighter constraintLimit should violate the constraint, got c={c_tighter}"

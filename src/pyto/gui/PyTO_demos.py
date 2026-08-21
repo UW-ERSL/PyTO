@@ -519,7 +519,7 @@ while True:
         print('-----------------------------')
         fe_solver.plot_deformation()
     elif demo == pyTODemos.SolidWorks_Demo:
-        from solidworks_interface import SolidWorksInterface
+        from pyto.io.solidworks_interface import SolidWorksInterface
 
         input("Is SolidWorks open with a part?\nPress Enter to continue...")
         script_dir = os.path.dirname(os.path.abspath(__file__))

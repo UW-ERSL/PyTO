@@ -6,6 +6,73 @@ import time
 import matplotlib.pyplot as plt
 from pyto.topopt.drivers.mmaWrapper import runMMA
 from pyto.topopt.drivers._shared import setup_driver_state, torch_sparse_filter
+from pyto.examples_benchmarks.topopt_structural_benchmarks import *
+from pyto.examples_benchmarks.topopt_thermal_benchmarks import *
+
+
+def run_topopt_mma(to_problem):
+    """Run topology optimization using the MMA method.
+
+    Mirrors run_topopt_ocm/run_topopt_levelset/run_pareto_topopt's pattern
+    (see topopt/drivers/oc.py, levelset.py, pareto.py) -- builds the mesh
+    and FE solver for the given example, then calls topopt_mma() and plots
+    the result. This wrapper didn't previously exist (only topopt_mma()
+    itself did), which meant `from pyto.topopt.drivers.mma import
+    run_topopt_mma` -- e.g. main.ipynb's import cell -- raised an
+    ImportError, unlike the equivalent OC/Levelset/Pareto imports.
+
+    Args:
+        to_problem: A StructuralTOExamples or ThermalTOExamples member
+            identifying which example problem to set up.
+
+    Returns: None
+    """
+    if to_problem in StructuralTOExamples:
+        mesh, mat_prop, bc, elem_body_force, to_params = getStructuralTOProblem(to_problem)
+    elif to_problem in ThermalTOExamples:
+        mesh, mat_prop, bc, elem_body_force, to_params = getThermalTOProblem(to_problem)
+
+    print(f"Running {to_problem.name}...")
+    print("-" * 50)
+    solver = Solvers.PARDISO  # Choose solver. Typically PARDISO, but DPCG for DOF > 200,000
+    dsolver = deflation.DeflationSolver()
+    if to_params.nDOFDesired > DIRECT_SOLVER_DOF_CUTOFF:
+        solver = Solvers.DPCG
+        nGroups = min(dsolver.maxGroups, max(dsolver.minGroups, round(3 * mesh.num_nodes / dsolver.dofPerGroup)))
+        dsolver.create_deflation_groups(mesh, nGroups)
+        dsolver.create_deflation_matrix(mesh)
+
+    if to_problem in StructuralTOExamples:
+        fe_solver = hex_structural_fea.HexStructuralFEA(mesh=mesh, mat_prop=mat_prop, bc=bc,
+                    solver=solver, dsolver=dsolver, rtol=1e-8, elem_body_force=elem_body_force)
+    elif to_problem in ThermalTOExamples:
+        fe_solver = hex_thermal_fea.HexThermalFEA(mesh=mesh, mat_prop=mat_prop, bc=bc,
+                    solver=solver, dsolver=dsolver, rtol=1e-8, elem_body_force=elem_body_force)
+
+    print('Solver: ', fe_solver.solver.name)
+    print("nDOF: ", 3 * fe_solver.mesh.num_nodes)
+    print("nElem: ", fe_solver.mesh.num_elems)
+
+    startTime = time.time()
+    print("OptimizationMethod: MMA")
+    sol, history, success, errorMsg, nFEAs = topopt_mma(fe_solver=fe_solver, to_params=to_params,
+                    plot_progress=True, print_progress=True, maxMMAIterations=to_params.MaxIterations)
+    timeTaken = time.time() - startTime
+    print(f"Time taken: {timeTaken:.0f} s")
+    if not success:
+        print(f"Error: {errorMsg}")
+
+    title = f"MMA: vol: {history['volfrac'][-1]:0.2f}, J: {history['objective'][-1]:.3g}, nFEA: {len(history['objective']):3d}, time: {timeTaken:.0f} s"
+    fe_solver.plot_mesh(title=title, plot_bc=False, save_path=None)
+
+    plt.figure()
+    plt.plot(history["objective"], label="Objective")
+    plt.xlabel("Iterations")
+    plt.ylabel(f"Objective ({to_params.Objective[0].name})")
+    plt.grid(True)
+    plt.show()
+
+
 def topopt_mma(fe_solver, #hex_structural_fea.HexStructuralFEA or hex_thermal_fea.HexThermalFEA
                            to_params,
                             maxMMAIterations: int = 150, 
@@ -238,7 +305,11 @@ def topopt_mma(fe_solver, #hex_structural_fea.HexStructuralFEA or hex_thermal_fe
                 getattr(cn[0], "name", str(cn[0])) for cn in to_params.Constraints
             ]
             for idx, val in enumerate(c.flatten()):
-                inequality = ">=" if constraint_names[idx] == "STRESS_FAILURE_FACTOR" else "<="
+                # Every branch in compute_constraint_and_gradient computes
+                # c <= 0 (including STRESS_FAILURE_FACTOR, fixed to follow
+                # the same value/limit - 1.0 convention as every other
+                # constraint), so the displayed inequality is always "<=".
+                inequality = "<="
                 rhs = to_params.Constraints[idx][2]
                 print(
                     f"Constraint {idx+1} ({constraint_names[idx]}): {(val+1)*rhs:.3g} {inequality} {rhs:.3g}?"
@@ -353,8 +424,8 @@ def topopt_mma(fe_solver, #hex_structural_fea.HexStructuralFEA or hex_thermal_fe
 # ------------------------------ Script runner -------------------------------
 
 if __name__ == "__main__":
-    from topopt_structural_benchmarks import *
-    from topopt_thermal_benchmarks import *
+    from pyto.examples_benchmarks.topopt_structural_benchmarks import *
+    from pyto.examples_benchmarks.topopt_thermal_benchmarks import *
 
     print("-" * 50)
 

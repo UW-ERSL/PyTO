@@ -982,7 +982,7 @@ def get_cnodes_for_symmetryBC() -> np.ndarray:
 
 if __name__ == "__main__":
  
-    from hex_structural_examples import StructuralExamples,getStructuralProblem
+    from pyto.examples_benchmarks.hex_structural_examples import StructuralExamples,getStructuralProblem
 
     problem = StructuralExamples.BeamSurfaceLoad
     control = ControlType.ForceControl 

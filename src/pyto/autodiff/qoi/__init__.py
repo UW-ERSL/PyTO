@@ -111,17 +111,31 @@ def compute_constraint_and_gradient(to_params, sol: torch.Tensor, x: torch.Tenso
             # before Phase 4 (the real enum member is STRESS_FAILURE_FACTOR --
             # see topopt_common.py's TO_QOI and topopt_structural_benchmarks.py,
             # which actually constructs constraints with it, e.g.
-            # LBracketTopLoad_Vol_StressFailureFactor). Fixed the reference so
-            # this branch is reachable at all; the `1.0 / constraintLimit` term
-            # below is UNCHANGED from the inherited formula and its sign/
-            # reciprocal convention has not been re-verified against
-            # STRESS_FAILURE_FACTOR's "opposite of safety factor" semantics --
-            # flagged for follow-up, not fixed here.
+            # LBracketTopLoad_Vol_StressFailureFactor).
+            #
+            # The `1.0 / constraintLimit` term here was flagged, not fixed, in
+            # Phase 4 pending physics verification. Verified now: failure
+            # factor is defined as stress/yieldStrength (opposite of safety
+            # factor = yieldStrength/stress, per topopt_common.py's enum
+            # comment and the benchmark's own "failure limit is the opposite
+            # of safety factor" comment). The constraint failure_factor <=
+            # constraintLimit therefore means stress <= yieldStrength *
+            # constraintLimit, i.e. c = stress/(yieldStrength*constraintLimit)
+            # - 1.0 <= 0 -- matching the value/limit - 1.0 <= 0 pattern every
+            # other branch here uses. The old `1.0 / constraintLimit` term
+            # instead allowed stress up to yieldStrength/constraintLimit --
+            # with the benchmark's constraintLimit=0.5, that's stress <= 2x
+            # yield strength, the opposite of the intended "use at most half
+            # the material's strength" margin. Fixed to multiply by
+            # constraintLimit instead of dividing by it (see
+            # test_stress_failure_factor_constraint_direction in
+            # tests/test_qoi_gradients.py for the regression check).
             pnorm_stress, max_von_mises = compute_pnorm_stress_autograd(sol, x, fe_solver)
             yieldStrength = fe_solver.mat_prop.yield_strength
             normalized_pnorm = to_params.stress_scaling * pnorm_stress
-            c[m, 0] = normalized_pnorm / yieldStrength - 1.0 / constraintLimit
-            if max_von_mises > yieldStrength / constraintLimit:
+            allowed_stress = yieldStrength * constraintLimit
+            c[m, 0] = normalized_pnorm / allowed_stress - 1.0
+            if max_von_mises > allowed_stress:
                 to_params.stress_scaling = (
                     0.5 * (max_von_mises / pnorm_stress).item() + 0.5 * to_params.stress_scaling
                 )

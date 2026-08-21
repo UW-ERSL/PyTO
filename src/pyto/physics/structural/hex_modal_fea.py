@@ -152,8 +152,8 @@ class ModalFEA:
         eigenvector, eigenvalue, mode_number=mode, plotter=plotter)
 
 if __name__ == "__main__":    
-  import hex_modal_fea as fea
-  from hex_structural_examples import *
+  import pyto.physics.structural.hex_modal_fea as fea
+  from pyto.examples_benchmarks.hex_structural_examples import *
 
 
   problem = StructuralExamples.LBracket

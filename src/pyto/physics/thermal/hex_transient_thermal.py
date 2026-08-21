@@ -107,11 +107,11 @@ class HexTransientThermalFEA:
 
     
 if __name__ == "__main__":
-    from hex_thermal_examples import HexThermalExamples, getThermalProblem
-    import linear_solvers as lin_solv
+    from pyto.examples_benchmarks.hex_thermal_examples import HexThermalExamples, getThermalProblem
+    import pyto.solve.numpy_backend as lin_solv
     import time
 
-    from hex_transient_thermal_examples import HexTransientThermalExamples,getHexTransientThermalProblem 
+    from pyto.examples_benchmarks.hex_transient_thermal_examples import HexTransientThermalExamples,getHexTransientThermalProblem 
 
 
     nDOFDesired = 50000

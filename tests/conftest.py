@@ -33,13 +33,13 @@ THERMAL_NDOF = 300
 def structural_problem():
     """A small structural TO problem: mesh, mat_prop, bc, elem_body_force, to_params.
 
-    NOTE: getStructuralTOProblem() does not populate mesh.edofMat (only
-    mesh.edofMatStructural / mesh.edofMatThermal) -- HexStructuralFEA.solve()
-    still expects the flat mesh.edofMat name. Today, only PyTOGUI.py patches
-    this manually (see PyTOGUI.py:2951-2973) before constructing an FEA
-    solver from a mesh. We do the same patch here since it reflects the
-    real, current calling convention -- this gap itself is exercised
-    directly by test_drivers_smoke.py's xfail cases.
+    getStructuralTOProblem() only populates mesh.edofMatStructural, not the
+    generic mesh.edofMat the shared torch QOI code reads regardless of
+    physics -- set eagerly here too, though HexStructuralFEA.__init__ now
+    does this itself defensively (previously it didn't, and only
+    PyTOGUI.py patched this manually before constructing an FEA solver;
+    every other caller, e.g. topopt_run_benchmarks.py, hit an
+    AttributeError -- fixed directly in HexStructuralFEA/HexThermalFEA).
     """
     mesh, mat_prop, bc, elem_body_force, to_params = getStructuralTOProblem(
         StructuralTOExamples.ShortCantileverTipLoad, nDOFDesired=STRUCTURAL_NDOF
@@ -77,7 +77,7 @@ def structural_KE(structural_problem):
 
 @pytest.fixture(scope="session")
 def thermal_problem():
-    """A small thermal TO problem, same edofMat caveat as structural_problem."""
+    """A small thermal TO problem, same edofMat note as structural_problem."""
     mesh, mat_prop, bc, elem_body_force, to_params = getThermalTOProblem(
         ThermalTOExamples.HeatPlate, nDOFDesired=THERMAL_NDOF
     )

@@ -118,7 +118,7 @@ class TetTransientThermalFEA:
 if __name__ == "__main__":
     import time
     import matplotlib.pyplot as plt
-    from tet_transient_thermal_examples import TetTransientThermalExamples, getTetTransientThermalProblem
+    from pyto.examples_benchmarks.tet_transient_thermal_examples import TetTransientThermalExamples, getTetTransientThermalProblem
 
     nDOFDesired = 50000
     problem = TetTransientThermalExamples.ThickPlate

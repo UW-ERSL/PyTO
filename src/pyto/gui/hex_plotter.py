@@ -8,7 +8,7 @@ This module contains all plotting functionality for:
 - Mesh visualization
 
 Usage:
-    from hex_fea_plotter import HexFEAPlotter
+    from pyto.gui.hex_plotter import HexFEAPlotter
     
     plotter = HexFEAPlotter(mesh, camera_position=camera_pos)
     plotter.plot_pseudo_density(...)

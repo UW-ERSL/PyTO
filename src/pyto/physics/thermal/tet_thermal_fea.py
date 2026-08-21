@@ -150,7 +150,7 @@ class TetThermalFEA:
     plotter.show()
 if __name__ == "__main__":
     import time	
-    from tet_thermal_examples import TetThermalExamples, getTetThermalProblem
+    from pyto.examples_benchmarks.tet_thermal_examples import TetThermalExamples, getTetThermalProblem
   
     
     nDOFDesired = 10000

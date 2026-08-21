@@ -455,8 +455,8 @@ def topopt_levelset(feaMode,
 
 if __name__ == "__main__":    
 	
-	from topopt_structural_benchmarks import *
-	from topopt_thermal_benchmarks import *
+	from pyto.examples_benchmarks.topopt_structural_benchmarks import *
+	from pyto.examples_benchmarks.topopt_thermal_benchmarks import *
 	
 	print("-" * 50)
 	to_problem = StructuralTOExamples.Mitchell # Choose the TO problem

@@ -37,7 +37,7 @@ from pyto.autodiff.material_model import (
 
 def compute_objective_topological_sensitivity_compliance(to_params, sol: np.ndarray, x: np.ndarray,	fe_solver, KE,
 				material_model = None):
-	from topopt_common import TO_QOI
+	from pyto.topopt.common import TO_QOI
 
 	# Compute the compliance independent of objective
 	dofMat = fe_solver.mesh.edofMat
