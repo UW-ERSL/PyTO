@@ -1,8 +1,8 @@
 import time
 import numpy as np
-import linear_solvers as lin_sol
-import mat_lib
-import bound_cond
+import pyto.solve.numpy_backend as lin_sol
+import pyto.core.mat_lib as mat_lib
+import pyto.core.bc as bound_cond
 import pyvista as pv # pip install pyvista
 from numba import njit
 import scipy.sparse as sp

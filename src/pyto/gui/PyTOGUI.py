@@ -10,24 +10,24 @@ from PyQt5.QtCore import QSize
 from PyQt5.QtGui import QIcon
 from pyvistaqt import QtInteractor
 from PyQt5.QtCore import pyqtSignal, QObject
-from stl_reader import STLGeom
+from pyto.io.stl_reader import STLGeom
 
-import bound_cond
-import mat_lib
-import linear_solvers
-from hex_mesher import HexMesher
-from tet_mesher import TetMesher
-import deflation
-from hex_thermal_fea import HexThermalFEA 
-import hex_structural_fea
+import pyto.core.bc as bound_cond
+import pyto.core.mat_lib as mat_lib
+import pyto.solve.numpy_backend as linear_solvers
+from pyto.core.hex_mesher import HexMesher
+from pyto.core.tet_mesher import TetMesher
+import pyto.solve.deflation as deflation
+from pyto.physics.thermal.hex_thermal_fea import HexThermalFEA 
+import pyto.physics.structural.hex_structural_fea as hex_structural_fea
 from matplotlib.colors import ListedColormap
-from topopt_mma import topopt_mma
-from topopt_common import *
-from topopt_thermostructural_sensitivity import ThermoElasticSensitivity
-from topopt_ocm import topopt_optimality_criteria
-from topopt_pareto import topopt_pareto
-from topopt_levelset import topopt_levelset
-from topopt_stl_recovery import extract_isosurface_cnn, subtract_voids_from_stl
+from pyto.topopt.drivers.mma import topopt_mma
+from pyto.topopt.common import *
+from pyto.physics.thermoelastic.topopt_thermostructural_sensitivity import ThermoElasticSensitivity
+from pyto.topopt.drivers.oc import topopt_optimality_criteria
+from pyto.topopt.drivers.pareto import topopt_pareto
+from pyto.topopt.drivers.levelset import topopt_levelset
+from pyto.io.topopt_stl_recovery import extract_isosurface_cnn, subtract_voids_from_stl
 
 #This is optional; requires win32com
 #from solidworks_interface import SolidWorksInterface

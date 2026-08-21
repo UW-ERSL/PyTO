@@ -1,12 +1,13 @@
 
-from topopt_common import *
-from topopt_material_model import *
-from topopt_obj_cons_sensitivities import *
+from pyto.topopt.common import *
+from pyto.autodiff.material_model import *
+from pyto.autodiff.qoi import *
+from pyto.autodiff.reference_adjoint.legacy_sensitivities import compute_volume_constraint_and_gradient
 import time
 
-from topopt_structural_benchmarks import *
-from topopt_thermal_benchmarks import *
-from topopt_thermostructural_benchmarks import *
+from pyto.examples_benchmarks.topopt_structural_benchmarks import *
+from pyto.examples_benchmarks.topopt_thermal_benchmarks import *
+from pyto.examples_benchmarks.topopt_thermostructural_benchmarks import *
 from pyto.topopt.drivers._shared import setup_driver_state
 
 def run_topopt_ocm(to_problem):

@@ -13,11 +13,11 @@ import numpy as np
 import pytest
 import torch
 
-import topopt_mma
-import topopt_ocm
-import topopt_levelset
-import topopt_pareto
-from topopt_common import FEA_MODE
+import pyto.topopt.drivers.mma as topopt_mma
+import pyto.topopt.drivers.oc as topopt_ocm
+import pyto.topopt.drivers.levelset as topopt_levelset
+import pyto.topopt.drivers.pareto as topopt_pareto
+from pyto.topopt.common import FEA_MODE
 
 
 def test_mma_structural_runs(structural_fe_solver, structural_problem):

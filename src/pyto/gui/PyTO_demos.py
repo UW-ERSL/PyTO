@@ -9,26 +9,26 @@ import numpy as np
 import matplotlib.pyplot as plt
 
 
-from stl_reader import STLGeom
-from hex_mesher import HexMesher
-from linear_solvers import Solvers
-from deflation import DeflationSolver
-from hex_structural_fea import HexStructuralFEA
-from hex_modal_fea import ModalFEA
-from hex_thermal_fea import HexThermalFEA
-from topopt_mma import topopt_mma
-from topopt_pareto import topopt_pareto
-from topopt_ocm import topopt_optimality_criteria
-from tet_mesher import TetMesher
-from hex_structural_examples import *
-from hex_thermal_examples import *
+from pyto.io.stl_reader import STLGeom
+from pyto.core.hex_mesher import HexMesher
+from pyto.solve.numpy_backend import Solvers
+from pyto.solve.deflation import DeflationSolver
+from pyto.physics.structural.hex_structural_fea import HexStructuralFEA
+from pyto.physics.structural.hex_modal_fea import ModalFEA
+from pyto.physics.thermal.hex_thermal_fea import HexThermalFEA
+from pyto.topopt.drivers.mma import topopt_mma
+from pyto.topopt.drivers.pareto import topopt_pareto
+from pyto.topopt.drivers.oc import topopt_optimality_criteria
+from pyto.core.tet_mesher import TetMesher
+from pyto.examples_benchmarks.hex_structural_examples import *
+from pyto.examples_benchmarks.hex_thermal_examples import *
 
-from topopt_structural_benchmarks import *
-from topopt_thermal_benchmarks import *
-from tet_thermal_examples import  *
-from tet_thermal_fea import TetThermalFEA
-from tet_structural_examples import *
-from tet_structural_fea import TetStructuralFEA
+from pyto.examples_benchmarks.topopt_structural_benchmarks import *
+from pyto.examples_benchmarks.topopt_thermal_benchmarks import *
+from pyto.examples_benchmarks.tet_thermal_examples import  *
+from pyto.physics.thermal.tet_thermal_fea import TetThermalFEA
+from pyto.examples_benchmarks.tet_structural_examples import *
+from pyto.physics.structural.tet_structural_fea import TetStructuralFEA
 
 
 class pyTODemos(enum.Enum):

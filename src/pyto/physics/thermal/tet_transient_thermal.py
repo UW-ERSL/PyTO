@@ -1,9 +1,9 @@
 import numpy as np
-import linear_solvers as lin_sol
-import mat_lib
-import bound_cond
-from tet_thermal_fea import tet4_stiffness_matrix_thermal, tet4_specific_heat_matrix
-from tet_thermal_examples import createThickPlateThermalProblemTet
+import pyto.solve.numpy_backend as lin_sol
+import pyto.core.mat_lib as mat_lib
+import pyto.core.bc as bound_cond
+from pyto.physics.thermal.tet_thermal_fea import tet4_stiffness_matrix_thermal, tet4_specific_heat_matrix
+from pyto.examples_benchmarks.tet_thermal_examples import createThickPlateThermalProblemTet
 import time
 import scipy.sparse as sp
 

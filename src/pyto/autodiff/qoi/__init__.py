@@ -9,7 +9,7 @@ live in pyto.autodiff.reference_adjoint, used only as a test oracle.
 """
 import torch
 
-from topopt_common import TO_QOI
+from pyto.topopt.common import TO_QOI
 
 from pyto.autodiff.qoi.compliance import compute_compliance_torch
 from pyto.autodiff.qoi.volume_fraction import compute_volume_constraint_torch

@@ -2,16 +2,16 @@
 import time
 import numpy as np # pip install numpy
 import matplotlib.pyplot as plt # pip install matplotlib
-import hex_structural_fea as fea
-import deflation
-import linear_solvers as lin_solv
+import pyto.physics.structural.hex_structural_fea as fea
+import pyto.solve.deflation as deflation
+import pyto.solve.numpy_backend as lin_solv
 import os
-from topopt_mma import topopt_mma
-from topopt_ocm import topopt_optimality_criteria	
-from topopt_pareto import topopt_pareto
-from hex_structural_examples import *
-from topopt_common import *
-from topopt_structural_benchmarks import *
+from pyto.topopt.drivers.mma import topopt_mma
+from pyto.topopt.drivers.oc import topopt_optimality_criteria	
+from pyto.topopt.drivers.pareto import topopt_pareto
+from pyto.examples_benchmarks.hex_structural_examples import *
+from pyto.topopt.common import *
+from pyto.examples_benchmarks.topopt_structural_benchmarks import *
 import itertools
 
 dsolver = deflation.DeflationSolver()

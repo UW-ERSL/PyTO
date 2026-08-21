@@ -21,7 +21,7 @@ from pyto.autodiff.material_model import (
     get_structural_material_model_sensitivity,
     get_thermal_material_model_sensitivity,
 )
-import linear_solvers
+import pyto.solve.numpy_backend as linear_solvers
 
 
 def compute_volume_constraint_and_gradient(x: np.ndarray,

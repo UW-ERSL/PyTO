@@ -1,12 +1,12 @@
 import numpy as np
-import mat_lib
-import bound_cond
-import hex_mesher
+import pyto.core.mat_lib as mat_lib
+import pyto.core.bc as bound_cond
+import pyto.core.hex_mesher as hex_mesher
 import os
 import enum
 import scipy.sparse as spy_sprs
-from hex_structural_examples import StructuralExamples
-from stl_reader import STLGeom
+from pyto.examples_benchmarks.hex_structural_examples import StructuralExamples
+from pyto.io.stl_reader import STLGeom
 from scipy.sparse import lil_matrix
 script_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))  # points at src/, matching pre-Phase-6 location (this file moved from src/ to src/pyto/examples_benchmarks/)
 

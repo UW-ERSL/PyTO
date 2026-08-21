@@ -1,6 +1,6 @@
 import enum
-from hex_thermal_examples import *
-from topopt_common import *
+from pyto.examples_benchmarks.hex_thermal_examples import *
+from pyto.topopt.common import *
 
 class ThermalTOExamples(enum.Enum):
 	HeatPlate = enum.auto()

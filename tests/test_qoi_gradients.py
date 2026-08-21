@@ -14,17 +14,19 @@ can't hide.
 import numpy as np
 import torch
 
-from topopt_material_model import MaterialModel
-from topopt_obj_cons_sensitivities import (
+from pyto.autodiff.material_model import MaterialModel
+from pyto.autodiff.qoi import (
     compute_compliance_torch,
     compute_volume_constraint_torch,
     compute_pnorm_stress_autograd,
     compute_mass_torch,
     compute_gvector_torch,
+)
+from pyto.autodiff.reference_adjoint import (
     compute_compliance,
     compute_pnorm_stress_and_sensitivity,
 )
-from topopt_common import TOParams, TO_QOI
+from pyto.topopt.common import TOParams, TO_QOI
 
 EPS = 1e-6
 REL_TOL = 1e-4
@@ -302,8 +304,8 @@ def test_pareto_compliance_value_matches_compute_compliance_torch(structural_fe_
     # different code paths. This is the check that would have caught a
     # sign/indexing slip introduced while fixing the torch/NumPy solve
     # boundary, without claiming to validate a non-existent "gradient of T".
-    from topopt_common import FEA_MODE, TOParams, TO_QOI
-    from topopt_pareto import compute_objective_topological_sensitivity_compliance
+    from pyto.topopt.common import FEA_MODE, TOParams, TO_QOI
+    from pyto.topopt.drivers.pareto import compute_objective_topological_sensitivity_compliance
 
     fe = structural_fe_solver
     x0_t = 0.5 * torch.ones(fe.mesh.num_elems, dtype=torch.float64)

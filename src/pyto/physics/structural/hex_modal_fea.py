@@ -2,16 +2,16 @@
 
 import time
 import numpy as np
-import linear_solvers as lin_sol
-import hex_element_stiffness as elem_stiff
-import mat_lib
-import bound_cond
-import linear_solvers as lin_solv
+import pyto.solve.numpy_backend as lin_sol
+import pyto.physics.hex_element_stiffness as elem_stiff
+import pyto.core.mat_lib as mat_lib
+import pyto.core.bc as bound_cond
+import pyto.solve.numpy_backend as lin_solv
 import os
 
 import scipy.sparse
 from scipy.sparse.linalg import eigsh
-from hex_plotter import HexFEAPlotter 
+from pyto.gui.hex_plotter import HexFEAPlotter
 
 script_dir = os.path.dirname(os.path.abspath(__file__))
 

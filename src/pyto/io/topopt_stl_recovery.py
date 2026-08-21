@@ -3,7 +3,7 @@ import numpy as np
 import trimesh
 import torch
 import torch.nn as nn
-from topopt_structural_benchmarks import *
+from pyto.examples_benchmarks.topopt_structural_benchmarks import *
 
 
 class CNN3D(nn.Module):

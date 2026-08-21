@@ -1,16 +1,16 @@
 """Optimization routines for topology optimization."""
 
-from topopt_common import *
-from topopt_material_model import *
-from topopt_obj_cons_sensitivities import *
+from pyto.topopt.common import *
+from pyto.autodiff.material_model import *
+from pyto.autodiff.qoi import *
 from scipy.ndimage import distance_transform_edt
 from matplotlib import pyplot as plt
 import time
-from hex_mesher import DISTANCE_TYPE
+from pyto.core.hex_mesher import DISTANCE_TYPE
 
-from topopt_structural_benchmarks import *
-from topopt_thermal_benchmarks import *
-from topopt_thermostructural_benchmarks import *
+from pyto.examples_benchmarks.topopt_structural_benchmarks import *
+from pyto.examples_benchmarks.topopt_thermal_benchmarks import *
+from pyto.examples_benchmarks.topopt_thermostructural_benchmarks import *
     
 
 def compute_compliance_and_sensitivity(feaMode, rho, fe_solver,void = 0.0001):

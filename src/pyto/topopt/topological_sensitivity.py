@@ -28,7 +28,7 @@ placeholder for the day the two copies get consolidated.
 """
 import numpy as np
 
-import linear_solvers
+import pyto.solve.numpy_backend as linear_solvers
 from pyto.autodiff.material_model import (
     get_structural_material_model_scaling,
     get_thermal_material_model_scaling,

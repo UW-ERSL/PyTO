@@ -9,7 +9,7 @@ SPD system, independent of any physics.
 import numpy as np
 import torch
 
-from torch_spsolve import SparseLinearSolve, Solvers
+from pyto.autodiff.sparse_solve import SparseLinearSolve, Solvers
 
 
 def _random_spd_sparse(n, density=0.4, seed=0):

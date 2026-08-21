@@ -2,20 +2,20 @@
 
 import time
 import numpy as np
-import linear_solvers as lin_sol
-import hex_element_stiffness as elem_stiff
-import mat_lib
-import bound_cond
-from bound_cond import apply_dirichlet_bc_torch
+import pyto.solve.numpy_backend as lin_sol
+import pyto.physics.hex_element_stiffness as elem_stiff
+import pyto.core.mat_lib as mat_lib
+import pyto.core.bc as bound_cond
+from pyto.core.bc import apply_dirichlet_bc_torch
 import os
 import pyvista as pv
 import scipy.sparse as sp
-import deflation
-import torch_spsolve
-from torch_spsolve import solve as sparse_spsolve
-from topopt_material_model import *
-from hex_thermal_examples import HexThermalExamples
-from hex_plotter import HexFEAPlotter
+import pyto.solve.deflation as deflation
+import pyto.autodiff.sparse_solve as torch_spsolve
+from pyto.autodiff.sparse_solve import solve as sparse_spsolve
+from pyto.autodiff.material_model import *
+from pyto.examples_benchmarks.hex_thermal_examples import HexThermalExamples
+from pyto.gui.hex_plotter import HexFEAPlotter
 
 script_dir = os.path.dirname(os.path.abspath(__file__))
 

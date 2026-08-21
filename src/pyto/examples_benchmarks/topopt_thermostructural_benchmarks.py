@@ -1,6 +1,6 @@
 import enum
-from hex_thermostructural_examples import *
-from topopt_common import *
+from pyto.examples_benchmarks.hex_thermostructural_examples import *
+from pyto.topopt.common import *
 
 
 # The actual implementations are in topopt_structural_benchmarks.py and topopt_thermal_benchmarks.py

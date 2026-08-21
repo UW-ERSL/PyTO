@@ -584,7 +584,7 @@ if __name__ == "__main__":
 
     
     tetmesh = TetMesher()
-    script_dir = os.path.dirname(os.path.abspath(__file__))
+    script_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
     stlFileName = os.path.join(script_dir, '../Models/Impeller/Impeller.STL')
     stlFileName = os.path.join(script_dir, '../Models/Comb/Comb.STL')
     tetmesh.createTetMeshFromSTLFile(stlFileName, nElemsDesired=20000,mergeFacets=True, elemSizeFunction=cube_size_function_linear)

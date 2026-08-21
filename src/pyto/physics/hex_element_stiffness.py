@@ -2,7 +2,7 @@
 
 import numpy as np
 import scipy.special as spy_spl
-import mat_lib
+import pyto.core.mat_lib as mat_lib
 from numba import njit
  
 @njit(cache=True)

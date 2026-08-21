@@ -6,9 +6,9 @@ import numpy as np
 import pyvista as pv # pip install pyvista
 from scipy.sparse import coo_matrix
 import time
-from stl_reader import STLGeom
+from pyto.io.stl_reader import STLGeom
 import enum
-from hex_plotter import HexFEAPlotter
+from pyto.gui.hex_plotter import HexFEAPlotter
 from scipy.spatial import cKDTree
 @dataclasses.dataclass
 class Extent:
@@ -1503,7 +1503,7 @@ if __name__ == "__main__":
     import os
     import time
     mesh = HexMesher()
-    script_dir = os.path.dirname(os.path.abspath(__file__))
+    script_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
     stlFileName = os.path.join(script_dir, '../Models/LBracket/LBracket.STL')
     #stlFileName = os.path.join(script_dir, '../Models/Overhang/Overhang.STL')
     #stlFileName = os.path.join(script_dir, '../Models/Inverter/Inverter.STL')

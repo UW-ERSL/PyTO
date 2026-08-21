@@ -1,5 +1,5 @@
-from solidworks_interface import SolidWorksInterface 
-from stl_reader import STLGeom
+from pyto.io.solidworks_interface import SolidWorksInterface 
+from pyto.io.stl_reader import STLGeom
 import os
 script_dir = os.path.dirname(os.path.abspath(__file__))
 sw = SolidWorksInterface()

@@ -1,8 +1,8 @@
 import numpy as np
 import os
-from tet_mesher import TetMesher
-import mat_lib
-import bound_cond
+from pyto.core.tet_mesher import TetMesher
+import pyto.core.mat_lib as mat_lib
+import pyto.core.bc as bound_cond
 import enum
 script_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))  # points at src/, matching pre-Phase-6 location (this file moved from src/ to src/pyto/examples_benchmarks/)
 

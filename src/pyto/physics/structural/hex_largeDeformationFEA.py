@@ -3,8 +3,8 @@ from scipy.sparse import csr_matrix
 import pypardiso # pip install pypardiso
 from scipy.special import roots_legendre
 import numpy as np
-import deflation
-import linear_solvers 
+import pyto.solve.deflation as deflation
+import pyto.solve.numpy_backend as linear_solvers
 import pyvista as pv
 from numba import njit
 import time

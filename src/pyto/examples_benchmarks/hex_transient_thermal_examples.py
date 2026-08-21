@@ -1,8 +1,8 @@
 import numpy as np
 import os
-from hex_mesher import HexMesher
-import mat_lib
-import bound_cond
+from pyto.core.hex_mesher import HexMesher
+import pyto.core.mat_lib as mat_lib
+import pyto.core.bc as bound_cond
 import enum
 script_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))  # points at src/, matching pre-Phase-6 location (this file moved from src/ to src/pyto/examples_benchmarks/)
 

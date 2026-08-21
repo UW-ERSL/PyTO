@@ -1,7 +1,7 @@
-from topopt_common import *
-from topopt_obj_cons_sensitivities import *
-from topopt_material_model import *
-from torch_spsolve import SparseLinearSolve, Solvers
+from pyto.topopt.common import *
+from pyto.autodiff.qoi import *
+from pyto.autodiff.material_model import *
+from pyto.autodiff.sparse_solve import SparseLinearSolve, Solvers
 import time
 import matplotlib.pyplot as plt
 from pyto.topopt.drivers.mmaWrapper import runMMA

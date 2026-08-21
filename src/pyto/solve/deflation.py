@@ -12,7 +12,7 @@ from typing import TypeAlias, Union
 import numpy as np
 import scipy.sparse as spy_sprs
 import scipy.linalg as spy_linalg
-from hex_mesher import HexMesher
+from pyto.core.hex_mesher import HexMesher
 
 try:
 	import cupy as cp

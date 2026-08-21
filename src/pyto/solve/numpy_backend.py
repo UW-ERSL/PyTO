@@ -19,7 +19,7 @@ try:# Windows does not support petsc, so we skip
 except ImportError:
   PETSc = None
 
-import bound_cond
+import pyto.core.bc as bound_cond
 from scipy.linalg import null_space
 
 class Preconditioners(enum.Enum):

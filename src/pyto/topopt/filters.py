@@ -2,7 +2,7 @@
 
 import numpy as np
 from scipy.sparse import coo_matrix
-import hex_mesher
+import pyto.core.hex_mesher as hex_mesher
 
 
 def createSmoothingFilter(mesh: hex_mesher.HexMesher, rel_filter_radius: float = 1.5):

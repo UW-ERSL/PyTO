@@ -17,13 +17,13 @@ codebase (also touching hex_structural_fea.py, pyto.autodiff.qoi.compliance,
 reintroducing this file's dependency on the edofMat patch or rushing a
 bigger change than this phase's scope.
 """
-from topopt_common import *
+from pyto.topopt.common import *
 import time
 import numpy as np
 
-from topopt_structural_benchmarks import *
-from topopt_thermal_benchmarks import *
-from topopt_thermostructural_benchmarks import *
+from pyto.examples_benchmarks.topopt_structural_benchmarks import *
+from pyto.examples_benchmarks.topopt_thermal_benchmarks import *
+from pyto.examples_benchmarks.topopt_thermostructural_benchmarks import *
 
 
 #################################################################

@@ -1,13 +1,13 @@
-from topopt_thermostructural_benchmarks import ThermoStructuralTOExamples
-from topopt_common import *
-from topopt_mma import topopt_mma
-from topopt_ocm import topopt_optimality_criteria	
-from topopt_pareto import topopt_pareto
+from pyto.examples_benchmarks.topopt_thermostructural_benchmarks import ThermoStructuralTOExamples
+from pyto.topopt.common import *
+from pyto.topopt.drivers.mma import topopt_mma
+from pyto.topopt.drivers.oc import topopt_optimality_criteria	
+from pyto.topopt.drivers.pareto import topopt_pareto
 
-from topopt_levelset import topopt_levelset	
-from topopt_structural_benchmarks import *
-from topopt_thermal_benchmarks import *
-from topopt_thermostructural_benchmarks import *
+from pyto.topopt.drivers.levelset import topopt_levelset	
+from pyto.examples_benchmarks.topopt_structural_benchmarks import *
+from pyto.examples_benchmarks.topopt_thermal_benchmarks import *
+from pyto.examples_benchmarks.topopt_thermostructural_benchmarks import *
 import time
 import glob
 import pandas as pd

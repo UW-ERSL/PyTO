@@ -1,9 +1,7 @@
 """Shared fixtures for the PyTO test suite.
 
-The ``src/`` package uses flat, non-package imports everywhere
-(``import hex_mesher``, ``from topopt_common import *``), so every module
-assumes ``src/`` is directly on ``sys.path``. This conftest adds it once so
-existing modules can be imported unmodified from ``tests/``.
+``src/`` holds the ``pyto`` package; this conftest adds ``src/`` to
+``sys.path`` once so ``import pyto...`` works from ``tests/``.
 """
 import os
 import sys
@@ -15,15 +13,15 @@ SRC_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__)
 if SRC_DIR not in sys.path:
     sys.path.insert(0, SRC_DIR)
 
-import deflation
-import hex_structural_fea
-import hex_thermal_fea
-import torch_spsolve
-import linear_solvers
-import hex_element_stiffness
-from topopt_material_model import MaterialModel
-from topopt_structural_benchmarks import StructuralTOExamples, getStructuralTOProblem
-from topopt_thermal_benchmarks import ThermalTOExamples, getThermalTOProblem
+import pyto.solve.deflation as deflation
+import pyto.physics.structural.hex_structural_fea as hex_structural_fea
+import pyto.physics.thermal.hex_thermal_fea as hex_thermal_fea
+import pyto.autodiff.sparse_solve as torch_spsolve
+import pyto.solve.numpy_backend as linear_solvers
+import pyto.physics.hex_element_stiffness as hex_element_stiffness
+from pyto.autodiff.material_model import MaterialModel
+from pyto.examples_benchmarks.topopt_structural_benchmarks import StructuralTOExamples, getStructuralTOProblem
+from pyto.examples_benchmarks.topopt_thermal_benchmarks import ThermalTOExamples, getThermalTOProblem
 
 
 # Small fixture sizes chosen for fast test turnaround (~1-2s to mesh).

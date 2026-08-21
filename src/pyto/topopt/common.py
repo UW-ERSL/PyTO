@@ -3,17 +3,17 @@ import enum
 import numpy as np
 from pyto.topopt.filters import *
 import matplotlib.pyplot as plt
-import linear_solvers as lin_solv
-import hex_mesher
-import hex_structural_fea 
-import hex_element_stiffness
-from topopt_material_model import *
+import pyto.solve.numpy_backend as lin_solv
+import pyto.core.hex_mesher as hex_mesher
+import pyto.physics.structural.hex_structural_fea as hex_structural_fea
+import pyto.physics.hex_element_stiffness as hex_element_stiffness
+from pyto.autodiff.material_model import *
 from dataclasses import dataclass, field
 from typing import Tuple
-import hex_thermal_fea 
-import deflation
-import linear_solvers
-from topopt_material_model import *
+import pyto.physics.thermal.hex_thermal_fea as hex_thermal_fea 
+import pyto.solve.deflation as deflation
+import pyto.solve.numpy_backend as linear_solvers
+from pyto.autodiff.material_model import *
 
 DIRECT_SOLVER_DOF_CUTOFF = 100000 #  dof limit for direct solver, for greater number of dof, iterative solver is used
 

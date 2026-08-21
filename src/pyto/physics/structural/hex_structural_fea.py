@@ -1,17 +1,17 @@
 """Structural Finite Element Analysis."""
 
-from topopt_material_model import *
-from topopt_material_model import _EVOID_RELATIVE, _PNORM_EXPONENT
+from pyto.autodiff.material_model import *
+from pyto.autodiff.material_model import _EVOID_RELATIVE, _PNORM_EXPONENT
 import numpy as np
 import os
 import pyvista as pv
-import mat_lib
-import bound_cond
-from bound_cond import apply_dirichlet_bc_torch
-import hex_element_stiffness
-import deflation
-import torch_spsolve
-from torch_spsolve import solve as sparse_spsolve
+import pyto.core.mat_lib as mat_lib
+import pyto.core.bc as bound_cond
+from pyto.core.bc import apply_dirichlet_bc_torch
+import pyto.physics.hex_element_stiffness as hex_element_stiffness
+import pyto.solve.deflation as deflation
+import pyto.autodiff.sparse_solve as torch_spsolve
+from pyto.autodiff.sparse_solve import solve as sparse_spsolve
 
 
 script_dir = os.path.dirname(os.path.abspath(__file__))

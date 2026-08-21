@@ -4,13 +4,13 @@ import json
 import time
 import numpy as np
 import argparse
-import linear_solvers as lin_solv
-import hex_structural_fea as fea
-import mat_lib
-import bound_cond
-from stl_reader import STLGeom
-from hex_mesher import HexMesher
-import hex_thermal_fea
+import pyto.solve.numpy_backend as lin_solv
+import pyto.physics.structural.hex_structural_fea as fea
+import pyto.core.mat_lib as mat_lib
+import pyto.core.bc as bound_cond
+from pyto.io.stl_reader import STLGeom
+from pyto.core.hex_mesher import HexMesher
+import pyto.physics.thermal.hex_thermal_fea as hex_thermal_fea
 import glob
 
 class ProjectManager:

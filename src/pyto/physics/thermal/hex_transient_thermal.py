@@ -1,8 +1,8 @@
 import numpy as np
-import linear_solvers
-import mat_lib
-import bound_cond
-import hex_element_stiffness as es
+import pyto.solve.numpy_backend as linear_solvers
+import pyto.core.mat_lib as mat_lib
+import pyto.core.bc as bound_cond
+import pyto.physics.hex_element_stiffness as es
 import matplotlib.pyplot as plt
 import scipy.sparse as sp
 

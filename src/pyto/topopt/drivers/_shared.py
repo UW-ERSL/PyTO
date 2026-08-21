@@ -12,9 +12,9 @@ the one place it's defined now.
 """
 import numpy as np
 
-import hex_element_stiffness
-import hex_structural_fea
-import hex_thermal_fea
+import pyto.physics.hex_element_stiffness as hex_element_stiffness
+import pyto.physics.structural.hex_structural_fea as hex_structural_fea
+import pyto.physics.thermal.hex_thermal_fea as hex_thermal_fea
 from pyto.topopt.common import createFilters, find_elements_with_forces
 
 
