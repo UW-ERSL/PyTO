@@ -368,3 +368,28 @@ def test_stress_failure_factor_constraint_direction(structural_fe_solver):
     assert abs(c_at_boundary) < 1e-8, f"expected c==0 at the boundary limit, got {c_at_boundary}"
     assert c_looser < 0, f"looser constraintLimit should satisfy the constraint, got c={c_looser}"
     assert c_tighter > 0, f"tighter constraintLimit should violate the constraint, got c={c_tighter}"
+
+
+def test_pareto_topological_sensitivity_functions_are_the_shared_module_s():
+    # Regression test for the Phase 5/7 duplication fix: pareto.py used to
+    # carry its own second, independent copy of these four functions
+    # rather than importing them from pyto.topopt.topological_sensitivity
+    # (see that module's docstring for the full history -- consolidation
+    # was deferred until mesh.edofMat became unconditionally reliable).
+    # Checking object identity (not just "behaves the same") makes sure a
+    # future edit can't silently reintroduce a second copy that drifts
+    # from this one, the same way the Phase 2 shim-transparency checks did
+    # for the flat-path compatibility shims.
+    import pyto.topopt.drivers.pareto as pareto_mod
+    import pyto.topopt.topological_sensitivity as ts_mod
+
+    for name in (
+        "compute_objective_topological_sensitivity_compliance",
+        "computeStructuralTopologicalSensitivity",
+        "compute_pnorm_stress_and_TS",
+        "computeThermalTopologicalSensitivity",
+    ):
+        assert getattr(pareto_mod, name) is getattr(ts_mod, name), (
+            f"{name} in pareto.py is not the same object as "
+            "pyto.topopt.topological_sensitivity's -- duplication reintroduced?"
+        )

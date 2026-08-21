@@ -17,6 +17,7 @@ import pyto.topopt.drivers.mma as topopt_mma
 import pyto.topopt.drivers.oc as topopt_ocm
 import pyto.topopt.drivers.levelset as topopt_levelset
 import pyto.topopt.drivers.pareto as topopt_pareto
+import pyto.autodiff.material_model as material_model_module
 from pyto.topopt.common import FEA_MODE
 
 
@@ -135,3 +136,43 @@ def test_pareto_structural_runs(structural_fe_solver, structural_problem):
     target_volfrac = to_params.Constraints[0][2]
     assert abs(history["volfrac"][-1] - target_volfrac) < 1e-6
     assert history["volfrac"][0] > history["volfrac"][-1]
+
+
+def test_oc_use_continuation_does_not_leak_simp_penalty_state(structural_fe_solver, structural_problem):
+    # Regression test for a state-leak hazard fixed after being flagged:
+    # topopt_optimality_criteria's use_continuation=True path mutates
+    # module-global SIMP penalty state in pyto.autodiff.material_model
+    # (_SIMP_STRUCTURAL_PENALTY/_SIMP_THERMAL_PENALTY) via
+    # initialize_SIMP_*/increment_SIMP_* -- the same category of bug as
+    # stress_scaling before its Phase 4 fix (a mutable function attribute
+    # shared process-wide), just via a plain module global instead. No
+    # caller currently sets use_continuation=True (dormant, not currently
+    # reachable through any driver wrapper or the GUI), but the hazard is
+    # real the moment it is: a run using continuation would leave the
+    # global at whatever value its last ramping step reached, silently
+    # changing every *other* unrelated optimization/QOI call's SIMP
+    # penalty afterward. Fixed with a save/restore in a try/finally
+    # spanning the whole call, so the global is always restored -- on
+    # success, on early convergence, and on exception -- not just cleaned
+    # up in the (nonexistent) single unconditional exit path.
+    before_structural = material_model_module._SIMP_STRUCTURAL_PENALTY
+    before_thermal = material_model_module._SIMP_THERMAL_PENALTY
+
+    _, _, _, _, to_params = structural_problem
+    sol, history, success, error_msg, n_feas = topopt_ocm.topopt_optimality_criteria(
+        fe_solver=structural_fe_solver,
+        to_params=to_params,
+        maxIterations=25,   # enough for at least 2 continuation ramp steps (every 10 iterations)
+        use_continuation=True,
+        print_progress=False,
+        plot_progress=False,
+    )
+
+    assert material_model_module._SIMP_STRUCTURAL_PENALTY == before_structural, (
+        "SIMP structural penalty leaked out of topopt_optimality_criteria "
+        f"(was {before_structural}, now {material_model_module._SIMP_STRUCTURAL_PENALTY})"
+    )
+    assert material_model_module._SIMP_THERMAL_PENALTY == before_thermal, (
+        "SIMP thermal penalty leaked out of topopt_optimality_criteria "
+        f"(was {before_thermal}, now {material_model_module._SIMP_THERMAL_PENALTY})"
+    )

@@ -7,13 +7,13 @@ References:
 -----------
 See pdf documentation for detailed derivations and explanations.
 
-CAUTION: this module's ThermoElasticSensitivity is a second, independent
-implementation of the same concept as
-pyto.physics.thermoelastic.check_thermoelasticity_sensitivity's
-ThermoElasticSensitivity class -- not consolidated (same category of
-duplication already flagged for pareto.py's topological-sensitivity
-functions vs. pyto.topopt.topological_sensitivity in Phase 5). This is
-the one PyTOGUI.py actually imports and uses.
+This is the ThermoElasticSensitivity implementation PyTOGUI.py imports
+and uses. pyto.physics.thermoelastic.check_thermoelasticity_sensitivity
+used to carry a second, byte-for-byte-identical copy of this class
+(confirmed via diff -- same category of duplication already fixed for
+pareto.py's topological-sensitivity functions vs.
+pyto.topopt.topological_sensitivity); that file now imports the class
+from here instead.
 """
 
 import numpy as np
