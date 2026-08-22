@@ -283,8 +283,9 @@ class HexStructuralFEA:
       #print(f"Maximum von Mises stress: {np.max(self.vonMisesStress):.4e}")
       return 
 #################################################################
-  def plot_mesh(self, title = None,plot_bc = True,rel_arrow_scale = 0.5, 
-                auto_close = True, save_path=None,offsetArrow = False,transparency = 1.0, plotter=None):
+  def plot_mesh(self, title = None,plot_bc = True,rel_arrow_scale = 0.5,
+                auto_close = True, save_path=None,offsetArrow = False,transparency = 1.0, plotter=None,
+                camera_position=None):
     
     self.pyVistaPlotter.clear()
     if (title is None):
@@ -345,7 +346,6 @@ class HexStructuralFEA:
           plotter.show(interactive_update=True, auto_close=False)
       else:
         plotter = pv.Plotter(off_screen=True) # for saving images
-        plotter.camera_position =self.camera_position
         plotter.enable_anti_aliasing()
       # Add coordinate axes widget
       plotter.add_axes(
@@ -413,6 +413,15 @@ class HexStructuralFEA:
     # Save image if path is provided
 
     if save_path:
+      # Set the camera position after all geometry is in the scene, not
+      # before (as this used to do at plotter-creation time) -- a string
+      # preset like 'xy'/'iso' fits the view to the renderer's current
+      # data bounds, which are empty/default before add_mesh() runs. That
+      # produced wildly inconsistent framing across problems (some
+      # cropped/zoomed-in, some tiny/zoomed-out in the middle of a blank
+      # frame) depending on each mesh's actual size relative to pyvista's
+      # camera default, not the mesh itself.
+      plotter.camera_position = camera_position if camera_position is not None else self.camera_position
       plotter.screenshot(save_path)
       plotter.close()
     else:

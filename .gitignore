@@ -8,6 +8,7 @@
 *_optimized.stl
 *.nbc
 *.nbi
+*.log
 /PyTOSlides
 /Results
 __pycache__/

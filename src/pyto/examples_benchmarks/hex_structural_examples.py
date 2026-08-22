@@ -1966,7 +1966,7 @@ def createBliskQuarterProblem(nDOFDesired: int = 10000,rpm = 0,radialForce = 0,
 def createGEGrabCADProblem(nDOFDesired: int = 50000, axialLoad = 10000): 
  
   # Read the STL model, create a mesh of desired size, and a structural problem is posed on it.
-  stl_file = os.path.join(script_dir, '../Models/GEGrabCAD/GEGrabCAD.STL')
+  stl_file = os.path.join(script_dir, '../Models/GEGrabCad/GEGrabCAD.STL')
 
   nElemsDesired = nDOFDesired/3    # estimate
   mesh = hex_mesher.HexMesher()

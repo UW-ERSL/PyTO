@@ -11,8 +11,80 @@ from pyto.examples_benchmarks.topopt_thermostructural_benchmarks import *
 import time
 import glob
 import pandas as pd
+import multiprocessing
 
-def runTOMethodOnBenchmarks(optimizationMethod):
+def _record_result(output_dir, optimizationMethod, entry, results_list):
+	"""Append `entry` to results_list and merge it into that method's summary CSV.
+
+	Shared by the success path and the per-problem failure handler in
+	runTOMethodOnBenchmarks, so a caught exception is recorded in exactly the
+	same CSV a successful run would use (same schema, same update-or-append
+	behavior) instead of just being printed and lost.
+	"""
+	results_list.append(entry)
+	os.makedirs(output_dir, exist_ok=True)
+	result_csv_file = f"{output_dir}/{optimizationMethod.name}_summary.csv"
+	if os.path.exists(result_csv_file):
+		existing_df = pd.read_csv(result_csv_file)
+		problem_index = existing_df[existing_df['name'] == entry['name']].index
+		if len(problem_index) > 0:
+			existing_df.loc[problem_index[0]] = entry
+		else:
+			existing_df = pd.concat([existing_df, pd.DataFrame([entry])], ignore_index=True)
+		existing_df.to_csv(result_csv_file, index=False)
+	else:
+		pd.DataFrame([entry]).to_csv(result_csv_file, index=False)
+
+
+benchmarks_structural_2_5D_problems_1 = [StructuralTOExamples.Mitchell,
+						StructuralTOExamples.CantileverTipLoad,
+						StructuralTOExamples.CantileverMidLoad,
+						StructuralTOExamples.MBBBeam,
+						StructuralTOExamples.Bridge,
+						StructuralTOExamples.TwoBar,]
+
+benchmarks_structural_2_5D_problems_2 = [StructuralTOExamples.LBracketTopLoad,
+						StructuralTOExamples.LBracketMidLoad,
+						StructuralTOExamples.TorquePlate,
+						StructuralTOExamples.DistributedLoad,
+						StructuralTOExamples.ThreeHoleBracket,]
+
+benchmarks_structural_3D_problems = [StructuralTOExamples.EdgeCantilever,
+						StructuralTOExamples.ThreeHoleBracketThick,
+						StructuralTOExamples.Multiload,
+						StructuralTOExamples.LBracketThickTopLoad,
+						StructuralTOExamples.LBracketThickMidLoad,
+						StructuralTOExamples.Table]
+
+benchmarks_structural_casestudies = [StructuralTOExamples.GEGrabCAD,]
+
+benchmarks_structural_noncompliance = [StructuralTOExamples.CantileverMidLoadVolumeCompliance,
+					StructuralTOExamples.LBracketTopLoad_Stress_Vol,
+					StructuralTOExamples.LBracketTopLoad_Vol_Stress,
+					StructuralTOExamples.LBracketMidLoad_Vol_Stress,
+					StructuralTOExamples.LBracketTopLoad_Mass_StressFF,
+					StructuralTOExamples.Inverter]
+
+benchmarks_structural_bodyforce = [StructuralTOExamples.GravityPlate,
+					StructuralTOExamples.CentrifugalPlate]
+
+benchmarks_thermostructural_problems = [ThermoStructuralTOExamples.BiClamp,
+					ThermoStructuralTOExamples.MBBBeam]
+
+benchmarks_thermal_2_5D_problems = [ThermalTOExamples.HeatPlate, ThermalTOExamples.FourCornersThermal,
+						 ThermalTOExamples.BridgeThermal]
+
+allBenchmarks = benchmarks_structural_2_5D_problems_1 + \
+				benchmarks_structural_2_5D_problems_2 + \
+				benchmarks_thermal_2_5D_problems + \
+				benchmarks_structural_3D_problems  + \
+				benchmarks_structural_noncompliance + \
+				benchmarks_structural_bodyforce + \
+				benchmarks_thermostructural_problems  + \
+				benchmarks_structural_casestudies
+
+
+def runTOMethodOnBenchmarks(optimizationMethod, problems_override: list = None):
 	# Create a list to store results
 
 	saveVTU = False  # Set to True if you want to save the VTU files for MMA method
@@ -20,60 +92,9 @@ def runTOMethodOnBenchmarks(optimizationMethod):
 	results_list = []
 	dsolver = deflation.DeflationSolver()
 	feaMode = FEA_MODE.STRUCTURAL
-	benchmarks_structural_2_5D_problems_1 = [StructuralTOExamples.Mitchell, 
-							StructuralTOExamples.CantileverTipLoad, 
-							StructuralTOExamples.CantileverMidLoad,
-							StructuralTOExamples.MBBBeam,
-							StructuralTOExamples.Bridge,
-							StructuralTOExamples.TwoBar,]
-	
-	benchmarks_structural_2_5D_problems_2 = [StructuralTOExamples.LBracketTopLoad, 
-							StructuralTOExamples.LBracketMidLoad,
-							StructuralTOExamples.TorquePlate,
-							StructuralTOExamples.DistributedLoad,
-							StructuralTOExamples.ThreeHoleBracket,]
 
-	benchmarks_structural_3D_problems = [StructuralTOExamples.EdgeCantilever, 
-							StructuralTOExamples.ThreeHoleBracketThick, 
-							StructuralTOExamples.Multiload,
-							StructuralTOExamples.LBracketThickTopLoad,
-							StructuralTOExamples.LBracketThickMidLoad,
-							StructuralTOExamples.Table]
-	
-	benchmarks_structural_casestudies = [StructuralTOExamples.GEGrabCAD,]
-	
-	benchmarks_structural_noncompliance = [StructuralTOExamples.CantileverMidLoadVolumeCompliance,
-						StructuralTOExamples.LBracketTopLoad_Stress_Vol, 
-						StructuralTOExamples.LBracketTopLoad_Vol_Stress, 
-						StructuralTOExamples.LBracketMidLoad_Vol_Stress,
-						StructuralTOExamples.LBracketTopLoad_Mass_StressFF,
-						StructuralTOExamples.Inverter]
-		
-	benchmarks_structural_bodyforce = [StructuralTOExamples.GravityPlate,
-						StructuralTOExamples.CentrifugalPlate]
-
-	benchmarks_thermostructural_problems = [ThermoStructuralTOExamples.BiClamp,
-						ThermoStructuralTOExamples.MBBBeam]
-	
-	benchmarks_thermal_2_5D_problems = [ThermalTOExamples.HeatPlate, ThermalTOExamples.FourCornersThermal,
-							 ThermalTOExamples.BridgeThermal]	
-	
-	sampleBenchmarks = [StructuralTOExamples.Mitchell, StructuralTOExamples.LBracketTopLoad_Stress_Vol,
-						StructuralTOExamples.EdgeCantilever,StructuralTOExamples.GravityPlate,ThermoStructuralTOExamples.MBBBeam,
-						ThermalTOExamples.FourCornersThermal]
-	
-	allBenchmarks = benchmarks_structural_2_5D_problems_1 + \
-					benchmarks_structural_2_5D_problems_2 + \
-					benchmarks_thermal_2_5D_problems + \
-					benchmarks_structural_3D_problems  + \
-					benchmarks_structural_noncompliance + \
-					benchmarks_structural_bodyforce + \
-					benchmarks_thermostructural_problems  + \
-					benchmarks_structural_casestudies
-	
-	for to_problem in  benchmarks_thermal_2_5D_problems:
+	for to_problem in (problems_override if problems_override is not None else allBenchmarks):
 		if to_problem in benchmarks_structural_2_5D_problems_1:
-			subFolder = "Structural-Compliance2.5D_1"
 			subFolder = "Structural-Compliance2.5D_1"
 		elif to_problem in benchmarks_structural_2_5D_problems_2:
 			subFolder = "Structural-Compliance2.5D_2"
@@ -90,173 +111,178 @@ def runTOMethodOnBenchmarks(optimizationMethod):
 		else:
 			subFolder = "Other"
 
-		if (to_problem in StructuralTOExamples):
-			mesh, mat_prop, bc,elem_body_force, to_params = getStructuralTOProblem(to_problem)
-			feaMode = FEA_MODE.STRUCTURAL
-		elif (to_problem in ThermalTOExamples):
-			mesh, mat_prop, bc,elem_body_force, to_params = getThermalTOProblem(to_problem)
-			feaMode = FEA_MODE.THERMAL
-		elif (to_problem in ThermoStructuralTOExamples):
-			mesh, mat_prop, structural_bc,thermal_bc, elem_body_force, to_params  = getThermoStructuralTOProblem(to_problem)
-			feaMode = FEA_MODE.THERMO_STRUCTURAL # or FEA_MODE.STRUCTURAL depending on the problem setup
+		try:
+			if (to_problem in StructuralTOExamples):
+				mesh, mat_prop, bc,elem_body_force, to_params = getStructuralTOProblem(to_problem)
+				feaMode = FEA_MODE.STRUCTURAL
+			elif (to_problem in ThermalTOExamples):
+				mesh, mat_prop, bc,elem_body_force, to_params = getThermalTOProblem(to_problem)
+				feaMode = FEA_MODE.THERMAL
+			elif (to_problem in ThermoStructuralTOExamples):
+				mesh, mat_prop, structural_bc,thermal_bc, elem_body_force, to_params  = getThermoStructuralTOProblem(to_problem)
+				feaMode = FEA_MODE.THERMO_STRUCTURAL # or FEA_MODE.STRUCTURAL depending on the problem setup
 
 		
-		print_progress = False
-		fe_structural_solver = None
-		fe_thermal_solver = None
+			print_progress = False
+			fe_structural_solver = None
+			fe_thermal_solver = None
 
-		dsolver = deflation.DeflationSolver()
-		if (to_params.nDOFDesired <= DIRECT_SOLVER_DOF_CUTOFF):#  # Choose solver. Typically PARDISO, but DPCG for large DOF problems
-			solver = lin_solv.Solvers.PARDISO
-		else:
-			solver = lin_solv.Solvers.DPCG
-			nGroups =  min(dsolver.maxGroups,max(dsolver.minGroups,round(3*mesh.num_nodes/dsolver.dofPerGroup)))
-			dsolver.create_deflation_groups(mesh, nGroups)
-			dsolver.create_deflation_matrix(mesh)
-
-		if (feaMode == FEA_MODE.STRUCTURAL):
-			fe_structural_solver = hex_structural_fea.HexStructuralFEA(mesh = mesh,
-						mat_prop = mat_prop,
-						bc = bc,
-						solver = solver,
-						dsolver = dsolver,
-						rtol = 1e-8,
-						elem_body_force = elem_body_force)
-			fe_solver = fe_structural_solver
-
-		#fe_structural_solver.plot_mesh(title = "Structural Load", plot_bc = True, save_path = None)
-		elif (feaMode == FEA_MODE.THERMAL):
-			fe_thermal_solver = hex_thermal_fea.HexThermalFEA(mesh = mesh,
-						mat_prop = mat_prop,
-						bc = bc,
-						solver = solver,
-						dsolver = dsolver,
-						rtol = 1e-8,
-						elem_body_force = elem_body_force)
-			fe_solver = fe_thermal_solver
-
-		#fe_thermal_solver.plot_mesh(title = "Thermal Load", plot_bc = True, save_path = None)
-		elif (feaMode == FEA_MODE.THERMO_STRUCTURAL):
-			fe_structural_solver = hex_structural_fea.HexStructuralFEA(mesh = mesh,
-						mat_prop = mat_prop,
-						bc = structural_bc,
-						solver = solver,
-						dsolver = dsolver,
-						rtol = 1e-8,
-						elem_body_force = elem_body_force)
-			fe_thermal_solver = hex_thermal_fea.HexThermalFEA(mesh = mesh,
-						mat_prop = mat_prop,
-						bc = thermal_bc,
-						solver = solver,
-						dsolver = dsolver,
-						rtol = 1e-8)
-			fe_solver = fe_structural_solver  # primary solver is structural
-			
-		# Ensure the output directory exists
-		output_base = f"./Results/Results_{time.strftime('%Y-%m-%d')}/{subFolder}/Problems/"
-		os.makedirs(output_base, exist_ok=True)
-
-		if to_params.ExtrudeZ:
-			fe_solver.plot_mesh(
-				title="Structural Load",
-				plot_bc=True,
-				camera_position='xy',
-				save_path=f"{output_base}/{to_problem.name}_problem.png"
-			)
-		else:
-			fe_solver.plot_mesh(
-				title="Structural Load",
-				plot_bc=True,
-				camera_position='iso',
-				save_path=f"{output_base}/{to_problem.name}_problem.png"
-			)
-		startTime = time.time()
-
-		print("-" * 50)
-		print(f"Running {to_problem.name} problem using {optimizationMethod.name} method and {solver.name} solver")
-		print("-" * 50)
-		# Create the directory if it does not exist
-		output_dir = f"./Results/Results_{time.strftime('%Y-%m-%d')}/{subFolder}/{optimizationMethod.name}"
-		if not os.path.exists(output_dir):
-			os.makedirs(output_dir)
-
-		
-		if optimizationMethod == TO_METHODS.DENSITYMMA:
-			u, history,success,errorMsg,nFEAs = topopt_mma(feaMode, fe_structural_solver,fe_thermal_solver,binarize_topology = binarize_topology,
-									to_params = to_params,print_progress = print_progress)
-		elif optimizationMethod == TO_METHODS.DENSITYOCM:
-			if to_problem in benchmarks_structural_noncompliance or \
-					to_problem in benchmarks_structural_bodyforce or \
-					to_problem in benchmarks_thermostructural_problems:
-				continue
-			u, history, success,errorMsg,nFEAs = topopt_optimality_criteria(feaMode, fe_solver,binarize_topology = binarize_topology,
-											to_params = to_params,print_progress = print_progress)
-		elif optimizationMethod == TO_METHODS.PARETO:
-			if to_problem in benchmarks_structural_noncompliance or \
-					to_problem in benchmarks_structural_bodyforce or \
-					to_problem in benchmarks_thermostructural_problems:
-				continue
-			u, history, success,errorMsg,nFEAs = topopt_pareto(feaMode, fe_solver,
-													to_params = to_params,print_progress = print_progress)
-		elif optimizationMethod == TO_METHODS.LEVELSET:
-			if to_problem in benchmarks_structural_noncompliance or \
-					to_problem in benchmarks_structural_bodyforce or \
-					to_problem in benchmarks_thermostructural_problems:
-				continue
-			u, history, success,errorMsg,nFEAs = topopt_levelset(feaMode,  fe_solver,
-													to_params = to_params)
-		timeTaken = time.time() - startTime
-
-		image_path = f"{output_dir}/{to_problem.name}.png"
-		title = f"{optimizationMethod.name}: vol: {history['volfrac'][-1]:0.2f}, J: {history['objective'][-1]:.3g}, nFEA: {len(history['objective']):3d}, time: {timeTaken:.0f} s"
-		title = None
-		if to_problem in benchmarks_structural_2_5D_problems_1 or to_problem in benchmarks_structural_2_5D_problems_2 or to_problem in benchmarks_thermal_2_5D_problems:
-			fe_solver.plot_mesh(save_path=image_path, plot_bc = None, title=title, camera_position='xy')
-		else:
-			fe_solver.plot_mesh(save_path=image_path, plot_bc = None, title=title,camera_position='iso')
-	
-		results_list.append({
-			'name': to_problem.name,
-			'comment': to_params.Comment,  
-			'ndof': 3*fe_solver.mesh.num_nodes,
-			'volfrac': history['volfrac'][-1],
-			'objective': history['objective'][-1],
-			'#FEAs': nFEAs,
-			'time (s)': timeTaken,
-			'success': success,
-			'errorMsg': errorMsg
-		})
-		# Check if a previous CSV result exists for this method and problem
-		result_csv_file = f"{output_dir}/{optimizationMethod.name}_summary.csv"
-		if os.path.exists(result_csv_file):
-			# Read the existing CSV file
-			existing_df = pd.read_csv(result_csv_file)
-						
-			# Find if this problem already exists in the CSV
-			problem_index = existing_df[existing_df['name'] == to_problem.name].index
-						
-			if len(problem_index) > 0:
-				# Update the existing entry
-				existing_df.loc[problem_index[0]] = results_list[-1]
+			dsolver = deflation.DeflationSolver()
+			if (to_params.nDOFDesired <= DIRECT_SOLVER_DOF_CUTOFF):#  # Choose solver. Typically PARDISO, but DPCG for large DOF problems
+				solver = lin_solv.Solvers.PARDISO
 			else:
-				# Append the new entry
-				existing_df = pd.concat([existing_df, pd.DataFrame([results_list[-1]])], ignore_index=True)
-						
-			# Save the updated DataFrame back to CSV
-			existing_df.to_csv(result_csv_file, index=False)
+				solver = lin_solv.Solvers.DPCG
+				nGroups =  min(dsolver.maxGroups,max(dsolver.minGroups,round(3*mesh.num_nodes/dsolver.dofPerGroup)))
+				dsolver.create_deflation_groups(mesh, nGroups)
+				dsolver.create_deflation_matrix(mesh)
 
-		else:
-			# If the CSV file does not exist, create it with the new entry
-			pd.DataFrame([results_list[-1]]).to_csv(result_csv_file, index=False)
+			if (feaMode == FEA_MODE.STRUCTURAL):
+				fe_structural_solver = hex_structural_fea.HexStructuralFEA(mesh = mesh,
+							mat_prop = mat_prop,
+							bc = bc,
+							solver = solver,
+							dsolver = dsolver,
+							rtol = 1e-8,
+							elem_body_force = elem_body_force)
+				fe_solver = fe_structural_solver
+
+			#fe_structural_solver.plot_mesh(title = "Structural Load", plot_bc = True, save_path = None)
+			elif (feaMode == FEA_MODE.THERMAL):
+				fe_thermal_solver = hex_thermal_fea.HexThermalFEA(mesh = mesh,
+							mat_prop = mat_prop,
+							bc = bc,
+							solver = solver,
+							dsolver = dsolver,
+							rtol = 1e-8,
+							elem_body_force = elem_body_force)
+				fe_solver = fe_thermal_solver
+
+			#fe_thermal_solver.plot_mesh(title = "Thermal Load", plot_bc = True, save_path = None)
+			elif (feaMode == FEA_MODE.THERMO_STRUCTURAL):
+				fe_structural_solver = hex_structural_fea.HexStructuralFEA(mesh = mesh,
+							mat_prop = mat_prop,
+							bc = structural_bc,
+							solver = solver,
+							dsolver = dsolver,
+							rtol = 1e-8,
+							elem_body_force = elem_body_force)
+				fe_thermal_solver = hex_thermal_fea.HexThermalFEA(mesh = mesh,
+							mat_prop = mat_prop,
+							bc = thermal_bc,
+							solver = solver,
+							dsolver = dsolver,
+							rtol = 1e-8)
+				fe_solver = fe_structural_solver  # primary solver is structural
+			
+			# Ensure the output directory exists
+			output_base = f"./Results/Results_{time.strftime('%Y-%m-%d')}/{subFolder}/Problems/"
+			os.makedirs(output_base, exist_ok=True)
+
+			if to_params.ExtrudeZ:
+				fe_solver.plot_mesh(
+					title="Structural Load",
+					plot_bc=True,
+					camera_position='xy',
+					save_path=f"{output_base}/{to_problem.name}_problem.png"
+				)
+			else:
+				fe_solver.plot_mesh(
+					title="Structural Load",
+					plot_bc=True,
+					camera_position='iso',
+					save_path=f"{output_base}/{to_problem.name}_problem.png"
+				)
+			startTime = time.time()
+
+			print("-" * 50)
+			print(f"Running {to_problem.name} problem using {optimizationMethod.name} method and {solver.name} solver")
+			print("-" * 50)
+			# Create the directory if it does not exist
+			output_dir = f"./Results/Results_{time.strftime('%Y-%m-%d')}/{subFolder}/{optimizationMethod.name}"
+			if not os.path.exists(output_dir):
+				os.makedirs(output_dir)
+
 		
-		# Export the mesh with pseudo density to a .vtu file
-		if (saveVTU) and (optimizationMethod == TO_METHODS.DENSITYMMA):
-			vtu_dir= f"./Results/VTU"
-			if not os.path.exists(vtu_dir):
-				os.makedirs(vtu_dir)
-			vtu_file = f"{vtu_dir}/{to_problem.name}.vtu"
-			fe_solver.mesh.export_vtu_mesh(fe_solver.mesh.elemPseudoDensity,
-										file_name = vtu_file,)
+			if optimizationMethod == TO_METHODS.DENSITYMMA:
+				if to_problem in benchmarks_thermostructural_problems:
+					# Coupled thermo-structural optimization (two FE solvers) was
+					# supported by an older topopt_mma; the current torch-native
+					# driver only ever takes a single fe_solver (structural OR
+					# thermal, never both), so this can't run -- same as
+					# OC/Pareto/Levelset's existing skip below, just for MMA too.
+					continue
+				u, history,success,errorMsg,nFEAs = topopt_mma(fe_solver,to_params = to_params,
+										maxMMAIterations = to_params.MaxIterations,
+										binarize_topology = binarize_topology,print_progress = print_progress)
+			elif optimizationMethod == TO_METHODS.DENSITYOCM:
+				if to_problem in benchmarks_structural_noncompliance or \
+						to_problem in benchmarks_structural_bodyforce or \
+						to_problem in benchmarks_thermostructural_problems:
+					continue
+				u, history, success,errorMsg,nFEAs = topopt_optimality_criteria(fe_solver,to_params = to_params,
+												maxIterations = to_params.MaxIterations,
+												binarize_topology = binarize_topology,print_progress = print_progress)
+			elif optimizationMethod == TO_METHODS.PARETO:
+				if to_problem in benchmarks_structural_noncompliance or \
+						to_problem in benchmarks_structural_bodyforce or \
+						to_problem in benchmarks_thermostructural_problems:
+					continue
+				u, history, success,errorMsg,nFEAs = topopt_pareto(feaMode, fe_solver,
+														to_params = to_params,print_progress = print_progress)
+			elif optimizationMethod == TO_METHODS.LEVELSET:
+				if to_problem in benchmarks_structural_noncompliance or \
+						to_problem in benchmarks_structural_bodyforce or \
+						to_problem in benchmarks_thermostructural_problems:
+					continue
+				u, history, success,errorMsg,nFEAs = topopt_levelset(feaMode,  fe_solver,
+														to_params = to_params)
+			timeTaken = time.time() - startTime
+
+			image_path = f"{output_dir}/{to_problem.name}.png"
+			title = f"{optimizationMethod.name}: vol: {history['volfrac'][-1]:0.2f}, J: {history['objective'][-1]:.3g}, nFEA: {len(history['objective']):3d}, time: {timeTaken:.0f} s"
+			title = None
+			if to_problem in benchmarks_structural_2_5D_problems_1 or to_problem in benchmarks_structural_2_5D_problems_2 or to_problem in benchmarks_thermal_2_5D_problems:
+				fe_solver.plot_mesh(save_path=image_path, plot_bc = None, title=title, camera_position='xy')
+			else:
+				fe_solver.plot_mesh(save_path=image_path, plot_bc = None, title=title,camera_position='iso')
+	
+			_record_result(output_dir, optimizationMethod, {
+				'name': to_problem.name,
+				'comment': to_params.Comment,
+				'ndof': 3*fe_solver.mesh.num_nodes,
+				'volfrac': history['volfrac'][-1],
+				'objective': history['objective'][-1],
+				'#FEAs': nFEAs,
+				'time (s)': timeTaken,
+				'success': success,
+				'errorMsg': errorMsg
+			}, results_list)
+
+		
+			# Export the mesh with pseudo density to a .vtu file
+			if (saveVTU) and (optimizationMethod == TO_METHODS.DENSITYMMA):
+				vtu_dir= f"./Results/VTU"
+				if not os.path.exists(vtu_dir):
+					os.makedirs(vtu_dir)
+				vtu_file = f"{vtu_dir}/{to_problem.name}.vtu"
+				fe_solver.mesh.export_vtu_mesh(fe_solver.mesh.elemPseudoDensity,
+											file_name = vtu_file,)
+		except Exception as e:
+			print(f"FAILED: {to_problem.name} with {optimizationMethod.name}: {e}")
+			output_dir = f"./Results/Results_{time.strftime('%Y-%m-%d')}/{subFolder}/{optimizationMethod.name}"
+			_record_result(output_dir, optimizationMethod, {
+				'name': to_problem.name,
+				'comment': '',
+				'ndof': None,
+				'volfrac': None,
+				'objective': None,
+				'#FEAs': None,
+				'time (s)': None,
+				'success': False,
+				'errorMsg': str(e)
+			}, results_list)
+			continue
+
 	# Convert results_list to a DataFrame for better visualization
 	# Read the results from the existing CSV file if it exists, otherwise create a new DataFrame
 	result_csv_file = f"{output_dir}/{optimizationMethod.name}_summary.csv"
@@ -560,17 +586,62 @@ def create_summary_tables():
 		plt.savefig(out_path, dpi=300, bbox_inches='tight')
 		plt.close()
 
-if __name__ == "__main__":    
-	
-	optimizationMethods = [TO_METHODS.DENSITYMMA,TO_METHODS.DENSITYOCM, TO_METHODS.PARETO, TO_METHODS.LEVELSET]
+def run_all_benchmarks_isolated(optimizationMethods=None, problems=None):
+	"""Run every (method, problem) pair in its own OS process.
+
+	pyvista/torch's per-process caching allocators never return memory to
+	the OS once allocated: a single benchmark problem's optimization run
+	jumps this process's RSS by several GB, and that memory stays reserved
+	even after the FE solver/mesh are deleted and gc.collect() runs (
+	confirmed directly -- 4 repeats of the *same*-sized problem plateau at
+	the post-first-run level, they don't keep growing). Across ~30
+	differently-*sized* benchmark problems in one long-lived process,
+	each new size forces its own new allocations on top of the ones
+	already cached for every previous size, so usage climbs without bound
+	-- observed reaching 63GB before the OS OOM-killed it. Because that
+	process inherits whatever cgroup launched it (e.g. VSCode's own memory
+	cgroup, when started from its integrated terminal), the kill can take
+	the whole editor down with it, not just this script.
+
+	Running each (method, problem) pair in a fresh subprocess (spawn, not
+	fork, so it's a genuinely new interpreter rather than a copy of this
+	already-large one) guarantees the OS fully reclaims that pair's memory
+	the instant it exits, regardless of what pyvista/torch cache
+	internally -- bounding this driver's own memory to whatever the
+	single largest problem needs, not the sum of all of them.
+	"""
+	if optimizationMethods is None:
+		optimizationMethods = [TO_METHODS.DENSITYMMA, TO_METHODS.DENSITYOCM, TO_METHODS.PARETO, TO_METHODS.LEVELSET]
+	if problems is None:
+		problems = allBenchmarks
+
+	ctx = multiprocessing.get_context("spawn")
 	for optimizationMethod in optimizationMethods:
-		runTOMethodOnBenchmarks(optimizationMethod)
+		for to_problem in problems:
+			print("=" * 60)
+			print(f"[isolated] {optimizationMethod.name}: {to_problem.name}")
+			print("=" * 60)
+			p = ctx.Process(
+				target=runTOMethodOnBenchmarks,
+				args=(optimizationMethod,),
+				kwargs={"problems_override": [to_problem]},
+			)
+			p.start()
+			p.join()
+			if p.exitcode != 0:
+				print(f"WARNING: subprocess for {optimizationMethod.name}/{to_problem.name} "
+					  f"exited with code {p.exitcode} (likely killed by the OS, e.g. OOM) -- "
+					  "not recorded in the CSV; re-run this pair individually if needed.")
 		print("-" * 50)
 		print(f"Finished {optimizationMethod.name} tests.")
 		print("-" * 50)
 		print("\n")
-	
+
 	# Combine results from all methods
-	combine_results() 
+	combine_results()
 
 	create_summary_tables()
+
+
+if __name__ == "__main__":
+	run_all_benchmarks_isolated()

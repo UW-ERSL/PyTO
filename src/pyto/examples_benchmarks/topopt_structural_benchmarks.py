@@ -109,7 +109,7 @@ def getSTLPath_TOProblem(to_problem: StructuralTOExamples):
     elif to_problem == StructuralTOExamples.Table:
         stl_file = "Models/Table/Table.STL"
     elif to_problem == StructuralTOExamples.GEGrabCAD:
-        stl_file = "Models/GEGrabCAD/GEGrabCAD.STL"
+        stl_file = "Models/GEGrabCad/GEGrabCAD.STL"
 
     elif to_problem == StructuralTOExamples.BiClamp:
         stl_file = "Models/BiClamp/BiClamp.STL"

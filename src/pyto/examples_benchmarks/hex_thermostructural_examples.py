@@ -24,7 +24,7 @@ def getThermoStructuralProblem(problem: ThermoStructuralExamples, **kwargs):
         raise ValueError("Invalid Thermo-structural problem specified.")
     
 def createBiClampProblem(nDOFDesired=25000, structural_load = 1e5,TWall = 28):
-    stl_file = os.path.join(script_dir, '../Models/BiClamp/BiClamp.STL')
+    stl_file = os.path.join(script_dir, '../Models/Biclamp/biclamp.STL')
 
     mesh = hex_mesher.HexMesher()
     nElemsDesired = round(nDOFDesired/3)    # estimate
