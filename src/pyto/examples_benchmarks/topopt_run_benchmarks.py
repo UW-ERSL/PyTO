@@ -317,22 +317,28 @@ def runTOMethodOnBenchmarks(optimizationMethod, problems_override: list = None):
 	plt.savefig(results_path, bbox_inches='tight')
 	plt.close()  
 
-def combine_results():
+def combine_results(date_str: str = None):
+	"""Build comparison charts from a day's Results/Results_<date>/ folder.
+
+	date_str defaults to today (time.strftime('%Y-%m-%d')), matching where
+	runTOMethodOnBenchmarks just wrote its output -- but a run that takes
+	multiple hours can finish after midnight, and re-running this later
+	(e.g. the next day, to retry after a crash mid-aggregation) needs
+	yesterday's date explicitly, since "today" no longer points at that
+	data. Pass the exact "Results_<date>" suffix to target a specific run.
+	"""
+	if date_str is None:
+		date_str = time.strftime('%Y-%m-%d')
 	# Get the latest results directory
 	for subFolder in ["Structural-Compliance2.5D_1",
 				   "Structural-Compliance2.5D_2",
 				   "Structural-Compliance3D",
-				   "Structural-NonCompliance", 
+				   "Structural-NonCompliance",
 				   "Structural-BodyForce",
 				   "ThermoStructural",
 				   "Thermal-Compliance2.5D"]:
 		# Get the latest results directory for the given subfolder
-		# Use glob to find all matching directories and sort them
-		# Use time.strftime to get the current date in the format YYYY-MM-DD
-		# Sort the directories and take the last one (most recent)
-		#results_dir = sorted(glob.glob(f"./Results/Results_{time.strftime('%Y-%m-%d')}/{subFolder}"))[-1]
-		# If you want to combine results from all subfolders, uncomment the line below
-		results_dirs = sorted(glob.glob(f"./Results/Results_{time.strftime('%Y-%m-%d')}/{subFolder}"))
+		results_dirs = sorted(glob.glob(f"./Results/Results_{date_str}/{subFolder}"))
 		if not results_dirs:
 			print(f"No results directory found for {subFolder}. Skipping...")
 			continue
@@ -350,15 +356,26 @@ def combine_results():
 				dataframes[method.name] = df
 
 		if not dataframes:
-			return
+			print(f"No method CSVs found in {results_dir}. Skipping...")
+			continue
+		if 'DENSITYMMA' not in dataframes:
+			print(f"No DENSITYMMA results in {results_dir} -- comparison charts are "
+				  "relative to DENSITYMMA, so there's nothing to normalize against. Skipping...")
+			continue
 
 		# Create compliance summary
-		problems = dataframes['DENSITYMMA']['name']
-		compliance_data = {}
-		fea_data = {}
-		time_data = {}
-		
-		# Get reference values from DENSITYMMA
+		#
+		# Every method's per-problem values are keyed by problem name (a dict,
+		# not a plain list) so pd.DataFrame(...) aligns rows by name and fills
+		# NaN for any problem a given method is missing, instead of assuming
+		# every method has exactly the same problems as DENSITYMMA in exactly
+		# the same order. That assumption broke in practice: a problem can
+		# legitimately succeed for some methods and fail for others (e.g. get
+		# OOM-killed) since runTOMethodOnBenchmarks records each problem's
+		# result independently -- indexing straight into a DENSITYMMA-only
+		# reference dict for a name DENSITYMMA doesn't have raised a bare
+		# KeyError that killed this function (and every subfolder after it)
+		# the first time a real run actually hit that case.
 		reference_compliance = dict(zip(
 			dataframes['DENSITYMMA']['name'],
 			dataframes['DENSITYMMA']['objective']
@@ -367,38 +384,47 @@ def combine_results():
 			dataframes['DENSITYMMA']['name'],
 			dataframes['DENSITYMMA']['time (s)']
 		))
+		reference_feas = dict(zip(
+			dataframes['DENSITYMMA']['name'],
+			dataframes['DENSITYMMA']['#FEAs']
+		))
 
-		# Calculate normalized compliance, time and get #FEAs for each method
+		compliance_data = {}
+		time_data = {}
+		fea_data = {}
+		volume_data = {}
+
+		# Calculate normalized compliance, time, #FEAs, and volume fraction
+		# for each method -- only for problems that also have a DENSITYMMA
+		# reference value (rows without one are silently omitted, not an
+		# error: there is no meaningful "relative to DENSITYMMA" value to
+		# compute without one).
 		for method, df in dataframes.items():
-			compliance_data[method] = [
-				min(row['objective'] / reference_compliance[row['name']], 5)
-				for _, row in df.iterrows()
-			]
-			time_data[method] = [
-				row['time (s)'] / reference_time[row['name']]
-				for _, row in df.iterrows()
-			]
-			# Get reference values for #FEAs from DENSITYMMA
-			reference_feas = dict(zip(
-				dataframes['DENSITYMMA']['name'],
-				dataframes['DENSITYMMA']['#FEAs']
-			))
-			# Calculate normalized #FEAs
-			fea_data[method] = [
-				row['#FEAs'] / reference_feas[row['name']]
-				for _, row in df.iterrows()
-			]
+			compliance_row, time_row, fea_row, volume_row = {}, {}, {}, {}
+			for _, row in df.iterrows():
+				name = row['name']
+				volume_row[name] = float(row['volfrac'])
+				if name in reference_compliance:
+					compliance_row[name] = min(row['objective'] / reference_compliance[name], 5)
+				if name in reference_time:
+					time_row[name] = row['time (s)'] / reference_time[name]
+				if name in reference_feas:
+					fea_row[name] = row['#FEAs'] / reference_feas[name]
+			compliance_data[method] = compliance_row
+			time_data[method] = time_row
+			fea_data[method] = fea_row
+			volume_data[method] = volume_row
 
 		# Create and save normalized compliance summary
-		compliance_df = pd.DataFrame(compliance_data, index=problems)
+		compliance_df = pd.DataFrame(compliance_data)
 		#compliance_df.to_csv(f"{results_dir}/compliance_summary.csv")
 
 		# Create and save normalized time summary
-		time_df = pd.DataFrame(time_data, index=problems)
+		time_df = pd.DataFrame(time_data)
 		#time_df.to_csv(f"{results_dir}/time_summary.csv")
 
 		# Create and save #FEAs summary
-		fea_df = pd.DataFrame(fea_data, index=problems)
+		fea_df = pd.DataFrame(fea_data)
 		#fea_df.to_csv(f"{results_dir}/fea_summary.csv")
 		# Create separate plots for compliance, time and FEAs
 		
@@ -439,13 +465,10 @@ def combine_results():
 		plt.savefig(f"{results_dir}/{subFolder}_fea_comparison.png", dpi=300, bbox_inches='tight')
 		plt.close()
 
-		# Create and plot normalized volume fraction summary
-		volume_data = {}
-		for method, df in dataframes.items():
-			volume_data[method] = [float(vol) for vol in df['volfrac']]
-		
-		volume_df = pd.DataFrame(volume_data, index=problems)
-		
+		# Volume fraction summary (volume_data was already built name-keyed
+		# in the loop above, alongside compliance/time/#FEAs)
+		volume_df = pd.DataFrame(volume_data)
+
 		plt.figure(figsize=(10, 6))
 		volume_df.plot(kind='bar', width=0.8)
 		plt.title('Volume Fraction', fontsize=14, fontweight='bold')
@@ -457,7 +480,12 @@ def combine_results():
 		plt.savefig(f"{results_dir}/{subFolder}_volume_comparison.png", dpi=300, bbox_inches='tight')
 		plt.close()
 
-def create_summary_tables():
+def create_summary_tables(date_str: str = None):
+	"""Build the per-subfolder image-grid summary table. See combine_results()
+	for why date_str (default: today) can matter -- same "today's date"
+	dependency, same folder layout."""
+	if date_str is None:
+		date_str = time.strftime('%Y-%m-%d')
 	subfolders = [
 		"Structural-Compliance2.5D_1",
 		"Structural-Compliance2.5D_2",
@@ -470,7 +498,7 @@ def create_summary_tables():
 
 	for subFolder in subfolders:
 		plt.close('all')
-		results_dirs = sorted(glob.glob(f"./Results/Results_{time.strftime('%Y-%m-%d')}/{subFolder}"))
+		results_dirs = sorted(glob.glob(f"./Results/Results_{date_str}/{subFolder}"))
 		if not results_dirs:
 			print(f"No results directory found for {subFolder}. Skipping...")
 			continue
