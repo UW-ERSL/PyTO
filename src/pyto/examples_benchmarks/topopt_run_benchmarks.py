@@ -84,8 +84,13 @@ allBenchmarks = benchmarks_structural_2_5D_problems_1 + \
 				benchmarks_structural_casestudies
 
 
-def runTOMethodOnBenchmarks(optimizationMethod, problems_override: list = None):
+def runTOMethodOnBenchmarks(optimizationMethod, problems_override: list = None, date_str: str = None):
 	# Create a list to store results
+
+	# Resolved once per call (not once per output path -- see
+	# run_all_benchmarks_isolated for why a single, caller-supplied
+	# date_str matters for a sweep spanning many hours/subprocesses).
+	date_str = date_str or time.strftime('%Y-%m-%d')
 
 	saveVTU = False  # Set to True if you want to save the VTU files for MMA method
 	binarize_topology = True  # Set to True if you want to binarize the topology for MMA/OCM method
@@ -175,7 +180,7 @@ def runTOMethodOnBenchmarks(optimizationMethod, problems_override: list = None):
 				fe_solver = fe_structural_solver  # primary solver is structural
 			
 			# Ensure the output directory exists
-			output_base = f"./Results/Results_{time.strftime('%Y-%m-%d')}/{subFolder}/Problems/"
+			output_base = f"./Results/Results_{date_str}/{subFolder}/Problems/"
 			os.makedirs(output_base, exist_ok=True)
 
 			if to_params.ExtrudeZ:
@@ -198,7 +203,7 @@ def runTOMethodOnBenchmarks(optimizationMethod, problems_override: list = None):
 			print(f"Running {to_problem.name} problem using {optimizationMethod.name} method and {solver.name} solver")
 			print("-" * 50)
 			# Create the directory if it does not exist
-			output_dir = f"./Results/Results_{time.strftime('%Y-%m-%d')}/{subFolder}/{optimizationMethod.name}"
+			output_dir = f"./Results/Results_{date_str}/{subFolder}/{optimizationMethod.name}"
 			if not os.path.exists(output_dir):
 				os.makedirs(output_dir)
 
@@ -269,7 +274,7 @@ def runTOMethodOnBenchmarks(optimizationMethod, problems_override: list = None):
 											file_name = vtu_file,)
 		except Exception as e:
 			print(f"FAILED: {to_problem.name} with {optimizationMethod.name}: {e}")
-			output_dir = f"./Results/Results_{time.strftime('%Y-%m-%d')}/{subFolder}/{optimizationMethod.name}"
+			output_dir = f"./Results/Results_{date_str}/{subFolder}/{optimizationMethod.name}"
 			_record_result(output_dir, optimizationMethod, {
 				'name': to_problem.name,
 				'comment': '',
@@ -637,11 +642,29 @@ def run_all_benchmarks_isolated(optimizationMethods=None, problems=None):
 	the instant it exits, regardless of what pyvista/torch cache
 	internally -- bounding this driver's own memory to whatever the
 	single largest problem needs, not the sum of all of them.
+
+	The whole sweep's output date (the "Results_<date>" folder every
+	problem writes into, and the one combine_results()/create_summary_tables()
+	read back from at the end) is resolved exactly once, here, up front --
+	not separately by each subprocess or by the final aggregation calls.
+	A full sweep runs for hours; letting each piece independently ask "what
+	day is it right now" means a run that crosses midnight silently splits
+	its own output across two date folders, and the final aggregation
+	(computed after everything else, i.e. most likely to land on the far
+	side of that boundary) ends up looking at the wrong -- often mostly
+	empty -- folder. One date_str threaded through every subprocess and
+	into the final combine/summarize calls makes this a non-issue by
+	construction, not a mismatch to notice and patch around after a run
+	already got split across two days.
 	"""
 	if optimizationMethods is None:
 		optimizationMethods = [TO_METHODS.DENSITYMMA, TO_METHODS.DENSITYOCM, TO_METHODS.PARETO, TO_METHODS.LEVELSET]
 	if problems is None:
 		problems = allBenchmarks
+
+	run_date = time.strftime('%Y-%m-%d')
+	print(f"Benchmark sweep output folder: Results/Results_{run_date}/ "
+		  "(fixed for this whole run, regardless of how long it takes)")
 
 	ctx = multiprocessing.get_context("spawn")
 	for optimizationMethod in optimizationMethods:
@@ -652,7 +675,7 @@ def run_all_benchmarks_isolated(optimizationMethods=None, problems=None):
 			p = ctx.Process(
 				target=runTOMethodOnBenchmarks,
 				args=(optimizationMethod,),
-				kwargs={"problems_override": [to_problem]},
+				kwargs={"problems_override": [to_problem], "date_str": run_date},
 			)
 			p.start()
 			p.join()
@@ -665,10 +688,11 @@ def run_all_benchmarks_isolated(optimizationMethods=None, problems=None):
 		print("-" * 50)
 		print("\n")
 
-	# Combine results from all methods
-	combine_results()
+	# Combine results from all methods -- same run_date as every subprocess
+	# above wrote into, not whatever "today" happens to be by now.
+	combine_results(run_date)
 
-	create_summary_tables()
+	create_summary_tables(run_date)
 
 
 if __name__ == "__main__":
