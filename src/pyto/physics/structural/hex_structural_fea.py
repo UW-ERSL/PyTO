@@ -37,6 +37,19 @@ class HexStructuralFEA:
     self.solver, self.kwargs = solver, kwargs
     self.dsolver = dsolver
 
+    well_posed, worst_relative_component = bound_cond.check_rigid_body_constraint(mesh, bc)
+    if not well_posed:
+      raise ValueError(
+          f"BC is under-constrained: at least one rigid-body mode (translation "
+          f"or rotation) is left free by fixed_dofs, and the applied force has a "
+          f"significant component along it (relative magnitude "
+          f"{worst_relative_component:.3g}, vs. a well-posed problem's ~1e-6 or "
+          f"less). The solve would still 'succeed' but produce a numerically "
+          f"meaningless displacement/compliance (e.g. negative compliance). Fix "
+          f"the boundary condition's fixed_dofs so every rigid-body mode is "
+          f"constrained, or make sure the load has no component along any mode "
+          f"that is intentionally left free.")
+
     # Handle single material or list of materials
     if isinstance(mat_prop, list):
     # Create element stiffness matrix for each material

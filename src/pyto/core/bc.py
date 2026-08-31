@@ -37,7 +37,112 @@ class BC:
     Useful for transient problems.
     """
     self.force = force
-    
+
+
+def _rigid_body_mode_matrix(node_xyz: np.ndarray, node_ids: np.ndarray,
+                             comps: np.ndarray, reference_point: np.ndarray) -> np.ndarray:
+  """Evaluate the 6 classical small-rigid-body-displacement fields
+  (translate x/y/z, rotate x/y/z about `reference_point`) at a set of
+  (node, component) dofs. Row i, column j is mode j's displacement value
+  at dof i. See check_rigid_body_constraint for how this is used.
+  """
+  rel = node_xyz[node_ids] - reference_point
+  x, y, z = rel[:, 0], rel[:, 1], rel[:, 2]
+  M = np.zeros((len(node_ids), 6))
+  M[comps == 0, 0] = 1.0
+  M[comps == 1, 1] = 1.0
+  M[comps == 2, 2] = 1.0
+  M[comps == 0, 4] = z[comps == 0]   # rotate_y: u_x = z
+  M[comps == 0, 5] = -y[comps == 0]  # rotate_z: u_x = -y
+  M[comps == 1, 3] = -z[comps == 1]  # rotate_x: u_y = -z
+  M[comps == 1, 5] = x[comps == 1]   # rotate_z: u_y = x
+  M[comps == 2, 3] = y[comps == 2]   # rotate_x: u_z = y
+  M[comps == 2, 4] = -x[comps == 2]  # rotate_y: u_z = -x
+  return M
+
+
+def check_rigid_body_constraint(mesh, bc: "BC", tol: float = 1e-6) -> tuple[bool, float]:
+  """Check whether bc's fixed_dofs + force together make a well-posed 3D
+  structural equilibrium problem -- not just whether every rigid-body
+  mode (3 translations + 3 rotations) is individually constrained.
+
+  A direct solver doesn't reliably signal near-singularity the way an
+  iterative solver's failure-to-converge does -- if the fixed-DOF node
+  set leaves any rigid-body mode free (e.g. because the fixed nodes are
+  colinear, so rotation about that line costs zero strain energy), a
+  load with a nonzero component along that free mode produces a
+  numerically meaningless displacement -- and hence compliance -- while
+  still solving "successfully". This was the root cause of a real,
+  previously-silent bug: LBracketThickMidLoad's fixed nodes are colinear
+  (all at the same y, z), so rotation about that line is unconstrained,
+  and its off-axis load directly excites that mode, producing a
+  compliance of roughly -1e11 (compliance can never be negative)
+  reported as success.
+
+  Critically, an unconstrained rigid-body mode is only an actual problem
+  if the applied load has a nonzero generalized-force component along
+  it -- otherwise the mode is simply never excited and the solve remains
+  perfectly well-defined (e.g. LBracketThickTopLoad has the exact same
+  colinear support as LBracketThickMidLoad and is therefore also
+  "missing" a mode by the naive test, but its load happens to lie in the
+  plane containing the free axis and so never excites it; a 2.5D
+  extruded model like Mitchell is even more extreme -- translation along
+  the extrusion axis is completely free, which is normal and harmless as
+  long as nothing ever pushes in that direction). So this checks force
+  compatibility with the null space, not just the null space itself --
+  verified directly to have zero false positives across every benchmark
+  problem in topopt_structural_benchmarks.py.
+
+  Args:
+    mesh: Mesh object (uses node_xyz, num_nodes).
+    bc: BC object (uses fixed_dofs, force). Always reports well-posed
+      when bc uses a constraint_matrix instead of fixed_dofs (e.g.
+      sliding BCs), since that's a different, not-yet-covered constraint
+      mechanism.
+    tol: Singular-value threshold, relative to the largest singular
+      value, below which a rigid-body mode is considered unconstrained.
+
+  Returns:
+    (well_posed, worst_relative_component): well_posed is False only when
+    an unconstrained mode is actually excited by bc.force above a tiny
+    relative tolerance; worst_relative_component is the largest such
+    (dimensionless) excitation found, for use in an error message (None
+    if every mode was already fully constrained, i.e. nothing to check).
+  """
+  if bc.constraint_matrix is not None:
+    return True, None
+  fixed_dofs = np.asarray(bc.fixed_dofs)
+  reference_point = mesh.node_xyz.mean(axis=0)
+  if len(fixed_dofs) == 0:
+    return (not np.any(bc.force)), None
+
+  fixed_nodes = fixed_dofs // 3
+  fixed_comps = fixed_dofs % 3
+  M_fixed = _rigid_body_mode_matrix(mesh.node_xyz, fixed_nodes, fixed_comps, reference_point)
+  _U, S, Vt = np.linalg.svd(M_fixed, full_matrices=True)
+  S_full = np.concatenate([S, np.zeros(6 - len(S))]) if len(S) < 6 else S
+  threshold = tol * max(S_full[0], 1e-12)
+  free_mask = S_full < threshold
+  if not free_mask.any():
+    return True, None
+  free_directions = Vt[free_mask]  # (k, 6): combined rigid-body modes left unconstrained
+
+  if not np.any(bc.force):
+    return True, None
+
+  all_node_ids = np.repeat(np.arange(mesh.num_nodes), 3)
+  all_comps = np.tile(np.arange(3), mesh.num_nodes)
+  M_all = _rigid_body_mode_matrix(mesh.node_xyz, all_node_ids, all_comps, reference_point)
+  generalized_force = M_all.T @ bc.force  # (6,): work-conjugate force/moment resultants
+
+  char_force = np.abs(bc.force).sum()
+  char_length = max(np.ptp(mesh.node_xyz, axis=0).max(), 1e-12)
+  scale = char_force * char_length
+
+  worst = max(abs(generalized_force @ v) for v in free_directions) / scale
+  return worst < 1e-6, worst
+
+
 def impose_dirichlet_bc(A: spy_sprs.csr_matrix,
                         b: np.ndarray,
                         bc: BC,
