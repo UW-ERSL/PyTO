@@ -163,18 +163,14 @@ class HexStructuralFEA:
       self.stiff_mtrx = torch.sparse_coo_tensor(
           self._unique_indices, agg_vals, (ndof, ndof), device=device, dtype=dtype
       )
-      # 3) add external springs (if any)
-      if getattr(self.mesh, "externalSprings", None):
-          dofs, ks = zip(*self.mesh.externalSprings)
-          spring_idx = torch.tensor([dofs, dofs], dtype=torch.long, device=device)
-          spring_vals = torch.tensor(ks, dtype=dtype, device=device)
+      # 3) add external springs (if any), precomputed once in __init__
+      if self._spring_K is not None:
+          spring_idx, spring_vals = self._spring_K
           spring_K = torch.sparse_coo_tensor(
-              spring_idx, spring_vals, (ndof, ndof), device=device, dtype=dtype
+              spring_idx.to(device), spring_vals.to(device=device, dtype=dtype),
+              (ndof, ndof), device=device, dtype=dtype
           ).coalesce()
           self.stiff_mtrx = (self.stiff_mtrx + spring_K).coalesce()
-
-      if self._spring_K is not None:
-          self.stiff_mtrx = (self.stiff_mtrx + self.spring_K).coalesce()
 
 
       # 4) assemble force vector (incl. body forces)
