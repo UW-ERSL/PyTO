@@ -247,11 +247,15 @@ def topopt_mma(fe_solver, #hex_structural_fea.HexStructuralFEA or hex_thermal_fe
                 x_filtered, material_model
             )
 
-        # Sensitivity filtering/mapping (FILTERED -> RAW design variables)
-        if to_params.APPLY_FILTER_TO_DENSITY and (to_params.Objective[0] is TO_QOI.COMPLIANCE):
+        # Sensitivity filtering. The gradients above come from autograd w.r.t. the RAW
+        # variables, i.e. they already include the chain rule through the density filter
+        # when APPLY_FILTER_TO_DENSITY is on -- filtering them again would be a second,
+        # incorrect smoothing. Sensitivity filtering is only the right regularization
+        # when the density filter is OFF.
+        if not to_params.APPLY_FILTER_TO_DENSITY and (to_params.Objective[0] is TO_QOI.COMPLIANCE):
             # Weighted filter
-            grad_obj = (H @ (x_filtered * grad_obj)) / Hs / x_filtered
-        elif to_params.APPLY_FILTER_TO_DENSITY and (
+            grad_obj = (H @ (x_filtered * grad_obj)) / Hs / (x_filtered + 1e-12)
+        elif not to_params.APPLY_FILTER_TO_DENSITY and (
             to_params.Objective[0] is not TO_QOI.VOLUME_FRACTION
         ):
             # Regular filter
@@ -264,11 +268,12 @@ def topopt_mma(fe_solver, #hex_structural_fea.HexStructuralFEA or hex_thermal_fe
             grad_obj[to_params.ElemsToKeep] = min(grad_obj)
 
 
-        # Sensitivity filtering for constraints (FILTERED -> RAW)
-        if to_params.APPLY_FILTER_TO_DENSITY:
+        # Sensitivity filtering for constraints (only when the density filter is off;
+        # see note on the objective above)
+        if not to_params.APPLY_FILTER_TO_DENSITY:
             for m in range(len(to_params.Constraints)):
                 if to_params.Constraints[m][0] is TO_QOI.COMPLIANCE:
-                    dcdx_filt[m] = (H @ (x_filtered * dcdx_filt[m])) / Hs / x_filtered
+                    dcdx_filt[m] = (H @ (x_filtered * dcdx_filt[m])) / Hs / (x_filtered + 1e-12)
                 elif to_params.Constraints[m][0] is not TO_QOI.VOLUME_FRACTION:
                     dcdx_filt[m] = (H @ dcdx_filt[m]) / Hs
         dcdx = dcdx_filt
@@ -366,34 +371,28 @@ def topopt_mma(fe_solver, #hex_structural_fea.HexStructuralFEA or hex_thermal_fe
     x = np.asarray(xOptimal).flatten()
     x_t = torch.tensor(x, requires_grad=True)
 
-    # Evaluate final objective/constraints via the same chains (ensures consistency)
-    obj_raw_final, _gobj_filt, c_final, _dg_filt, sol, x_filtered_final = obj_cons_function(x_t)
+    # Continuous evaluation at the optimum. x is the RAW design variable; with
+    # density filtering on, the PHYSICAL design is the filtered field returned here.
+    _obj, _g, _c, _dg, _sol, x_filtered_final = obj_cons_function(x_t)
+    x_phys = np.asarray(x_filtered_final).flatten()
 
-    # Track in history (store de-normalized to match earlier semantics)
-    history["objective"].append(obj_raw_final)
-    history["volfrac"].append(np.mean(x_filtered_final))
-    for idx, val in enumerate(c_final.flatten()):
-        history[f"constraint_{idx+1}"].append(val)
-
-    # Grey fraction before binarization (based on RAW x for reporting)
-    grey_elements = np.sum((x > 0.1) & (x < 0.9))
+    # Grey fraction of the physical design, before binarization
+    grey_elements = np.sum((x_phys > 0.1) & (x_phys < 0.9))
     fraction_grey = grey_elements / num_elems
 
-    # Optional binarization for display/export
+    # Optional volume-preserving binarization of the PHYSICAL density
+    x_design = x_phys
     if binarize_topology:
-        x_sorted = np.sort(x)
-        threshold = x_sorted[int((1 - np.mean(x)) * len(x))]
-        x = np.where(x < threshold, 0.0, 1.0)
-
-    # For topological operations (hanging elements), operate on RAW (binarized) x
-    fe_solver.mesh.setPseudoDensity(torch.tensor(x))
+        x_sorted = np.sort(x_phys)
+        threshold = x_sorted[int((1 - np.mean(x_phys)) * len(x_phys))]
+        x_design = np.where(x_phys < threshold, 0.0, 1.0)
 
     if to_params.Eliminate_Hanging_Elements:
         # Ensure binarized
-        x_sorted = np.sort(x)
-        threshold = x_sorted[int((1 - np.mean(x)) * len(x))]
-        x = np.where(x < threshold, 0.0, 1.0)
-        fe_solver.mesh.setPseudoDensity(torch.tensor(x))
+        x_sorted = np.sort(x_design)
+        threshold = x_sorted[int((1 - np.mean(x_design)) * len(x_design))]
+        x_design = np.where(x_design < threshold, 0.0, 1.0)
+        fe_solver.mesh.setPseudoDensity(torch.tensor(x_design))
 
         meshComponents = fe_solver.mesh.find_connected_components()
         if len(meshComponents) > 1:
@@ -401,16 +400,30 @@ def topopt_mma(fe_solver, #hex_structural_fea.HexStructuralFEA or hex_thermal_fe
                 log_message(50 * "-")
                 log_message("Removing hanging elements.")
             largest_component = max(meshComponents, key=len)
-            x[:] = 0.0
-            x[list(largest_component)] = 1.0
-            fe_solver.mesh.setPseudoDensity(x.flatten())
+            x_design[:] = 0.0
+            x_design[list(largest_component)] = 1.0
 
-    # Final FE evaluation for reporting (use analysis chain with filtering)
-    obj_raw_final, _gobj_filt, c_final, _dg_filt, sol, x_filtered_final = obj_cons_function(x_t)
+    # Final FE evaluation of the design actually being returned. x_design is
+    # already physical, so evaluate it WITHOUT re-filtering (a second filter pass
+    # would blur the binarized topology and misreport its objective/volume).
+    filter_setting = to_params.APPLY_FILTER_TO_DENSITY
+    to_params.APPLY_FILTER_TO_DENSITY = False
+    try:
+        x_final_t = torch.tensor(x_design, requires_grad=True)
+        obj_raw_final, _gobj_filt, c_final, _dg_filt, sol, x_filtered_final = obj_cons_function(x_final_t)
+    finally:
+        to_params.APPLY_FILTER_TO_DENSITY = filter_setting
+
+    # Track the final design in history (store de-normalized to match earlier semantics)
+    history["objective"].append(obj_raw_final)
+    history["volfrac"].append(np.mean(x_filtered_final))
+    for idx, val in enumerate(c_final.flatten()):
+        history[f"constraint_{idx+1}"].append(val)
+
+    # Leave the final design on the mesh for plotting
+    fe_solver.mesh.setPseudoDensity(torch.tensor(x_design))
 
     # Log final line
-    grey_elements = np.sum((x > 0.1) & (x < 0.9))
-    fraction_grey = grey_elements / num_elems
     print("-" * 50)
     log_message(
         f"Final objective: {obj_raw_final:.4g}, vf: {np.mean(x_filtered_final):.3f}, grey: {fraction_grey:.3f}"

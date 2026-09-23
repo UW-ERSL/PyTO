@@ -21,7 +21,20 @@ def compute_compliance_torch(
     Returns:
         The compliance value as a scalar Torch tensor.
     """
-    from pyto.autodiff.material_model import get_structural_material_model_scaling_torch
+    from pyto.autodiff.material_model import (
+        get_structural_material_model_scaling_torch,
+        get_thermal_material_model_scaling_torch,
+    )
+    from pyto.physics.thermal.hex_thermal_fea import HexThermalFEA
+    from pyto.physics.thermal.tet_thermal_fea import TetThermalFEA
+
+    # The objective must use the same material interpolation as the solver's
+    # own state equation (thermal uses its own penalty/void constants), or its
+    # gradient no longer matches the physics being solved.
+    if isinstance(fe_solver, (HexThermalFEA, TetThermalFEA)):
+        scaling_fn = get_thermal_material_model_scaling_torch
+    else:
+        scaling_fn = get_structural_material_model_scaling_torch
 
     x = x.flatten()  # (E,)
     dofMat = torch.as_tensor(
@@ -36,6 +49,6 @@ def compute_compliance_torch(
     # Element energies: ce_e = u_eᵀ KE u_e
     # u_e: (E, nRows), KE: (nRows, nRows) → ce: (E,)
     ce = torch.einsum("ei,ij,ej->e", u_e, KE, u_e)
-    material_scaling = get_structural_material_model_scaling_torch(x, material_model)  # (E,)
+    material_scaling = scaling_fn(x, material_model)  # (E,)
 
     return (material_scaling * ce).sum()
