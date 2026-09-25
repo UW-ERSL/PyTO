@@ -12,7 +12,7 @@ Status: `[ ]` todo, `[~]` in progress, `[x]` done.
 - [x] **B0. Problem definitions** matching the papers (BiClamp: R&F Example A; MBB: Ooms parameters). Done after B3 because it needs the coupled solver to validate.
 - [x] **B5. BiClamp validation** against R&F and the Reference row.
 - [x] **B6. MBB steady-state validation** against Ooms and the Reference row.
-- [ ] **B7. Transient thermal** (backward Euler, design-dependent C and K, objective summed over time steps).
+- [-] **B7. Transient thermal** (SKIPPED by user decision, 2026-09-25) (backward Euler, design-dependent C and K, objective summed over time steps).
 - [x] **B8. Heaviside projection** (optional; done together with B6 because the MBB comparison needed it).
 - [ ] **B9. Sweep and comparison report** include the two problems; update the handoff file.
 
