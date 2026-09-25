@@ -1,5 +1,6 @@
 from pyto.examples_benchmarks.topopt_thermostructural_benchmarks import ThermoStructuralTOExamples
 from pyto.topopt.common import *
+from pyto.physics.thermoelastic.thermostructural_fea import ThermoStructuralFEA
 from pyto.topopt.drivers.mma import topopt_mma
 from pyto.topopt.drivers.oc import topopt_optimality_criteria	
 from pyto.topopt.drivers.pareto import topopt_pareto
@@ -164,19 +165,16 @@ def runTOMethodOnBenchmarks(optimizationMethod, problems_override: list = None, 
 
 			#fe_thermal_solver.plot_mesh(title = "Thermal Load", plot_bc = True, save_path = None)
 			elif (feaMode == FEA_MODE.THERMO_STRUCTURAL):
-				fe_structural_solver = hex_structural_fea.HexStructuralFEA(mesh = mesh,
+				# One coupled solver: thermal solve -> thermal force -> structural solve (autograd through both).
+				fe_structural_solver = ThermoStructuralFEA(mesh = mesh,
 							mat_prop = mat_prop,
-							bc = structural_bc,
+							structural_bc = structural_bc,
+							thermal_bc = thermal_bc,
 							solver = solver,
 							dsolver = dsolver,
 							rtol = 1e-8,
 							elem_body_force = elem_body_force)
-				fe_thermal_solver = hex_thermal_fea.HexThermalFEA(mesh = mesh,
-							mat_prop = mat_prop,
-							bc = thermal_bc,
-							solver = solver,
-							dsolver = dsolver,
-							rtol = 1e-8)
+				fe_thermal_solver = fe_structural_solver.thermal_fea
 				fe_solver = fe_structural_solver  # primary solver is structural
 			
 			# Ensure the output directory exists
@@ -209,20 +207,12 @@ def runTOMethodOnBenchmarks(optimizationMethod, problems_override: list = None, 
 
 		
 			if optimizationMethod == TO_METHODS.DENSITYMMA:
-				if to_problem in benchmarks_thermostructural_problems:
-					# Coupled thermo-structural optimization (two FE solvers) was
-					# supported by an older topopt_mma; the current torch-native
-					# driver only ever takes a single fe_solver (structural OR
-					# thermal, never both), so this can't run -- same as
-					# OC/Pareto/Levelset's existing skip below, just for MMA too.
-					continue
 				u, history,success,errorMsg,nFEAs = topopt_mma(fe_solver,to_params = to_params,
 										maxMMAIterations = to_params.MaxIterations,
 										binarize_topology = binarize_topology,print_progress = print_progress)
 			elif optimizationMethod == TO_METHODS.DENSITYOCM:
 				if to_problem in benchmarks_structural_noncompliance or \
-						to_problem in benchmarks_structural_bodyforce or \
-						to_problem in benchmarks_thermostructural_problems:
+						to_problem in benchmarks_structural_bodyforce:
 					continue
 				u, history, success,errorMsg,nFEAs = topopt_optimality_criteria(fe_solver,to_params = to_params,
 												maxIterations = to_params.MaxIterations,

@@ -174,3 +174,21 @@ def test_coupled_autograd_gradient_matches_hand_derived_thermoelastic_sensitivit
         ref = ThermoElasticSensitivity(fe.thermal_fea, fe).compute_compliance_sensitivity(
             x0.numpy(), fe.temperature.detach().numpy(), fe.sol.detach().numpy(), solver=lin.Solvers.SPSOLVE)
     assert np.max(np.abs(ref - g.numpy())) <= 1e-6 * np.max(np.abs(g.numpy()))
+
+
+# ---------------------------------------------------------------- B4: drivers accept the coupled solver
+def test_mma_and_oc_run_on_the_coupled_solver():
+    from pyto.topopt.common import TOParams, TO_QOI
+    from pyto.topopt.drivers.mma import topopt_mma
+    from pyto.topopt.drivers.oc import topopt_optimality_criteria
+    params = TOParams()
+    params.Objective = (TO_QOI.COMPLIANCE, None)
+    params.Constraints = [(TO_QOI.VOLUME_FRACTION, None, 0.5)]
+    for run in (lambda fe: topopt_mma(fe, to_params=params, maxMMAIterations=6, print_progress=False,
+                                      binarize_topology=False),
+                lambda fe: topopt_optimality_criteria(fe, to_params=params, maxIterations=6, print_progress=False,
+                                                      binarize_topology=False)):
+        history = run(_coupled_problem())[1]
+        J = np.array(history["objective"])
+        assert np.all(np.isfinite(J)) and J[-1] < J[0]
+        assert history["volfrac"][-1] <= 0.5 + 0.01  # volume constraint is an upper bound

@@ -8,7 +8,7 @@ Status: `[ ]` todo, `[~]` in progress, `[x]` done.
 - [x] **B1. Differentiable thermoelastic force** `F_th(x, T)` (torch), validated against the existing NumPy `get_thermoelastic_force` and by finite differences.
 - [x] **B2. Structural solve accepts the thermal load** (and an element thermal strain for stresses).
 - [x] **B3. Coupled solver object** (`ThermoStructuralFEA`) with the single-solver interface the drivers expect; gradient by autograd through both adjoints, checked by finite differences and against the hand-derived `ThermoElasticSensitivity`.
-- [ ] **B4. Drivers and runner** run the coupled problems (MMA and OC).
+- [x] **B4. Drivers and runner** run the coupled problems (MMA and OC).
 - [ ] **B0. Problem definitions** matching the papers (BiClamp: R&F Example A; MBB: Ooms parameters). Done after B3 because it needs the coupled solver to validate.
 - [ ] **B5. BiClamp validation** against R&F and the Reference row.
 - [ ] **B6. MBB steady-state validation** against Ooms and the Reference row.
@@ -41,3 +41,13 @@ Status: `[ ]` todo, `[~]` in progress, `[x]` done.
   - autograd gradient of the compliance equals central finite differences (rtol 1e-5);
   - autograd gradient equals the independent hand-derived `ThermoElasticSensitivity` (3-term adjoint formula) to 5e-9 relative. That oracle uses the `getHMatrix` fixed in B2, so this also confirms the fix is consistent.
 - **Note for B4:** the runner's THERMO_STRUCTURAL branch currently builds a plain `HexStructuralFEA` plus an unused thermal object; it must build `ThermoStructuralFEA` instead.
+
+### B4 (done): drivers and runner run the coupled problems
+- **Drivers:** no change needed. `ThermoStructuralFEA` is a `HexStructuralFEA`, so `topopt_mma` / `topopt_optimality_criteria` treat it as a structural problem (3 dof/node, structural filters, forces) and their autograd chain now goes through the thermal solve as well.
+- **Runner** (`examples_benchmarks/topopt_run_benchmarks.py`): the THERMO_STRUCTURAL branch built a plain `HexStructuralFEA` and an unused thermal object; it now builds one `ThermoStructuralFEA`. The MMA `continue` for thermostructural problems (from the old two-solver design) is removed, and OC now runs them too. Pareto and LevelSet still skip them (hand-derived sensitivities for structural/thermal only).
+- **Smoke runs** (default problem definitions, 33 750 dof, PARDISO, 15 iterations, drivers only, NOT yet a validation):
+  - BiClamp: MMA J 461 -> 18.0, vf 0.250; OC J 461 -> 17.85, vf 0.250 (converged in 15 FEAs).
+  - MBBBeam: MMA J 4.8e9 -> 9.3e8, vf 0.398; OC J 4.8e9 -> 5.8e8, vf 0.397 (OC hit the 15-iteration cap; the MBB parameters are still the old ones, B0 changes them).
+  - Runner path (`runTOMethodOnBenchmarks`, OC, BiClamp) writes its CSV row and image as for other problems.
+- **Test:** `test_mma_and_oc_run_on_the_coupled_solver` (small coupled problem: finite objective, decreases, volume constraint respected).
+- **Open for later steps:** compliance of a thermally driven problem is not monotone in the design, so OC's assumption (negative sensitivities) can fail on it; MMA is the reference method in R&F and Ooms. Watch OC on MBB in B6.
