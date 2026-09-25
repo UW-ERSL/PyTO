@@ -34,3 +34,13 @@ def test_sparse_linear_solve_gradcheck():
         return SparseLinearSolve.apply(mtrx, b, "spsolve", {})
 
     assert torch.autograd.gradcheck(f, (values, b), eps=1e-6, atol=1e-5, rtol=1e-4)
+
+
+def test_dpcg_is_not_implemented_and_warns_before_falling_back():
+    # The torch path has no DPCG; it must say so, not silently substitute a direct solve.
+    import pytest
+    from pyto.autodiff.sparse_solve import solve
+    indices, values, shape = _random_spd_sparse(6)
+    A = torch.sparse_coo_tensor(indices, values.detach(), shape)
+    with pytest.warns(UserWarning, match="not implemented"):
+        solve(A, torch.ones(6, dtype=torch.float64), solver=Solvers.DPCG)

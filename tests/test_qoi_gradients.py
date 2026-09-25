@@ -393,3 +393,80 @@ def test_pareto_topological_sensitivity_functions_are_the_shared_module_s():
             f"{name} in pareto.py is not the same object as "
             "pyto.topopt.topological_sensitivity's -- duplication reintroduced?"
         )
+
+
+def test_stress_scaling_update_rule(structural_fe_solver):
+    # Reference-era rule: every call sets s <- 0.25*max_vm/pnorm + 0.75*s, whether or not the limit is
+    # exceeded (a later refactor updated only when max_vm > limit and stopped stress problems converging).
+    from pyto.autodiff.qoi import compute_constraint_and_gradient
+    from pyto.autodiff.qoi.stress import compute_pnorm_stress_autograd
+    fe = structural_fe_solver
+    torch.manual_seed(1)
+    x = 0.3 + 0.4 * torch.rand(fe.mesh.num_elems, dtype=torch.float64)
+    sol = fe.solve(x, MaterialModel.SIMP)
+    pnorm, max_vm = compute_pnorm_stress_autograd(sol, x, fe)
+    for limit in (0.5 * float(max_vm), 2.0 * float(max_vm)):  # limit below and above the actual max
+        tp = TOParams()
+        tp.Constraints = [(TO_QOI.MAX_VONMISES_STRESS, None, limit)]
+        compute_constraint_and_gradient(tp, sol, x, fe, None, MaterialModel.SIMP)
+        assert abs(tp.stress_scaling - (0.25 * float(max_vm / pnorm) + 0.75)) < 1e-12
+
+
+def test_compliance_sign_only_flips_for_prescribed_value_problems():
+    # FourCornersThermal / BridgeThermal have no load, only prescribed temperatures: minimizing u^T K u
+    # would delete the design, so the optimizer minimizes -J there (the Reference-era behaviour).
+    from types import SimpleNamespace
+    from pyto.autodiff.qoi.compliance import compliance_sign
+    from pyto.core.bc import BC
+    zero, hot = np.zeros(4), np.array([1.0, 0.0])
+    driven = SimpleNamespace(bc=BC(force=zero, fixed_dofs=np.array([0, 1]), dirichlet_values=hot), elem_body_force=None)
+    loaded = SimpleNamespace(bc=BC(force=np.ones(4), fixed_dofs=np.array([0, 1]), dirichlet_values=hot), elem_body_force=None)
+    fixed_only = SimpleNamespace(bc=BC(force=np.ones(4), fixed_dofs=np.array([0]), dirichlet_values=np.zeros(1)), elem_body_force=None)
+    assert compliance_sign(driven) == -1.0
+    assert compliance_sign(loaded) == 1.0
+    assert compliance_sign(fixed_only) == 1.0
+
+
+def test_mma_wrapper_handles_a_negative_objective():
+    # Regression: runMMA divided f0 and its gradient by the SIGNED first objective value, so a negative
+    # objective (e.g. -J/J0) was silently turned around and minimized the wrong way.
+    from pyto.topopt.drivers.mmaWrapper import runMMA
+    n = 6
+    def fn(x):  # minimize -sum(x) s.t. mean(x) <= 0.5  -> optimum sits on the constraint at mean 0.5
+        x = np.asarray(x).reshape(-1, 1)
+        return np.array([[-float(x.sum())]]), -np.ones((n, 1)), np.array([[float(x.mean()) / 0.5 - 1.0]]), np.ones((1, n)) / n / 0.5
+    # start well below the limit: correct behaviour adds material up to 0.5; the flipped objective removes it
+    out = runMMA(n, 1, fn, 0.2 * np.ones((n, 1)), np.zeros((n, 1)), np.ones((n, 1)), maxIterations=40)
+    assert np.mean(out[0]) > 0.4, f"negative objective was minimized the wrong way (final mean x = {np.mean(out[0]):.2f})"
+
+
+def test_resolve_constraint_matrix_folds_single_dof_rows_and_rejects_sliding():
+    import pytest
+    import scipy.sparse as sp
+    from pyto.core.bc import BC, resolve_constraint_matrix
+    single = BC(force=np.zeros(6), fixed_dofs=[], dirichlet_values=[],  # empty lists, as the problem builders pass
+                constraint_matrix=sp.csr_matrix(np.array([[1.0, 0, 0, 0, 0, 0], [0, 0, 2.0, 0, 0, 0]])),
+                constraint_rhs=np.array([0.0, 4.0]))
+    resolve_constraint_matrix(single)
+    assert single.constraint_matrix is None
+    assert dict(zip(single.fixed_dofs.tolist(), single.dirichlet_values.tolist())) == {0: 0.0, 2: 2.0}
+    sliding = BC(force=np.zeros(6), fixed_dofs=np.array([5]), dirichlet_values=np.zeros(1),
+                 constraint_matrix=sp.csr_matrix(np.array([[1.0, -1.0, 0, 0, 0, 0]])), constraint_rhs=np.zeros(1))
+    with pytest.raises(NotImplementedError, match="couple several DOFs"):
+        resolve_constraint_matrix(sliding)
+
+
+def test_volume_fraction_min_is_a_lower_bound():
+    # VOLUME_FRACTION_MIN: c = 1 - mean(x)/limit <= 0, i.e. mean(x) >= limit. Lets self-weight problems
+    # (whose unconstrained optimum is "almost no material") keep a minimum amount of material.
+    from pyto.autodiff.qoi import compute_constraint_and_gradient
+    tp = TOParams()
+    tp.Constraints = [(TO_QOI.VOLUME_FRACTION_MIN, None, 0.5)]
+    x = torch.full((10,), 0.25, dtype=torch.float64, requires_grad=True)
+    c, _ = compute_constraint_and_gradient(tp, None, x, None, None, MaterialModel.SIMP)
+    assert abs(float(c[0, 0]) - 0.5) < 1e-12           # mean 0.25 < 0.5: violated
+    (g,) = torch.autograd.grad(c[0, 0], x)
+    assert torch.all(g < 0)                             # adding material reduces the violation
+    x2 = torch.full((10,), 0.75, dtype=torch.float64)
+    c2, _ = compute_constraint_and_gradient(tp, None, x2, None, None, MaterialModel.SIMP)
+    assert float(c2[0, 0]) < 0                          # mean 0.75 >= 0.5: satisfied
