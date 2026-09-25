@@ -73,7 +73,8 @@ benchmarks_thermostructural_problems = [ThermoStructuralTOExamples.BiClamp,
 					ThermoStructuralTOExamples.BiClampDT0,
 					ThermoStructuralTOExamples.BiClampDT4,
 					ThermoStructuralTOExamples.BiClampDT10,
-					ThermoStructuralTOExamples.MBBBeam]
+					ThermoStructuralTOExamples.MBBBeam,
+					ThermoStructuralTOExamples.MBBBeamNoHeat]
 
 benchmarks_thermal_2_5D_problems = [ThermalTOExamples.HeatPlate, ThermalTOExamples.FourCornersThermal,
 						 ThermalTOExamples.BridgeThermal]

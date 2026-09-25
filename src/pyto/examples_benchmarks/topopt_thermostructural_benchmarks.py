@@ -9,7 +9,8 @@ class ThermoStructuralTOExamples(enum.Enum):
 	BiClampDT0 = enum.auto()   # same, dT = 0 (purely mechanical)
 	BiClampDT4 = enum.auto()   # same, dT = 4 K
 	BiClampDT10 = enum.auto()  # same, dT = 10 K
-	MBBBeam = enum.auto()      # Ooms et al., steady-state thermal field
+	MBBBeam = enum.auto()      # Ooms et al., steady-state thermal field (their Fig. 6i)
+	MBBBeamNoHeat = enum.auto() # same, bottom kept at 20 C: purely mechanical (their Fig. 6a, t_f = 0)
 
 
 def getThermoStructuralTOProblem(to_problem: ThermoStructuralTOExamples, **kwargs):
@@ -38,7 +39,7 @@ def getThermoStructuralTOProblem(to_problem: ThermoStructuralTOExamples, **kwarg
 		to_params.Objective = (TO_QOI.COMPLIANCE, None)
 		to_params.Constraints = [(TO_QOI.VOLUME_FRACTION, None, 0.4)]
 
-	elif to_problem == ThermoStructuralTOExamples.MBBBeam:
+	elif to_problem in (ThermoStructuralTOExamples.MBBBeam, ThermoStructuralTOExamples.MBBBeamNoHeat):
 		# See paper: "Thermoelastic topology optimization of structural components at elevated temperatures
 		# considering transient heat conduction", by Ooms, et al., 2023. Steady-state case (t_f = infinity,
 		# their Fig. 6i): concrete, 20 C on top, 800 C on the bottom, F_m = 10 kN on a 10 mm thick half model,
@@ -47,7 +48,7 @@ def getThermoStructuralTOProblem(to_problem: ThermoStructuralTOExamples, **kwarg
 		print("Creating Thermo-structural MBB Beam problem...")
 		thermostructural_problem = ThermoStructuralExamples.MBBBeam 
 		kwargs['Ta'] = 20  # Top temperature
-		kwargs['Tf'] = 800 # Bottom (fire) temperature
+		kwargs['Tf'] = 20 if to_problem == ThermoStructuralTOExamples.MBBBeamNoHeat else 800 # Bottom (fire) temperature
 		to_params.ThermalReferenceTemperature = 20.0
 		to_params.ConductivityPenalty = 3.0
 		to_params.ConductivityVoidRatio = 0.03
@@ -56,7 +57,8 @@ def getThermoStructuralTOProblem(to_problem: ThermoStructuralTOExamples, **kwarg
 		to_params.RelativeFilterRadius = 4.4
 		to_params.HeavisideProjection = True # beta 1 -> 32, doubling every 50 iterations (their Sect. 3.4)
 		to_params.MaxIterations = 350
-		to_params.Comment = "Thermo-structural MBB Beam (Ooms et al.), steady state"
+		to_params.Comment = "Thermo-structural MBB Beam (Ooms et al.), " + (
+			"no heating (t_f = 0)" if to_problem == ThermoStructuralTOExamples.MBBBeamNoHeat else "steady state")
 		to_params.ExtrudeZ = True
 		to_params.nDOFDesired = 25000
 		to_params.Objective = (TO_QOI.COMPLIANCE, None)
