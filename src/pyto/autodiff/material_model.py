@@ -133,7 +133,9 @@ def get_structural_material_model_scaling_torch(x: Tensor,
 
 
 def get_thermal_material_model_scaling_torch(x: Tensor,
-                                             material_model: MaterialModel | None) -> Tensor:
+                                             material_model: MaterialModel | None,
+                                             penalty: float | None = None,
+                                             void_ratio: float | None = None) -> Tensor:
     """Compute the thermal conductivity scaling based on the material model.
 
     Torch-differentiable twin of get_thermal_material_model_scaling below,
@@ -143,11 +145,15 @@ def get_thermal_material_model_scaling_torch(x: Tensor,
     Args:
       x: Array of (num_elems,) containing the element densities.
       material_model: The material model to use (SIMP or SIMP+).
+      penalty: SIMP exponent of the conductivity (default _SIMP_THERMAL_PENALTY). A problem may set its own,
+        e.g. Ooms et al. use 3.
+      void_ratio: conductivity of void relative to solid (default _KVOID_RELATIVE). A problem may set its own,
+        e.g. Ooms et al. model insulation as void with 0.03 of the solid conductivity.
 
     Returns: Array of conductivity scalings for each element.
     """
-    Kvoid = torch.tensor(_KVOID_RELATIVE, device=_tdev, dtype=torch.float64)
-    p     = torch.tensor(_SIMP_THERMAL_PENALTY, device=_tdev, dtype=torch.float64)
+    Kvoid = torch.tensor(_KVOID_RELATIVE if void_ratio is None else void_ratio, device=_tdev, dtype=torch.float64)
+    p     = torch.tensor(_SIMP_THERMAL_PENALTY if penalty is None else penalty, device=_tdev, dtype=torch.float64)
     ramp  = torch.tensor(_RAMP_PENALTY,     device=_tdev, dtype=torch.float64)
 
     if material_model is None:

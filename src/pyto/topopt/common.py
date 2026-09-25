@@ -57,6 +57,10 @@ class TOParams: # These are the default parameters
     )# Collection of tuples of constraint type, auxiliary scalar/vector/function, and upper bound
     nDOFDesired: int = 25000 # Desired number of degrees of freedom in the finite element problem
     APPLY_FILTER_TO_DENSITY: bool = True # Apply filter to density
+    HeavisideProjection: bool = False # Project the filtered density with a smooth Heaviside step (MMA driver); beta
+    # starts at 1 and doubles every HeavisideBetaInterval iterations up to HeavisideBetaMax (Ooms et al., Sect. 3.4)
+    HeavisideBetaInterval: int = 50
+    HeavisideBetaMax: float = 32.0
     RelativeFilterRadius: float = 1.5 #relative to the element size
     XSymmetry: bool = False # Desired symmetry in YZ plane
     YSymmetry: bool = False
@@ -76,6 +80,10 @@ class TOParams: # These are the default parameters
     Eliminate_Hanging_Elements: bool = False # Should the hanging elements be eliminated after optimization?
     MaterialsExcelFile: str = '' # Path to the Excel file containing material properties for MMTO problems
     materialModel: MaterialModel = MaterialModel.SIMP # Material model for density based topology optimization
+    # Thermo-mechanical problems only (see physics/thermoelastic/thermostructural_fea.py)
+    ThermalReferenceTemperature: float = 23.0 # Stress-free temperature of the structure
+    ConductivityPenalty: float = None # SIMP exponent of the conductivity (None = module default)
+    ConductivityVoidRatio: float = None # Void conductivity relative to solid (None = module default)
     stress_scaling: float = 1.0 # Adaptive stress-normalization factor for MAX_VONMISES_STRESS/STRESS_FAILURE_FACTOR
     # constraints. Lives here (per optimization run) rather than as a module
     # global or a mutable function attribute, so two separate optimization

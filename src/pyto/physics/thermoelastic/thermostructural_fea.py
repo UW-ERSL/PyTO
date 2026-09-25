@@ -26,12 +26,15 @@ class ThermoStructuralFEA(HexStructuralFEA):
   """
 
   def __init__(self, mesh, mat_prop, structural_bc, thermal_bc, solver, dsolver=None,
-               elem_body_force=None, thermoElasticReferenceTemperature=23.0, **kwargs):
+               elem_body_force=None, thermoElasticReferenceTemperature=23.0,
+               conductivity_penalty=None, conductivity_void_ratio=None, **kwargs):
     # Thermal first: HexThermalFEA.__init__ points the shared mesh.edofMat at the thermal connectivity, and
     # the structural constructor (which reads mesh.edofMat for its assembly and the qoi code reads
     # afterwards) has to be the last one to set it.
     self.thermal_fea = HexThermalFEA(mesh=mesh, mat_prop=mat_prop, bc=thermal_bc, solver=solver, dsolver=dsolver,
-                                     thermoElasticReferenceTemperature=thermoElasticReferenceTemperature, **kwargs)
+                                     thermoElasticReferenceTemperature=thermoElasticReferenceTemperature,
+                                     conductivity_penalty=conductivity_penalty,
+                                     conductivity_void_ratio=conductivity_void_ratio, **kwargs)
     super().__init__(mesh=mesh, mat_prop=mat_prop, bc=structural_bc, solver=solver, dsolver=dsolver,
                      elem_body_force=elem_body_force, **kwargs)
     self.temperature = None

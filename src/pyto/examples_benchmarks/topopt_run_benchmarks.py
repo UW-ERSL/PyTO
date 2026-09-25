@@ -70,6 +70,9 @@ benchmarks_structural_bodyforce = [StructuralTOExamples.GravityPlate,
 					StructuralTOExamples.CentrifugalPlate]
 
 benchmarks_thermostructural_problems = [ThermoStructuralTOExamples.BiClamp,
+					ThermoStructuralTOExamples.BiClampDT0,
+					ThermoStructuralTOExamples.BiClampDT4,
+					ThermoStructuralTOExamples.BiClampDT10,
 					ThermoStructuralTOExamples.MBBBeam]
 
 benchmarks_thermal_2_5D_problems = [ThermalTOExamples.HeatPlate, ThermalTOExamples.FourCornersThermal,
@@ -173,7 +176,10 @@ def runTOMethodOnBenchmarks(optimizationMethod, problems_override: list = None, 
 							solver = solver,
 							dsolver = dsolver,
 							rtol = 1e-8,
-							elem_body_force = elem_body_force)
+							elem_body_force = elem_body_force,
+							thermoElasticReferenceTemperature = to_params.ThermalReferenceTemperature,
+							conductivity_penalty = to_params.ConductivityPenalty,
+							conductivity_void_ratio = to_params.ConductivityVoidRatio)
 				fe_thermal_solver = fe_structural_solver.thermal_fea
 				fe_solver = fe_structural_solver  # primary solver is structural
 			
@@ -209,14 +215,14 @@ def runTOMethodOnBenchmarks(optimizationMethod, problems_override: list = None, 
 			if optimizationMethod == TO_METHODS.DENSITYMMA:
 				u, history,success,errorMsg,nFEAs = topopt_mma(fe_solver,to_params = to_params,
 										maxMMAIterations = to_params.MaxIterations,
-										binarize_topology = binarize_topology,print_progress = print_progress)
+										binarize_topology = binarize_topology and not to_params.HeavisideProjection,print_progress = print_progress)
 			elif optimizationMethod == TO_METHODS.DENSITYOCM:
 				if to_problem in benchmarks_structural_noncompliance or \
 						to_problem in benchmarks_structural_bodyforce:
 					continue
 				u, history, success,errorMsg,nFEAs = topopt_optimality_criteria(fe_solver,to_params = to_params,
 												maxIterations = to_params.MaxIterations,
-												binarize_topology = binarize_topology,print_progress = print_progress)
+												binarize_topology = binarize_topology and not to_params.HeavisideProjection,print_progress = print_progress)
 			elif optimizationMethod == TO_METHODS.PARETO:
 				if to_problem in benchmarks_structural_noncompliance or \
 						to_problem in benchmarks_structural_bodyforce or \
@@ -236,7 +242,7 @@ def runTOMethodOnBenchmarks(optimizationMethod, problems_override: list = None, 
 			image_path = f"{output_dir}/{to_problem.name}.png"
 			title = f"{optimizationMethod.name}: vol: {history['volfrac'][-1]:0.2f}, J: {history['objective'][-1]:.3g}, nFEA: {len(history['objective']):3d}, time: {timeTaken:.0f} s"
 			title = None
-			if to_problem in benchmarks_structural_2_5D_problems_1 or to_problem in benchmarks_structural_2_5D_problems_2 or to_problem in benchmarks_thermal_2_5D_problems:
+			if to_problem in benchmarks_structural_2_5D_problems_1 or to_problem in benchmarks_structural_2_5D_problems_2 or to_problem in benchmarks_thermal_2_5D_problems or to_problem in benchmarks_thermostructural_problems:
 				fe_solver.plot_mesh(save_path=image_path, plot_bc = None, title=title, camera_position='xy')
 			else:
 				fe_solver.plot_mesh(save_path=image_path, plot_bc = None, title=title,camera_position='iso')

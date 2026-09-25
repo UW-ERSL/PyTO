@@ -3,6 +3,7 @@ from pyto.autodiff.qoi.compliance import compliance_sign
 from pyto.autodiff.qoi import *
 from pyto.autodiff.material_model import *
 from pyto.autodiff.sparse_solve import SparseLinearSolve, Solvers
+import math
 import time
 import matplotlib.pyplot as plt
 from pyto.topopt.drivers.mmaWrapper import runMMA
@@ -185,6 +186,14 @@ def topopt_mma(fe_solver, #hex_structural_fea.HexStructuralFEA or hex_thermal_fe
             x_filtered = (
                 torch.sparse.mm(H_torch, x_raw.unsqueeze(1)).squeeze(1) / Hs_torch
             ) if to_params.APPLY_FILTER_TO_DENSITY else x_raw
+
+            if to_params.APPLY_FILTER_TO_DENSITY and to_params.HeavisideProjection:
+                # Smooth Heaviside projection of the filtered density (Ooms et al. 2023, eq. 33, eta = 0.5),
+                # continuation in beta from the iteration count. Autograd differentiates through it.
+                beta = min(to_params.HeavisideBetaMax, 2.0 ** (mmaIterations // to_params.HeavisideBetaInterval))
+                eta = 0.5
+                x_filtered = (math.tanh(beta * eta) + torch.tanh(beta * (x_filtered - eta))) / (
+                    math.tanh(beta * eta) + math.tanh(beta * (1.0 - eta)))
 
             # Set filtered density on mesh for FE + plotting
             with torch.no_grad():
@@ -373,7 +382,8 @@ def topopt_mma(fe_solver, #hex_structural_fea.HexStructuralFEA or hex_thermal_fe
         maxIterations=maxMMAIterations,
         timeLimitSecs=timeLimitSecs,
         move_limit=move_limit,
-        fTolerance=objective_tol,
+        # With a beta continuation the objective jumps at every beta change; run the whole schedule.
+        fTolerance=0.0 if to_params.HeavisideProjection else objective_tol,
         gTolerance=constraint_tol,
         kktTol=kkt_tol,
         verbose=False,

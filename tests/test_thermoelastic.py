@@ -194,3 +194,43 @@ def test_mma_converges_and_oc_runs_on_the_coupled_solver():
     h = topopt_optimality_criteria(_coupled_problem(), to_params=params, maxIterations=4, print_progress=False,
                                    binarize_topology=False)[1]
     assert np.all(np.isfinite(np.array(h["objective"])))
+
+
+# ---------------------------------------------------------------- B0: problem definitions
+def test_thermal_scaling_accepts_per_problem_penalty_and_void_ratio():
+    from pyto.autodiff.material_model import get_thermal_material_model_scaling_torch as scaling
+    x = torch.tensor([0.0, 0.5, 1.0], dtype=torch.float64)
+    s = scaling(x, MaterialModel.SIMP, penalty=3.0, void_ratio=0.03)
+    assert torch.allclose(s, torch.tensor([0.03, 0.03 + 0.125 * 0.97, 1.0], dtype=torch.float64))
+    assert torch.allclose(scaling(x, MaterialModel.SIMP), scaling(x, MaterialModel.SIMP, None, None))
+
+
+def test_paper_problem_definitions():
+    from pyto.examples_benchmarks.topopt_thermostructural_benchmarks import (ThermoStructuralTOExamples as P,
+                                                                               getThermoStructuralTOProblem)
+    # Rodrigues & Fernandes Example A: 1000 kgf, vf 0.4, clamped columns kept, walls at T_ref + dT
+    for prob, dT in ((P.BiClampDT0, 0), (P.BiClamp, 1), (P.BiClampDT4, 4), (P.BiClampDT10, 10)):
+        mesh, mat, sbc, tbc, _, p = getThermoStructuralTOProblem(prob)
+        assert abs(np.abs(sbc.force).sum() - 1000 * 9.80665) < 1e-6
+        assert p.Constraints[0][2] == 0.4 and p.ElemsToKeep is not None and len(p.ElemsToKeep) > 0
+        assert np.allclose(tbc.dirichlet_values, p.ThermalReferenceTemperature + dT)
+    # Ooms et al. MBB: concrete, 20/800 C, F_m = 5 kN (half of 10 kN) per 10 mm of thickness, insulating void, exponent 3
+    mesh, mat, sbc, tbc, _, p = getThermoStructuralTOProblem(P.MBBBeam)
+    thickness = np.ptp(mesh.node_xyz[:, 2])
+    assert abs(np.abs(sbc.force).sum() - 5e5 * thickness) < 1e-3
+    assert mat.youngs_modulus == 30e9 and p.ThermalReferenceTemperature == 20.0
+    assert set(np.unique(tbc.dirichlet_values)) == {20.0, 800.0}
+    assert p.ConductivityPenalty == 3.0 and p.ConductivityVoidRatio == 0.03
+
+
+def test_mma_with_heaviside_projection_runs_and_is_differentiable():
+    from pyto.topopt.common import TOParams, TO_QOI
+    from pyto.topopt.drivers.mma import topopt_mma
+    params = TOParams()
+    params.Objective = (TO_QOI.COMPLIANCE, None)
+    params.Constraints = [(TO_QOI.VOLUME_FRACTION, None, 0.5)]
+    params.HeavisideProjection, params.HeavisideBetaInterval = True, 3  # beta 1, 2, 4 within 9 iterations
+    h = topopt_mma(_coupled_problem(), to_params=params, maxMMAIterations=9, print_progress=False,
+                   binarize_topology=False)[1]
+    J = np.array(h["objective"]).ravel()
+    assert np.all(np.isfinite(J)) and h["volfrac"][-1] <= 0.5 + 0.02

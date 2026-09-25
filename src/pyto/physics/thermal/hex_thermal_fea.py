@@ -30,10 +30,14 @@ class HexThermalFEA:
                dsolver: deflation.DeflationSolver = None,
                 elem_body_force: np.ndarray = None,
                 thermoElasticReferenceTemperature = 23.0,
+                conductivity_penalty: float = None,
+                conductivity_void_ratio: float = None,
 							 **kwargs):
 
     self.mesh, self.mat_prop, self.bc = mesh, mat_prop, bc
     self.thermoElasticReferenceTemperature = thermoElasticReferenceTemperature  # Reference temperature for thermal expansion
+    # Per-problem conductivity interpolation (None = the module defaults in autodiff/material_model.py)
+    self.conductivity_penalty, self.conductivity_void_ratio = conductivity_penalty, conductivity_void_ratio
     self.solver, self.kwargs = solver, kwargs
     self.sol = None
     # Handle single material or list of materials
@@ -124,7 +128,8 @@ class HexThermalFEA:
     device, dtype = x.device, x.dtype
     ndof = self.bc.num_dofs
 
-    elem_material_scaling = get_thermal_material_model_scaling_torch(x, material_model)
+    elem_material_scaling = get_thermal_material_model_scaling_torch(
+        x, material_model, self.conductivity_penalty, self.conductivity_void_ratio)
 
     elem_stiff_mtrx = torch.einsum("mij,m->mij", self.elem_stiff_torch, elem_material_scaling)
     vals = elem_stiff_mtrx.reshape(-1)

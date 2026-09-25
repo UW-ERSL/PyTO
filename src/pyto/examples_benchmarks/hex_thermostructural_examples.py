@@ -74,7 +74,12 @@ def createBiClampProblem(nDOFDesired=25000, structural_load = 1e5,TWall = 28):
 
 
 
-def createMBBBeamProblem(nDOFDesired=25000, structural_load = 5000,Ta = 23,Tf  = 823):
+def createMBBBeamProblem(nDOFDesired=25000, load_per_thickness = 5e5, Ta = 20, Tf = 800):
+    """Half MBB beam of Ooms et al. (2023), "Thermoelastic topology optimization of structural components at
+    elevated temperatures considering transient heat conduction": 1200 x 400 mm, concrete, point load
+    F_m = 10 kN for the full beam, i.e. 5 kN on the half model (their code: Fm = -10000/2), 10 mm thick (`load_per_thickness` = 5e5 N/m), top edge held at Ta, bottom edge at
+    Tf (the bottom condition stops two nodes before the roller support, as in their code). The stress-free
+    temperature is Ta. The void phase stands for insulation (see ThermoStructuralTOExamples.MBBBeam)."""
     stl_file = os.path.join(script_dir, '../Models/MBBBeam/MBBBeam.STL')
 
     mesh = hex_mesher.HexMesher()
@@ -85,10 +90,9 @@ def createMBBBeamProblem(nDOFDesired=25000, structural_load = 5000,Ta = 23,Tf  =
 
 
     symmetryNodes = mesh.getNodesOnBoundingBoxPlane(0,True) # x = 0 plane
-    hingedNodes = mesh.getNodesOnBoundingBoxPlane(1,True) # y = 0 plane
     node_pts = mesh.node_xyz
-  
     xMax = np.max(node_pts[:, 0])
+    thickness = np.ptp(node_pts[:, 2])
 
     hingedNodes = np.intersect1d(mesh.getNodesOnBoundingBoxPlane(1,True), np.where(mesh.node_xyz[:,0] == xMax)[0])
    
@@ -105,12 +109,14 @@ def createMBBBeamProblem(nDOFDesired=25000, structural_load = 5000,Ta = 23,Tf  =
 
     force = np.zeros(3*mesh.num_nodes)
     for node in load_nodes:
-        force[3 * node + 1] = -structural_load / len(load_nodes)
+        force[3 * node + 1] = -load_per_thickness * thickness / len(load_nodes)
 
     bcStructural = bound_cond.BC(force = force,fixed_dofs = fixed_dofs,dirichlet_values = dirichlet_values) 
 
     top_nodes = mesh.getNodesOnBoundingBoxPlane(1,False) # y =yMax plane
     bottom_nodes = mesh.getNodesOnBoundingBoxPlane(1,True) # y =yMin plane
+    # Ooms et al.: the hot boundary stops two nodes short of the roller support
+    bottom_nodes = bottom_nodes[node_pts[bottom_nodes, 0] < xMax - 1.5 * mesh.elem_size[0]]
 
     thermal_fixed_dofs = np.concatenate([top_nodes, bottom_nodes]).astype(int)
     thermal_dirichlet_values = np.concatenate([Ta * np.ones(len(top_nodes)), 
@@ -121,7 +127,17 @@ def createMBBBeamProblem(nDOFDesired=25000, structural_load = 5000,Ta = 23,Tf  =
     bcThermal = bound_cond.BC(force = thermal_force,
 						fixed_dofs = thermal_fixed_dofs,
 						dirichlet_values = thermal_dirichlet_values) 
-    mat_prop = mat_lib.get_material("Steel")
+    mat_prop = mat_lib.Material(  # Ooms et al., Table 1 (concrete); note mat_lib's "Concrete" has E = 30 MPa
+        name="ConcreteOoms",
+        youngs_modulus=30e9,
+        poissons_ratio=0.3,
+        mass_density=2400,
+        thermal_conductivity=1,
+        specific_heat=900,
+        thermal_expansion_coefficient=12e-6,
+        cost=0.1,
+        yield_strength=30e6,
+    )
     elem_body_force = None
 
     return mesh, mat_prop, bcStructural,bcThermal, elem_body_force
