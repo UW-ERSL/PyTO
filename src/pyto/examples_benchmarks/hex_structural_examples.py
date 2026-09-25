@@ -2337,8 +2337,15 @@ def createLBracketThickProblem(nDOFDesired: int = 80000,topload = 1000,midload =
   mesh.createMeshFromSTLFile(stl_file, nElemsDesired=nElemsDesired)
   mesh.createEdofMatStructural()
 
-  triList0 = [16,17]
-  fixed_nodes = mesh.get_nodes_on_triangles(triList0)
+  # Supports/loads are selected by GEOMETRY, not by hard-coded STL triangle index.
+  # The model was re-tessellated (32 -> 596 triangles) and the old indices [16,17],
+  # [12,13], [4,5] then silently pointed at unrelated patches of the y = 0.5 surface
+  # (5 colinear fixed nodes instead of the whole top face) -- a different problem.
+  vecs = mesh.stlGeom.mesh.vectors  # (n_triangles, 3 vertices, xyz)
+  x, y, z = vecs[..., 0], vecs[..., 1], vecs[..., 2]
+  eps = 1e-4
+  fixed_tris = np.where((np.abs(y - y.max()) < eps).all(axis=1))[0]  # top face, y = yMax
+  fixed_nodes = mesh.get_nodes_on_triangles(fixed_tris)
   fixed_dofs = np.array([3 * fixed_nodes,
               3 * fixed_nodes + 1,
               3 * fixed_nodes + 2]).flatten().astype(int)
@@ -2347,16 +2354,16 @@ def createLBracketThickProblem(nDOFDesired: int = 80000,topload = 1000,midload =
 
   force = np.zeros(3*mesh.num_nodes)
   if(abs(topload) > 0):
-    triList1 = [12,13]
-    topload_nodes = mesh.get_nodes_on_triangles(triList1)
-    
+    # narrow strip at the end of the foot: top surface y = 0.5, x >= 0.975
+    topload_tris = np.where((np.abs(y - 0.5) < eps).all(axis=1) & (x >= 0.975 - eps).all(axis=1))[0]
+    topload_nodes = mesh.get_nodes_on_triangles(topload_tris)
     topload_dofs = 3 * topload_nodes + 1  
     mesh.node_indices[topload_nodes, 3] = 2 # for plotting
     force[topload_dofs] = -topload/len(topload_nodes)
   if(abs(midload) > 0):
-    triList2 = [4,5]
-    midload_nodes = mesh.get_nodes_on_triangles(triList2)
-
+    # narrow strip at mid-height of the foot's end face: x = xMax, |y - 0.25| <= 0.0125
+    midload_tris = np.where((np.abs(x - x.max()) < eps).all(axis=1) & (np.abs(y - 0.25) <= 0.0125 + eps).all(axis=1))[0]
+    midload_nodes = mesh.get_nodes_on_triangles(midload_tris)
     midload_dofs = 3 * midload_nodes + 1
     mesh.node_indices[midload_nodes, 3] = 2 # for plotting
     force[midload_dofs] = -midload/len(midload_nodes)

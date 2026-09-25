@@ -39,6 +39,31 @@ class BC:
     self.force = force
 
 
+def resolve_constraint_matrix(bc: "BC") -> None:
+  """Make `bc` usable by the torch solve, which only knows fixed_dofs/dirichlet_values.
+
+  A constraint row with a single non-zero (coef * u_j = rhs) is just a Dirichlet condition u_j = rhs / coef,
+  so those rows are folded into fixed_dofs/dirichlet_values and constraint_matrix is cleared. A row that
+  couples several DOFs (e.g. a sliding support) cannot be expressed that way and is not supported by the
+  torch solve: raise instead of silently ignoring it. Also normalizes fixed_dofs/dirichlet_values to arrays
+  (problems may pass empty lists). Safe to call repeatedly.
+  """
+  fixed = np.asarray(bc.fixed_dofs, dtype=np.int64).reshape(-1)
+  values = np.asarray(bc.dirichlet_values, dtype=float).reshape(-1)
+  if bc.constraint_matrix is not None:
+    C = spy_sprs.csr_matrix(bc.constraint_matrix)
+    rhs = np.zeros(C.shape[0]) if bc.constraint_rhs is None else np.asarray(bc.constraint_rhs, dtype=float).reshape(-1)
+    if np.any(np.diff(C.indptr) != 1):
+      raise NotImplementedError(
+          "constraint_matrix rows that couple several DOFs (e.g. sliding supports) are not supported by the "
+          "torch solve; only single-DOF rows (plain Dirichlet conditions) are.")
+    merged = dict(zip(fixed.tolist(), values.tolist()))
+    merged.update(zip(C.indices.tolist(), (rhs / C.data).tolist()))
+    fixed, values = np.array(list(merged), dtype=np.int64), np.array(list(merged.values()), dtype=float)
+    bc.constraint_matrix, bc.constraint_rhs = None, None
+  bc.fixed_dofs, bc.dirichlet_values = fixed, values
+
+
 def _rigid_body_mode_matrix(node_xyz: np.ndarray, node_ids: np.ndarray,
                              comps: np.ndarray, reference_point: np.ndarray) -> np.ndarray:
   """Evaluate the 6 classical small-rigid-body-displacement fields
@@ -211,8 +236,12 @@ def apply_dirichlet_bc_torch(K, f, bc: BC):
   idx = Kc.indices()
   val = Kc.values()
 
-  # modify RHS: f_mod = f - K * u_pres, then enforce dirichlet values at fixed dofs
-  reaction = torch.sparse.mm(Kc, u_pres.unsqueeze(1)).squeeze(1)
+  # modify RHS: f_mod = f - K * u_pres, then enforce dirichlet values at fixed dofs.
+  # K @ u_pres is written as an explicit scatter over K's stored nonzeros rather than
+  # torch.sparse.mm: the backward of sparse.mm w.r.t. K (SparseAddmmBackward) materializes
+  # a dense (ndof x ndof) gradient -- ~48 GB at 77k dof -- and OOM-killed large problems
+  # (LBracketThick, ThreeHoleBracket, GEGrabCAD) inside torch.autograd.grad.
+  reaction = torch.zeros(ndof, device=device, dtype=dtype).index_add(0, idx[0], val * u_pres[idx[1]])
   f_mod = f - reaction
   f_mod[fixed] = dir_vals
 

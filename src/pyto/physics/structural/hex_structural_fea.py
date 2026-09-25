@@ -37,6 +37,7 @@ class HexStructuralFEA:
     self.solver, self.kwargs = solver, kwargs
     self.dsolver = dsolver
 
+    bound_cond.resolve_constraint_matrix(bc)  # single-DOF constraint rows become Dirichlet; sliding rows raise
     well_posed, worst_relative_component = bound_cond.check_rigid_body_constraint(mesh, bc)
     if not well_posed:
       raise ValueError(
@@ -97,16 +98,15 @@ class HexStructuralFEA:
 
     if self.elem_body_force is not None:
         self._elem_body_force_torch = torch.tensor(self.elem_body_force, dtype=torch.float64)
-        self._elem_to_node_map_torch = torch.tensor(
-            self.mesh.elem_to_node_field_mapping,
-            dtype=torch.float64,
-        )
+        m = self.mesh.elem_to_node_field_mapping.tocoo()  # scipy (num_nodes, num_elems); dense would be huge
+        self._elem_to_node_map_torch = torch.sparse_coo_tensor(
+            np.vstack([m.row, m.col]), m.data, m.shape, dtype=torch.float64).coalesce()
     else:
         self._elem_body_force_torch = None
         self._elem_to_node_map_torch = None
     self._spring_K = None
     if getattr(self.mesh, "externalSprings", None):
-        dofs, ks = zip(*self.mesh.externalSprings)
+        ks, dofs = zip(*self.mesh.externalSprings)
         spring_idx  = torch.tensor([dofs, dofs], dtype=torch.long)
         spring_vals = torch.tensor(ks, dtype=torch.float64)
         self._spring_K = (spring_idx, spring_vals)  # store raw parts
@@ -178,12 +178,10 @@ class HexStructuralFEA:
 
       if self._elem_body_force_torch is not None:
           elem_force = self._elem_body_force_torch # (3E,)
-          elem_force = elem_force.view(-1, 3) * elem_material_scaling.view(-1, 1)
-          elem_force = elem_force.reshape(-1)
+          # body force is proportional to density x (not to the SIMP stiffness factor)
+          elem_force = (elem_force.view(-1, 3) * x.view(-1, 1)).reshape(-1)
           map_vec = self._elem_to_node_map_torch
-          fx = map_vec * elem_force[0::3]
-          fy = map_vec * elem_force[1::3]
-          fz = map_vec * elem_force[2::3]
+          fx, fy, fz = (torch.sparse.mm(map_vec, elem_force[i::3].unsqueeze(1)).squeeze(1) for i in range(3))
           node_forces = torch.stack([fx, fy, fz], dim=1).reshape(-1)
           f = f + node_forces
       self.total_force = f
@@ -451,9 +449,9 @@ class HexStructuralFEA:
     # Create vertices array
     vertices = self.mesh.node_xyz.copy()
   
-    sol = self.sol.copy()
+    sol = self.sol.detach().cpu().numpy().copy()
     sol = sol.reshape((-1, 3))
-    delta = self.deformation
+    delta = self.deformation.detach().cpu().numpy()
     deltaMax = self.max_deformation
     if deltaMax < 1e-16:
       deltaMax = 1e-16
@@ -513,7 +511,6 @@ class HexStructuralFEA:
     if plotter is None: 
       externalPlotter = True # create a new plotter
       # Create plotter
-      save_path = None
       if save_path is  None:
         plotter = self.pyVistaPlotter 
         if plotter.iren is None:
