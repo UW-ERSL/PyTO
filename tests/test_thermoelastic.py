@@ -100,3 +100,77 @@ def test_bar_clamped_at_both_ends_carries_minus_E_alpha_dT():
     expected = mat.youngs_modulus * mat.thermal_expansion_coefficient * dT
     sxx = np.asarray(structural.stressComponents)[:, 0]
     assert np.allclose(sxx, -expected, rtol=1e-5), (sxx.min(), sxx.max(), -expected)
+
+
+# ---------------------------------------------------------------- B3: coupled solver object
+def _coupled_problem(n=(4, 2, 2), T_hot=80.0, T_cold=23.0):
+    """Cantilever-like brick: hot face x=0, cold face x=L (thermal Dirichlet), clamped at x=0, tip load at x=L."""
+    import pyto.core.bc as bound_cond
+    import pyto.core.mat_lib as mat_lib
+    import pyto.core.hex_mesher as hex_mesher
+    import pyto.solve.numpy_backend as lin
+    from pyto.physics.thermoelastic.thermostructural_fea import ThermoStructuralFEA
+
+    mesh = hex_mesher.HexMesher()
+    mesh.grid_mesh(num_elems=n, elem_size=(0.5, 0.5, 0.5))
+    mat = mat_lib.get_material("Steel")
+    xyz = mesh.node_xyz
+    hot, cold = np.where(xyz[:, 0] < 1e-9)[0], np.where(xyz[:, 0] > xyz[:, 0].max() - 1e-9)[0]
+    tbc = bound_cond.BC(force=np.zeros(mesh.num_nodes), fixed_dofs=np.concatenate([hot, cold]),
+                        dirichlet_values=np.concatenate([np.full(len(hot), T_hot), np.full(len(cold), T_cold)]))
+    fixed = np.concatenate([3 * hot, 3 * hot + 1, 3 * hot + 2])
+    force = np.zeros(3 * mesh.num_nodes)
+    force[3 * cold + 1] = -1e5
+    sbc = bound_cond.BC(force=force, fixed_dofs=fixed, dirichlet_values=np.zeros(len(fixed)))
+    fe = ThermoStructuralFEA(mesh=mesh, mat_prop=mat, structural_bc=sbc, thermal_bc=tbc,
+                             solver=lin.Solvers.SPSOLVE, thermoElasticReferenceTemperature=T_cold)
+    return fe
+
+
+def _energy_compliance(fe, x):
+    from pyto.autodiff.qoi.compliance import compute_compliance_torch
+    u = fe.solve(x, MaterialModel.SIMP)
+    KE = fe.elem_stiff_torch[0]
+    return compute_compliance_torch(u, x, fe, KE, MaterialModel.SIMP)
+
+
+def test_coupled_solver_keeps_structural_edofmat_and_matches_manual_chain():
+    fe = _coupled_problem()
+    assert np.array_equal(fe.mesh.edofMat, fe.mesh.edofMatStructural)  # thermal ctor must not leave its edofMat behind
+    x = torch.tensor(0.3 + 0.6 * np.random.default_rng(0).random(fe.mesh.num_elems), dtype=torch.float64)
+    u = fe.solve(x, MaterialModel.SIMP)
+    T = fe.thermal_fea.solve(x, MaterialModel.SIMP)
+    f = fe.thermal_fea.get_thermoelastic_force_torch(T, x, MaterialModel.SIMP)
+    assert torch.allclose(fe.temperature, T)
+    assert np.max(np.abs(f.numpy())) > 0
+    assert torch.allclose(fe.total_force, torch.as_tensor(fe.bc.force) + f)
+    assert fe.elem_thermal_strain is not None
+
+
+def test_coupled_compliance_gradient_matches_finite_differences():
+    # Autograd through thermal adjoint -> thermal force -> structural adjoint, vs central differences.
+    fe = _coupled_problem()
+    x0 = torch.tensor(0.3 + 0.6 * np.random.default_rng(3).random(fe.mesh.num_elems), dtype=torch.float64)
+    x = x0.clone().requires_grad_(True)
+    (g,) = torch.autograd.grad(_energy_compliance(fe, x), x)
+    for i in np.random.default_rng(4).choice(fe.mesh.num_elems, size=4, replace=False):
+        step = 1e-5
+        up, dn = x0.clone(), x0.clone()
+        up[i] += step; dn[i] -= step
+        fd = (_energy_compliance(fe, up) - _energy_compliance(fe, dn)).item() / (2 * step)
+        assert abs(fd - float(g[i])) <= 1e-5 * abs(fd) + 1e-9, (i, fd, float(g[i]))
+
+
+def test_coupled_autograd_gradient_matches_hand_derived_thermoelastic_sensitivity():
+    # Independent oracle: ThermoElasticSensitivity (three-term adjoint formula, used by the GUI).
+    import contextlib, io
+    import pyto.solve.numpy_backend as lin
+    from pyto.physics.thermoelastic.topopt_thermostructural_sensitivity import ThermoElasticSensitivity
+    fe = _coupled_problem()
+    x0 = torch.tensor(0.3 + 0.6 * np.random.default_rng(3).random(fe.mesh.num_elems), dtype=torch.float64)
+    x = x0.clone().requires_grad_(True)
+    (g,) = torch.autograd.grad(_energy_compliance(fe, x), x)
+    with contextlib.redirect_stdout(io.StringIO()):  # the oracle prints debug lines
+        ref = ThermoElasticSensitivity(fe.thermal_fea, fe).compute_compliance_sensitivity(
+            x0.numpy(), fe.temperature.detach().numpy(), fe.sol.detach().numpy(), solver=lin.Solvers.SPSOLVE)
+    assert np.max(np.abs(ref - g.numpy())) <= 1e-6 * np.max(np.abs(g.numpy()))

@@ -7,7 +7,7 @@ Status: `[ ]` todo, `[~]` in progress, `[x]` done.
 ## Steps
 - [x] **B1. Differentiable thermoelastic force** `F_th(x, T)` (torch), validated against the existing NumPy `get_thermoelastic_force` and by finite differences.
 - [x] **B2. Structural solve accepts the thermal load** (and an element thermal strain for stresses).
-- [ ] **B3. Coupled solver object** (`ThermoStructuralFEA`) with the single-solver interface the drivers expect; gradient by autograd through both adjoints, checked by finite differences and against the hand-derived `ThermoElasticSensitivity`.
+- [x] **B3. Coupled solver object** (`ThermoStructuralFEA`) with the single-solver interface the drivers expect; gradient by autograd through both adjoints, checked by finite differences and against the hand-derived `ThermoElasticSensitivity`.
 - [ ] **B4. Drivers and runner** run the coupled problems (MMA and OC).
 - [ ] **B0. Problem definitions** matching the papers (BiClamp: R&F Example A; MBB: Ooms parameters). Done after B3 because it needs the coupled solver to validate.
 - [ ] **B5. BiClamp validation** against R&F and the Reference row.
@@ -31,3 +31,13 @@ Status: `[ ]` todo, `[~]` in progress, `[x]` done.
 - **Bug found** (`physics/thermal/hex_thermal_fea.py`): `getHMatrix` returned its 24 rows COMPONENT-major (all x of nodes 1..8, then y, then z), while `edofMat`, the element stiffness and the displacement vector are NODE-major (3*j + c). The thermal force was therefore scrambled: a freely expanding body did not expand freely. Fixed at the source by permuting the rows to node-major (`H.reshape(3,8,8).transpose(1,0,2).reshape(24,8)`). This also corrects `get_thermoelastic_force` (NumPy), `get_thermoelastic_force_torch` and `ThermoElasticSensitivity`, which all consume that matrix.
 - **Consequence:** the old Reference/PyTO ThermoStructural numbers and the GUI thermo-elastic demo were produced with the wrong ordering and are not trustworthy; they need recomputing (B5/B6).
 - **Checked** (`tests/test_thermoelastic.py`): free expansion with 6 minimal supports gives `u = alpha dT (X - X0)` exactly and ~zero von Mises; a bar clamped in x at both ends gives `sigma_xx = -E alpha dT`. Full suite: 94 passed, 1 xfailed.
+
+### B3 (done): coupled solver object `ThermoStructuralFEA`
+- **Approach:** the drivers take one `fe_solver` and call `solve(x, material_model)`. A new class `ThermoStructuralFEA(HexStructuralFEA)` (`physics/thermoelastic/thermostructural_fea.py`) owns a `HexThermalFEA` (`.thermal_fea`) and its `solve` runs `T = thermal.solve(x)` -> `F_th = get_thermoelastic_force_torch(T, x)` -> `HexStructuralFEA.solve(x, extra_force=F_th, elem_thermal_strain=...)`. It returns the displacement, so the existing qoi code (compliance energy form `u^T K u = F_total . u`, volume, stress) needs no change, and `isinstance(fe, HexStructuralFEA)` checks in the drivers stay true. `.temperature` keeps the last T.
+- **No coupled sensitivity code:** everything is torch, so `autograd` goes through the thermal adjoint, the force and the structural adjoint. Nothing hand-derived enters the optimizers.
+- **Pitfall handled:** `HexThermalFEA.__init__` overwrites the shared `mesh.edofMat` with the thermal connectivity. The thermal object is built first and the structural constructor last, which leaves `mesh.edofMat = edofMatStructural` (asserted in a test).
+- **Checked** (`tests/test_thermoelastic.py`, hot face x=0 / cold face x=L, clamp + tip load, random densities):
+  - coupled result equals the manual chain and `total_force = F_mech + F_th`;
+  - autograd gradient of the compliance equals central finite differences (rtol 1e-5);
+  - autograd gradient equals the independent hand-derived `ThermoElasticSensitivity` (3-term adjoint formula) to 5e-9 relative. That oracle uses the `getHMatrix` fixed in B2, so this also confirms the fix is consistent.
+- **Note for B4:** the runner's THERMO_STRUCTURAL branch currently builds a plain `HexStructuralFEA` plus an unused thermal object; it must build `ThermoStructuralFEA` instead.
