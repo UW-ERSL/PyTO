@@ -34,6 +34,7 @@ class HexStructuralFEA:
 
     self.mesh, self.mat_prop, self.bc = mesh, mat_prop, bc
     self.thermo_elastic_force = thermo_elastic_force
+    self.elem_thermal_strain = None  # (E, 6) free thermal strain of the last solve, for stress post-processing
     self.solver, self.kwargs = solver, kwargs
     self.dsolver = dsolver
 
@@ -142,7 +143,18 @@ class HexStructuralFEA:
 
   #################################################################
 
-  def solve(self, x, material_model: MaterialModel = None):
+  def solve(self, x, material_model: MaterialModel = None, extra_force=None, elem_thermal_strain=None):
+      """Solve K(x) u = f.
+
+      Args:
+        x: (E,) design densities (torch).
+        material_model: SIMP/RAMP/... (see pyto.autodiff.material_model).
+        extra_force: optional (ndof,) torch tensor added to the load. Differentiable: this is how the
+          design-dependent thermal load F_th(x, T) of a coupled thermo-mechanical problem enters
+          (autograd flows through it).
+        elem_thermal_strain: optional (E, 6) free thermal strain; only used by postprocess() so the
+          stresses are computed from the elastic strain (total - thermal).
+      """
 
       self.x = x
       device, dtype = x.device, x.dtype
@@ -184,6 +196,11 @@ class HexStructuralFEA:
           fx, fy, fz = (torch.sparse.mm(map_vec, elem_force[i::3].unsqueeze(1)).squeeze(1) for i in range(3))
           node_forces = torch.stack([fx, fy, fz], dim=1).reshape(-1)
           f = f + node_forces
+      if self.thermo_elastic_force is not None:  # static (non-differentiable) thermal load given at construction
+          f = f + torch.as_tensor(self.thermo_elastic_force, dtype=f.dtype, device=f.device)
+      if extra_force is not None:
+          f = f + extra_force
+      self.elem_thermal_strain = elem_thermal_strain
       self.total_force = f
 
 
@@ -241,19 +258,8 @@ class HexStructuralFEA:
       ], axis=1)  # Shape: (num_elems, 6)
       self.strainComponents = strain.copy() # store the total strain (elastic + thermal)
     
-      if (self.thermo_elastic_force is not None): # We must use only the elastic strain for computing stresses
-        # Compute elastic strains only
-        uGradElastic = gradN @ self.solElastic[edof[:, ::3]].T
-        vGradElastic = gradN @ self.solElastic[edof[:, 1::3]].T
-        wGradElastic = gradN @ self.solElastic[edof[:, 2::3]].T
-        
-        # Compute Engineering strains
-        strain = np.stack([
-          uGradElastic[0], vGradElastic[1], wGradElastic[2],
-          uGradElastic[1] + vGradElastic[0],
-          uGradElastic[2] + wGradElastic[0],
-          vGradElastic[2] + wGradElastic[1]
-        ], axis=1)  # Shape: (num_elems, 6)
+      if self.elem_thermal_strain is not None:  # stresses come from the ELASTIC strain only
+        strain = strain - self.elem_thermal_strain
 
       # STRESS_RELAXATION method;
       q = 0.5  # SIMP like penalization for stress

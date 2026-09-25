@@ -164,7 +164,7 @@ class HexThermalFEA:
       Returns:
       --------
       H : ndarray (24, 8)
-          Thermo-elastic coupling matrix
+          Thermo-elastic coupling matrix; rows are node-major (3*j + component), like edofMat.
           
       Notes:
       ------
@@ -226,7 +226,13 @@ class HexThermalFEA:
       
       # Reshape to 24x8 using Fortran (column-major) order to match MATLAB
       H = H_flat.reshape((24, 8), order='F')
-      
+
+      # The symbolic output orders the 24 rows COMPONENT-major (all x-forces of nodes 1..8, then all y, then
+      # all z). Every other element quantity in PyTO (edofMat, the element stiffness, the displacement vector
+      # sol[edof]) is NODE-major (3*j + c), so reorder the rows. Without this the thermal force was scrambled
+      # (a freely expanding body did not expand freely; see tests/test_thermoelastic.py).
+      H = H.reshape(3, 8, 8).transpose(1, 0, 2).reshape(24, 8)
+
       return H
   #################################################################
   def get_thermoelastic_force_torch(self, T: torch.Tensor, x: torch.Tensor,
