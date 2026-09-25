@@ -229,6 +229,53 @@ class HexThermalFEA:
       
       return H
   #################################################################
+  def get_thermoelastic_force_torch(self, T: torch.Tensor, x: torch.Tensor,
+                                    material_model: MaterialModel = None) -> torch.Tensor:
+    """Differentiable nodal thermal force F_th(x, T), shape (3 * num_nodes,).
+
+    Torch twin of get_thermoelastic_force (same numbers): per element
+        f_e = s_beta(x_e) * E * alpha * H (T_e - T_ref),
+    where s_beta is the structural stiffness scaling (the thermal stress coefficient beta = E*alpha is
+    penalized like E, Rodrigues & Fernandes 1995; Ooms et al.), and H = getHMatrix(nu) [24 x 8].
+    getHMatrix is proportional to 1/(2*nu - 1), so a single reference matrix (nu = 0) serves every
+    element and material: H(nu) = H(0) / (1 - 2*nu).
+
+    Autograd flows through both the temperatures T (so through the thermal solve) and the design x.
+    """
+    dx, dy, dz = self.mesh.elem_size
+    elem_nodes = torch.as_tensor(self.mesh.elemArray[:, :8], dtype=torch.long)          # (E, 8)
+    dofs = (3 * elem_nodes.unsqueeze(-1) + torch.arange(3)).reshape(elem_nodes.shape[0], 24)  # node-major, like H
+    H0 = torch.as_tensor(self.getHMatrix(dx, dy, dz, 0.0), dtype=T.dtype)                 # (24, 8)
+
+    n_elem = elem_nodes.shape[0]
+    if isinstance(self.mat_prop, list):
+      E = torch.tensor([mp.youngs_modulus for mp in self.mat_prop], dtype=T.dtype)
+      alpha = torch.tensor([mp.thermal_expansion_coefficient for mp in self.mat_prop], dtype=T.dtype)
+      nu = torch.tensor([mp.poissons_ratio for mp in self.mat_prop], dtype=T.dtype)
+    else:
+      E, alpha, nu = (torch.full((n_elem,), v, dtype=T.dtype) for v in (
+          self.mat_prop.youngs_modulus, self.mat_prop.thermal_expansion_coefficient, self.mat_prop.poissons_ratio))
+    scale = get_structural_material_model_scaling_torch(x, material_model) * E * alpha / (1.0 - 2.0 * nu)  # (E,)
+
+    dT = T[elem_nodes] - self.thermoElasticReferenceTemperature                            # (E, 8)
+    f_elem = scale.unsqueeze(1) * (dT @ H0.T)                                              # (E, 24)
+    return torch.zeros(3 * self.mesh.num_nodes, dtype=T.dtype).index_add(0, dofs.reshape(-1), f_elem.reshape(-1))
+
+  def get_element_thermal_strain(self, T: torch.Tensor) -> np.ndarray:
+    """Free thermal strain of each element, (E, 6) Voigt: alpha * (T_mean_e - T_ref) * [1, 1, 1, 0, 0, 0].
+
+    Used to remove the thermal part from the total strain when computing stresses."""
+    elem_nodes = self.mesh.elemArray[:, :8]
+    T_np = T.detach().cpu().numpy() if hasattr(T, "detach") else np.asarray(T)
+    dT = T_np[elem_nodes].mean(axis=1) - self.thermoElasticReferenceTemperature
+    if isinstance(self.mat_prop, list):
+      alpha = np.array([mp.thermal_expansion_coefficient for mp in self.mat_prop])
+    else:
+      alpha = self.mat_prop.thermal_expansion_coefficient
+    strain = np.zeros((elem_nodes.shape[0], 6))
+    strain[:, :3] = (alpha * dT)[:, None]
+    return strain
+
   def get_thermoelastic_force(self, x: np.ndarray = None, material_model: MaterialModel = None) -> np.ndarray:
     """
     Add thermal forces to the finite element system.
