@@ -1,4 +1,5 @@
 from pyto.topopt.common import *
+from pyto.autodiff.qoi.compliance import compliance_sign
 from pyto.autodiff.qoi import *
 from pyto.autodiff.material_model import *
 from pyto.autodiff.sparse_solve import SparseLinearSolve, Solvers
@@ -73,6 +74,17 @@ def run_topopt_mma(to_problem):
     plt.show()
 
 
+def _stress_limits(to_params, fe_solver):
+    """Allowed stress [Pa] of every stress-type constraint (empty when there is none)."""
+    out = []
+    for c in to_params.Constraints:
+        if c[0] is TO_QOI.MAX_VONMISES_STRESS:
+            out.append(c[2])
+        elif c[0] is TO_QOI.STRESS_FAILURE_FACTOR:
+            out.append(fe_solver.mat_prop.yield_strength * c[2])
+    return out
+
+
 def topopt_mma(fe_solver, #hex_structural_fea.HexStructuralFEA or hex_thermal_fea.HexThermalFEA
                            to_params,
                             maxMMAIterations: int = 150, 
@@ -136,6 +148,16 @@ def topopt_mma(fe_solver, #hex_structural_fea.HexStructuralFEA or hex_thermal_fe
     errorMsg = "No errors."
     nFEAs = 0
     obj0 = None
+    stress_limits = _stress_limits(to_params, fe_solver)
+    if stress_limits:
+        ones = torch.ones(num_elems, dtype=torch.float64)
+        with torch.no_grad():
+            _p, solid_max_vm = compute_pnorm_stress_autograd(fe_solver.solve(ones, material_model), ones, fe_solver)
+        if float(solid_max_vm) > min(stress_limits):
+            log_message(f"Warning: the stress limit ({min(stress_limits):.4g} Pa) is below the peak stress of the "
+                        f"SOLID design ({float(solid_max_vm):.4g} Pa); the constraint may be unreachable.")
+    # -1 only for prescribed-value-driven compliance problems (see compliance_sign)
+    sign = compliance_sign(fe_solver) if to_params.Objective[0] is TO_QOI.COMPLIANCE else 1.0
     mmaIterations = 0
 
     # ----------------- Core chains (x -> obj) and (x -> cons) -----------------
@@ -233,19 +255,9 @@ def topopt_mma(fe_solver, #hex_structural_fea.HexStructuralFEA or hex_thermal_fe
 
         # Normalization
         if obj0 is None:
-            obj0 = obj_raw
-        obj = obj_raw / obj0
-        grad_obj = grad_obj_filt / obj0  # still w.r.t. FILTERED density
-
-        # Additional body-force term (structural)
-        if nodal_body_force is not None:
-            ce_body_force = (
-                sol[fe_solver.mesh.edofMat].reshape(num_elems, 24)
-                * nodal_body_force[fe_solver.mesh.edofMat].reshape(num_elems, 24)
-            ).sum(1)
-            grad_obj += 2.0 * ce_body_force * get_material_model_rho_sensitivity(
-                x_filtered, material_model
-            )
+            obj0 = abs(obj_raw)
+        obj = sign * obj_raw / obj0
+        grad_obj = sign * grad_obj_filt / obj0  # still w.r.t. FILTERED density
 
         # Sensitivity filtering. The gradients above come from autograd w.r.t. the RAW
         # variables, i.e. they already include the chain rule through the density filter
@@ -274,12 +286,12 @@ def topopt_mma(fe_solver, #hex_structural_fea.HexStructuralFEA or hex_thermal_fe
             for m in range(len(to_params.Constraints)):
                 if to_params.Constraints[m][0] is TO_QOI.COMPLIANCE:
                     dcdx_filt[m] = (H @ (x_filtered * dcdx_filt[m])) / Hs / (x_filtered + 1e-12)
-                elif to_params.Constraints[m][0] is not TO_QOI.VOLUME_FRACTION:
+                elif to_params.Constraints[m][0] not in (TO_QOI.VOLUME_FRACTION, TO_QOI.VOLUME_FRACTION_MIN):
                     dcdx_filt[m] = (H @ dcdx_filt[m]) / Hs
         dcdx = dcdx_filt
 
         # Book-keeping
-        history["objective"].append(obj * obj0)        # store de-normalized (as before)
+        history["objective"].append(sign * obj * obj0)  # store the true (de-normalized) objective
         history["volfrac"].append(np.mean(x_filtered)) # track filtered volume fraction
         for idx, val in enumerate(c.flatten()):
             history[f"constraint_{idx+1}"].append(val)
@@ -305,7 +317,7 @@ def topopt_mma(fe_solver, #hex_structural_fea.HexStructuralFEA or hex_thermal_fe
             objective_name = getattr(
                 to_params.Objective[0], "name", str(to_params.Objective[0])
             )
-            print(f"Min. Objective ({objective_name}): {obj * obj0:.3g}")
+            print(f"Min. Objective ({objective_name}): {sign * obj * obj0:.3g}")
             constraint_names = [
                 getattr(cn[0], "name", str(cn[0])) for cn in to_params.Constraints
             ]
@@ -335,7 +347,9 @@ def topopt_mma(fe_solver, #hex_structural_fea.HexStructuralFEA or hex_thermal_fe
     objective_name = getattr(to_params.Objective[0], 'name', str(to_params.Objective[0]))
     constraint_names = [getattr(c[0], 'name', str(c[0])) for c in to_params.Constraints]
     
-    initialDensity = 0.5
+    # Start from the volume-fraction limit when there is one (Reference-era behaviour). Starting at
+    # 0.5 with a 0.1 limit is an infeasible start, and self-weight problems then collapse to zero material.
+    initialDensity = next((c[2] for c in to_params.Constraints if c[0] == TO_QOI.VOLUME_FRACTION), 0.5)
     x0 = initialDensity * np.ones(num_elems, dtype=float).reshape(-1, 1)
     lowerBound = np.zeros(num_elems, dtype=float).reshape(-1, 1)
     upperBound = np.ones(num_elems, dtype=float).reshape(-1, 1)
@@ -422,6 +436,14 @@ def topopt_mma(fe_solver, #hex_structural_fea.HexStructuralFEA or hex_thermal_fe
 
     # Leave the final design on the mesh for plotting
     fe_solver.mesh.setPseudoDensity(torch.tensor(x_design))
+
+    if stress_limits:
+        fe_solver.postprocess()  # stresses of the design just evaluated
+        solid = x_design > 0.5
+        max_vm = float(np.max(np.asarray(fe_solver.vonMisesStress)[solid])) if solid.any() else 0.0
+        if max_vm > 1.01 * min(stress_limits):
+            errorMsg = (f"Warning: stress limit exceeded by {100 * (max_vm / min(stress_limits) - 1):.1f}% "
+                        f"(max von Mises {max_vm:.4g} Pa vs limit {min(stress_limits):.4g} Pa)")
 
     # Log final line
     print("-" * 50)

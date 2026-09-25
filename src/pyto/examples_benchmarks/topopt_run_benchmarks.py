@@ -239,8 +239,8 @@ def runTOMethodOnBenchmarks(optimizationMethod, problems_override: list = None, 
 						to_problem in benchmarks_structural_bodyforce or \
 						to_problem in benchmarks_thermostructural_problems:
 					continue
-				u, history, success,errorMsg,nFEAs = topopt_levelset(feaMode,  fe_solver,
-														to_params = to_params)
+				u, history, success,errorMsg,nFEAs = topopt_levelset(feaMode, fe_solver,
+															to_params = to_params, maxIterations = to_params.MaxIterations)
 			timeTaken = time.time() - startTime
 
 			image_path = f"{output_dir}/{to_problem.name}.png"

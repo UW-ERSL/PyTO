@@ -31,6 +31,7 @@ class FEA_MODE(enum.Enum):
 
 class TO_QOI(enum.Enum): # Topology optimization; Various Quantity of Interest
 	VOLUME_FRACTION = enum.auto() # Volume fraction
+	VOLUME_FRACTION_MIN = enum.auto() # Lower bound on volume fraction (constraint: 1 - mean(x)/limit <= 0); e.g. keeps self-weight problems from collapsing
 	VOLUME = enum.auto() # Volume total
 	MASS = enum.auto() # Mass total
 	COMPLIANCE = enum.auto()

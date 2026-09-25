@@ -12,7 +12,6 @@ class StructuralTOExamples(enum.Enum):
 	ShortCantileverMidLoad = enum.auto()
 	CantileverTipLoad = enum.auto()
 	CantileverMidLoad = enum.auto()
-	CantileverTipLoadDisplacementObjective = enum.auto()
 	MBBBeam = enum.auto()
 	LBracketTopLoad = enum.auto()
 	LBracketMidLoad = enum.auto()
@@ -41,7 +40,6 @@ class StructuralTOExamples(enum.Enum):
 	CantileverMidLoadVolumeCompliance = enum.auto()
 
 	LBracketTopLoad_Stress_Vol = enum.auto()
-	LBracketTopLoad_Vol_StressFailureFactor = enum.auto()
 	LBracketTopLoad_Vol_Stress = enum.auto()
 	LBracketTopLoad_Mass_StressFF = enum.auto()
 	LBracketThickTopLoad_Vol_Stress = enum.auto()
@@ -73,8 +71,6 @@ def getSTLPath_TOProblem(to_problem: StructuralTOExamples):
     elif to_problem == StructuralTOExamples.CantileverTipLoad:
         stl_file = "Models/Cantilever/Cantilever.STL"
     elif to_problem == StructuralTOExamples.CantileverMidLoad:
-        stl_file = "Models/Cantilever/Cantilever.STL"
-    elif to_problem == StructuralTOExamples.CantileverTipLoadDisplacementObjective:
         stl_file = "Models/Cantilever/Cantilever.STL"
     elif to_problem == StructuralTOExamples.MBBBeam:
         stl_file = "Models/MBBBeam/MBBBeam.STL"
@@ -117,8 +113,6 @@ def getSTLPath_TOProblem(to_problem: StructuralTOExamples):
     elif to_problem == StructuralTOExamples.CantileverMidLoadVolumeCompliance:
         stl_file = "Models/Cantilever/CantileverMidLoad.STL"
     elif to_problem == StructuralTOExamples.LBracketTopLoad_Stress_Vol:
-        stl_file = "Models/LBracket/LBracket.STL"
-    elif to_problem == StructuralTOExamples.LBracketTopLoad_Vol_StressFailureFactor:
         stl_file = "Models/LBracket/LBracket.STL"
     elif to_problem == StructuralTOExamples.LBracketTopLoad_Vol_Stress:
         stl_file = "Models/LBracket/LBracket.STL"
@@ -214,13 +208,6 @@ def getStructuralTOProblem(to_problem: StructuralTOExamples,nDOFDesired = None, 
         to_params.nDOFDesired = 25000 if nDOFDesired is None else nDOFDesired
         to_params.Objective = (TO_QOI.COMPLIANCE, None)
         to_params.Constraints = [(TO_QOI.VOLUME_FRACTION, None, 0.5)]
-    elif to_problem == StructuralTOExamples.CantileverTipLoadDisplacementObjective:
-        structural_problem = StructuralExamples.CantileverTipLoad
-        to_params.Comment  = "Benchmark 2.5D"
-        to_params.Objective = (TO_QOI.GVECTOR, None) # see below for setting the GVECTOR after mesh is created
-        to_params.ExtrudeZ = True
-        to_params.nDOFDesired = 25000 if nDOFDesired is None else nDOFDesired
-        to_params.Constraints = [(TO_QOI.VOLUME_FRACTION, None, 0.5), (TO_QOI.RELATIVE_COMPLIANCE, None, 3)] 
     elif to_problem == StructuralTOExamples.MBBBeam:
         structural_problem = StructuralExamples.MBBBeam
         to_params.Comment  = "Benchmark 2.5D"
@@ -374,6 +361,7 @@ def getStructuralTOProblem(to_problem: StructuralTOExamples,nDOFDesired = None, 
         to_params.ZSymmetry = True
         to_params.nDOFDesired = 75000 if nDOFDesired is None else nDOFDesired
         to_params.Objective = (TO_QOI.COMPLIANCE, None)
+        to_params.MaxIterations = 300  # removes ~85% of the material; LevelSet needs ~200 iterations to get there
         to_params.Constraints = [(TO_QOI.VOLUME_FRACTION, None, 0.15)] 
 
     elif to_problem == StructuralTOExamples.GEGrabCAD:
@@ -390,7 +378,8 @@ def getStructuralTOProblem(to_problem: StructuralTOExamples,nDOFDesired = None, 
         to_params.XSymmetry = True
         to_params.Objective = (TO_QOI.COMPLIANCE, None)
         to_params.nDOFDesired = 20000 if nDOFDesired is None else nDOFDesired
-        to_params.Constraints = [(TO_QOI.VOLUME_FRACTION, None, 0.1)] 
+        # Self-weight compliance has a trivial near-empty optimum (less material = less load): keep a small band
+        to_params.Constraints = [(TO_QOI.VOLUME_FRACTION, None, 0.1), (TO_QOI.VOLUME_FRACTION_MIN, None, 0.095)] 
     elif to_problem == StructuralTOExamples.CentrifugalPlate:
         structural_problem = StructuralExamples.CentrifugalPlate
         to_params.Comment  = "Body Force"
@@ -450,7 +439,8 @@ def getStructuralTOProblem(to_problem: StructuralTOExamples,nDOFDesired = None, 
         kwargs['midload'] = 0
         to_params.nDOFDesired = 50000 if nDOFDesired is None else nDOFDesired
         to_params.Objective = (TO_QOI.VOLUME_FRACTION, None) # pnorm value
-        to_params.Constraints = [(TO_QOI.MAX_VONMISES_STRESS, None, 200e6)] 
+        # user-set limit: 300 MPa (a solid part peaks at ~206 MPa, so the original 200 MPa was unreachable; note the material's yield is 250 MPa)
+        to_params.Constraints = [(TO_QOI.MAX_VONMISES_STRESS, None, 300e6)] 
         to_params.Eliminate_Hanging_Elements = True
     elif to_problem == StructuralTOExamples.LBracketThickTopLoad_Stress_Vol:
         structural_problem = StructuralExamples.LBracket
@@ -512,14 +502,6 @@ def getStructuralTOProblem(to_problem: StructuralTOExamples,nDOFDesired = None, 
     if to_problem == StructuralTOExamples.KnuckleAssembly:
          to_params.ElemsToKeep = np.where(mesh.elemComponentId == 2)[0]
          #print("Elems to keep", to_params.ElemsToKeep.shape)
-    if to_problem == StructuralTOExamples.CantileverTipLoadDisplacementObjective:
-        pt = [1, 0.5, 0.05] # point of interest
-        node = mesh.get_nodes_from_locations(pt) 
-        dof = 3*node+1 # y dof
-        g = np.zeros(3*mesh.num_nodes)
-        g[dof] = -1
-        #to_params.ElemsToKeep, _ = mesh.get_element_containing_point(pt2)
-        to_params.Objective = (TO_QOI.GVECTOR, g) 
     if to_problem == StructuralTOExamples.Inverter:
         node_pts = mesh.node_xyz
         xMin = np.min(node_pts[:,0]) 

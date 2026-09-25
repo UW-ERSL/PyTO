@@ -1,4 +1,5 @@
 """Torch-differentiable compliance objective/constraint."""
+import numpy as np
 import torch
 
 
@@ -52,3 +53,19 @@ def compute_compliance_torch(
     material_scaling = scaling_fn(x, material_model)  # (E,)
 
     return (material_scaling * ce).sum()
+
+
+def compliance_sign(fe_solver) -> float:
+    """Sign to apply to the compliance objective (and its gradient) when *optimizing* it.
+
+    +1 for load-driven problems: minimize compliance u^T K u.
+    -1 when the only "load" is prescribed values (no force, no body force, non-zero Dirichlet values,
+    e.g. FourCornersThermal / BridgeThermal). There u^T K u is the dissipated energy, which FALLS as
+    material is removed, so minimizing it just deletes the design. The Reference-era gradient
+    (-dK*ce) instead maximized it (maximum conduction), which is the sensible goal: minimize -J.
+    The reported objective stays the true J.
+    """
+    bc = fe_solver.bc
+    driven_by_values = (not np.any(bc.force) and fe_solver.elem_body_force is None
+                        and np.any(np.asarray(bc.dirichlet_values)))
+    return -1.0 if driven_by_values else 1.0

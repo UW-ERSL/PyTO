@@ -77,7 +77,7 @@ def runMMA(nVariables,nConstraints,optimizationFunction,X0,lowerBound,
 	outit = 0
 	timeMMA = 0.0
 	timeFuncEval = 0.0
-	f0Scaling = f0val if abs(f0val) >1e-6 else 1
+	f0Scaling = abs(f0val) if abs(f0val) >1e-6 else 1  # a magnitude: dividing by a negative f0val would flip the objective and its gradient
 	f0valPrev = f0val/f0Scaling
 	fErr = 1
 	gErr = 1

@@ -72,6 +72,11 @@ def compute_constraint_and_gradient(to_params, sol: torch.Tensor, x: torch.Tenso
     signature compatibility with any future caller, not as a real
     sensitivity. Only c[m,0] is guaranteed correct.
 
+    NOTE: the MAX_VONMISES_STRESS / STRESS_FAILURE_FACTOR branches are stateful by design: every call
+    updates to_params.stress_scaling <- 0.25*max_vm/pnorm + 0.75*stress_scaling (the Reference-era
+    adaptive p-norm normalization), so evaluating them twice at the same x gives different values.
+    Reset to_params.stress_scaling before finite-difference checks.
+
     stress_scaling lives on to_params (per optimization run) rather than as
     a mutable function attribute -- see plan Phase 4 -- so two separate
     optimization runs in the same process don't share this state.
@@ -90,6 +95,8 @@ def compute_constraint_and_gradient(to_params, sol: torch.Tensor, x: torch.Tenso
         elif constraintType == TO_QOI.MASS:
             mass_t = compute_mass_torch(x, fe_solver)
             c[m, 0] = mass_t / constraintLimit - 1.0
+        elif constraintType == TO_QOI.VOLUME_FRACTION_MIN:
+            c[m, 0] = 1.0 - torch.mean(x) / constraintLimit
         elif constraintType == TO_QOI.VOLUME_FRACTION:
             c[m, 0] = compute_volume_constraint_torch(x, constraintLimit)
         elif constraintType == TO_QOI.PNORM_STRESS:
@@ -102,10 +109,7 @@ def compute_constraint_and_gradient(to_params, sol: torch.Tensor, x: torch.Tenso
             pnorm_stress, max_von_mises = compute_pnorm_stress_autograd(sol, x, fe_solver)
             normalized_pnorm = to_params.stress_scaling * pnorm_stress
             c[m, 0] = normalized_pnorm / constraintLimit - 1.0
-            if max_von_mises > constraintLimit:
-                to_params.stress_scaling = (
-                    0.5 * (max_von_mises / pnorm_stress).item() + 0.5 * to_params.stress_scaling
-                )
+            to_params.stress_scaling = 0.25 * (max_von_mises / pnorm_stress).item() + 0.75 * to_params.stress_scaling
         elif constraintType == TO_QOI.STRESS_FAILURE_FACTOR:
             # NOTE: this branch referenced a nonexistent TO_QOI.STRESS_SAFETY_FACTOR
             # before Phase 4 (the real enum member is STRESS_FAILURE_FACTOR --
@@ -132,13 +136,10 @@ def compute_constraint_and_gradient(to_params, sol: torch.Tensor, x: torch.Tenso
             # tests/test_qoi_gradients.py for the regression check).
             pnorm_stress, max_von_mises = compute_pnorm_stress_autograd(sol, x, fe_solver)
             yieldStrength = fe_solver.mat_prop.yield_strength
-            normalized_pnorm = to_params.stress_scaling * pnorm_stress
             allowed_stress = yieldStrength * constraintLimit
+            normalized_pnorm = to_params.stress_scaling * pnorm_stress
             c[m, 0] = normalized_pnorm / allowed_stress - 1.0
-            if max_von_mises > allowed_stress:
-                to_params.stress_scaling = (
-                    0.5 * (max_von_mises / pnorm_stress).item() + 0.5 * to_params.stress_scaling
-                )
+            to_params.stress_scaling = 0.25 * (max_von_mises / pnorm_stress).item() + 0.75 * to_params.stress_scaling
         else:
             raise NotImplementedError(f"Constraint {constraintType} is not implemented yet.")
     return c, dc

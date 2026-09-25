@@ -436,7 +436,11 @@ def topopt_levelset(feaMode,
         print(errorMsg)
         success = False
     
-    if len(history['objective']) > 1 and obj > 2 * history['objective'][0]:
+    # "Disconnected topology": a compliance blow-up is only a hint (compliance grows steeply as volume is removed,
+    # so it also fires on healthy designs); confirm with the actual connectivity of the final design.
+    volume_reduction = max(1.0, history['volfrac'][0] / volFractionConstraint)
+    if (len(history['objective']) > 1 and obj > 2 * volume_reduction * history['objective'][0]
+            and len(mesh.find_connected_components()) > 1):
         errorMsg = "Disconnected topology"
         success = False
     

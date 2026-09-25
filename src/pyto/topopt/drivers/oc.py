@@ -1,9 +1,9 @@
 
 from pyto.topopt.common import *
+from pyto.autodiff.qoi.compliance import compliance_sign
 from pyto.autodiff.material_model import *
 import pyto.autodiff.material_model as material_model_module
 from pyto.autodiff.qoi import *
-from pyto.autodiff.reference_adjoint.legacy_sensitivities import compute_volume_constraint_and_gradient
 import time
 
 from pyto.examples_benchmarks.topopt_structural_benchmarks import *
@@ -222,7 +222,7 @@ def topopt_optimality_criteria(
 			fe_solver.postprocess()
 
 			obj = obj_t.item()
-			grad_obj = grad_obj_t.detach().cpu().numpy()
+			grad_obj = compliance_sign(fe_solver) * grad_obj_t.detach().cpu().numpy()  # -1 only for prescribed-value problems
 			sol = sol_t.detach().cpu().numpy()
 
 			if (len(history['objective']) == 0):
@@ -230,9 +230,6 @@ def topopt_optimality_criteria(
 			obj = obj/objScaling # Scale the objective function to avoid numerical issues
 			grad_obj /= objScaling
 
-			if (nodal_body_force is not None): #additional body force term
-				ce_body_force = (sol[fe_solver.mesh.edofMat].reshape(num_elems, 24) * nodal_body_force[fe_solver.mesh.edofMat].reshape(num_elems, 24)).sum(1)
-				grad_obj +=  2*ce_body_force
 			
 			# we apply sensitivity filter on the gradient in OCM
 			grad_obj = (H *(x* grad_obj))/Hs/x # apply filter
@@ -244,7 +241,8 @@ def topopt_optimality_criteria(
 				grad_obj[to_params.ElemsToKeep] = min(grad_obj) # also retain elements that are in the keep list
 
 	
-			volConstraint, volConstraint_gradient = compute_volume_constraint_and_gradient(x, volFractionConstraint)
+			volConstraint = np.mean(x) / volFractionConstraint - 1.0
+			volConstraint_gradient = np.ones_like(x) / volFractionConstraint / x.size
 
 			# Optimality criteria update
 			xold = x.copy()
@@ -260,7 +258,7 @@ def topopt_optimality_criteria(
 				D = np.clip(D, 0.1,10) # 
 				# OC update with damping and bounds
 				xnew = np.maximum(xmin,np.maximum(x - move,np.minimum(xmax, np.minimum(x + move, x * np.sqrt(D)))))
-				volConstraint, _ = compute_volume_constraint_and_gradient(xnew, volFractionConstraint)
+				volConstraint = np.mean(xnew) / volFractionConstraint - 1.0
 				if volConstraint > 0:
 					l1 = lmid
 				else:
