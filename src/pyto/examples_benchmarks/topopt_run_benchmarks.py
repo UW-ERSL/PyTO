@@ -76,6 +76,20 @@ benchmarks_thermostructural_problems = [ThermoStructuralTOExamples.BiClamp,
 					ThermoStructuralTOExamples.MBBBeam,
 					ThermoStructuralTOExamples.MBBBeamNoHeat]
 
+# Defined and building (checked 2026-09-28) but not part of the standard sweep: variants of listed problems,
+# large-DOF versions, or problems with no Reference result. Run them with problems_override=... when needed.
+benchmarks_not_in_sweep = [StructuralTOExamples.Mitchell_2,
+					StructuralTOExamples.Mitchell_3,
+					StructuralTOExamples.ShortCantileverTipLoad,
+					StructuralTOExamples.ShortCantileverMidLoad,
+					StructuralTOExamples.TensilePlate,
+					StructuralTOExamples.EdgeCantileverLargeDOF,
+					StructuralTOExamples.EdgeCantileverConstraintMatrix,
+					StructuralTOExamples.LBracketThickTopLoad_Vol_Stress,
+					StructuralTOExamples.LBracketThickTopLoad_Stress_Vol,
+					StructuralTOExamples.LBracketMidLoad_Vol_StressFailureFactor_Compliance,
+					StructuralTOExamples.KnuckleAssembly]
+
 benchmarks_thermal_2_5D_problems = [ThermalTOExamples.HeatPlate, ThermalTOExamples.FourCornersThermal,
 						 ThermalTOExamples.BridgeThermal]
 
@@ -218,20 +232,25 @@ def runTOMethodOnBenchmarks(optimizationMethod, problems_override: list = None, 
 										maxMMAIterations = to_params.MaxIterations,
 										binarize_topology = binarize_topology and not to_params.HeavisideProjection,print_progress = print_progress)
 			elif optimizationMethod == TO_METHODS.DENSITYOCM:
-				if to_problem in benchmarks_structural_noncompliance or \
-						to_problem in benchmarks_structural_bodyforce:
+				# GravityPlate (pure self-weight) is skipped: its compliance is not monotone in the density, OC's
+				# update assumes negative sensitivities, and it collapses the design (tried SIMP and RAMP,
+				# 2026-09-28). CentrifugalPlate runs fine with OC.
+				if to_problem in benchmarks_structural_noncompliance or to_problem == StructuralTOExamples.GravityPlate:
 					continue
 				u, history, success,errorMsg,nFEAs = topopt_optimality_criteria(fe_solver,to_params = to_params,
 												maxIterations = to_params.MaxIterations,
 												binarize_topology = binarize_topology and not to_params.HeavisideProjection,print_progress = print_progress)
 			elif optimizationMethod == TO_METHODS.PARETO:
 				if to_problem in benchmarks_structural_noncompliance or \
-						to_problem in benchmarks_structural_bodyforce or \
 						to_problem in benchmarks_thermostructural_problems:
 					continue
+				# Pareto includes the body-force term in its topological sensitivity and removes hanging elements:
+				# it gives the self-weight arch on GravityPlate.
 				u, history, success,errorMsg,nFEAs = topopt_pareto(feaMode, fe_solver,
 														to_params = to_params,print_progress = print_progress)
 			elif optimizationMethod == TO_METHODS.LEVELSET:
+				# Body-force problems are skipped: the level-set shape derivative has no design-dependent load term,
+				# and adding it (checked against autograd) still does not converge on either plate (2026-09-28).
 				if to_problem in benchmarks_structural_noncompliance or \
 						to_problem in benchmarks_structural_bodyforce or \
 						to_problem in benchmarks_thermostructural_problems:

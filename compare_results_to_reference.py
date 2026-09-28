@@ -128,6 +128,10 @@ def compare(ref, new, category="", method=""):
     else:
         out["verdict"] = "Reference better"
 
+    warning = (new.get("errorMsg") or "")
+    if warning.startswith("Warning"):  # run succeeded, but e.g. the final (binarized) design breaks the stress limit
+        out["note"] = (out["note"] + " " + warning).strip()
+
     ri, ni = num(ref, "#FEAs"), num(new, "#FEAs")
     # The 150-iteration cap applies to MMA and OCM only; Pareto and LevelSet count iterations differently.
     if method in ("DENSITYMMA", "DENSITYOCM") and ni is not None and ni >= MAX_ITERS:

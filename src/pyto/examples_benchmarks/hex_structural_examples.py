@@ -606,7 +606,9 @@ def createInverterProblem(nDOFDesired: int = 10000):
   load_dof = 3*load_nodes # x direction
 
   ## Add spring to output node and input nodes
-  mesh.externalSprings = [(0.01,3*node) for node in np.concatenate((outputNodes, load_nodes))]
+  # Spring stiffness 0.1 (E = 1): the value the Reference results were made with. Commit f4e163e changed it to
+  # 0.01, which makes a different (much softer-output) problem and objectives not comparable with the Reference.
+  mesh.externalSprings = [(0.1,3*node) for node in np.concatenate((outputNodes, load_nodes))]
    
    # Apply forces according to node type
   force = np.zeros(3*mesh.num_nodes)

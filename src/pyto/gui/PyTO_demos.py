@@ -237,7 +237,7 @@ while True:
         structural_solver.plot_vonMisesStress()   
     elif demo == pyTODemos.HexStructuralTO_DensityMMA:
         feaMode = FEA_MODE.STRUCTURAL
-        to_problem = StructuralTOExamples.Mitchell_1 # Choose the TO problem
+        to_problem = StructuralTOExamples.Mitchell # Choose the TO problem
         solver = Solvers.PARDISO # # Choose solver. Typically PARDISO, but DPCG for DOF > 200,000
         # Get the structural problem
         mesh, mat_prop, bc,elem_body_force, to_params = getStructuralTOProblem(to_problem)
