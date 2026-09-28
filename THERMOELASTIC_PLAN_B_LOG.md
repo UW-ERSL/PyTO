@@ -14,7 +14,7 @@ Status: `[ ]` todo, `[~]` in progress, `[x]` done.
 - [x] **B6. MBB steady-state validation** against Ooms and the Reference row.
 - [-] **B7. Transient thermal** (SKIPPED by user decision, 2026-09-25) (backward Euler, design-dependent C and K, objective summed over time steps).
 - [x] **B8. Heaviside projection** (optional; done together with B6 because the MBB comparison needed it).
-- [ ] **B9. Sweep and comparison report** include the two problems; update the handoff file.
+- [x] **B9. Sweep and comparison report** include the two problems; update the handoff file.
 
 ## Change log
 (Newest last.)
@@ -90,3 +90,10 @@ MMA with Heaviside, 350 iterations, 38 304 dof (~10.8 mm elements vs their 5 mm)
 - **Steady state, compliance 37 % higher.** Causes, not yet separated: (1) mesh twice as coarse (10.8 mm vs 5 mm) with the same physical filter, so the thin insulation layer where the whole 780 K drop happens is under-resolved; (2) MMA ends in a period-2 oscillation at beta = 32 (J alternates between about 260 and 277 N m, i.e. 130 000 and 138 000 N mm) and the runner reports whichever iterate is last; a run with move limit 0.1 instead of 0.2 ended on 260.4 (130 200 N mm, +29 %); (3) Ooms stop on a 0.01 design change after 404 iterations, we run the fixed 350-iteration beta schedule. Next check if needed: 5 mm mesh (~290k dof) and the smaller move limit.
 - **Old Reference row** (MBBBeam J 5.50e8) used steel, no temperature difference and a 1e8 N load; not comparable.
 - **OC on these problems** was not validated (see B4: OC 2-cycles on thermally loaded compliance).
+
+### B9 (done): sweep and comparison report
+- The user ran the full sweep (`Results/Results_2026-09-25`, all methods and categories, including the 6 thermo-structural problems).
+- `compare_results_to_reference.py` covers every category (structural, thermal, body-force, non-compliance, thermo-structural, `Other`). Changed for Plan B: thermo-structural rows are "Not comparable" (problems redefined in B0, `getHMatrix` bug fixed in B2), and the "not run" note says Pareto/LevelSet skip them by design instead of claiming the drivers cannot run coupled problems. Report: `Results/COMPARISON_Results_2026-09-25_vs_Reference.md`.
+- **Sweep MMA results reproduce the B5/B6 validation runs exactly** (BiClamp 0.6761, DT0 0.1089, DT4 6.580, DT10 31.06, MBBBeam 276.5, MBBBeamNoHeat 38.02), and the paper side-by-side images were rebuilt from the sweep folder.
+- **OC fails on the thermally loaded cases** (as predicted in B4): iteration cap on BiClamp (J 0.842 vs MMA 0.676) and MBBBeam (476 vs 277), and the volume constraint is violated on BiClampDT4 / DT10 (vf 0.79 / 0.78 against 0.4). OC is fine on the mechanical variants (BiClampDT0 0.1090 vs MMA 0.1089; MBBBeamNoHeat 48.7 vs MMA 38.0, without Heaviside).
+- Handoff file updated (`AUTOGRAD_STATUS_AND_HANDOFF.md`, "Latest status").

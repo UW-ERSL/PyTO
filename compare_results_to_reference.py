@@ -90,8 +90,8 @@ def compare(ref, new, category="", method=""):
         return out
     if new is None:
         out["verdict"] = "Not run"
-        if category == "ThermoStructural":
-            out["note"] = "Skipped by design: needs two coupled FE solvers, which the current drivers do not support."
+        if category == "ThermoStructural" and method in ("PARETO", "LEVELSET"):
+            out["note"] = "Skipped by design: Pareto/LevelSet have hand-derived sensitivities for structural or thermal only."
         else:
             out["note"] = "Missing from this sweep (still running, not reached yet, or the process was killed)."
         return out
@@ -103,6 +103,14 @@ def compare(ref, new, category="", method=""):
         out["verdict"] = "AutoPyTO only OK"
     if not (r_ok and n_ok):
         out["note"] = explain(new.get("errorMsg")) if not n_ok else "Reference reported: " + explain(ref.get("errorMsg"))
+        return out
+
+    if category == "ThermoStructural":
+        # Redefined in Plan B (B0) to match the papers (load, volume, material, temperatures), and the old
+        # results used the component-major getHMatrix bug (B2): the Reference numbers describe other problems.
+        out["verdict"] = "Not comparable"
+        out["note"] = ("Problem redefined to match the papers and the thermal-force ordering bug fixed "
+                       "(THERMOELASTIC_PLAN_B_LOG.md B0/B2); compare with Results/Publications/PyTO_comparison instead.")
         return out
 
     ro, no = num(ref, "objective"), num(new, "objective")

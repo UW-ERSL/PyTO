@@ -2,6 +2,14 @@
 
 Written 2026-09-23 as the starting point for the next phase. Everything under "Verified" was run and measured in that session; anything marked **unverified** was not. Read the "Working rules" section first.
 
+## Latest status (2026-09-28, full sweep `Results/Results_2026-09-25`)
+Sections further down were written on 2026-09-23 and are partly superseded; this section wins where they disagree.
+- **Comparison report:** `Results/COMPARISON_Results_2026-09-25_vs_Reference.md` (all categories, 104 problem/method pairs; regenerate with `python compare_results_to_reference.py Results_2026-09-25`). Of the 89 pairs that succeeded in both sweeps, 82 match (within 1 %) or beat the Reference. OCM, Pareto and LevelSet match on all structural and thermal problems (Pareto `Multiload` +1.1 %).
+- **Still worse than the Reference or not converged (MMA):** `LBracketTopLoad_Vol_Stress` +6.0 %, `TwoBar` +2.2 %, `CantileverMidLoadVolumeCompliance` +1.0 %. Four stress/mass problems hit the 150-iteration cap (`LBracketMidLoad_Vol_Stress`, `LBracketTopLoad_Mass_StressFF`, `LBracketTopLoad_Stress_Vol`, `LBracketTopLoad_Vol_Stress`); three of them still end with a better objective than the Reference. MMA needs more iterations than the Reference in 23 of 28 cases.
+- **Thermo-structural is supported now** (Plan B, `THERMOELASTIC_PLAN_B_LOG.md`): `ThermoStructuralFEA` couples the thermal and structural solves and autograd differentiates through both, so MMA and OC run them (Pareto and LevelSet still skip them). The problems were redefined to match the papers and a thermal-force dof-ordering bug was fixed, so the report marks them "not comparable" with the Reference. Validation against the papers is in `Results/Publications/PyTO_comparison/` (rebuild with `python -m pyto.examples_benchmarks.make_publication_comparison Results/Results_<date>/ThermoStructural/DENSITYMMA`).
+- **OC on thermo-structural problems is not usable:** it 2-cycles because the thermally loaded compliance is not monotone in the design. In the sweep it hit the iteration cap on `BiClamp` and `MBBBeam`, and it ended at vf 0.79 / 0.78 (limit 0.4) on `BiClampDT4` / `BiClampDT10`. It only behaves on the purely mechanical variants (`BiClampDT0`, `MBBBeamNoHeat`). Use MMA for these.
+- **Open:** Plan A (GravityPlate self-weight) skipped by the user; B7 (transient heat conduction) skipped by the user; MBB steady-state compliance is 29-37 % above Ooms (topology matches; see the Plan B log B6); FourCorners/BridgeThermal sign question (below).
+
 ## Working rules from the user
 - **Do not `git commit` unless the user explicitly asks in that message. Never `git push`.** (Commit `f3c3fbf` was made unprompted in the previous session; it is local and unpushed.)
 - Reuse the codebase's own plotters (`fe.plot_mesh`, `plot_pseudo_density`, `plot_deformation`, `plot_vonMisesStress`); do not write new topology plots.
@@ -93,7 +101,7 @@ Method: for each problem, build the FE model in an isolated subprocess, evaluate
 | `EdgeCantileverConstraintMatrix` | All supports are in `bc.constraint_matrix`, `fixed_dofs=[]`. The torch solve ignores `constraint_matrix` and `apply_dirichlet_bc_torch` fails on an empty list ("expected np.ndarray (got list)"). Not in the runner's problem lists. | Needs a real constraint-matrix path in the torch solve, or exclude it. |
 
 ### Structural limits
-- **Thermo-structural (BiClamp, MBBBeam under `ThermoStructural`)**: the drivers accept one FE solver. The runner skips them for all four methods. `main.ipynb` reports them as unsupported.
+- **Thermo-structural** (superseded 2026-09-28, see Latest status): now run through `ThermoStructuralFEA` with MMA and OC; Pareto and LevelSet skip them. `main.ipynb` may still describe them as unsupported.
 - **OCM, Pareto, LevelSet** raise `ValueError` unless the objective is COMPLIANCE and `Constraints[0]` is VOLUME_FRACTION. Only MMA handles stress/mass/GVECTOR/multiple constraints, so the non-compliance benchmarks run under MMA only.
 - **QOIs never implemented** in `autodiff/qoi`: VOLUME, GFUNCTION, COST, TEMPERATURE_FAILURE_FACTOR, MAX_CRITICALITY, MEAN_CRITICALITY, FATIGUE_FAILURE_FACTOR, PBR.
 - **DPCG (large-DOF iterative solver) is not implemented in the torch path** (`autodiff/sparse_solve.py` warns and falls back to a direct solve). No benchmark triggers it because the cutoff `DIRECT_SOLVER_DOF_CUTOFF = 100000` uses `>` and the largest `nDOFDesired` is exactly 100000, but a larger user problem would.
