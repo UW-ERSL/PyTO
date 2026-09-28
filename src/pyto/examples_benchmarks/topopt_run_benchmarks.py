@@ -262,7 +262,9 @@ def runTOMethodOnBenchmarks(optimizationMethod, problems_override: list = None, 
 			image_path = f"{output_dir}/{to_problem.name}.png"
 			title = f"{optimizationMethod.name}: vol: {history['volfrac'][-1]:0.2f}, J: {history['objective'][-1]:.3g}, nFEA: {len(history['objective']):3d}, time: {timeTaken:.0f} s"
 			title = None
-			if to_problem in benchmarks_structural_2_5D_problems_1 or to_problem in benchmarks_structural_2_5D_problems_2 or to_problem in benchmarks_thermal_2_5D_problems or to_problem in benchmarks_thermostructural_problems:
+			# Same camera rule as the problem image above (ExtrudeZ -> 2D view), so each result sits next to a
+			# setup picture drawn the same way (the non-compliance/body-force 2.5D problems used to get 'iso').
+			if to_params.ExtrudeZ:
 				fe_solver.plot_mesh(save_path=image_path, plot_bc = None, title=title, camera_position='xy')
 			else:
 				fe_solver.plot_mesh(save_path=image_path, plot_bc = None, title=title,camera_position='iso')
@@ -598,7 +600,20 @@ def create_summary_tables(date_str: str = None):
 			# Name cell
 			ax0 = axes[ri, 0]
 			ax0.axis('off')
-			ax0.text(0.02, 0.5, entry['Name'], fontsize=12, va='center', ha='left')
+			# Long names (e.g. CantileverMidLoadVolumeCompliance) used to overflow this column; tight_layout then
+			# squeezed every image axis to make room and the topologies came out tiny. Break the name at '_'
+			# and keep all cell texts out of the layout computation.
+			name = entry['Name']
+			if len(name) > 18:
+				if '_' in name:
+					name = name.replace('_', '_\n')
+				else:  # CamelCase: break at the capital letter nearest the middle
+					caps = [i for i, c in enumerate(name) if c.isupper() and i > 0]
+					if caps:
+						cut = min(caps, key=lambda i: abs(i - len(name) / 2))
+						name = name[:cut] + '\n' + name[cut:]
+			ax0.text(0.02, 0.5, name, fontsize=12 if len(entry['Name']) <= 18 else 10, va='center', ha='left',
+					 transform=ax0.transAxes).set_in_layout(False)
 
 			# Problem image cell
 			ax_prob = axes[ri, 1]
@@ -608,9 +623,11 @@ def create_summary_tables(date_str: str = None):
 					img = plt.imread(entry['problem_img'])
 					ax_prob.imshow(img)
 				except Exception:
-					ax_prob.text(0.02, 0.5, "Problem image load error", fontsize=10, va='center', ha='left')
+					ax_prob.text(0.02, 0.5, "Problem image load error", fontsize=10, va='center', ha='left',
+								 transform=ax_prob.transAxes).set_in_layout(False)
 			else:
-				ax_prob.text(0.02, 0.5, "No problem image", fontsize=10, va='center', ha='left')
+				ax_prob.text(0.02, 0.5, "No problem image", fontsize=10, va='center', ha='left',
+							 transform=ax_prob.transAxes).set_in_layout(False)
 
 			# Method cells: show figure if available, else text
 			for ci, method in enumerate(methods, start=2):
@@ -626,9 +643,11 @@ def create_summary_tables(date_str: str = None):
 									color='white', bbox=dict(facecolor='black', alpha=0.4, pad=2),
 									transform=ax.transAxes)
 					except Exception:
-						ax.text(0.02, 0.5, cell['text'] or "Image load error", fontsize=10, va='center', ha='left')
+						ax.text(0.02, 0.5, cell['text'] or "Image load error", fontsize=10, va='center', ha='left',
+								transform=ax.transAxes).set_in_layout(False)
 				else:
-					ax.text(0.02, 0.5, cell['text'] or "No image", fontsize=10, va='center', ha='left')
+					ax.text(0.02, 0.5, cell['text'] or "No image", fontsize=10, va='center', ha='left',
+							transform=ax.transAxes).set_in_layout(False)
 
 		plt.tight_layout(pad=0.5)
 		out_path = f"{results_dir}/{subFolder}_summary_table.png"
