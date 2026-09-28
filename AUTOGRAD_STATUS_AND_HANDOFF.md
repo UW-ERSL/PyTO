@@ -8,7 +8,7 @@ Sections further down were written on 2026-09-23 and are partly superseded; this
 - **Still worse than the Reference or not converged (MMA):** `LBracketTopLoad_Vol_Stress` +6.0 %, `TwoBar` +2.2 %, `CantileverMidLoadVolumeCompliance` +1.0 %. Four stress/mass problems hit the 150-iteration cap (`LBracketMidLoad_Vol_Stress`, `LBracketTopLoad_Mass_StressFF`, `LBracketTopLoad_Stress_Vol`, `LBracketTopLoad_Vol_Stress`); three of them still end with a better objective than the Reference. MMA needs more iterations than the Reference in 23 of 28 cases.
 - **Thermo-structural is supported now** (Plan B, `THERMOELASTIC_PLAN_B_LOG.md`): `ThermoStructuralFEA` couples the thermal and structural solves and autograd differentiates through both, so MMA and OC run them (Pareto and LevelSet still skip them). The problems were redefined to match the papers and a thermal-force dof-ordering bug was fixed, so the report marks them "not comparable" with the Reference. Validation against the papers is in `Results/Publications/PyTO_comparison/` (rebuild with `python -m pyto.examples_benchmarks.make_publication_comparison Results/Results_<date>/ThermoStructural/DENSITYMMA`).
 - **OC on thermo-structural problems is not usable:** it 2-cycles because the thermally loaded compliance is not monotone in the design. In the sweep it hit the iteration cap on `BiClamp` and `MBBBeam`, and it ended at vf 0.79 / 0.78 (limit 0.4) on `BiClampDT4` / `BiClampDT10`. It only behaves on the purely mechanical variants (`BiClampDT0`, `MBBBeamNoHeat`). Use MMA for these.
-- **Open:** Plan A (GravityPlate self-weight) skipped by the user; B7 (transient heat conduction) skipped by the user; MBB steady-state compliance is 29-37 % above Ooms (topology matches; see the Plan B log B6); FourCorners/BridgeThermal sign question (below).
+- **Open:** Plan A (GravityPlate self-weight) skipped by the user; B7 (transient heat conduction) skipped by the user; MBB steady-state compliance is 29-37 % above Ooms (topology matches; see the Plan B log B6). The FourCorners/BridgeThermal question below is resolved (`compliance_sign` in `autodiff/qoi/compliance.py`); all four methods now match the Reference on both.
 
 ## Working rules from the user
 - **Do not `git commit` unless the user explicitly asks in that message. Never `git push`.** (Commit `f3c3fbf` was made unprompted in the previous session; it is local and unpushed.)
@@ -108,7 +108,7 @@ Method: for each problem, build the FE model in an isolated subprocess, evaluate
 - **Multi-material**: only the first material's element stiffness is used (`compute_element_stiffness` in `drivers/_shared.py`).
 - `check_rigid_body_constraint` (`core/bc.py`) skips BCs that use `constraint_matrix`.
 
-### Open decision (needs the user)
+### Open decision (needs the user) -- RESOLVED, see Latest status
 **FourCornersThermal and BridgeThermal** have prescribed temperatures and no heat source. The Reference (legacy code) effectively *maximizes* conduction: volume stays at its limit and J is about 6839 (FourCorners, vf 0.75). The current autograd differentiates `J = u^T K(x) u` correctly, and J falls as material is removed, so MMA strips the design (vf about 0.15, J about 1e-5) and OCM ends at vf 1.0. The gradient is verified correct (they pass the FD check); the question is the intended objective for prescribed-value problems. Matching the Reference means adopting the legacy sign convention (roughly, treating the equivalent load as fixed). The user has not decided.
 
 ## Fixes already made in the working tree (all verified, see git state below)
