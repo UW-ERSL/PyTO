@@ -17,7 +17,7 @@ def test_builtin_expressions_and_labels():
     assert gs.builtin_expression("Volume fraction", "All") == "VolumeFraction()"
     assert "Temperature" not in gs.response_labels("structural")
     assert "Displacement" not in gs.response_labels("thermal") and "Temperature" in gs.response_labels("thermal")
-    assert "Stress (p-norm)" not in gs.response_labels("thermo-structural")
+    assert {"Stress (p-norm)", "Mechanical compliance", "Thermal compliance"} <= set(gs.response_labels("thermo-structural"))
 
 
 OLD_OPTIONS = {"manufacturing": {"extrude": {"enabled": True, "value": "ZDir"},

@@ -50,7 +50,12 @@ def compute_compliance_torch(
     # Element energies: ce_e = u_eᵀ KE u_e
     # u_e: (E, nRows), KE: (nRows, nRows) → ce: (E,)
     ce = torch.einsum("ei,ij,ej->e", u_e, KE, u_e)
-    material_scaling = scaling_fn(x, material_model)  # (E,)
+    if scaling_fn is get_thermal_material_model_scaling_torch:
+        # the solver's own conductivity law (per-problem penalty / void ratio, None = defaults), as in its solve()
+        material_scaling = scaling_fn(x, material_model, getattr(fe_solver, "conductivity_penalty", None),
+                                      getattr(fe_solver, "conductivity_void_ratio", None))
+    else:
+        material_scaling = scaling_fn(x, material_model)  # (E,)
 
     return (material_scaling * ce).sum()
 

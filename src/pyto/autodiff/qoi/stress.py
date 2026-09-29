@@ -76,6 +76,16 @@ def compute_pnorm_stress_autograd(
         dim=1,
     )  # (nelems, 6)
 
+    # Thermo-structural solver: stress comes from the ELASTIC strain, total minus the free thermal strain
+    # alpha * (T_mean - T_ref) on the normal components (as HexStructuralFEA.postprocess does). T is part of the
+    # autograd graph, so the stress gradient also flows through the thermal solve.
+    T = getattr(fe_solver, "temperature", None)
+    if T is not None and hasattr(fe_solver, "thermal_fea"):
+        elem_nodes = torch.as_tensor(mesh.elemArray[:, :8], dtype=torch.long, device=device)
+        alpha = float(fe_solver.mat_prop.thermal_expansion_coefficient)
+        eps_th = alpha * (T[elem_nodes].mean(dim=1) - fe_solver.thermal_fea.thermoElasticReferenceTemperature)
+        strain = strain - torch.cat([eps_th.unsqueeze(1).expand(-1, 3), torch.zeros_like(strain[:, 3:])], dim=1)
+
     # ---------- 5) Constitutive matrix D (single material) ----------
     mat = fe_solver.mat_prop
     E = float(mat.youngs_modulus)

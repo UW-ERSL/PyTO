@@ -22,6 +22,7 @@ RESPONSE_LABELS = {
     "Compliance": "Compliance", "Volume fraction": "VolumeFraction", "Mass": "Mass",
     "Displacement": "Displacement", "Temperature": "Temperature", "Reaction force": "ReactionForce",
     "Strain energy": "StrainEnergy", "Stress (p-norm)": "StressPNorm", "Stress failure factor": "StressFailureFactor",
+    "Mechanical compliance": "MechanicalCompliance", "Thermal compliance": "ThermalCompliance",
 }
 EXPRESSION_LABEL = "Expression..."
 PYTHON_LABEL = "Python function..."

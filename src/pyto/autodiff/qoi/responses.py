@@ -130,6 +130,33 @@ def strain_energy(sol, x, fe_solver, elements=None):
     return 0.5 * (ce.sum() if e is None else ce[e].sum())
 
 
+def mechanical_compliance(sol, x, fe_solver):
+    """Work of the mechanical loads only, F_mech . u. Equals Compliance for purely mechanical problems; for
+    thermo-structural ones it leaves out the thermal-expansion load (a common objective when the thermal load
+    dominates the total compliance)."""
+    f = fe_solver.total_force
+    f_th = getattr(fe_solver, "thermal_force", None)
+    if f_th is not None:
+        f = f - f_th
+    return torch.dot(f.to(sol.dtype), sol)
+
+
+def thermal_compliance(sol, x, fe_solver):
+    """Thermal compliance T^T K_th(x) T: of the thermal solution (thermal problems), or of the thermal field of a
+    thermo-structural solver. Lower means better heat conduction for a heat-source-driven problem."""
+    from pyto.autodiff.qoi.compliance import compute_compliance_torch
+    if physics_of(fe_solver) == COUPLED:
+        th = fe_solver.thermal_fea
+        edof_saved = th.mesh.edofMat
+        th.mesh.edofMat = th.mesh.edofMatThermal        # the shared mesh.edofMat is the structural one here
+        try:
+            return compute_compliance_torch(fe_solver.temperature, x, th, th.elem_stiff_torch[0].to(sol.dtype),
+                                            MaterialModel.SIMP)
+        finally:
+            th.mesh.edofMat = edof_saved
+    return compliance(sol, x, fe_solver)
+
+
 def stress_pnorm(sol, x, fe_solver):
     """p-norm of the element von Mises stress over the model (smooth stand-in for the maximum)."""
     from pyto.autodiff.qoi.stress import compute_pnorm_stress_autograd
@@ -161,12 +188,16 @@ RESPONSES = {r.name: r for r in (
              description="Sum of support reactions over selected (fixed) nodes."),
     Response("StrainEnergy", strain_energy, frozenset({STRUCTURAL}), {"elements": "element selection"}, "J",
              description="Strain energy of a region."),
-    # Stress: structural only. The differentiable stress uses the total strain; for thermo-structural problems the
-    # thermal strain would have to be subtracted first (HexStructuralFEA.postprocess does that, the torch path not yet).
-    Response("StressPNorm", stress_pnorm, frozenset({STRUCTURAL}), unit="Pa",
+    # Stress from the elastic strain (for thermo-structural problems the thermal strain is subtracted in
+    # compute_pnorm_stress_autograd).
+    Response("StressPNorm", stress_pnorm, _MECH, unit="Pa",
              description="p-norm of von Mises stress (smooth stand-in for the maximum stress)."),
-    Response("StressFailureFactor", stress_failure_factor, frozenset({STRUCTURAL}), unit="-",
+    Response("StressFailureFactor", stress_failure_factor, _MECH, unit="-",
              description="p-norm von Mises stress / yield strength; <= 1 keeps the smoothed peak below yield."),
+    Response("MechanicalCompliance", mechanical_compliance, _MECH, unit="J",
+             description="Work of the mechanical loads only (F_mech . u); leaves out the thermal-expansion load."),
+    Response("ThermalCompliance", thermal_compliance, frozenset({THERMAL, COUPLED}), unit="W K",
+             description="Thermal compliance T^T K T of the temperature field (heat-conduction measure)."),
 )}
 
 

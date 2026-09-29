@@ -38,11 +38,13 @@ class ThermoStructuralFEA(HexStructuralFEA):
     super().__init__(mesh=mesh, mat_prop=mat_prop, bc=structural_bc, solver=solver, dsolver=dsolver,
                      elem_body_force=elem_body_force, **kwargs)
     self.temperature = None
+    self.thermal_force = None
 
   def solve(self, x, material_model=None, extra_force=None, elem_thermal_strain=None):
     T = self.thermal_fea.solve(x, material_model)
     self.temperature = T
     f_th = self.thermal_fea.get_thermoelastic_force_torch(T, x, material_model)
+    self.thermal_force = f_th          # kept for responses such as MechanicalCompliance (= (F_total - F_th) . u)
     if extra_force is not None:
       f_th = f_th + extra_force
     return super().solve(x, material_model, extra_force=f_th,
