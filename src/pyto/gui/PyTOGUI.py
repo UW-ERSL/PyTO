@@ -4397,12 +4397,30 @@ class TopOptOptionsWindow(QtWidgets.QDialog):
         self.parent.notify_display_options_update()
         self.close()
 #----------------------------------------------------------------------------
+class _SignalLineStream:
+    """File-like object that sends each complete printed line to emit (a Qt signal, so it is thread safe)."""
+
+    def __init__(self, emit):
+        self.emit, self.buffer = emit, ""
+
+    def write(self, text):
+        self.buffer += text
+        *lines, self.buffer = self.buffer.split("\n")
+        for line in lines:
+            self.emit(line)
+        return len(text)
+
+    def flush(self):
+        pass
+
+
 class StructuralTopOptWindow(QtWidgets.QDialog):
 
     optimization_progress = pyqtSignal(str)
     optimization_update = pyqtSignal(object, int)
     optimization_done = pyqtSignal(bool, str, object, object, object)
     history_update = pyqtSignal(object)
+    log_line = pyqtSignal(str)
 
     def __init__(self, parent):
         super().__init__(parent)
@@ -4423,6 +4441,7 @@ class StructuralTopOptWindow(QtWidgets.QDialog):
         self.history_update.connect(self.update_history_plot, QtCore.Qt.QueuedConnection)
         
         self.setup_ui()
+        self.log_line.connect(self.formulation.log_view.appendPlainText, QtCore.Qt.QueuedConnection)
 
         if hasattr(self.parent, "fe_solver") and self.parent.fe_solver is not None:
             # Clear all actors except geometry info
@@ -4613,6 +4632,8 @@ class StructuralTopOptWindow(QtWidgets.QDialog):
         self.spec, self.physics = spec, physics
         self.history_figure.clear()
         self.history_canvas.draw_idle()
+        self.formulation.log_view.clear()
+        self.formulation.setCurrentWidget(self.formulation.log_view)
 
         self.optimization_running = True
         self.optimize_button.setEnabled(False)
@@ -4647,7 +4668,12 @@ class StructuralTopOptWindow(QtWidgets.QDialog):
         self.history_canvas.draw_idle()
 
     def run_optimization(self, plan, fe_solver, spec):
-        """Run the chosen method (worker thread)."""
+        """Run the chosen method (worker thread); what the optimizer prints goes to the Iterations tab."""
+        import contextlib
+        with contextlib.redirect_stdout(_SignalLineStream(self.log_line.emit)):
+            self._run_optimization(plan, fe_solver, spec)
+
+    def _run_optimization(self, plan, fe_solver, spec):
         to_params = plan.to_params
         method = spec.method.name
         self.to_params = to_params

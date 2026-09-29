@@ -167,3 +167,23 @@ def test_gradient_choice(qapp):
     assert panel.gradient_combo.isEnabled() and panel.get_spec().method.gradient == "autodiff"
     # old saved specs without the field load as AD
     assert OptimizationSpec.from_dict({"method": {"name": "MMA"}}).method.gradient == "autodiff"
+
+
+def test_iterations_tab_receives_printed_lines(qapp):
+    """Optimizer prints (worker thread) are split into lines and shown in the Iterations tab, not the terminal."""
+    import contextlib
+    import threading
+    from pyto.gui.PyTOGUI import _SignalLineStream
+    panel = gs.FormulationPanel()
+    assert panel.tabText(panel.count() - 1) == "Iterations"
+    lines = []
+
+    def work():
+        with contextlib.redirect_stdout(_SignalLineStream(lines.append)):
+            print("Iteration: 1")
+            print("Min. Objective (PNORM_STRESS): ", end="")
+            print(2.64e5)
+    t = threading.Thread(target=work)
+    t.start()
+    t.join()
+    assert lines == ["Iteration: 1", "Min. Objective (PNORM_STRESS): 264000.0"]

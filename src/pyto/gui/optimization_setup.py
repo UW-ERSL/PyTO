@@ -378,6 +378,14 @@ if QtWidgets is not None:
             form.addRow("", self.check_gradient_button)
             self.addTab(w, "Method")
 
+            # Per-iteration optimizer output (what the drivers print), filled during a run
+            self.log_view = QtWidgets.QPlainTextEdit()
+            self.log_view.setReadOnly(True)
+            self.log_view.setMaximumBlockCount(20000)         # keeps very long runs light
+            self.log_view.setLineWrapMode(QtWidgets.QPlainTextEdit.NoWrap)
+            self.log_view.setFont(QtGui.QFontDatabase.systemFont(QtGui.QFontDatabase.FixedFont))
+            self.addTab(self.log_view, "Iterations")
+
         def refresh_method_info(self, *_):
             """Enable only methods that support the current formulation; show the gradient source and cost."""
             try:
