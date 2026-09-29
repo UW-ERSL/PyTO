@@ -8,6 +8,7 @@ import time
 import matplotlib.pyplot as plt
 from pyto.topopt.drivers.mmaWrapper import runMMA
 from pyto.topopt.drivers._shared import setup_driver_state, torch_sparse_filter
+from pyto.topopt.manual_sensitivities import manual_gradients
 from pyto.examples_benchmarks.topopt_structural_benchmarks import *
 from pyto.examples_benchmarks.topopt_thermal_benchmarks import *
 
@@ -216,6 +217,9 @@ def topopt_mma(fe_solver, #hex_structural_fea.HexStructuralFEA or hex_thermal_fe
 
             return obj_raw, c_t, sol, x_filtered
 
+        if getattr(to_params, "Gradient", "autodiff") == "manual":
+            return manual_step(x_raw.detach())
+
         # Forward pass
         obj_raw_t, c_t, sol_t, x_filtered_t = chain(x_raw)
 
@@ -251,6 +255,34 @@ def topopt_mma(fe_solver, #hex_structural_fea.HexStructuralFEA or hex_thermal_fe
 
         return obj_raw, grad_obj_filt, c_np, dcdx_filt, sol_np, x_filtered_np
 
+
+    def manual_step(x_raw: torch.Tensor):
+        """obj_cons_function with hand-derived gradients (to_params.Gradient == "manual"): same values, the
+        gradient w.r.t. the physical density comes from manual_sensitivities and is chained back through the
+        Heaviside projection and the density filter by hand."""
+        with torch.no_grad():
+            x_f = (torch.sparse.mm(H_torch, x_raw.unsqueeze(1)).squeeze(1) / Hs_torch
+                   ) if to_params.APPLY_FILTER_TO_DENSITY else x_raw
+            dproj = None
+            if to_params.APPLY_FILTER_TO_DENSITY and to_params.HeavisideProjection:
+                beta = min(to_params.HeavisideBetaMax, 2.0 ** (mmaIterations // to_params.HeavisideBetaInterval))
+                den = math.tanh(beta * 0.5) + math.tanh(beta * 0.5)
+                t = torch.tanh(beta * (x_f - 0.5))
+                dproj = beta * (1.0 - t ** 2) / den
+                x_f = (math.tanh(beta * 0.5) + t) / den
+            fe_solver.mesh.setPseudoDensity(x_f)
+            sol_t = fe_solver.solve(x_f, material_model)
+            obj_t = compute_objective_and_gradient(to_params, sol_t, x_f, fe_solver, KE, material_model)
+            c_t, _ = compute_constraint_and_gradient(to_params, sol_t, x_f, fe_solver, KE, material_model)
+        d_obj, d_cons = manual_gradients(to_params, sol_t, x_f, fe_solver, material_model)
+        g = torch.as_tensor(np.vstack([d_obj[None, :], d_cons]), dtype=x_f.dtype)     # (1+m, n) w.r.t. x_f
+        if dproj is not None:
+            g = g * dproj
+        if to_params.APPLY_FILTER_TO_DENSITY:                                          # x_f = H x / Hs
+            g = torch.sparse.mm(H_torch.t(), (g / Hs_torch).t()).t()
+        g = g.cpu().numpy()
+        return (obj_t.detach().cpu().numpy(), g[0], c_t.detach().cpu().numpy().reshape(-1, 1), g[1:],
+                sol_t.detach().cpu().numpy(), x_f.cpu().numpy())
 
     # ------------------------ MMA objective callback -------------------------
 

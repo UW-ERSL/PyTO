@@ -4546,7 +4546,8 @@ class StructuralTopOptWindow(QtWidgets.QDialog):
         spec.manufacturing = manufacturing_from_topopt_options(getattr(self.parent, "topopt_options", None))
         fe_solver, physics, selections = self.build_problem()
         self.formulation.set_context(physics, selections, self.has_body_force())
-        plan = prepare_run(spec, physics, selections, body_force=self.has_body_force(), allow_code=allow_code)
+        plan = prepare_run(spec, physics, selections, body_force=self.has_body_force(), allow_code=allow_code,
+                           fe_solver=fe_solver)
         self.parent.optimization_spec = spec
         return plan, fe_solver, physics, spec
 
@@ -4590,7 +4591,8 @@ class StructuralTopOptWindow(QtWidgets.QDialog):
             return
         from pyto.topopt.capabilities import check_gradient
         results = check_gradient(plan.to_params, fe_solver, n_elements=5)
-        text = "Autograd vs central finite differences at a random design (5 elements):\n" + "\n".join(
+        source = "Manual" if getattr(plan.to_params, "Gradient", "autodiff") == "manual" else "Autograd"
+        text = f"{source} vs central finite differences at a random design (5 elements):\n" + "\n".join(
             f"  {r.name}: max relative error {r.max_rel_error:.2e}  {'OK' if r.ok else 'MISMATCH'}" for r in results)
         self.parent.message_text.append(text)
         QtWidgets.QMessageBox.information(self, "Gradient check", text)

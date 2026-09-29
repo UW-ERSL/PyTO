@@ -130,3 +130,34 @@ def test_formulation_panel_round_trip_and_method_enabling(qapp):
     panel.set_context("thermal", {"FixedTemp1": {"nodes": [0]}})
     items = [panel.type_combo.itemText(i) for i in range(panel.type_combo.count())]
     assert "Temperature" in items and "Displacement" not in items
+
+
+def test_gradient_choice(qapp):
+    """AD by default; Manual only where a hand-derived gradient exists; Pareto/LevelSet forced to Manual."""
+    panel = gs.FormulationPanel()
+    panel.set_context("structural", {"Load1": {"nodes": [1]}})
+    panel.set_spec(gs.default_spec())
+    panel.refresh_method_info()
+    manual_item = panel.gradient_combo.model().item(1)
+    assert panel.get_spec().method.gradient == "autodiff" and manual_item.isEnabled()
+    panel.gradient_combo.setCurrentIndex(1)
+    assert panel.get_spec().method.gradient == "manual" and "Hand-derived" in panel.gradient_label.text()
+    plan = gs.prepare_run(panel.get_spec(), "structural", {"Load1": {"nodes": [1]}})
+    assert not plan.errors and plan.to_params.Gradient == "manual" and "no adjoint" in plan.cost
+    # a user expression has no hand-derived gradient: Manual greyed out, back to AD
+    spec = panel.get_spec()
+    spec.objective = ObjectiveSpec("Displacement(Load1, y, mean)", "maximize")
+    panel.set_spec(spec)
+    panel.refresh_method_info()
+    assert not manual_item.isEnabled() and panel.get_spec().method.gradient == "autodiff"
+    spec.method.gradient = "manual"
+    assert any("Manual gradient not available" in str(i) for i in gs.prepare_run(spec, "structural",
+                                                                                    {"Load1": {"nodes": [1]}}).errors)
+    # Pareto: forced to Manual, combo locked
+    panel.set_spec(gs.default_spec())
+    panel.method_combo.setCurrentText("PARETO")
+    assert not panel.gradient_combo.isEnabled() and panel.get_spec().method.gradient == "manual"
+    panel.method_combo.setCurrentText("MMA")
+    assert panel.gradient_combo.isEnabled() and panel.get_spec().method.gradient == "autodiff"
+    # old saved specs without the field load as AD
+    assert OptimizationSpec.from_dict({"method": {"name": "MMA"}}).method.gradient == "autodiff"

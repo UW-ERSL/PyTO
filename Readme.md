@@ -18,8 +18,8 @@ Meshing is automatic from an STL (single or multi-body). Linear solvers: PARDISO
 ### Topology optimization
 | Method | Gradient | Handles |
 |---|---|---|
-| **MMA** (default) | autograd through the FE solve | every objective and constraint below, all physics |
-| **OC** (optimality criteria) | autograd | minimize compliance with one volume limit |
+| **MMA** (default) | autograd through the FE solve, or hand-derived | every objective and constraint below, all physics |
+| **OC** (optimality criteria) | autograd, or hand-derived | minimize compliance with one volume limit |
 | **Pareto** (topological sensitivity) | hand-derived | minimize compliance with one volume limit, incl. body force |
 | **LevelSet** | hand-derived shape derivative | minimize compliance with one volume limit |
 
@@ -28,6 +28,8 @@ Meshing is automatic from an STL (single or multi-body). Linear solvers: PARDISO
 **Your own objective or constraint**, without writing a gradient:
 - a formula over the quantities above, for example `Displacement(Load1, y, mean) / 1e-3 + 0.1 * VolumeFraction()`. It is checked against a whitelist, never executed as code.
 - or a Python function `fn(sol, x, fe_solver)` written with torch operations.
+
+**Gradient choice (MMA, OC):** automatic differentiation by default. *Manual* uses hand-derived sensitivities (no autograd graph, no adjoint solve for compliance) and is offered only for compliance, volume fraction and mass; it is not available for stress, user formulas, Python functions or design-dependent body forces. Pareto and LevelSet always use their own hand-derived sensitivities.
 
 **Manufacturing and regularization:** density filter, Heaviside projection, symmetry planes, cyclic symmetry, extrusion, keep-solid regions.
 
@@ -77,7 +79,7 @@ If the Python you start it with lacks the GUI's packages, `run_gui.py` restarts 
    - **Show results** displays deformation, stress or temperature of the initial design, or of the last optimized design.
 5. **TopOpt Options**: manufacturing options (extrusion, symmetry, cyclic, keep fixed faces).
 6. **TopOpt Execute**:
-   - Tabs **Objective / Constraints / Method**; methods that cannot solve your formulation are disabled, with the reason shown.
+   - Tabs **Objective / Constraints / Method**; methods that cannot solve your formulation are disabled, with the reason shown. The Method tab also chooses the gradient (automatic differentiation or manual).
    - Validate the formulation, optionally check the gradient, then **Optimize**.
    - A live plot shows the objective and constraints; tick **Show topology every iteration** to watch the design change.
    - The **Optimized design** buttons show density, deformation, stress or temperature of the result.

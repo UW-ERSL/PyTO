@@ -94,6 +94,7 @@ class MethodSpec:
     name: str = "MMA"
     max_iterations: int = 150
     move_limit: float = 0.2
+    gradient: str = "autodiff"                   # "autodiff" or "manual" (hand-derived; MMA/OC only)
 
 
 @dataclass
@@ -217,6 +218,8 @@ def validate(spec: OptimizationSpec, physics: str, selections: dict = None, allo
                      f"value - bound <= 0, which MMA may scale poorly.")
     if spec.method.name not in METHODS:
         err(f"Unknown method {spec.method.name!r} (choose from {', '.join(METHODS)}).")
+    if spec.method.gradient not in ("autodiff", "manual"):
+        err(f"Unknown gradient {spec.method.gradient!r} (choose autodiff or manual).")
     if spec.method.max_iterations < 1:
         err("Maximum iterations must be at least 1.")
     if not 0 < spec.method.move_limit <= 1:
@@ -281,6 +284,7 @@ def compile_spec(spec: OptimizationSpec, selections: dict = None, base: TOParams
     to_params.Constraints = constraints
 
     to_params.MaxIterations = int(spec.method.max_iterations)
+    to_params.Gradient = spec.method.gradient
     to_params.RelativeFilterRadius = float(spec.regularization.filter_radius)
     to_params.HeavisideProjection = bool(spec.regularization.heaviside)
     m = spec.manufacturing
@@ -352,7 +356,8 @@ def spec_from_to_params(to_params: TOParams, method: str = "MMA", num_dofs: int 
         selections["KeepSolid"] = {"elements": np.asarray(to_params.ElemsToKeep)}
         m.keep_selection = "KeepSolid"
     spec = OptimizationSpec(objective=objective, constraints=constraints,
-                            method=MethodSpec(method, int(to_params.MaxIterations)),
+                            method=MethodSpec(method, int(to_params.MaxIterations),
+                                              gradient=getattr(to_params, "Gradient", "autodiff")),
                             regularization=RegularizationSpec(float(to_params.RelativeFilterRadius),
                                                               bool(to_params.HeavisideProjection)),
                             manufacturing=m)

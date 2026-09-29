@@ -1,6 +1,7 @@
 
 from pyto.topopt.common import *
 from pyto.autodiff.qoi.compliance import compliance_sign
+from pyto.topopt.manual_sensitivities import manual_gradients
 from pyto.autodiff.material_model import *
 import pyto.autodiff.material_model as material_model_module
 from pyto.autodiff.qoi import *
@@ -218,10 +219,15 @@ def topopt_optimality_criteria(
 			# HexThermalFEA.solve() require a torch tensor since the
 			# torch-autodiff migration (Phase 0/4), so this raised
 			# a TypeError on the very first iteration (see test_oc_structural_runs).
-			x_t = torch.tensor(x, dtype=torch.float64, requires_grad=True)
-			sol_t = fe_solver.solve(x_t, material_model)
-			obj_t = compute_objective_and_gradient(to_params, sol_t, x_t, fe_solver, KE, material_model)
-			(grad_obj_t,) = torch.autograd.grad(obj_t, x_t)
+			manual = getattr(to_params, "Gradient", "autodiff") == "manual"
+			x_t = torch.tensor(x, dtype=torch.float64, requires_grad=not manual)
+			with torch.set_grad_enabled(not manual):
+				sol_t = fe_solver.solve(x_t, material_model)
+				obj_t = compute_objective_and_gradient(to_params, sol_t, x_t, fe_solver, KE, material_model)
+			if manual:  # hand-derived dC/dx, same convention as autograd
+				grad_obj_t = torch.as_tensor(manual_gradients(to_params, sol_t, x_t, fe_solver, material_model)[0])
+			else:
+				(grad_obj_t,) = torch.autograd.grad(obj_t, x_t)
 			fe_solver.postprocess()
 
 			obj = obj_t.item()

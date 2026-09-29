@@ -22,8 +22,33 @@ GRADIENT_SOURCE = {
 }
 
 
-def gradient_source(method: str) -> str:
+def gradient_source(method: str, gradient: str = "autodiff") -> str:
+    if gradient == "manual" and method not in MANUAL_ONLY:
+        return "Hand-derived (manual) sensitivities: compliance, volume fraction and mass only"
     return GRADIENT_SOURCE[method]
+
+
+MANUAL_ONLY = ("PARETO", "LEVELSET")          # no autograd path in these drivers
+
+
+def manual_gradient_support(spec: OptimizationSpec, selections: dict = None, body_force: bool = False) -> tuple:
+    """(True, "") if MMA/OC can use hand-derived gradients for this formulation, else (False, reason).
+
+    The solver-dependent limits (per-problem conductivity laws, prescribed values together with loads) are checked
+    again at run time by manual_sensitivities.manual_support."""
+    from pyto.topopt.manual_sensitivities import formulation_support
+    from pyto.topopt.spec import PYTHON_PREFIX, compile_spec
+    exprs = [spec.objective.expression] + [c.expression for c in spec.active_constraints]
+    if any(e.strip().startswith(PYTHON_PREFIX) for e in exprs):
+        return False, "Python functions need automatic differentiation."
+    try:
+        to_params = compile_spec(spec, selections)
+    except Exception as e:
+        return False, f"Fix the formulation first ({e})."
+    ok, reason = formulation_support(to_params)
+    if ok and body_force and any(_key(e) == "Compliance()" for e in exprs):
+        return False, "The hand-derived compliance gradient does not include design-dependent body forces."
+    return ok, reason
 
 
 def _is_classical(spec: OptimizationSpec) -> bool:
@@ -75,6 +100,8 @@ def solution_dependent_count(spec: OptimizationSpec, selections: dict = None) ->
 def cost_estimate(spec: OptimizationSpec, selections: dict = None, forward_s: float = None,
                   backward_s: float = None) -> str:
     """Per-iteration linear solves (and seconds, if single forward/backward timings are given) for MMA."""
+    if spec.method.gradient == "manual" or spec.method.name in MANUAL_ONLY:
+        return "Per iteration: 1 forward FE solve; the hand-derived compliance gradient needs no adjoint solve."
     k = solution_dependent_count(spec, selections)
     text = f"Per iteration: 1 forward FE solve + {k} adjoint solve{'s' if k != 1 else ''}"
     if forward_s is not None and backward_s is not None:
@@ -91,7 +118,8 @@ class GradientCheck:
 
 def check_gradient(to_params, fe_solver, n_elements: int = 5, rel_step: float = 1e-4, tol: float = 1e-3,
                    seed: int = 0) -> list:
-    """Compare autograd gradients of the objective and every constraint with central finite differences.
+    """Compare the gradients of the objective and every constraint (autograd, or the hand-derived ones when
+    to_params.Gradient == "manual") with central finite differences.
 
     Evaluated at a random interior design (0.3..0.9) on n_elements random elements, with the same material law the
     MMA driver uses. The adaptive stress normalization (to_params.stress_scaling) is reset before every evaluation so
@@ -105,19 +133,27 @@ def check_gradient(to_params, fe_solver, n_elements: int = 5, rel_step: float = 
     x0 = torch.tensor(0.3 + 0.6 * rng.random(fe_solver.mesh.num_elems), dtype=torch.float64)
     elems = rng.choice(fe_solver.mesh.num_elems, size=min(n_elements, fe_solver.mesh.num_elems), replace=False)
     scaling0 = to_params.stress_scaling
+    last = {}
 
     def values(x):
         to_params.stress_scaling = scaling0
-        sol = fe_solver.solve(x, mm)
+        sol = last["sol"] = fe_solver.solve(x, mm)
         obj = compute_objective_and_gradient(to_params, sol, x, fe_solver, KE, mm)
         cons, _ = compute_constraint_and_gradient(to_params, sol, x, fe_solver, KE, mm)
         return [obj.reshape(())] + [c.reshape(()) for c in cons.reshape(-1)]
 
     try:
-        x = x0.clone().requires_grad_(True)
-        vals = values(x)
-        ad = [torch.autograd.grad(v, x, retain_graph=True, allow_unused=True)[0] for v in vals]
-        ad = [torch.zeros_like(x0) if g is None else g.detach() for g in ad]
+        if getattr(to_params, "Gradient", "autodiff") == "manual":
+            from pyto.topopt.manual_sensitivities import manual_gradients
+            with torch.no_grad():
+                vals = values(x0.clone())
+            d_obj, d_cons = manual_gradients(to_params, last["sol"], x0, fe_solver, mm)
+            ad = [torch.as_tensor(g) for g in [d_obj] + list(d_cons)]
+        else:
+            x = x0.clone().requires_grad_(True)
+            vals = values(x)
+            ad = [torch.autograd.grad(v, x, retain_graph=True, allow_unused=True)[0] for v in vals]
+            ad = [torch.zeros_like(x0) if g is None else g.detach() for g in ad]
         fd = [np.zeros(len(elems)) for _ in vals]
         for j, e in enumerate(elems):
             h = rel_step * max(1.0, abs(float(x0[e])))

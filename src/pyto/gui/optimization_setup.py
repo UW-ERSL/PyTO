@@ -13,9 +13,10 @@ from dataclasses import dataclass, field
 import numpy as np
 
 from pyto.autodiff.qoi.responses import RESPONSES, available_responses
-from pyto.topopt.capabilities import cost_estimate, gradient_source, method_support
-from pyto.topopt.spec import (METHODS, PYTHON_PREFIX, ConstraintSpec, MethodSpec, ObjectiveSpec, OptimizationSpec,
-                              RegularizationSpec, compile_spec, validate)
+from pyto.topopt.capabilities import (MANUAL_ONLY, cost_estimate, gradient_source, manual_gradient_support,
+                                      method_support)
+from pyto.topopt.spec import (METHODS, PYTHON_PREFIX, ConstraintSpec, Issue, MethodSpec, ObjectiveSpec,
+                              OptimizationSpec, RegularizationSpec, compile_spec, validate)
 
 # Labels shown in the dropdowns -> response names. Order = display order.
 RESPONSE_LABELS = {
@@ -26,6 +27,7 @@ RESPONSE_LABELS = {
 }
 EXPRESSION_LABEL = "Expression..."
 PYTHON_LABEL = "Python function..."
+GRADIENT_CHOICES = [("Automatic differentiation", "autodiff"), ("Manual (hand-derived)", "manual")]
 AGGREGATE_LABELS = {"mean": "mean", "p-norm (smooth max)": "pnorm", "sum": "sum"}
 UNITS_NOTE = "Bounds are in SI units (m, Pa, K, N, J, kg), independent of the display unit system."
 
@@ -110,22 +112,32 @@ class RunPlan:
 
 
 def prepare_run(spec: OptimizationSpec, physics: str, selections: dict, body_force: bool = False,
-                base=None, allow_code: bool = False) -> RunPlan:
-    """Validate, check that the chosen method supports the formulation, and compile. No FE solve."""
+                base=None, allow_code: bool = False, fe_solver=None) -> RunPlan:
+    """Validate, check that the chosen method supports the formulation, and compile. No FE solve.
+
+    With fe_solver, a manual gradient is also checked against the solver (conductivity law, boundary values)."""
     plan = RunPlan(issues=validate(spec, physics, selections, allow_code=allow_code),
                    support=method_support(spec, physics, body_force))
     method = spec.method.name
     if method in plan.support and not plan.support[method][0]:
-        from pyto.topopt.spec import Issue
         plan.issues.append(Issue("error", plan.support[method][1]))
+    manual = spec.method.gradient == "manual" and method not in MANUAL_ONLY
+    if manual:
+        ok, why = manual_gradient_support(spec, selections, body_force)
+        if not ok:
+            plan.issues.append(Issue("error", f"Manual gradient not available: {why} Use automatic differentiation."))
     if method in METHODS:
-        plan.gradient = gradient_source(method)
+        plan.gradient = gradient_source(method, spec.method.gradient)
     if not plan.errors:
         try:
             plan.cost = cost_estimate(spec, selections)
             plan.to_params = compile_spec(spec, selections, base=base, allow_code=allow_code)
+            if manual and fe_solver is not None:
+                from pyto.topopt.manual_sensitivities import manual_support
+                ok, why = manual_support(plan.to_params, fe_solver)
+                if not ok:
+                    raise ValueError(f"Manual gradient not available: {why} Use automatic differentiation.")
         except Exception as e:                           # compile problems not caught by validate
-            from pyto.topopt.spec import Issue
             plan.issues.append(Issue("error", str(e)))
             plan.to_params = None
     return plan
@@ -331,6 +343,10 @@ if QtWidgets is not None:
             self.method_combo = QtWidgets.QComboBox()
             self.method_combo.addItems(list(METHODS))
             self.method_combo.currentIndexChanged.connect(self.refresh_method_info)
+            self.gradient_combo = QtWidgets.QComboBox()
+            for text, key in GRADIENT_CHOICES:
+                self.gradient_combo.addItem(text, key)
+            self.gradient_combo.currentIndexChanged.connect(self.refresh_method_info)
             self.gradient_label = QtWidgets.QLabel()
             self.gradient_label.setWordWrap(True)
             self.iterations_spin = QtWidgets.QSpinBox()
@@ -351,7 +367,8 @@ if QtWidgets is not None:
             self.cost_label.setWordWrap(True)
             self.check_gradient_button = QtWidgets.QPushButton("Check gradient (finite differences)")
             form.addRow("Method", self.method_combo)
-            form.addRow("Gradient", self.gradient_label)
+            form.addRow("Gradient", self.gradient_combo)
+            form.addRow("", self.gradient_label)
             form.addRow("Max iterations", self.iterations_spin)
             form.addRow("Move limit", self.move_spin)
             form.addRow("Filter radius (elements)", self.filter_spin)
@@ -376,7 +393,25 @@ if QtWidgets is not None:
                 item.setToolTip(reason or gradient_source(m))
             if not support[self.method_combo.currentText()][0]:
                 self.method_combo.setCurrentText("MMA")
-            self.gradient_label.setText(gradient_source(self.method_combo.currentText()))
+            method = self.method_combo.currentText()
+            manual_ok, manual_why = manual_gradient_support(spec, self.selections, self.body_force)
+            manual_item = self.gradient_combo.model().item(1)
+            self.gradient_combo.blockSignals(True)
+            if method in MANUAL_ONLY:                      # these drivers have no autograd path
+                self.gradient_combo.setCurrentIndex(1)
+                self.gradient_combo.setEnabled(False)
+                self.gradient_combo.setToolTip(f"{method} uses its own hand-derived sensitivity.")
+            else:
+                if not self.gradient_combo.isEnabled():    # leaving Pareto/LevelSet: back to the AD default
+                    self.gradient_combo.setCurrentIndex(0)
+                self.gradient_combo.setEnabled(True)
+                manual_item.setEnabled(manual_ok)
+                manual_item.setToolTip(manual_why)
+                if not manual_ok:
+                    self.gradient_combo.setCurrentIndex(0)
+                self.gradient_combo.setToolTip(manual_why or "Manual: hand-derived sensitivities, no autograd graph.")
+            self.gradient_combo.blockSignals(False)
+            self.gradient_label.setText(gradient_source(method, self.gradient_combo.currentData()))
             try:
                 self.cost_label.setText(cost_estimate(spec, self.selections))
             except Exception as e:                          # invalid expression: shown by Validate
@@ -414,6 +449,7 @@ if QtWidgets is not None:
             for c in spec.constraints:
                 self._add_constraint_row(c)
             self.method_combo.setCurrentText(spec.method.name)
+            self.gradient_combo.setCurrentIndex(max(0, self.gradient_combo.findData(spec.method.gradient)))
             self.iterations_spin.setValue(spec.method.max_iterations)
             self.move_spin.setValue(spec.method.move_limit)
             self.filter_spin.setValue(spec.regularization.filter_radius)
@@ -434,7 +470,8 @@ if QtWidgets is not None:
             return OptimizationSpec(
                 objective=ObjectiveSpec(self.expression_edit.text().strip(), self.sense_combo.currentText().lower()),
                 constraints=constraints,
-                method=MethodSpec(self.method_combo.currentText(), self.iterations_spin.value(), self.move_spin.value()),
+                method=MethodSpec(self.method_combo.currentText(), self.iterations_spin.value(), self.move_spin.value(),
+                                  self.gradient_combo.currentData() or "autodiff"),
                 regularization=RegularizationSpec(self.filter_spin.value(), self.heaviside_check.isChecked()))
 
         @property
