@@ -6349,9 +6349,14 @@ class ProjectsWindow(QtWidgets.QDialog):
                 continue
         return triangle_data
 #----------------------------------------------------------------------------
-if __name__ == "__main__":
-    app = QtWidgets.QApplication(sys.argv)
+def main():
+    """Start the PyTO GUI (used by `python -m pyto.gui.PyTOGUI` and by run_gui.py in the repository root)."""
+    app = QtWidgets.QApplication.instance() or QtWidgets.QApplication(sys.argv)
     app.setStyleSheet("* { font-size: 10pt; }")
     window = MainWindow()
     window.show()
-    sys.exit(app.exec_())
+    return app.exec_()
+
+
+if __name__ == "__main__":
+    sys.exit(main())

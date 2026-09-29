@@ -96,3 +96,13 @@ def test_gui_body_force_reaches_the_solver_input():
     window = SimpleNamespace(body_force={"X": 0.0, "Y": -9.81, "Z": 0.0})
     assert np.allclose(gui_elem_body_force(window, mesh, mat), ref_force)
     assert gui_elem_body_force(SimpleNamespace(), mesh, mat) is None      # Body force window never opened
+
+
+def test_run_gui_launcher_resolves_without_pythonpath():
+    """run_gui.py (repository root) finds the package by itself and uses PyTOGUI.main."""
+    import runpy
+    import sys
+    root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    ns = runpy.run_path(os.path.join(root, "run_gui.py"), run_name="not_main")   # does not start the window
+    assert ns["main"].__module__ == "pyto.gui.PyTOGUI"
+    assert os.path.join(root, "src") in sys.path
