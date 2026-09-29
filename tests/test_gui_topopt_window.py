@@ -204,15 +204,27 @@ def test_analysis_window_initial_design_results(window_parent, tmp_path):
             assert G.show_result_field(parent, "initial", field) is None and parent.plotter.actors
         assert "Thermal Analysis" in G.show_result_field(parent, "initial", "Temperature")
 
-        # Include Thermal Effect -> coupled analysis, temperature of the initial design available
-        w.thermal_check.setChecked(True)
+        # Thermo-Structural Analysis button -> coupled analysis, temperature of the initial design available
+        assert w.thermostructural_button.text() == "Thermo-Structural Analysis"
         w.temp_spin.setValue(300.0)
         with contextlib.redirect_stdout(io.StringIO()):
-            w.run_structural_analysis()
+            w.thermostructural_button.click()
         assert type(parent.fe_solver).__name__ == "ThermoStructuralFEA"
         assert all(b.isEnabled() for b in w.field_buttons.values())
         assert G.show_result_field(parent, "initial", "Temperature") is None
         assert float(np.max(np.asarray(parent.fe_solver.vonMisesStress))) > float(np.max(np.asarray(fe.vonMisesStress)))
+
+        # without thermal loads the button refuses (warning) and keeps the previous results
+        warned = []
+        saved_warning, saved_loads = G.QtWidgets.QMessageBox.warning, parent.thermal_loads_window
+        G.QtWidgets.QMessageBox.warning = lambda *a, **k: warned.append(a[2])
+        parent.thermal_loads_window = None
+        previous = parent.fe_solver
+        try:
+            w.thermostructural_button.click()
+        finally:
+            G.QtWidgets.QMessageBox.warning, parent.thermal_loads_window = saved_warning, saved_loads
+        assert warned and "thermal loads" in warned[0] and parent.fe_solver is previous
 
         # after an optimization, the initial-design view still draws the full design
         parent.topopt_results = {"fe_solver": parent.fe_solver, "physics": "thermo-structural",

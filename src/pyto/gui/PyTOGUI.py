@@ -2777,12 +2777,12 @@ class AnalysisWindow(QtWidgets.QDialog):
         layout.addLayout(solver_layout)
         
         # Thermal Effect
-        self.thermal_check = QtWidgets.QCheckBox("Include Thermal Effect")
-        layout.addWidget(self.thermal_check)
         
         # Zero-strain Temperature
         temp_layout = QtWidgets.QHBoxLayout()
-        temp_layout.addWidget(QtWidgets.QLabel("Zero-strain T(K):"))
+        zero_label = QtWidgets.QLabel("Zero-strain T:")
+        zero_label.setToolTip("Stress-free temperature for Thermo-Structural Analysis, in the unit of the thermal loads")
+        temp_layout.addWidget(zero_label)
         self.temp_spin = QtWidgets.QDoubleSpinBox()
         self.temp_spin.setRange(0, 1000)
         self.temp_spin.setValue(300)
@@ -2799,8 +2799,13 @@ class AnalysisWindow(QtWidgets.QDialog):
         layout.addWidget(self.thermal_button)
         
         self.structural_button = QtWidgets.QPushButton("Structural Analysis")
-        self.structural_button.clicked.connect(self.run_structural_analysis)
+        self.structural_button.clicked.connect(lambda: self.run_structural_analysis(coupled=False))
         layout.addWidget(self.structural_button)
+
+        # Thermal solve -> thermal expansion load -> structural solve (needs structural AND thermal loads)
+        self.thermostructural_button = QtWidgets.QPushButton("Thermo-Structural Analysis")
+        self.thermostructural_button.clicked.connect(lambda: self.run_structural_analysis(coupled=True))
+        layout.addWidget(self.thermostructural_button)
 
         # Results: deformation / stress / temperature of the initial design (the analyses above) or of the last
         # optimized design
@@ -3177,8 +3182,11 @@ class AnalysisWindow(QtWidgets.QDialog):
         if msg:
             QtWidgets.QMessageBox.information(self, "Results", msg)
 
-    def run_structural_analysis(self):
-        """Run structural analysis using existing mesh and boundary conditions"""
+    def run_structural_analysis(self, coupled: bool = False):
+        """Run structural analysis using existing mesh and boundary conditions.
+
+        coupled=True (Thermo-Structural Analysis button): thermal solve with the thermal loads, then the structural
+        solve with the thermal expansion load added, stress-free at the Zero-strain temperature."""
         if not self.parent.hex_mesh:
             QtWidgets.QMessageBox.warning(self, "No Mesh", "Please generate mesh first.")
             return
@@ -3288,14 +3296,14 @@ class AnalysisWindow(QtWidgets.QDialog):
         else:
             self.parent.dsolver = None
         
-        # Create FEA solver. "Include Thermal Effect": coupled thermo-structural analysis (thermal solve ->
-        # thermal expansion load -> structural solve), stress-free at the Zero-strain temperature.
+        # Create FEA solver: structural, or coupled thermo-structural (Thermo-Structural Analysis button)
         thermal_loads = getattr(getattr(self.parent, "thermal_loads_window", None), "thermal_loads", None) or {}
         has_thermal = any(thermal_loads.get(k) for k in ("fixed_temps", "heat_sources", "total_heat_sources"))
-        if self.thermal_check.isChecked() and not has_thermal:
-            self.parent.message_text.append("Include Thermal Effect is on, but no thermal loads are applied: "
-                                            "running a purely structural analysis.")
-        if self.thermal_check.isChecked() and has_thermal:
+        if coupled and not has_thermal:
+            QtWidgets.QMessageBox.warning(self, "No Thermal Loads",
+                                          "Thermo-structural analysis needs thermal loads. Apply them first.")
+            return
+        if coupled:
             full_mat = self.create_material_properties()          # includes conductivity and expansion
             thermal_bc = self.process_thermal_boundary_conditions(
                 self.parent.hex_mesh, thermal_loads, boundary_nodes, boundary_points, tolerance)
