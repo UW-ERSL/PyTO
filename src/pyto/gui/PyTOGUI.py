@@ -41,6 +41,19 @@ from pyto.io.topopt_stl_recovery import extract_isosurface_cnn, subtract_voids_f
 """
 DEFAULT_FONT_SIZE = 32
 #---------------------------------------------------------------------------
+def topopt_load_problems(physics, has_supports, has_forces, has_body_force, has_thermal):
+    """What is missing before a topology optimization can run, by physics (empty list = ready). Supports count in
+    any form (faces, nodes, boxes)."""
+    missing = []
+    if physics in ("structural", "thermo-structural") and not has_supports:
+        missing.append("supports (Fixed XYZ/X/Y/Z on faces or nodes)")
+    if physics == "structural" and not (has_forces or has_body_force):
+        missing.append("a load (force, torque or body force)")
+    if physics in ("thermal", "thermo-structural") and not has_thermal:
+        missing.append("thermal loads")
+    return missing
+
+
 def nearest_surface_nodes(points, boundary_nodes, boundary_points):
     """Nearest surface (boundary) mesh node of each point: (node indices, distances).
 
@@ -4461,8 +4474,9 @@ class StructuralTopOptWindow(QtWidgets.QDialog):
         tw = getattr(self.parent, "thermal_loads_window", None)
         thermal_loads = getattr(tw, "thermal_loads", None) or {}
         has_thermal = any(thermal_loads.get(k) for k in ("fixed_temps", "heat_sources", "total_heat_sources"))
+        # supports in any form (faces or nodes); with thermal loads, thermal expansion alone is a load
         has_struct = bool(getattr(self.parent, "constraint_data", None)) and bool(
-            getattr(self.parent, "force_data", None) or self.has_body_force())
+            getattr(self.parent, "force_data", None) or self.has_body_force() or has_thermal)
         if has_thermal and has_struct:
             return "thermo-structural"
         return "thermal" if has_thermal else "structural"
@@ -5012,15 +5026,18 @@ class StructuralTopOptWindow(QtWidgets.QDialog):
             QtWidgets.QMessageBox.warning(self, "No Material", "Please define material properties first.")
             return False
         
-        has_forces = len(self.parent.force_data) > 0
-        has_constraints = len(self.parent.constrained_triangles) > 0
-        
-        if not (has_forces and has_constraints):
-            QtWidgets.QMessageBox.warning(
-                self, 
-                "Incomplete Loads", 
-                "Please apply both forces and constraints for structural optimization."
-            )
+        # Supports in any form (faces, nodes, boxes): constraint_data, not only the support faces
+        # (constrained_triangles), which made node/box supports look missing.
+        physics = self.problem_physics()
+        tw = getattr(self.parent, "thermal_loads_window", None)
+        thermal_loads = getattr(tw, "thermal_loads", None) or {}
+        missing = topopt_load_problems(
+            physics, has_supports=bool(self.parent.constraint_data), has_forces=bool(self.parent.force_data),
+            has_body_force=self.has_body_force(),
+            has_thermal=any(thermal_loads.get(k) for k in ("fixed_temps", "heat_sources", "total_heat_sources")))
+        if missing:
+            QtWidgets.QMessageBox.warning(self, "Incomplete Loads",
+                                          f"For a {physics} optimization, please apply: " + "; ".join(missing) + ".")
             return False
         
         if self.parent.topopt_options is None:
@@ -5367,7 +5384,7 @@ class DisplayOptionsWindow(QtWidgets.QDialog):
     def update_checkbox_states(self):
         has_structural = (
             (hasattr(self.parent, 'force_data') and bool(self.parent.force_data)) or
-            (hasattr(self.parent, 'constrained_triangles') and bool(self.parent.constrained_triangles))
+            bool(getattr(self.parent, 'constraint_data', None))          # face and node supports
         )
         self.show_structural_loads_checkbox.setEnabled(bool(has_structural))
         self.show_structural_loads_checkbox.setChecked(bool(has_structural))
@@ -6194,7 +6211,7 @@ class ProjectsWindow(QtWidgets.QDialog):
         # Update structural loads state
         if self.parent.force_data:
             self.parent.update_LivVar('structural_loads.forces_applied', True)
-        if self.parent.constrained_triangles:
+        if self.parent.constraint_data:            # face and node supports
             self.parent.update_LivVar('structural_loads.fixed_constraints', True)
         
         if (self.parent.LivVar['structural_loads']['forces_applied'] and 

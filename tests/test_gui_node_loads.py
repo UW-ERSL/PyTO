@@ -366,3 +366,36 @@ def test_real_rubber_band_drags_do_not_crash():
                        env=env)
     assert r.returncode == 0, f"crashed (exit {r.returncode}): {r.stderr[-500:]}"
     assert "REGIONS 3" in r.stdout, r.stdout[-500:]
+
+
+def test_topopt_prerequisites_by_physics():
+    from pyto.gui.PyTOGUI import topopt_load_problems as P
+    assert P("structural", True, True, False, False) == []
+    assert P("structural", True, False, True, False) == []                  # body force is a load
+    assert P("structural", False, True, False, False) == ["supports (Fixed XYZ/X/Y/Z on faces or nodes)"]
+    assert P("structural", True, False, False, False) == ["a load (force, torque or body force)"]
+    assert P("thermal", False, False, False, True) == []
+    assert P("thermo-structural", True, False, False, True) == []           # thermal expansion alone is a load
+    assert P("thermo-structural", False, False, False, True) == ["supports (Fixed XYZ/X/Y/Z on faces or nodes)"]
+
+
+def test_topopt_accepts_node_supports(gui):
+    """Regression: TopOpt Execute said 'Please apply both forces and constraints' with node/box supports, because
+    it counted only support faces."""
+    app, G, parent, x0, tip = gui
+    saved = (parent.constraint_data, parent.force_data, parent.constrained_triangles, parent.topopt_options)
+    parent.constraint_data = [{"type": "Fixed XYZ", "triangles": [], "points": [p.tolist() for p in x0]}]
+    parent.force_data = [{"type": "force_xyz", "triangles": [], "points": [tip.tolist()], "force_x": 0.0,
+                          "force_y": -1000.0, "force_z": 0.0}]
+    parent.constrained_triangles, parent.topopt_options = set(), {}          # no support faces at all
+    warned = []
+    real = G.QtWidgets.QMessageBox.warning
+    G.QtWidgets.QMessageBox.warning = lambda *a, **k: warned.append(a[2])
+    try:
+        window = G.StructuralTopOptWindow(parent)
+        assert window.problem_physics() == "structural" and window.check_prerequisites() and not warned
+        parent.constraint_data = []                                          # really no supports: refused, and says what
+        assert not window.check_prerequisites() and "supports" in warned[-1]
+    finally:
+        G.QtWidgets.QMessageBox.warning = real
+        parent.constraint_data, parent.force_data, parent.constrained_triangles, parent.topopt_options = saved
