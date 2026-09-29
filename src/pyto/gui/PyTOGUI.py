@@ -51,6 +51,83 @@ def gui_elem_body_force(main_window, mesh, mat_prop):
         mesh, mat_prop.mass_density, [bf.get("X", 0.0), bf.get("Y", 0.0), bf.get("Z", 0.0)])
 
 
+TOPOPT_FIELDS = ("Density", "Deformation", "Von Mises stress", "Temperature")
+
+
+def topopt_fields_available(results):
+    """Result fields that exist for the last optimization (depends on its physics)."""
+    if not results or results.get("fe_solver") is None:
+        return []
+    physics = results.get("physics", "structural")
+    return ["Density"] + (["Deformation", "Von Mises stress"] if physics != "thermal" else []) \
+        + (["Temperature"] if physics != "structural" else [])
+
+
+def show_topopt_field(main_window, field):
+    """Draw a field of the OPTIMIZED design (its own final solve) in the main view, on the solid region
+    (density > 0.5). Used by the TopOpt Execute / Postprocess result buttons and Display Options -> 'TopOpt'.
+    Returns None, or a message saying why the field cannot be shown."""
+    results = getattr(main_window, "topopt_results", None) or {}
+    if field not in topopt_fields_available(results):
+        return (f"{field} is not available: run a topology optimization first."
+                if not results else f"{field} is not available for a {results.get('physics', 'structural')} optimization.")
+    fe_solver = results["fe_solver"]
+    physics = results.get("physics", "structural")
+    plotter = main_window.plotter
+    for name in list(plotter.actors.keys()):
+        if name != "geometry_info":
+            plotter.remove_actor(name, reset_camera=False)
+    for name in list(getattr(plotter, "scalar_bars", {}).keys()):
+        plotter.remove_scalar_bar(name)
+    if field == "Density":
+        fe_solver.plot_mesh(plotter=plotter)
+    elif field == "Deformation":
+        fe_solver.plot_deformation(plotter=plotter)
+    elif field == "Von Mises stress":
+        if not hasattr(fe_solver, "vonMisesStress"):
+            fe_solver.postprocess()
+        fe_solver.plot_vonMisesStress(plotter=plotter)
+    elif field == "Temperature":
+        summary = results.get("design_summary") or {}
+        elem_T = summary.get("element_temperature")
+        if elem_T is None:
+            return "Temperature of the final design was not evaluated."
+        thermal = fe_solver.thermal_fea if physics == "thermo-structural" else fe_solver
+        thermal.plot_elem_field(elem_T, title="Temperature", plotter=plotter)
+    plotter.render()
+    return None
+
+
+def add_topopt_field_buttons(dialog, layout):
+    """'Optimized design' buttons (one per field) on a dialog; returns {field: button}."""
+    group = QtWidgets.QGroupBox("Optimized design")
+    row = QtWidgets.QGridLayout(group)
+    buttons = {}
+    for i, field in enumerate(TOPOPT_FIELDS):
+        b = QtWidgets.QPushButton(f"Show {field.lower()}")
+        b.clicked.connect(lambda _checked=False, f=field: _show_field_or_warn(dialog, f))
+        row.addWidget(b, i // 2, i % 2)
+        buttons[field] = b
+    layout.addWidget(group)
+    return buttons
+
+
+def refresh_topopt_field_buttons(main_window, buttons):
+    available = topopt_fields_available(getattr(main_window, "topopt_results", None))
+    for field, b in buttons.items():
+        b.setEnabled(field in available)
+        b.setToolTip("" if field in available else "Not available for the last optimization (or none run yet).")
+
+
+def _show_field_or_warn(dialog, field):
+    try:
+        msg = show_topopt_field(dialog.parent, field)
+    except Exception as e:
+        msg = f"Could not show {field.lower()}: {e}"
+    if msg:
+        QtWidgets.QMessageBox.information(dialog, "Optimized design", msg)
+
+
 class MainWindow(QtWidgets.QMainWindow):
     WINDOW_SIZE = (1280, 768)
     SIDEBAR_WIDTH = 250
@@ -3986,6 +4063,10 @@ class StructuralTopOptWindow(QtWidgets.QDialog):
         self.history_canvas = FigureCanvasQTAgg(self.history_figure)
         layout.addWidget(self.history_canvas)
 
+        # Fields of the optimized design (enabled once a run has finished)
+        self.field_buttons = add_topopt_field_buttons(self, layout)
+        refresh_topopt_field_buttons(self.parent, self.field_buttons)
+
         # Optimize button
         self.optimize_button = QtWidgets.QPushButton("Optimize")
         self.optimize_button.clicked.connect(self.start_optimization)
@@ -4361,7 +4442,13 @@ class StructuralTopOptWindow(QtWidgets.QDialog):
         self.optimize_button.setEnabled(True)
         self.stop_button.setEnabled(False)
         
-        if success and history is not None:
+        # A run that stopped at its iteration limit (e.g. OC 'Maximum iterations reached') still produced a
+        # design; keep it viewable instead of discarding it.
+        has_design = history is not None and bool(history.get('objective') if isinstance(history, dict) else False)
+        if (success or has_design) and history is not None:
+            if not success:
+                self.parent.message_text.append(
+                    f"The optimization did not converge ({error_msg}); showing the design it reached.")
             # Handle different history formats from different optimization methods
             final_objective = 0.0
             final_volume = 0.0
@@ -4383,7 +4470,7 @@ class StructuralTopOptWindow(QtWidgets.QDialog):
                     final_objective = display_objective(self.spec, [history['objective'][-1]])[0]
                 self.history_update.emit({k: list(v) for k, v in history.items() if k != "change"})
             
-            self.parent.message_text.append(f"Topology optimization ({self.physics}) completed successfully")
+            self.parent.message_text.append(f"Topology optimization ({self.physics}) finished")
             self.parent.message_text.append(f"Method: {self.spec.method.name}")
             self.parent.message_text.append(f"Final objective: {final_objective:.3g}, Volume fraction: {final_volume:.3f}")
             
@@ -4397,7 +4484,7 @@ class StructuralTopOptWindow(QtWidgets.QDialog):
                 'volume_fraction': final_volume,
                 'objective': final_objective,
                 'iterations': n_iterations,
-                'converged': True,
+                'converged': bool(success),
                 'history': history,
                 'displacement': u,
                 'fe_solver': fe_solver
@@ -4414,7 +4501,8 @@ class StructuralTopOptWindow(QtWidgets.QDialog):
                 for line in summary['lines']:
                     self.parent.message_text.append(line)
                 self.parent.message_text.append(
-                    "View the optimized design's fields in Display Options: Geometry 'TopOpt', then a Field.")
+                    "Use the 'Optimized design' buttons (here or in TopOpt Postprocess) to show its density, "
+                    "deformation, von Mises stress or temperature.")
             except Exception as e:
                 self.parent.message_text.append(f"Could not evaluate the final design: {e}")
 
@@ -4428,6 +4516,7 @@ class StructuralTopOptWindow(QtWidgets.QDialog):
                 file_name=vtu_path
             )
             self.parent.message_text.append(f"VTU exported: {vtu_path}")
+            refresh_topopt_field_buttons(self.parent, self.field_buttons)
             
         else:
             self.parent.message_text.append(f"Structural topology optimization failed: {error_msg}")
@@ -4621,7 +4710,7 @@ class TopOptResultsWindow(QtWidgets.QDialog):
     def __init__(self, parent):
         super().__init__(parent)
         self.setWindowTitle("TopOpt Postprocess")
-        self.setFixedSize(320, 220)
+        self.setFixedSize(320, 330)
         self.parent = parent
 
         # Default values for tet mesh
@@ -4649,6 +4738,9 @@ class TopOptResultsWindow(QtWidgets.QDialog):
         self.tetmesh_btn = QtWidgets.QPushButton("Generate TetMesh")
         self.tetmesh_btn.clicked.connect(self.generate_tetmesh)
         layout.addWidget(self.tetmesh_btn)
+
+        self.field_buttons = add_topopt_field_buttons(self, layout)
+        refresh_topopt_field_buttons(self.parent, self.field_buttons)
 
 
     def apply_recovery(self):
@@ -4968,28 +5060,9 @@ class DisplayOptionsWindow(QtWidgets.QDialog):
                 plotter=self.parent.plotter
             )
         elif geometry_choice == "TopOpt" and hasattr(self.parent, "topopt_results") and self.parent.topopt_results:
-            # Fields of the OPTIMIZED design (its own final solve), shown on the solid region (density > 0.5)
-            results = self.parent.topopt_results
-            fe_solver = results.get("fe_solver")
-            physics = results.get("physics", "structural")
-            summary = results.get("design_summary") or {}
-            if fe_solver:
-                if field_choice == "Deformation" and physics != "thermal":
-                    fe_solver.plot_deformation(plotter=self.parent.plotter)
-                elif field_choice == "Von Mises stress" and physics != "thermal":
-                    if not hasattr(fe_solver, "vonMisesStress"):
-                        fe_solver.postprocess()
-                    fe_solver.plot_vonMisesStress(plotter=self.parent.plotter)
-                elif field_choice == "Temperature" and physics != "structural":
-                    elem_T = summary.get("element_temperature")
-                    thermal = fe_solver.thermal_fea if physics == "thermo-structural" else fe_solver
-                    if elem_T is not None:
-                        thermal.plot_elem_field(elem_T, title="Temperature", plotter=self.parent.plotter)
-                elif field_choice == "None":
-                    fe_solver.plot_mesh(plotter=self.parent.plotter)
-                else:
-                    QtWidgets.QMessageBox.information(self, "Field not available",
-                                                      f"{field_choice} is not available for a {physics} optimization.")
+            msg = show_topopt_field(self.parent, "Density" if field_choice == "None" else field_choice)
+            if msg:
+                QtWidgets.QMessageBox.information(self, "Field not available", msg)
         elif geometry_choice == "Final Design" and hasattr(self.parent, "optimized_topology_stl") and self.parent.optimized_topology_stl is not None:
             orig_actor = self.parent.plotter.actors.get("stl_geometry")
             if orig_actor and hasattr(orig_actor, "GetProperty"):
@@ -5261,7 +5334,7 @@ class DisplayOptionsWindow(QtWidgets.QDialog):
         has_topopt = (
             hasattr(self.parent, "topopt_results")
             and self.parent.topopt_results is not None
-            and self.parent.topopt_results.get("converged", False)
+            and self.parent.topopt_results.get("fe_solver") is not None
         )
         if has_topopt:
             items.append("TopOpt")
@@ -5284,8 +5357,7 @@ class DisplayOptionsWindow(QtWidgets.QDialog):
         results = getattr(self.parent, "topopt_results", None) or {}
         if self.geometry_combo.currentText() == "TopOpt" and results:
             physics = results.get("physics", "structural")      # offer only the fields of that optimization
-            fields = ["None"] + (["Deformation", "Von Mises stress"] if physics != "thermal" else []) \
-                + (["Temperature"] if physics != "structural" else [])
+            fields = ["None"] + [f for f in topopt_fields_available(results) if f != "Density"]
         self.field_combo.addItems(fields)
         if self.geometry_combo.currentText() in ["Initial Design", "TopOpt"]:
             self.field_combo.setCurrentText("None")

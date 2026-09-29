@@ -113,3 +113,51 @@ def test_final_design_fields(window_parent, tmp_path):
     assert s["max_displacement"] is None and s["max_temperature"] >= 300.0
     fe.plot_elem_field(s["element_temperature"], title="Temperature", save_path=str(tmp_path / "T.png"))
     assert (tmp_path / "T.png").exists()                              # the plot_elem_field wrapper forwards save_path
+
+
+def test_optimized_design_buttons_after_completion(window_parent, tmp_path):
+    """The real completion handler: results stored (also when not converged), result buttons enabled per physics,
+    and every field drawn into the main view."""
+    import shutil
+    import pyvista as pv
+    import pyto.gui.PyTOGUI as G
+    from pyto.topopt.spec import MethodSpec, ObjectiveSpec, OptimizationSpec
+
+    class ViewStub(pv.Plotter):                        # the GUI's QtInteractor: show() just redraws
+        def show(self, *a, **k):
+            self.render()
+
+    app, parent = window_parent
+    parent.plotter = ViewStub(off_screen=True)
+    parent.update_LivVar = lambda *a, **k: None
+    parent.set_sidebar_icon = lambda *a, **k: None
+    stl = tmp_path / "Cantilever.STL"                   # completion exports a .vtu next to the STL
+    shutil.copy(parent.stl_geom.file_path, stl)
+    real_path = parent.stl_geom.file_path
+    parent.stl_geom.file_path = str(stl)
+    try:
+        for spec, structural, thermal, expected in [
+            (OptimizationSpec(method=MethodSpec("OC", 3)), True, None,            # stops at the iteration limit
+             ["Density", "Deformation", "Von Mises stress"]),
+            (OptimizationSpec(objective=ObjectiveSpec("Temperature(All, pnorm)"), method=MethodSpec("MMA", 3)), False,
+             {"fixed_temps": [{"triangles": parent.faces[0], "temperature": 300.0}],
+              "total_heat_sources": [{"triangles": parent.faces[1], "total_heat": 50.0}]},
+             ["Density", "Temperature"]),
+        ]:
+            parent.topopt_results = None
+            w, fe, physics, sel, done, J = _run(app, parent, spec, structural=structural, thermal=thermal)
+            w.optimization_completed(done["ok"], done["msg"], done["h"], None, fe)   # the real handler
+            assert parent.topopt_results["fe_solver"] is fe and parent.topopt_results["physics"] == physics
+            assert G.topopt_fields_available(parent.topopt_results) == expected
+            assert {f: b.isEnabled() for f, b in w.field_buttons.items()} == {f: f in expected for f in G.TOPOPT_FIELDS}
+            for field in G.TOPOPT_FIELDS:
+                msg = G.show_topopt_field(parent, field)
+                if field in expected:
+                    assert msg is None and len(parent.plotter.actors) > 0, field
+                else:
+                    assert "not available" in msg
+            post = G.TopOptResultsWindow(parent)                # the same buttons in TopOpt Postprocess
+            assert {f: b.isEnabled() for f, b in post.field_buttons.items()} == {f: f in expected for f in G.TOPOPT_FIELDS}
+    finally:
+        parent.stl_geom.file_path = real_path
+        parent.plotter.close()
