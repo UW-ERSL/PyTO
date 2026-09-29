@@ -41,6 +41,25 @@ from pyto.io.topopt_stl_recovery import extract_isosurface_cnn, subtract_voids_f
 """
 DEFAULT_FONT_SIZE = 32
 #---------------------------------------------------------------------------
+def nearest_surface_nodes(points, boundary_nodes, boundary_points):
+    """Nearest surface (boundary) mesh node of each point: (node indices, distances).
+
+    Node loads/supports are stored as coordinates (STL vertices the user clicked), not mesh node numbers, so they
+    survive remeshing; they are mapped to the current mesh here."""
+    from scipy.spatial import cKDTree
+    pts = np.asarray(points, dtype=float).reshape(-1, 3)
+    if len(pts) == 0:
+        return np.array([], dtype=int), np.array([])
+    dist, idx = cKDTree(np.asarray(boundary_points)).query(pts)
+    return np.asarray(boundary_nodes)[idx].astype(int), dist
+
+
+def snap_to_triangle_vertex(stl_geom, cell_id, picked_point):
+    """The vertex of STL triangle cell_id closest to the clicked point."""
+    verts = np.asarray(stl_geom.mesh.vectors[cell_id], dtype=float)
+    return verts[int(np.argmin(np.linalg.norm(verts - np.asarray(picked_point, dtype=float), axis=1)))]
+
+
 def gui_elem_body_force(main_window, mesh, mat_prop):
     """Element body force from the Body force window (accelerations in m/s^2), or None if none is set.
 
@@ -256,6 +275,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.applied_material = None
         self.highlight_actor = None
         self.highlight_mode = 'coarse'
+        self.selected_points = []        # node-mode picks (STL vertex coordinates) for point loads / supports
         self.stl_geom = None
         self.hex_mesh = None
 
@@ -682,6 +702,18 @@ class MainWindow(QtWidgets.QMainWindow):
                             self.message_text.append("Please click on the geometry surface.")
                             return
         
+        if getattr(self, 'highlight_mode', 'coarse') == 'node':
+            # Node mode: snap to the nearest vertex of the clicked triangle
+            point = snap_to_triangle_vertex(self.stl_geom, cell_id, picked_point)
+            if any(np.linalg.norm(np.asarray(p) - point) < 1e-12 for p in self.selected_points):
+                self.message_text.append("Node already selected.")
+                return
+            self.selected_points.append(point.tolist())
+            self.update_point_markers()
+            self.message_text.append(f"Selected node at ({point[0]:.4g}, {point[1]:.4g}, {point[2]:.4g}); "
+                                     f"{len(self.selected_points)} node(s) selected.")
+            return
+
         if cell_id in self.constrained_triangles:
             self.message_text.append("Cannot select constrained triangle.")
             return
@@ -697,10 +729,25 @@ class MainWindow(QtWidgets.QMainWindow):
         depth, angle = (0, 0) if mode == 'triangle' else (500, 15)
         return self.stl_geom.highlight_triangles_recursive(cell_id, depth, angle)
 
+    def update_point_markers(self):
+        """Draw the node-mode selection (orange points)."""
+        if 'selected_points' in self.plotter.actors:
+            self.plotter.remove_actor('selected_points', reset_camera=False)
+        if self.selected_points:
+            self.plotter.add_mesh(pv.PolyData(np.asarray(self.selected_points, dtype=float)), color='orange',
+                                  point_size=14, render_points_as_spheres=True, pickable=False,
+                                  name='selected_points')
+        self.plotter.render()
+
     def on_right_button_press(self, obj, event):
-        """Handle right click for deselecting all triangles"""
+        """Handle right click for deselecting all triangles (and all node-mode picks)"""
         if not hasattr(self, 'stl_geom') or not self.stl_geom:
             return
+        if getattr(self, 'selected_points', None):
+            n = len(self.selected_points)
+            self.selected_points = []
+            self.update_point_markers()
+            self.message_text.append(f"Deselected {n} node(s).")
             
         selected_count = sum(1 for h in self.stl_geom.tri_highlight if h)
         if selected_count == 0:
@@ -1396,7 +1443,8 @@ class StructuralLoadsWindow(QtWidgets.QDialog):
     
     SELECTION_MODES = {
         "Facet": "coarse",
-        "Triangle": "triangle"
+        "Triangle": "triangle",
+        "Node": "node",          # click snaps to the nearest STL vertex; force / supports on those nodes
     }
 
     
@@ -1605,8 +1653,72 @@ class StructuralLoadsWindow(QtWidgets.QDialog):
         for spinbox in self.force_spinboxes.values():
             spinbox.setValue(0)
 
+    def _node_mode(self):
+        return getattr(self.parent, 'highlight_mode', 'coarse') == 'node'
+
+    def _take_selected_points(self):
+        points = list(getattr(self.parent, 'selected_points', []) or [])
+        if not points:
+            QtWidgets.QMessageBox.warning(self, "No Selection", "No nodes selected. In Node mode, click the "
+                                                                  "geometry to pick nodes (right-click clears).")
+            return None
+        return points
+
+    def _clear_selected_points(self):
+        self.parent.selected_points = []
+        self.parent.update_point_markers()
+
+    def apply_force_to_points(self):
+        """Force on picked nodes: the entered force is the total, split evenly over the nodes (as for faces)."""
+        points = self._take_selected_points()
+        if not points:
+            return
+        forces = self.get_force_values()
+        if not self.validate_forces(forces):
+            return
+        f = self.convert_forces_to_base_units(forces)
+        entry = {'type': 'force_xyz', 'triangles': [], 'points': points, 'force_x': f['X'], 'force_y': f['Y'],
+                 'force_z': f['Z'], 'load_set': self.load_set_spin.value()}
+        self.parent.force_data.append(entry)
+        self._rebuild_force_visualization(entry)
+        self._clear_selected_points()
+        force_unit = self.parent.settings.get_force_unit_string()
+        self.parent.message_text.append(
+            f"Applied force ({f['X']:+.4g}, {f['Y']:+.4g}, {f['Z']:+.4g}) {force_unit} (total) to {len(points)} node(s).")
+        self.parent.update_LivVar('structural_loads.forces_applied', True)
+        self.clear_force_inputs()
+        self.parent.notify_display_options_update()
+
+    def apply_constraint_to_points(self, config):
+        """Point support: fix the picked nodes in the constraint's directions."""
+        points = self._take_selected_points()
+        if not points:
+            return
+        self.parent.constraint_data.append({'type': config["constraint_type"], 'triangles': [], 'points': points})
+        self._clear_selected_points()
+        self.visualize_constraints()
+        self.parent.update_LivVar('structural_loads.fixed_constraints', True)
+        self.parent.message_text.append(f"Applied {config['constraint_type']} to {len(points)} node(s).")
+        self.parent.notify_display_options_update()
+
+    def draw_point_force(self, entry):
+        """Arrows at the nodes of a point load, pointing along the force."""
+        f = np.array([entry['force_x'], entry['force_y'], entry['force_z']], dtype=float)
+        norm = np.linalg.norm(f)
+        if norm == 0:
+            return
+        scale = self.calculate_arrow_scale()
+        direction = f / norm
+        for i, p in enumerate(np.asarray(entry['points'], dtype=float)):
+            arrow = pv.Arrow(start=p - direction * scale, direction=direction, scale=scale)
+            actor = self.parent.plotter.add_mesh(arrow, color="red", pickable=False,
+                                                 name=f"point_force_{id(entry)}_{i}")
+            self.parent.force_actors.append(actor)
+
     def apply_force(self):
         """Apply resultant force to selected triangles"""
+        if self._node_mode():
+            return self.apply_force_to_points()
         selected_triangles = self.get_selected_triangles()
         if not selected_triangles:
             return
@@ -1683,6 +1795,8 @@ class StructuralLoadsWindow(QtWidgets.QDialog):
 
     def _rebuild_force_visualization(self, force_data):
         """Rebuild visualization for a force data entry"""
+        if force_data.get('points'):
+            return self.draw_point_force(force_data)
         forces = {
             'X': force_data['force_x'],
             'Y': force_data['force_y'], 
@@ -1770,6 +1884,10 @@ class StructuralLoadsWindow(QtWidgets.QDialog):
 
     def apply_torque(self):
         """Apply torque to selected planar or cylindrical surfaces with visualization and unit conversion."""
+        if self._node_mode():
+            QtWidgets.QMessageBox.warning(self, "Torque on nodes",
+                                          "A torque needs a face (its axis and radius). Use Facet or Triangle mode.")
+            return
         selected_triangles = self.get_selected_triangles()
         if not selected_triangles:
             return
@@ -1958,6 +2076,8 @@ class StructuralLoadsWindow(QtWidgets.QDialog):
 
     def apply_constraint(self, config):
         """constraint application method"""
+        if self._node_mode():
+            return self.apply_constraint_to_points(config)
         selected_triangles = self.get_selected_triangles()
         if not selected_triangles:
             return
@@ -2004,8 +2124,9 @@ class StructuralLoadsWindow(QtWidgets.QDialog):
         self.parent.notify_display_options_update()
 
     def visualize_constraints(self):
-        """Create black visualization for constrained triangles"""
-        if not self.parent.stl_geom or not self.parent.constrained_triangles:
+        """Create black visualization for constrained triangles, and black nodes for point supports"""
+        point_supports = [p for c in self.parent.constraint_data for p in (c.get('points') or [])]
+        if not self.parent.stl_geom or not (self.parent.constrained_triangles or point_supports):
             return
 
         #Remove old constraint actors
@@ -2015,6 +2136,11 @@ class StructuralLoadsWindow(QtWidgets.QDialog):
         constraint_mesh = self.create_constraint_mesh()
         if constraint_mesh:
             self.add_constraint_visualization(constraint_mesh)
+        if point_supports:
+            actor = self.parent.plotter.add_mesh(pv.PolyData(np.asarray(point_supports, dtype=float)), color="black",
+                                                 point_size=16, render_points_as_spheres=True, pickable=False,
+                                                 name="point_supports")
+            self.parent.constraint_actors.append(actor)
         
         self.parent.plotter.render()
 
@@ -2799,12 +2925,12 @@ class AnalysisWindow(QtWidgets.QDialog):
         layout.addWidget(self.thermal_button)
         
         self.structural_button = QtWidgets.QPushButton("Structural Analysis")
-        self.structural_button.clicked.connect(lambda: self.run_structural_analysis(coupled=False))
+        self.structural_button.clicked.connect(lambda: self._run_guarded(self.run_structural_analysis, coupled=False))
         layout.addWidget(self.structural_button)
 
         # Thermal solve -> thermal expansion load -> structural solve (needs structural AND thermal loads)
         self.thermostructural_button = QtWidgets.QPushButton("Thermo-Structural Analysis")
-        self.thermostructural_button.clicked.connect(lambda: self.run_structural_analysis(coupled=True))
+        self.thermostructural_button.clicked.connect(lambda: self._run_guarded(self.run_structural_analysis, coupled=True))
         layout.addWidget(self.thermostructural_button)
 
         # Results: deformation / stress / temperature of the initial design (the analyses above) or of the last
@@ -2907,6 +3033,23 @@ class AnalysisWindow(QtWidgets.QDialog):
         
         return surface_nodes
     
+    def map_bc_entry_to_nodes(self, entry, boundary_nodes=None, boundary_points=None, tolerance=None):
+        """Surface nodes of a support/load entry: its picked triangles and/or its picked nodes (points)."""
+        if boundary_nodes is None:
+            boundary_nodes, boundary_points, tolerance = self.get_boundary_mapping_data()
+        nodes = set(self.map_triangles_to_surface_nodes(entry.get('triangles') or [], boundary_nodes,
+                                                        boundary_points, tolerance))
+        points = entry.get('points') or []
+        if points:
+            idx, dist = nearest_surface_nodes(points, boundary_nodes, boundary_points)
+            far = dist > 2.0 * max(self.parent.hex_mesh.elem_size)
+            if np.any(far):
+                self.parent.message_text.append(
+                    f"Warning: {int(far.sum())} picked node(s) are more than two elements from the meshed part "
+                    f"(max {dist.max():.3g}); they are mapped to the nearest surface node.")
+            nodes.update(int(n) for n in idx)
+        return nodes
+
     def build_node_to_elem_map(self, mesh):
         """Build a mapping from node index to set of element indices."""
 
@@ -2948,16 +3091,15 @@ class AnalysisWindow(QtWidgets.QDialog):
         boundary_nodes, boundary_points, tolerance = self.get_boundary_mapping_data()
 
         if color_type == "structural":
-            if self.parent.constrained_triangles:
-                constrained_elements = self.map_triangles_to_elements(
-                    list(self.parent.constrained_triangles), boundary_nodes, boundary_points, tolerance, node_to_elem
-                )
+            to_elements = lambda nodes: set().union(*(node_to_elem[n] for n in nodes)) if nodes else set()
+            for constraint in self.parent.constraint_data:
+                constrained_elements = to_elements(self.map_bc_entry_to_nodes(
+                    constraint, boundary_nodes, boundary_points, tolerance))
                 element_colors[list(constrained_elements)] = 0.0  # Black
 
             for force_info in self.parent.force_data:
-                force_elements = self.map_triangles_to_elements(
-                    force_info['triangles'], boundary_nodes, boundary_points, tolerance, node_to_elem
-                )
+                force_elements = to_elements(self.map_bc_entry_to_nodes(
+                    force_info, boundary_nodes, boundary_points, tolerance))
                 if force_info.get('type') == 'torque':
                     element_colors[list(force_elements)] = 0.33  # Green for torque
                 else:
@@ -2997,18 +3139,13 @@ class AnalysisWindow(QtWidgets.QDialog):
             constrained_nodes = set()
             loaded_nodes = set()
 
-            # Constrained nodes
-            if self.parent.constrained_triangles:
-                for constraint in self.parent.constraint_data:
-                    triangles = constraint.get('triangles', [])
-                    nodes = self.map_triangles_to_surface_nodes(triangles, boundary_nodes, boundary_points, tolerance)
-                    constrained_nodes.update(nodes)
+            # Constrained nodes (faces and point supports)
+            for constraint in self.parent.constraint_data:
+                constrained_nodes.update(self.map_bc_entry_to_nodes(constraint, boundary_nodes, boundary_points, tolerance))
 
-            # Loaded nodes
+            # Loaded nodes (faces and point loads)
             for force_info in self.parent.force_data:
-                triangles = force_info.get('triangles', [])
-                nodes = self.map_triangles_to_surface_nodes(triangles, boundary_nodes, boundary_points, tolerance)
-                loaded_nodes.update(nodes)
+                loaded_nodes.update(self.map_bc_entry_to_nodes(force_info, boundary_nodes, boundary_points, tolerance))
 
             # Plot mesh as wireframe
             mesh_polydata = self.create_mesh_polydata(np.full(mesh.num_elems, 0.65))
@@ -3164,6 +3301,15 @@ class AnalysisWindow(QtWidgets.QDialog):
         }
         return solver_map[self.solver_combo.currentText()]
 
+    def _run_guarded(self, analysis, **kwargs):
+        """Run an analysis and show solver errors (e.g. supports that leave a rigid-body motion free, likely with
+        a few point supports) in a message box instead of only in the terminal."""
+        try:
+            analysis(**kwargs)
+        except Exception as e:
+            self.parent.message_text.append(f"Analysis failed: {e}")
+            QtWidgets.QMessageBox.critical(self, "Analysis failed", str(e))
+
     def refresh_result_buttons(self, *_):
         design = "optimized" if self.design_combo.currentText() == "Optimized design" else "initial"
         available = result_fields_available(self.parent, design)
@@ -3204,14 +3350,13 @@ class AnalysisWindow(QtWidgets.QDialog):
         # Map constrained triangles to fixed nodes - SURFACE ONLY
         fixed_nodes = {'xyz': set(), 'x': set(), 'y': set(), 'z': set()}
         
-        if self.parent.constrained_triangles and self.parent.constraint_data:
+        if self.parent.constraint_data:          # face supports and point (node) supports
             for constraint in self.parent.constraint_data:
                 constraint_type = constraint['type']
-                triangles = constraint.get('triangles', [])
                 
                 # Use surface-only mapping
-                constrained_nodes = self.map_triangles_to_surface_nodes(
-                    triangles, boundary_nodes, boundary_points, tolerance
+                constrained_nodes = self.map_bc_entry_to_nodes(
+                    constraint, boundary_nodes, boundary_points, tolerance
                 )
                 
                 if constraint_type == 'Fixed XYZ':
@@ -3229,9 +3374,7 @@ class AnalysisWindow(QtWidgets.QDialog):
 
         for force_info in self.parent.force_data:
             # Use surface-only mapping
-            force_nodes = self.map_triangles_to_surface_nodes(
-                force_info['triangles'], boundary_nodes, boundary_points, tolerance
-            )
+            force_nodes = self.map_bc_entry_to_nodes(force_info, boundary_nodes, boundary_points, tolerance)
 
             if force_info.get('type') == 'torque':
                 # Distribute torque, tangential force proportional to radius
@@ -4635,7 +4778,8 @@ class StructuralTopOptWindow(QtWidgets.QDialog):
             fixed_nodes = {'xyz': set(), 'x': set(), 'y': set(), 'z': set()}
             all_support = set()
             for i, constraint in enumerate(self.parent.constraint_data):
-                surface_nodes = to_nodes(constraint.get('triangles', []))
+                surface_nodes = sorted(analysis_window.map_bc_entry_to_nodes(
+                    constraint, boundary_nodes, boundary_points, tolerance))
                 selections[f"Support{i + 1}"] = {"nodes": np.array(surface_nodes, dtype=int)}
                 all_support.update(surface_nodes)
                 key = {'Fixed XYZ': 'xyz', 'Fixed X': 'x', 'Fixed Y': 'y', 'Fixed Z': 'z'}.get(constraint['type'])
@@ -4646,7 +4790,8 @@ class StructuralTopOptWindow(QtWidgets.QDialog):
 
             load_nodes_groups, load_forces, all_loaded = [], [], set()
             for i, force_info in enumerate(getattr(self.parent, "force_data", None) or []):
-                surface_nodes = to_nodes(force_info.get('triangles', []))
+                surface_nodes = sorted(analysis_window.map_bc_entry_to_nodes(
+                    force_info, boundary_nodes, boundary_points, tolerance))
                 selections[f"Load{i + 1}"] = {"nodes": np.array(surface_nodes, dtype=int)}
                 all_loaded.update(surface_nodes)
                 if not surface_nodes:
@@ -5539,7 +5684,7 @@ class ProjectsWindow(QtWidgets.QDialog):
         fixed_faces_indices = []
         if hasattr(self.parent, 'constraint_data'):
             for constraint in self.parent.constraint_data:
-                if constraint.get('type') == 'Fixed XYZ':
+                if constraint.get('type') == 'Fixed XYZ' and not constraint.get('points'):
                     fixed_faces_indices.extend(constraint.get('triangles', []))
         
         structuralBC['fixed_faces_indices'] = fixed_faces_indices
@@ -5549,7 +5694,7 @@ class ProjectsWindow(QtWidgets.QDialog):
         load_forces = []
         
         for force_info in self.parent.force_data:
-            if force_info.get('type') == 'force_xyz':
+            if force_info.get('type') == 'force_xyz' and not force_info.get('points'):
                 load_faces_indices.append(force_info.get('triangles', []))
                 load_forces.append([
                     force_info.get('force_x', 0.0),
@@ -5559,6 +5704,12 @@ class ProjectsWindow(QtWidgets.QDialog):
         
         structuralBC['load_faces_indices'] = load_faces_indices
         structuralBC['load_forces'] = load_forces
+        # Node (point) supports and loads, as coordinates (independent of the mesh)
+        structuralBC['point_supports'] = [{'type': c['type'], 'points': c['points']}
+                                          for c in getattr(self.parent, 'constraint_data', []) if c.get('points')]
+        structuralBC['point_loads'] = [{'points': f['points'], 'force': [f.get('force_x', 0.0), f.get('force_y', 0.0),
+                                                                         f.get('force_z', 0.0)]}
+                                       for f in self.parent.force_data if f.get('points')]
         
         # Add counts
         structuralBC['constraint_counts'] = {
@@ -5854,18 +6005,29 @@ class ProjectsWindow(QtWidgets.QDialog):
                         'force_z': force[2]
                     }
                     self.parent.force_data.append(force_info)
+
+            # Node (point) supports and loads
+            for ps in structuralBC.get('point_supports', []):
+                self.parent.constraint_data.append({'type': ps['type'], 'triangles': [], 'points': ps['points']})
+            for pl in structuralBC.get('point_loads', []):
+                self.parent.force_data.append({'type': 'force_xyz', 'triangles': [], 'points': pl['points'],
+                                               'force_x': pl['force'][0], 'force_y': pl['force'][1],
+                                               'force_z': pl['force'][2]})
         
         # Create structural loads window if needed
         if not getattr(self.parent, 'structural_loads_window', None):
             self.parent.structural_loads_window = StructuralLoadsWindow(self.parent)
         
-        # Recreate constraint visualizations
-        if self.parent.constrained_triangles:
+        # Recreate constraint visualizations (faces and point supports)
+        if self.parent.constraint_data:
             self.parent.structural_loads_window.visualize_constraints()
         
         # Recreate force visualizations
         for force_info in self.parent.force_data:
             # Add triangle_data if not already present
+            if force_info.get('points'):
+                self.parent.structural_loads_window._rebuild_force_visualization(force_info)
+                continue
             if 'triangle_data' not in force_info:
                 force_info['triangle_data'] = self.recreate_triangle_data(force_info['triangles'])
                 
