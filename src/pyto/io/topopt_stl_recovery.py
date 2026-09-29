@@ -36,10 +36,13 @@ class CNN3D(nn.Module):
         )
 
         self.device = 'cuda' if torch.cuda.is_available() else 'cpu'
-        self.to(self.device)
+        # float32 explicitly: pyto.autodiff.material_model sets torch's default dtype to float64 when imported (the
+        # FE solves need it), which made these layers float64 while the input is float32 ("Input type (float) and
+        # bias type (double) should be the same" in the GUI's STL recovery).
+        self.to(device=self.device, dtype=torch.float32)
 
     def forward(self, x):
-        x = x.to(self.device)
+        x = x.to(device=self.device, dtype=torch.float32)
         x = self.encoder(x)
         x = self.decoder(x)
         return x
