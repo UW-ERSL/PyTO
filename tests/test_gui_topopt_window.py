@@ -156,9 +156,71 @@ def test_optimized_design_buttons_after_completion(window_parent, tmp_path):
                     assert msg is None and len(parent.plotter.actors) > 0, field
                 else:
                     assert "not available" in msg
-            analysis = G.AnalysisWindow(parent)                 # the same buttons in the Analysis window
-            assert {f: b.isEnabled() for f, b in analysis.field_buttons.items()} == {f: f in expected for f in G.TOPOPT_FIELDS}
+            analysis = G.AnalysisWindow(parent)                 # Analysis window: 'Optimized design' results
+            analysis.design_combo.setCurrentText("Optimized design")
+            assert {f: b.isEnabled() for f, b in analysis.field_buttons.items()} == \
+                {f: f in expected for f in G.RESULT_FIELDS}         # no Density button there
             assert not hasattr(G.TopOptResultsWindow(parent), "field_buttons")   # Postprocess: STL recovery only
     finally:
         parent.stl_geom.file_path = real_path
         parent.plotter.close()
+
+
+def test_analysis_window_initial_design_results(window_parent, tmp_path):
+    """Structural Analysis (gravity applied once), Include Thermal Effect (coupled), and the Initial / Optimized
+    result buttons of the Analysis window, through the window's own methods."""
+    import pyvista as pv
+    import pyto.gui.PyTOGUI as G
+
+    class ViewStub(pv.Plotter):
+        def show(self, *a, **k):
+            self.render()
+
+    app, parent = window_parent
+    x0, x1 = parent.faces
+    parent.plotter = ViewStub(off_screen=True)
+    parent.update_LivVar = lambda *a, **k: None
+    parent.constraint_data = [{"type": "Fixed XYZ", "triangles": x0}]
+    parent.force_data = [{"type": "force", "triangles": x1, "force_x": 0.0, "force_y": -1e4, "force_z": 0.0}]
+    parent.body_force = {"X": 0.0, "Y": -9.81, "Z": 0.0}
+    parent.fe_solver = parent.thermal_fe_solver = parent.topopt_results = None
+    parent.thermal_loads_window = types.SimpleNamespace(thermal_loads={
+        "fixed_temps": [{"triangles": x0, "temperature": 300.0}, {"triangles": x1, "temperature": 340.0}]})
+    try:
+        w = G.AnalysisWindow(parent)
+        assert not any(b.isEnabled() for b in w.field_buttons.values())            # nothing analysed yet
+        w.solver_combo.setCurrentText("SPSOLVE")
+        with contextlib.redirect_stdout(io.StringIO()):
+            w.run_structural_analysis()
+        fe = parent.fe_solver
+        assert type(fe).__name__ == "HexStructuralFEA"
+        mesh = fe.mesh
+        volume = mesh.num_elems * float(np.prod(mesh.elem_size))
+        fy = float(fe.total_force.reshape(-1, 3)[:, 1].sum())
+        assert fy == pytest.approx(-1e4 - 7850 * 9.81 * volume, rel=1e-9)          # gravity counted once
+        assert {f: b.isEnabled() for f, b in w.field_buttons.items()} == \
+            {"Deformation": True, "Von Mises stress": True, "Temperature": False}
+        for field in ("Deformation", "Von Mises stress"):
+            assert G.show_result_field(parent, "initial", field) is None and parent.plotter.actors
+        assert "Thermal Analysis" in G.show_result_field(parent, "initial", "Temperature")
+
+        # Include Thermal Effect -> coupled analysis, temperature of the initial design available
+        w.thermal_check.setChecked(True)
+        w.temp_spin.setValue(300.0)
+        with contextlib.redirect_stdout(io.StringIO()):
+            w.run_structural_analysis()
+        assert type(parent.fe_solver).__name__ == "ThermoStructuralFEA"
+        assert all(b.isEnabled() for b in w.field_buttons.values())
+        assert G.show_result_field(parent, "initial", "Temperature") is None
+        assert float(np.max(np.asarray(parent.fe_solver.vonMisesStress))) > float(np.max(np.asarray(fe.vonMisesStress)))
+
+        # after an optimization, the initial-design view still draws the full design
+        parent.topopt_results = {"fe_solver": parent.fe_solver, "physics": "thermo-structural",
+                                 "density": np.where(np.arange(mesh.num_elems) % 2 == 0, 1.0, 0.0)}
+        assert G.show_result_field(parent, "optimized", "Deformation") is None
+        assert np.array_equal(mesh.elemPseudoDensity, parent.topopt_results["density"])
+        assert G.show_result_field(parent, "initial", "Deformation") is None
+        assert np.all(mesh.elemPseudoDensity == 1.0)
+    finally:
+        parent.plotter.close()
+        parent.body_force = None

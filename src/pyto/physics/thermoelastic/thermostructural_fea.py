@@ -40,7 +40,9 @@ class ThermoStructuralFEA(HexStructuralFEA):
     self.temperature = None
     self.thermal_force = None
 
-  def solve(self, x, material_model=None, extra_force=None, elem_thermal_strain=None):
+  def solve(self, x=None, material_model=None, extra_force=None, elem_thermal_strain=None):
+    if x is None:  # plain analysis of the full design, as HexStructuralFEA/HexThermalFEA.solve()
+      x = torch.ones(self.mesh.num_elems, dtype=torch.float64)
     T = self.thermal_fea.solve(x, material_model)
     self.temperature = T
     f_th = self.thermal_fea.get_thermoelastic_force_torch(T, x, material_model)

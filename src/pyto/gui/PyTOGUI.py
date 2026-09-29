@@ -73,6 +73,8 @@ def show_topopt_field(main_window, field):
                 if not results else f"{field} is not available for a {results.get('physics', 'structural')} optimization.")
     fe_solver = results["fe_solver"]
     physics = results.get("physics", "structural")
+    if results.get("density") is not None:      # the mesh is shared with the analyses: draw the optimized design
+        fe_solver.mesh.elemPseudoDensity = np.asarray(results["density"]).copy()
     plotter = main_window.plotter
     for name in list(plotter.actors.keys()):
         if name != "geometry_info":
@@ -94,6 +96,50 @@ def show_topopt_field(main_window, field):
             return "Temperature of the final design was not evaluated."
         thermal = fe_solver.thermal_fea if physics == "thermo-structural" else fe_solver
         thermal.plot_elem_field(elem_T, title="Temperature", plotter=plotter)
+    plotter.render()
+    return None
+
+
+RESULT_FIELDS = ("Deformation", "Von Mises stress", "Temperature")
+
+
+def result_fields_available(main_window, design):
+    """Fields that can be shown for 'initial' (the Structural / Thermal Analysis results) or 'optimized'."""
+    if design == "optimized":
+        return [f for f in topopt_fields_available(getattr(main_window, "topopt_results", None)) if f in RESULT_FIELDS]
+    out = []
+    fe = getattr(main_window, "fe_solver", None)
+    if fe is not None and getattr(fe, "sol", None) is not None and hasattr(fe, "vonMisesStress"):
+        out += ["Deformation", "Von Mises stress"]
+    th = getattr(main_window, "thermal_fe_solver", None)
+    if th is not None and getattr(th, "sol", None) is not None:
+        out.append("Temperature")
+    return out
+
+
+def show_result_field(main_window, design, field):
+    """Draw a field of the initial design (analysis results, full material) or of the optimized design (its own
+    final solve, solid region). The mesh is shared, and its element densities decide which elements are drawn, so
+    they are set to match the design first. Returns None or a message saying why the field cannot be shown."""
+    if design == "optimized":
+        return show_topopt_field(main_window, field)
+    if field not in result_fields_available(main_window, "initial"):
+        return {"Temperature": "Run Thermal Analysis (or Structural Analysis with Include Thermal Effect) first.",
+                }.get(field, "Run Structural Analysis first.")
+    plotter = main_window.plotter
+    for name in list(plotter.actors.keys()):
+        if name != "geometry_info":
+            plotter.remove_actor(name, reset_camera=False)
+    for name in list(getattr(plotter, "scalar_bars", {}).keys()):
+        plotter.remove_scalar_bar(name)
+    solver = main_window.thermal_fe_solver if field == "Temperature" else main_window.fe_solver
+    solver.mesh.elemPseudoDensity = np.ones(solver.mesh.num_elems)          # initial design: all material
+    if field == "Deformation":
+        solver.plot_deformation(plotter=plotter)
+    elif field == "Von Mises stress":
+        solver.plot_vonMisesStress(plotter=plotter)
+    else:
+        solver.plot_temperature(plotter=plotter)
     plotter.render()
     return None
 
@@ -2690,7 +2736,7 @@ class AnalysisWindow(QtWidgets.QDialog):
     def __init__(self, parent):
         super().__init__(parent)
         self.setWindowTitle("Analysis")
-        self.setFixedSize(300, 560)
+        self.setFixedSize(360, 560)
         self.parent = parent
         
         layout = QtWidgets.QVBoxLayout(self)
@@ -2756,9 +2802,22 @@ class AnalysisWindow(QtWidgets.QDialog):
         self.structural_button.clicked.connect(self.run_structural_analysis)
         layout.addWidget(self.structural_button)
 
-        # Fields of the last topology optimization's design (enabled once a run has finished)
-        self.field_buttons = add_topopt_field_buttons(self, layout)
-        refresh_topopt_field_buttons(self.parent, self.field_buttons)
+        # Results: deformation / stress / temperature of the initial design (the analyses above) or of the last
+        # optimized design
+        group = QtWidgets.QGroupBox("Show results")
+        grid = QtWidgets.QGridLayout(group)
+        self.design_combo = QtWidgets.QComboBox()
+        self.design_combo.addItems(["Initial design", "Optimized design"])
+        self.design_combo.currentIndexChanged.connect(self.refresh_result_buttons)
+        grid.addWidget(self.design_combo, 0, 0, 1, 3)
+        self.field_buttons = {}
+        for i, (field, label) in enumerate(zip(RESULT_FIELDS, ("Deformation", "Stress", "Temperature"))):
+            b = QtWidgets.QPushButton(label)
+            b.clicked.connect(lambda _checked=False, f=field: self.show_result(f))
+            grid.addWidget(b, 1, i)
+            self.field_buttons[field] = b
+        layout.addWidget(group)
+        self.refresh_result_buttons()
         
         close_button = QtWidgets.QPushButton("Close")
         close_button.clicked.connect(self.close)
@@ -3100,6 +3159,24 @@ class AnalysisWindow(QtWidgets.QDialog):
         }
         return solver_map[self.solver_combo.currentText()]
 
+    def refresh_result_buttons(self, *_):
+        design = "optimized" if self.design_combo.currentText() == "Optimized design" else "initial"
+        available = result_fields_available(self.parent, design)
+        for field, b in self.field_buttons.items():
+            b.setEnabled(field in available)
+            b.setToolTip("" if field in available else
+                         ("Run the matching analysis first (Structural / Thermal Analysis)." if design == "initial"
+                          else "Not available for the last optimization (or none run yet)."))
+
+    def show_result(self, field):
+        design = "optimized" if self.design_combo.currentText() == "Optimized design" else "initial"
+        try:
+            msg = show_result_field(self.parent, design, field)
+        except Exception as e:
+            msg = f"Could not show {field.lower()}: {e}"
+        if msg:
+            QtWidgets.QMessageBox.information(self, "Results", msg)
+
     def run_structural_analysis(self):
         """Run structural analysis using existing mesh and boundary conditions"""
         if not self.parent.hex_mesh:
@@ -3183,30 +3260,10 @@ class AnalysisWindow(QtWidgets.QDialog):
                         force_info.get('force_z', 0.0)
                     ])
 
-        body_force = getattr(self.parent, "body_force", None)
-        if body_force:
-            ax, ay, az = body_force.get("X", 0.0), body_force.get("Y", 0.0), body_force.get("Z", 0.0)
-            a_vec = np.array([ax, ay, az], dtype=float)
-            if np.linalg.norm(a_vec) > 1e-12:
-                # Get density from material
-                density = self.parent.applied_material['properties']['Density']
-                # For each node, add f = m*a = density * a
-                n_nodes = self.parent.hex_mesh.num_nodes
-                # If mesh has per-node volume, use it, else assume uniform
-                node_vol = getattr(self.parent.hex_mesh, "node_volume", None)
-                if node_vol is None:
-                    # Estimate node volume from total volume / num_nodes
-                    total_vol = np.sum(self.parent.hex_mesh.elemVolume) if hasattr(self.parent.hex_mesh, "elemVolume") else 1.0
-                    node_vol = np.full(n_nodes, total_vol / n_nodes)
-                # Add to load_nodes_groups: all nodes
-                all_nodes = list(range(n_nodes))
-                # Per-node force: density * node_vol * a_vec
-                per_node_force = (density * node_vol[:, None]) * a_vec[None, :]
-                # Add to load_nodes_groups/load_forces
-                for node_id in all_nodes:
-                    load_nodes_groups.append([node_id])
-                    load_forces.append(per_node_force[node_id].tolist())
-        
+        # Body force: applied once, as element forces (gui_elem_body_force, rho * a * element volume) when the
+        # solver is built below. The nodal version that used to be here assumed a total volume of 1 m^3 (the mesh
+        # has no elemVolume/node_volume) and, together with the element force, applied gravity twice.
+
         # Prepare load data for solver
         load_data = {
             'load_nodes_groups': load_nodes_groups,
@@ -3231,21 +3288,41 @@ class AnalysisWindow(QtWidgets.QDialog):
         else:
             self.parent.dsolver = None
         
-        # Create FEA solver
-        fe_solver = hex_structural_fea.HexStructuralFEA(
-            mesh=mesh,
-            mat_prop=mat_prop,
-            bc=bc,
-            solver=self.get_solver(),
-            dsolver=getattr(self.parent, 'dsolver', None),
-            rtol=1e-8,
-            elem_body_force=gui_elem_body_force(self.parent, mesh, mat_prop),
-        )
-        
+        # Create FEA solver. "Include Thermal Effect": coupled thermo-structural analysis (thermal solve ->
+        # thermal expansion load -> structural solve), stress-free at the Zero-strain temperature.
+        thermal_loads = getattr(getattr(self.parent, "thermal_loads_window", None), "thermal_loads", None) or {}
+        has_thermal = any(thermal_loads.get(k) for k in ("fixed_temps", "heat_sources", "total_heat_sources"))
+        if self.thermal_check.isChecked() and not has_thermal:
+            self.parent.message_text.append("Include Thermal Effect is on, but no thermal loads are applied: "
+                                            "running a purely structural analysis.")
+        if self.thermal_check.isChecked() and has_thermal:
+            full_mat = self.create_material_properties()          # includes conductivity and expansion
+            thermal_bc = self.process_thermal_boundary_conditions(
+                self.parent.hex_mesh, thermal_loads, boundary_nodes, boundary_points, tolerance)
+            fe_solver = ThermoStructuralFEA(
+                mesh=mesh, mat_prop=full_mat, structural_bc=bc, thermal_bc=thermal_bc, solver=self.get_solver(),
+                dsolver=getattr(self.parent, 'dsolver', None), rtol=1e-8,
+                elem_body_force=gui_elem_body_force(self.parent, mesh, full_mat),
+                thermoElasticReferenceTemperature=self.temp_spin.value())
+            self.parent.message_text.append(
+                f"Starting thermo-structural analysis (zero-strain temperature {self.temp_spin.value():g})...")
+        else:
+            fe_solver = hex_structural_fea.HexStructuralFEA(
+                mesh=mesh,
+                mat_prop=mat_prop,
+                bc=bc,
+                solver=self.get_solver(),
+                dsolver=getattr(self.parent, 'dsolver', None),
+                rtol=1e-8,
+                elem_body_force=gui_elem_body_force(self.parent, mesh, mat_prop),
+            )
+            self.parent.message_text.append("Starting structural analysis...")
+
         # Solve
-        self.parent.message_text.append("Starting structural analysis...")
         solution = fe_solver.solve()
         fe_solver.postprocess()
+        if isinstance(fe_solver, ThermoStructuralFEA):   # its temperature field is the initial-design temperature
+            self.parent.thermal_fe_solver = fe_solver.thermal_fea
 
         # Store solver for visualization
         self.parent.fe_solver = fe_solver
@@ -3275,6 +3352,7 @@ class AnalysisWindow(QtWidgets.QDialog):
         
         self.parent.message_text.append(f"Analysis complete. Max deformation: {fe_solver.max_deformation:.4e}")
         self.parent.message_text.append(f"Max von Mises stress: {np.max(fe_solver.vonMisesStress):.4e}")
+        self.refresh_result_buttons()
 
     def run_thermal_analysis(self):
         """Run thermal analysis using existing mesh and thermal boundary conditions"""
@@ -3348,6 +3426,7 @@ class AnalysisWindow(QtWidgets.QDialog):
         # Success messages
         self.parent.message_text.append("Thermal analysis complete.")
         self.parent.message_text.append(f"Temperature range: {np.min(temperature_solution):.2f} - {np.max(temperature_solution):.2f} K")
+        self.refresh_result_buttons()
 
     def process_thermal_boundary_conditions(self, mesh, thermal_loads, boundary_nodes, boundary_points, tolerance):
         """Process thermal loads and create boundary conditions using surface-only mapping"""
@@ -4489,6 +4568,7 @@ class StructuralTopOptWindow(QtWidgets.QDialog):
                 'objective': final_objective,
                 'iterations': n_iterations,
                 'converged': bool(success),
+                'density': np.asarray(self.parent.hex_mesh.elemPseudoDensity).copy(),
                 'history': history,
                 'displacement': u,
                 'fe_solver': fe_solver
@@ -4522,7 +4602,7 @@ class StructuralTopOptWindow(QtWidgets.QDialog):
             self.parent.message_text.append(f"VTU exported: {vtu_path}")
             refresh_topopt_field_buttons(self.parent, self.field_buttons)
             for win in self.parent.findChildren(AnalysisWindow):    # an Analysis window left open
-                refresh_topopt_field_buttons(self.parent, win.field_buttons)
+                win.refresh_result_buttons()
             
         else:
             self.parent.message_text.append(f"Structural topology optimization failed: {error_msg}")
