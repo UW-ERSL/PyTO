@@ -65,7 +65,7 @@ def solution_dependent_count(spec: OptimizationSpec, selections: dict = None) ->
     n = 0
     for e in [spec.objective.expression] + [c.expression for c in spec.active_constraints]:
         k = _key(e)
-        if k == "MaxStress()":                       # constraint-only built-in, depends on the stresses
+        if k == "MaxStress()" or e.strip().startswith("python:"):   # stress built-in / user code: assume it does
             n += 1
         else:
             n += int(compile_expression(e, selections).depends_on_solution)

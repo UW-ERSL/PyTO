@@ -98,6 +98,7 @@ def topopt_mma(fe_solver, #hex_structural_fea.HexStructuralFEA or hex_thermal_fe
                             plot_progress: bool = False,
                             binarize_topology: bool = True,   
                             progress_callback=None, 
+                            iteration_callback=None,
                             plotter=None  
                              ) -> tuple[np.ndarray, dict]:
     """MMA based topology optimization for minimum compliance.
@@ -304,6 +305,8 @@ def topopt_mma(fe_solver, #hex_structural_fea.HexStructuralFEA or hex_thermal_fe
         history["volfrac"].append(np.mean(x_filtered)) # track filtered volume fraction
         for idx, val in enumerate(c.flatten()):
             history[f"constraint_{idx+1}"].append(val)
+        if iteration_callback is not None:  # e.g. the GUI's live objective/constraint plot
+            iteration_callback(history)
 
         # Initial-iteration warning on constraints
         if (mmaIterations == 0) and print_progress:

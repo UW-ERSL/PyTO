@@ -40,6 +40,41 @@ def _key(expression: str) -> str:
     return expression.replace(" ", "")
 
 
+PYTHON_PREFIX = "python:"
+
+
+def load_python_function(reference: str):
+    """Load fn(sol, x, fe_solver) from 'python:<path to .py>::<function name>' (power-user objectives/constraints).
+
+    This executes the file, so callers must only do it with the user's consent (compile_spec(..., allow_code=True))."""
+    import importlib.util
+    import os
+    body = reference[len(PYTHON_PREFIX):]
+    if "::" not in body:
+        raise ExpressionError(f"Python reference must look like python:<file.py>::<function>, got {reference!r}.")
+    path, name = body.rsplit("::", 1)
+    if not os.path.isfile(path):
+        raise ExpressionError(f"Python file not found: {path}")
+    module_spec = importlib.util.spec_from_file_location(f"pyto_user_{abs(hash(path))}", path)
+    module = importlib.util.module_from_spec(module_spec)
+    module_spec.loader.exec_module(module)
+    fn = getattr(module, name, None)
+    if not callable(fn):
+        raise ExpressionError(f"{path} defines no function {name!r}.")
+    return fn
+
+
+def _compile_any(expression, selections, allow_code):
+    """(fn, depends_on_solution) for an expression or a python: reference."""
+    if expression.strip().startswith(PYTHON_PREFIX):
+        if not allow_code:
+            raise ExpressionError("This formulation calls a Python file; loading it runs code and needs confirmation "
+                                  "(allow_code=True).")
+        return load_python_function(expression.strip()), True
+    e = compile_expression(expression, selections)
+    return e.fn, e.depends_on_solution
+
+
 @dataclass
 class ObjectiveSpec:
     expression: str = "Compliance()"
@@ -128,7 +163,7 @@ def _compile_part(expression, selections):
     return compile_expression(expression, selections)
 
 
-def validate(spec: OptimizationSpec, physics: str, selections: dict = None) -> list:
+def validate(spec: OptimizationSpec, physics: str, selections: dict = None, allow_code: bool = False) -> list:
     """Problems with the spec for a given physics ('structural', 'thermal', 'thermo-structural')."""
     issues = []
     err = lambda m: issues.append(Issue("error", m))
@@ -145,6 +180,15 @@ def validate(spec: OptimizationSpec, physics: str, selections: dict = None) -> l
             continue
         if "MaxStress(" in _key(text) and _key(text) not in _CONSTRAINT_ONLY:
             err(f"{where}: MaxStress() can only be used on its own as a constraint; use StressPNorm() in formulas.")
+            continue
+        if text.strip().startswith(PYTHON_PREFIX):
+            if allow_code:
+                try:
+                    load_python_function(text.strip())
+                except ExpressionError as ex:
+                    err(f"{where}: {ex}")
+            else:
+                warn(f"{where}: calls a Python file; it runs only after you confirm (it executes code).")
             continue
         try:
             e = _compile_part(text, selections)
@@ -201,7 +245,8 @@ def validate(spec: OptimizationSpec, physics: str, selections: dict = None) -> l
     return issues
 
 
-def compile_spec(spec: OptimizationSpec, selections: dict = None, base: TOParams = None) -> TOParams:
+def compile_spec(spec: OptimizationSpec, selections: dict = None, base: TOParams = None,
+                 allow_code: bool = False) -> TOParams:
     """TOParams for the drivers. Raises ValueError listing the errors if validate() would report any.
 
     `base` (optional) supplies settings the spec does not cover (e.g. nDOFDesired, materialModel)."""
@@ -212,8 +257,8 @@ def compile_spec(spec: OptimizationSpec, selections: dict = None, base: TOParams
     if spec.objective.sense == "minimize" and obj_key in _NATIVE_OBJECTIVES:
         to_params.Objective = (_NATIVE_OBJECTIVES[obj_key], None)
     else:
-        e = compile_expression(spec.objective.expression, selections)
-        fn = e.fn if spec.objective.sense == "minimize" else _negated(e.fn)
+        fn, _ = _compile_any(spec.objective.expression, selections, allow_code)
+        fn = fn if spec.objective.sense == "minimize" else _negated(fn)
         to_params.Objective = (TO_QOI.GFUNCTION, fn)
 
     constraints = []
@@ -226,13 +271,13 @@ def compile_spec(spec: OptimizationSpec, selections: dict = None, base: TOParams
         else:
             if k in _CONSTRAINT_ONLY:
                 raise ValueError(f"{c.expression} is only supported as '<= bound' with bound > 0.")
-            e = compile_expression(c.expression, selections)
+            fn, _ = _compile_any(c.expression, selections, allow_code)
             if c.op == "<=" and c.bound > 0:
-                constraints.append((TO_QOI.GFUNCTION, e.fn, float(c.bound)))
+                constraints.append((TO_QOI.GFUNCTION, fn, float(c.bound)))
             elif c.op == "<=":
-                constraints.append((TO_QOI.GFUNCTION, _shifted(e.fn, c.bound), None))       # f - b <= 0
+                constraints.append((TO_QOI.GFUNCTION, _shifted(fn, c.bound), None))       # f - b <= 0
             else:
-                constraints.append((TO_QOI.GFUNCTION, _ge_normalized(e.fn, c.bound), None))  # 1 - f/b <= 0
+                constraints.append((TO_QOI.GFUNCTION, _ge_normalized(fn, c.bound), None))  # 1 - f/b <= 0
     to_params.Constraints = constraints
 
     to_params.MaxIterations = int(spec.method.max_iterations)

@@ -118,6 +118,7 @@ def topopt_optimality_criteria(
 							binarize_topology: bool = True,
 							use_continuation: bool = False,
 							progress_callback=None, 
+							iteration_callback=None,
                             plotter=None  
 							) -> tuple[np.ndarray, dict]:
 	"""Optimality Criteria based topology optimization for minimum compliance.
@@ -276,6 +277,8 @@ def topopt_optimality_criteria(
 			history['objective'].append(obj*objScaling)
 			history['volfrac'].append(np.mean(xPhys))
 			history['change'].append(change)
+			if iteration_callback is not None:  # e.g. the GUI's live objective plot
+				iteration_callback(history)
 			# Estimate the percentage of grey elements
 			grey_elements = np.sum((x > 0.05) & (x < 0.95))
 			fraction_grey = (grey_elements / num_elems) 

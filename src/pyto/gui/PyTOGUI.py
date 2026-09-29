@@ -25,6 +25,10 @@ from pyto.topopt.drivers.mma import topopt_mma
 from pyto.topopt.common import *
 from pyto.physics.thermoelastic.topopt_thermostructural_sensitivity import ThermoElasticSensitivity
 from pyto.topopt.drivers.oc import topopt_optimality_criteria
+from pyto.physics.thermoelastic.thermostructural_fea import ThermoStructuralFEA
+from pyto.gui.optimization_setup import (FormulationPanel, default_spec, display_objective,
+                                        manufacturing_from_topopt_options, migrate_performance_options, prepare_run,
+                                        project_entries, restore_from_project)
 from pyto.topopt.drivers.pareto import topopt_pareto
 from pyto.topopt.drivers.levelset import topopt_levelset
 from pyto.io.topopt_stl_recovery import extract_isosurface_cnn, subtract_voids_from_stl
@@ -133,6 +137,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.hex_mesh = None
 
         self.topopt_options = None
+        self.optimization_spec = None  # OptimizationSpec edited in TopOpt Execute (gui/optimization_setup.py)
 
     def create_initial_state(self):
         """Create the initial LivVar state dictionary"""
@@ -3377,11 +3382,8 @@ class TopOptOptionsWindow(QtWidgets.QDialog):
                 ('draw_direction', 'Draw Direction', 'combo', ["XDir", "YDir", "ZDir"]),
                 ('cyclic_symmetry', 'CyclicSym(Z)', 'combo', ["(2) 180 deg", "(3) 120 deg", "(4) 90 deg", "(5) 72 deg", "(6) 60 deg", "(7) 51 deg","(8) 45 deg"])
             ],
-            'performance': [
-                ('stress_safety', 'StressSafety', 'double_spin', (0.1, 10.0, 1.0)),
-                ('max_displacement', 'MaxDisp(m)', 'double_spin', (0, 1000, 160.0, 6)),
-                ('max_temperature', 'MaxTemp(K)', 'double_spin', (0, 5000, 2000.0))
-            ],
+            # Performance limits (stress, displacement, temperature) are constraints in TopOpt Execute now; the fields
+            # that used to be here were collected but never applied.
             'symmetry': [
                 ('x_symmetry', 'X-Symmetry', 'check_only'),
                 ('y_symmetry', 'Y-Symmetry', 'check_only'),
@@ -3925,6 +3927,7 @@ class StructuralTopOptWindow(QtWidgets.QDialog):
     optimization_progress = pyqtSignal(str)
     optimization_update = pyqtSignal(object, int)
     optimization_done = pyqtSignal(bool, str, object, object, object)
+    history_update = pyqtSignal(object)
 
     def __init__(self, parent):
         super().__init__(parent)
@@ -3942,6 +3945,7 @@ class StructuralTopOptWindow(QtWidgets.QDialog):
             QtCore.Qt.QueuedConnection  # Force main thread execution!
         )
         self.optimization_done.connect(self.optimization_completed)
+        self.history_update.connect(self.update_history_plot, QtCore.Qt.QueuedConnection)
         
         self.setup_ui()
 
@@ -3958,28 +3962,30 @@ class StructuralTopOptWindow(QtWidgets.QDialog):
         layout = QtWidgets.QVBoxLayout(self)
         layout.setSpacing(10)
         
-        # Method selection
-        method_layout = QtWidgets.QHBoxLayout()
-        method_label = QtWidgets.QLabel("Method")
-        self.method_combo = QtWidgets.QComboBox()
-        self.method_combo.addItems(["DENSITY-MMA", "DENSITY-OC", "PARETO", "LEVELSET"])
-        self.method_combo.setCurrentText("DENSITY-MMA")
-        method_layout.addWidget(method_label)
-        method_layout.addWidget(self.method_combo)
-        layout.addLayout(method_layout)
-        
-        # Volume fraction
-        vol_layout = QtWidgets.QHBoxLayout()
-        vol_label = QtWidgets.QLabel("Volume Fraction")
-        self.vol_spinbox = QtWidgets.QDoubleSpinBox()
-        self.vol_spinbox.setRange(0.1, 0.9)
-        self.vol_spinbox.setSingleStep(0.05)
-        self.vol_spinbox.setValue(0.5)
-        self.vol_spinbox.setDecimals(2)
-        vol_layout.addWidget(vol_label)
-        vol_layout.addWidget(self.vol_spinbox)
-        layout.addLayout(vol_layout)
-        
+        # Formulation: objective, constraints, method (gui/optimization_setup.py)
+        self.formulation = FormulationPanel(self)
+        spec = getattr(self.parent, "optimization_spec", None)
+        if spec is None:
+            spec = default_spec()
+            spec.constraints += migrate_performance_options(getattr(self.parent, "topopt_options", None))
+        self.formulation.set_spec(spec)
+        self.formulation.set_context(self.problem_physics(), {n: {"nodes": [0], "elements": [0]}
+                                                              for n in self.selection_names()},
+                                     body_force=self.has_body_force())
+        self.formulation.check_gradient_button.clicked.connect(self.check_gradient)
+        layout.addWidget(self.formulation)
+
+        self.validate_button = QtWidgets.QPushButton("Validate formulation")
+        self.validate_button.clicked.connect(self.validate_formulation)
+        layout.addWidget(self.validate_button)
+
+        # Live objective / constraint plot (MMA and OC report every iteration)
+        from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg
+        from matplotlib.figure import Figure
+        self.history_figure = Figure(figsize=(4, 2.4), tight_layout=True)
+        self.history_canvas = FigureCanvasQTAgg(self.history_figure)
+        layout.addWidget(self.history_canvas)
+
         # Optimize button
         self.optimize_button = QtWidgets.QPushButton("Optimize")
         self.optimize_button.clicked.connect(self.start_optimization)
@@ -3996,57 +4002,171 @@ class StructuralTopOptWindow(QtWidgets.QDialog):
         close_button.clicked.connect(self.close)
         layout.addWidget(close_button)
 
+    # ------------------------------------------------------------------ problem context
+    def problem_physics(self):
+        """structural / thermal / thermo-structural from the loads the user applied."""
+        tw = getattr(self.parent, "thermal_loads_window", None)
+        thermal_loads = getattr(tw, "thermal_loads", None) or {}
+        has_thermal = any(thermal_loads.get(k) for k in ("fixed_temps", "heat_sources", "total_heat_sources"))
+        has_struct = bool(getattr(self.parent, "constraint_data", None)) and bool(
+            getattr(self.parent, "force_data", None) or self.has_body_force())
+        if has_thermal and has_struct:
+            return "thermo-structural"
+        return "thermal" if has_thermal else "structural"
+
+    def has_body_force(self):
+        bf = getattr(self.parent, "body_force", None) or {}
+        return any(abs(float(bf.get(k, 0.0))) > 0 for k in ("X", "Y", "Z"))
+
+    def selection_names(self):
+        """Named selections the expressions can use: one per support/load/thermal face group, plus unions."""
+        names = []
+        if getattr(self.parent, "constraint_data", None):
+            names += [f"Support{i + 1}" for i in range(len(self.parent.constraint_data))] + ["Supports"]
+        if getattr(self.parent, "force_data", None):
+            names += [f"Load{i + 1}" for i in range(len(self.parent.force_data))] + ["Loads"]
+        tw = getattr(self.parent, "thermal_loads_window", None)
+        tl = getattr(tw, "thermal_loads", None) or {}
+        names += [f"FixedTemp{i + 1}" for i in range(len(tl.get("fixed_temps", [])))]
+        names += [f"HeatSource{i + 1}" for i in range(len(tl.get("heat_sources", [])) + len(tl.get("total_heat_sources", [])))]
+        if (getattr(self.parent, "topopt_options", None) or {}).get("other", {}).get("keep_fixed_faces"):
+            names.append("FixedFaces")
+        return names
+
+    # ------------------------------------------------------------------ validate / check / start
+    def _plan(self):
+        """Build the FE problem and compile the formulation. Returns (plan, fe_solver, physics) or shows errors."""
+        from pyto.topopt.spec import PYTHON_PREFIX
+        try:
+            spec = self.formulation.get_spec()
+        except ValueError as e:
+            QtWidgets.QMessageBox.warning(self, "Formulation", str(e))
+            return None
+        allow_code = False
+        texts = [spec.objective.expression] + [c.expression for c in spec.active_constraints]
+        if any(t.strip().startswith(PYTHON_PREFIX) for t in texts):
+            reply = QtWidgets.QMessageBox.question(
+                self, "Run Python code?",
+                "This formulation calls a Python file. Loading it runs the code in that file.\n\nRun it?",
+                QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No, QtWidgets.QMessageBox.No)
+            if reply != QtWidgets.QMessageBox.Yes:
+                return None
+            allow_code = True
+        spec.manufacturing = manufacturing_from_topopt_options(getattr(self.parent, "topopt_options", None))
+        fe_solver, physics, selections = self.build_problem()
+        self.formulation.set_context(physics, selections, self.has_body_force())
+        plan = prepare_run(spec, physics, selections, body_force=self.has_body_force(), allow_code=allow_code)
+        self.parent.optimization_spec = spec
+        return plan, fe_solver, physics, spec
+
+    def validate_formulation(self):
+        result = self._plan()
+        if result is None:
+            return
+        plan, fe_solver, physics, spec = result
+        lines = [f"Physics: {physics}", f"Method: {spec.method.name}", f"Gradient: {plan.gradient}"]
+        if plan.cost:
+            lines.append(plan.cost)
+        lines += [str(i) for i in plan.issues] or ["No problems found."]
+        if plan.to_params is not None and not plan.errors:
+            try:   # dry run: one FE solve, value of every function
+                import torch as _torch
+                from pyto.autodiff.qoi import compute_objective_and_gradient, compute_constraint_and_gradient
+                from pyto.topopt.drivers._shared import compute_element_stiffness
+                from pyto.autodiff.material_model import MaterialModel
+                vf0 = next((c.bound for c in spec.active_constraints
+                            if c.expression.replace(" ", "") == "VolumeFraction()"), 0.5)
+                x = _torch.full((fe_solver.mesh.num_elems,), float(vf0), dtype=_torch.float64)
+                KE = _torch.tensor(compute_element_stiffness(fe_solver))
+                sol = fe_solver.solve(x, MaterialModel.SIMP)
+                obj = compute_objective_and_gradient(plan.to_params, sol, x, fe_solver, KE, MaterialModel.SIMP)
+                cons, _ = compute_constraint_and_gradient(plan.to_params, sol, x, fe_solver, KE, MaterialModel.SIMP)
+                lines.append(f"At a uniform density {vf0:g}: objective {display_objective(spec, [obj.item()])[0]:.4g}; "
+                             f"constraints (<= 0 when satisfied): {', '.join(f'{v:.3g}' for v in cons.reshape(-1).tolist()) or 'none'}")
+            except Exception as e:
+                lines.append(f"ERROR in the dry run: {e}")
+        text = "\n".join(lines)
+        self.parent.message_text.append(text)
+        QtWidgets.QMessageBox.information(self, "Formulation check", text)
+
+    def check_gradient(self):
+        result = self._plan()
+        if result is None:
+            return
+        plan, fe_solver, physics, spec = result
+        if plan.to_params is None:
+            QtWidgets.QMessageBox.warning(self, "Gradient check", "\n".join(str(i) for i in plan.errors))
+            return
+        from pyto.topopt.capabilities import check_gradient
+        results = check_gradient(plan.to_params, fe_solver, n_elements=5)
+        text = "Autograd vs central finite differences at a random design (5 elements):\n" + "\n".join(
+            f"  {r.name}: max relative error {r.max_rel_error:.2e}  {'OK' if r.ok else 'MISMATCH'}" for r in results)
+        self.parent.message_text.append(text)
+        QtWidgets.QMessageBox.information(self, "Gradient check", text)
+
     def start_optimization(self):
-        """Start the structural topology optimization process"""
+        """Validate and compile the formulation, then run the chosen method in a worker thread."""
         if not self.check_prerequisites():
             return
-        
-        method = self.method_combo.currentText()
-        volume_fraction = self.vol_spinbox.value()
-        
+        result = self._plan()
+        if result is None:
+            return
+        plan, fe_solver, physics, spec = result
+        if plan.errors:
+            QtWidgets.QMessageBox.warning(self, "Cannot optimize", "\n".join(str(i) for i in plan.issues))
+            return
+        for i in plan.issues:
+            self.parent.message_text.append(str(i))
+        self.spec, self.physics = spec, physics
+        self.history_figure.clear()
+        self.history_canvas.draw_idle()
+
         self.optimization_running = True
         self.optimize_button.setEnabled(False)
         self.stop_button.setEnabled(True)
-        
-        self.parent.message_text.append(f"Starting structural topology optimization")
-        self.parent.message_text.append(f"Method: {method}, Volume Fraction: {volume_fraction}")
-        
+        self.parent.message_text.append(
+            f"Starting {physics} topology optimization: {spec.objective.sense} {spec.objective.expression}; "
+            f"constraints: {', '.join(f'{c.expression} {c.op} {c.bound:g}' for c in spec.active_constraints) or 'none'}")
+        self.parent.message_text.append(f"Method: {spec.method.name}. Gradient: {plan.gradient}. {plan.cost}")
+
         import threading
-        self.optimization_thread = threading.Thread(
-            target=self.run_optimization,
-            args=(method, volume_fraction)
-        )
+        self.optimization_thread = threading.Thread(target=self.run_optimization, args=(plan, fe_solver, spec))
         self.optimization_thread.daemon = True
         self.optimization_thread.start()
-        
         return True
-        
-    def run_optimization(self, method, volume_fraction):
-        """Run the topology optimization using the selected method"""
-        
-        # Create TO parameters
-        to_params = TOParams()
-        to_params.Objective = (TO_QOI.COMPLIANCE, "minimize", 1.0)
-        to_params.Constraints = [(TO_QOI.VOLUME_FRACTION, "<=", volume_fraction)]
- 
-        # Apply topopt options
-        self.apply_topopt_options_to_params(to_params)
 
+    @QtCore.pyqtSlot(object)
+    def update_history_plot(self, history):
+        """Objective and constraints against iteration (constraints in the normalized <= 0 form)."""
+        self.history_figure.clear()
+        ax = self.history_figure.add_subplot(111)
+        J = display_objective(self.spec, history.get("objective", []))
+        ax.plot(J, color="tab:blue", label="objective")
+        ax.set_xlabel("iteration"); ax.set_ylabel("objective", color="tab:blue")
+        cons = [k for k in history if k.startswith("constraint_")]
+        if cons:
+            ax2 = ax.twinx()
+            for k in cons:
+                ax2.plot([float(np.ravel(v)[0]) for v in history[k]], linestyle=":", label=k.replace("_", " "))
+            ax2.axhline(0.0, color="grey", linewidth=0.8)
+            ax2.set_ylabel("constraint (<= 0)")
+            ax2.legend(fontsize=7, loc="upper right")
+        self.history_canvas.draw_idle()
+
+    def run_optimization(self, plan, fe_solver, spec):
+        """Run the chosen method (worker thread)."""
+        to_params = plan.to_params
+        method = spec.method.name
         self.to_params = to_params
-
-        # Create FE solver
-        fe_solver = self.create_fe_solver_for_topopt()
         self.fe_solver = fe_solver
-        
+        feaMode = FEA_MODE.THERMAL if self.physics == "thermal" else FEA_MODE.STRUCTURAL
+
         success = False
         error_msg = ""
-        u, history, n_feas = None, None, 0
+        u, history, n_feas = None, {"objective": [], "volfrac": []}, 0
 
-        history = {
-        'objective': [],
-        'compliance': [],
-        'volume': []
-        }
+        def iteration_callback(h):
+            self.history_update.emit({k: list(v) for k, v in h.items() if k != "change"})
 
         def progress_callback(*args):
             """
@@ -4096,41 +4216,41 @@ class StructuralTopOptWindow(QtWidgets.QDialog):
             except Exception as e:
                 print(f"[CALLBACK] Error creating visualization: {e}")
         try:
-            # Call topopt_mma with correct parameters
-            if method == "DENSITY-MMA":
-                # Current single-solver MMA signature (the two-solver feaMode/fe_structural_solver form was
-                # removed in the torch migration). The result is emitted once, after this if/elif block.
+            if method == "MMA":
                 u, history, success, error_msg, n_feas = topopt_mma(
                     fe_solver,
                     to_params=to_params,
                     maxMMAIterations=to_params.MaxIterations,
+                    move_limit=spec.method.move_limit,
                     print_progress=True,
                     plot_progress=False,
-                    binarize_topology=False,
+                    binarize_topology=False,   # the GUI shows the continuous density (as before this change)
                     progress_callback=progress_callback,
+                    iteration_callback=iteration_callback,
                     plotter=None,
                 )
                 if success:
                     self.parent.optimized_x = u
 
-            elif method == "DENSITY-OC":
+            elif method == "OC":
                 u, history, success, error_msg, n_feas = topopt_optimality_criteria(
                     fe_solver=fe_solver,
                     to_params=to_params,
-                    maxIterations=250,
-                    move=0.2,
+                    maxIterations=to_params.MaxIterations,
+                    move=spec.method.move_limit,
                     move_tol=0.05,
                     rel_conv_tol=1e-4,
                     print_progress=True,
                     plot_progress=False,
-                    binarize_topology=False,
+                    binarize_topology=False,   # the GUI shows the continuous density (as before this change)
                     progress_callback=progress_callback,
+                    iteration_callback=iteration_callback,
                     plotter=None,
                 )
-                
+
             elif method == "PARETO":
                 u, history, success, error_msg, n_feas = topopt_pareto(
-                    feaMode=FEA_MODE.STRUCTURAL,
+                    feaMode=feaMode,
                     fe_solver=fe_solver,
                     to_params=to_params,
                     rel_err=0.02,
@@ -4143,13 +4263,13 @@ class StructuralTopOptWindow(QtWidgets.QDialog):
                     progress_callback=progress_callback,
                     plotter=None,
                 )
-                
+
             elif method == "LEVELSET":
                 u, history, success, error_msg, n_feas = topopt_levelset(
-                    feaMode=FEA_MODE.STRUCTURAL,
+                    feaMode=feaMode,
                     fe_solver=fe_solver,
                     to_params=to_params,
-                    maxIterations=250,
+                    maxIterations=to_params.MaxIterations,
                     numReinit=10000,
                     print_progress=True,
                     plot_progress=False,
@@ -4257,17 +4377,14 @@ class StructuralTopOptWindow(QtWidgets.QDialog):
                     final_objective = history['compliance'][-1]
                     n_iterations = len(history['compliance'])
                 
-                # Try to get volume
-                if 'volume' in history and history['volume']:
-                    final_volume = history['volume'][-1]
-                elif 'volume_fraction' in history and history['volume_fraction']:
-                    final_volume = history['volume_fraction'][-1]
-                else:
-                    # Default to specified volume fraction if volume not in history
-                    final_volume = self.vol_spinbox.value()
+                if history.get('volfrac'):
+                    final_volume = float(np.ravel(history['volfrac'][-1])[0])
+                if history.get('objective'):
+                    final_objective = display_objective(self.spec, [history['objective'][-1]])[0]
+                self.history_update.emit({k: list(v) for k, v in history.items() if k != "change"})
             
-            self.parent.message_text.append("Structural topology optimization completed successfully")
-            self.parent.message_text.append(f"Method: {self.method_combo.currentText()}")
+            self.parent.message_text.append(f"Topology optimization ({self.physics}) completed successfully")
+            self.parent.message_text.append(f"Method: {self.spec.method.name}")
             self.parent.message_text.append(f"Final objective: {final_objective:.3g}, Volume fraction: {final_volume:.3f}")
             
             self.parent.update_LivVar('topopt.structural_performed', True)
@@ -4275,7 +4392,8 @@ class StructuralTopOptWindow(QtWidgets.QDialog):
             self.parent.set_sidebar_icon("TopOpt Postprocess", "arrow")
             
             self.parent.topopt_results = {
-                'method': self.method_combo.currentText(), 
+                'method': self.spec.method.name,
+                'spec': self.spec.to_dict(),
                 'volume_fraction': final_volume,
                 'objective': final_objective,
                 'iterations': n_iterations,
@@ -4301,150 +4419,110 @@ class StructuralTopOptWindow(QtWidgets.QDialog):
         else:
             self.parent.message_text.append(f"Structural topology optimization failed: {error_msg}")
 
-    def apply_topopt_options_to_params(self, to_params):
-        constraints = self.parent.topopt_options
+    def build_problem(self):
+        """FE solver for the current loads (structural, thermal or coupled) and the named selections.
 
-        # Manufacturing constraints
-        manufacturing = constraints.get('manufacturing', {})
-        extrude = manufacturing.get('extrude', {})
-        if extrude.get('enabled', False):
-            direction = extrude.get('value', None)
-            if direction:
-                to_params.ExtrudeX = direction == "XDir"
-                to_params.ExtrudeY = direction == "YDir"
-                to_params.ExtrudeZ = direction == "ZDir"
-
-        # Symmetry constraints
-        symmetry = constraints.get('symmetry', {})
-        to_params.XSymmetry = symmetry.get('x_symmetry', False)
-        to_params.YSymmetry = symmetry.get('y_symmetry', False)
-        to_params.ZSymmetry = symmetry.get('z_symmetry', False)
-
-        # Cyclic symmetry constraint - use ZAxisAngularSymmetry only
-        manufacturing_cyclic = manufacturing.get('cyclic_symmetry', {})
-        if manufacturing_cyclic.get('enabled', False):
-            value = manufacturing_cyclic.get('value', None)
-            # Parse number of planes from value, e.g. "(3) 120 deg"
-            if value and "(" in value and ")" in value:
-                try:
-                    n_planes = int(value.split('(')[1].split(')')[0])
-                    to_params.ZAxisAngularSymmetry = n_planes
-                except Exception:
-                    to_params.ZAxisAngularSymmetry = 0
-            else:
-                to_params.ZAxisAngularSymmetry = 0
-        else:
-            to_params.ZAxisAngularSymmetry = 0
-
-        # Other constraints
-        other = constraints.get('other', {})
-        #to_params.ENSURE_CONNECTED_TOPOLOGY = other.get('connected_topology', False)
-
-        if other.get('keep_fixed_faces', False):
-            analysis_window = AnalysisWindow(self.parent)
-            boundary_nodes, boundary_points, tolerance = analysis_window.get_boundary_mapping_data()
-            constrained_elements = analysis_window.map_triangles_to_elements(
-                list(self.parent.constrained_triangles), boundary_nodes, boundary_points, tolerance
-            )
-            to_params.ElemsToKeep = list(constrained_elements)
-        else:
-            to_params.ElemsToKeep = None 
-
-    def create_fe_solver_for_topopt(self):
-        """Create FE solver for topology optimization (now handles torque)."""
+        Selections: SupportN / Supports (fixed faces), LoadN / Loads (loaded faces), FixedTempN, HeatSourceN
+        (thermal faces), FixedFaces (elements of the fixed faces, for 'keep fixed faces'). Node sets are the surface
+        nodes of the picked triangles, mapped exactly as for the analysis."""
         mesh = self.parent.hex_mesh
         analysis_window = AnalysisWindow(self.parent)
         analysis_window.prepare_mesh_for_analysis(mesh, "structural")
-
         boundary_nodes, boundary_points, tolerance = analysis_window.get_boundary_mapping_data()
+        to_nodes = lambda tris: sorted(analysis_window.map_triangles_to_surface_nodes(
+            tris, boundary_nodes, boundary_points, tolerance))
+        selections = {}
+        physics = self.problem_physics()
 
-        fixed_nodes = {'xyz': set(), 'x': set(), 'y': set(), 'z': set()}
-        # Map constraints to surface elements then to nodes
-        for constraint in self.parent.constraint_data:
-            triangles = constraint.get('triangles', [])
-            surface_nodes = analysis_window.map_triangles_to_surface_nodes(
-                triangles, boundary_nodes, boundary_points, tolerance
-            )
-            if constraint['type'] == 'Fixed XYZ':
-                fixed_nodes['xyz'].update(surface_nodes)
-            elif constraint['type'] == 'Fixed X':
-                fixed_nodes['x'].update(surface_nodes)
-            elif constraint['type'] == 'Fixed Y':
-                fixed_nodes['y'].update(surface_nodes)
-            elif constraint['type'] == 'Fixed Z':
-                fixed_nodes['z'].update(surface_nodes)
+        structural_bc, mesh_processed = None, mesh
+        if physics in ("structural", "thermo-structural"):
+            fixed_nodes = {'xyz': set(), 'x': set(), 'y': set(), 'z': set()}
+            all_support = set()
+            for i, constraint in enumerate(self.parent.constraint_data):
+                surface_nodes = to_nodes(constraint.get('triangles', []))
+                selections[f"Support{i + 1}"] = {"nodes": np.array(surface_nodes, dtype=int)}
+                all_support.update(surface_nodes)
+                key = {'Fixed XYZ': 'xyz', 'Fixed X': 'x', 'Fixed Y': 'y', 'Fixed Z': 'z'}.get(constraint['type'])
+                if key:
+                    fixed_nodes[key].update(surface_nodes)
+            if all_support:
+                selections["Supports"] = {"nodes": np.array(sorted(all_support), dtype=int)}
 
-        load_nodes_groups = [] 
-        load_forces = []
-
-        for force_info in self.parent.force_data:
-            triangles = force_info.get('triangles', [])
-            surface_nodes = analysis_window.map_triangles_to_surface_nodes(
-                triangles, boundary_nodes, boundary_points, tolerance
-            )
-            if not surface_nodes:
-                continue
-
-            if force_info.get('type') == 'torque':
-                # Distribute torque into tangential forces (same logic as run_structural_analysis)
-                axis_point = np.array(force_info.get('axis_point', [0, 0, 0]), dtype=float)
-                direction = np.array(force_info.get('direction', [0, 0, 1]), dtype=float)
-                torque_value = force_info.get('torque', 0.0)
-                if abs(torque_value) < 1e-12 or np.linalg.norm(direction) < 1e-12:
+            load_nodes_groups, load_forces, all_loaded = [], [], set()
+            for i, force_info in enumerate(getattr(self.parent, "force_data", None) or []):
+                surface_nodes = to_nodes(force_info.get('triangles', []))
+                selections[f"Load{i + 1}"] = {"nodes": np.array(surface_nodes, dtype=int)}
+                all_loaded.update(surface_nodes)
+                if not surface_nodes:
                     continue
-                direction /= np.linalg.norm(direction)
-                nodes = list(surface_nodes)
-                node_xyz = mesh.node_xyz[nodes]
-                face_center = np.mean(node_xyz, axis=0)
-                r_vecs = node_xyz - face_center
-                # Remove axial component
-                r_proj = r_vecs - np.outer(r_vecs @ direction, direction)
-                r_norm = np.linalg.norm(r_proj, axis=1)
-                r_norm[r_norm < 1e-12] = 1e-12
-                tangent_dirs = np.cross(direction, r_proj)
-                tangent_dirs /= np.linalg.norm(tangent_dirs, axis=1)[:, None]
-                raw_force = tangent_dirs * r_norm[:, None]
-                torque_actual = np.sum(np.cross(r_proj, raw_force), axis=0)
-                scale = torque_value / (torque_actual @ direction + 1e-12)
-                force_vecs = raw_force * scale
-                # Store each node with its own force
-                for node_id, fvec in zip(nodes, force_vecs):
-                    load_nodes_groups.append([node_id])
-                    load_forces.append(fvec.tolist())
-            else:
-                # Standard force (resultant distributed evenly)
-                fx = force_info.get('force_x', 0.0)
-                fy = force_info.get('force_y', 0.0)
-                fz = force_info.get('force_z', 0.0)
-                if abs(fx) + abs(fy) + abs(fz) < 1e-12:
-                    continue
-                load_nodes_groups.append(list(surface_nodes))
-                load_forces.append([fx, fy, fz])
+                if force_info.get('type') == 'torque':
+                    # Distribute torque into tangential forces (same logic as run_structural_analysis)
+                    axis_point = np.array(force_info.get('axis_point', [0, 0, 0]), dtype=float)
+                    direction = np.array(force_info.get('direction', [0, 0, 1]), dtype=float)
+                    torque_value = force_info.get('torque', 0.0)
+                    if abs(torque_value) < 1e-12 or np.linalg.norm(direction) < 1e-12:
+                        continue
+                    direction /= np.linalg.norm(direction)
+                    nodes = list(surface_nodes)
+                    node_xyz = mesh.node_xyz[nodes]
+                    r_vecs = node_xyz - np.mean(node_xyz, axis=0)
+                    r_proj = r_vecs - np.outer(r_vecs @ direction, direction)
+                    r_norm = np.linalg.norm(r_proj, axis=1)
+                    r_norm[r_norm < 1e-12] = 1e-12
+                    tangent_dirs = np.cross(direction, r_proj)
+                    tangent_dirs /= np.linalg.norm(tangent_dirs, axis=1)[:, None]
+                    raw_force = tangent_dirs * r_norm[:, None]
+                    torque_actual = np.sum(np.cross(r_proj, raw_force), axis=0)
+                    force_vecs = raw_force * (torque_value / (torque_actual @ direction + 1e-12))
+                    for node_id, fvec in zip(nodes, force_vecs):
+                        load_nodes_groups.append([node_id])
+                        load_forces.append(fvec.tolist())
+                else:
+                    fx, fy, fz = force_info.get('force_x', 0.0), force_info.get('force_y', 0.0), force_info.get('force_z', 0.0)
+                    if abs(fx) + abs(fy) + abs(fz) < 1e-12:
+                        continue
+                    load_nodes_groups.append(list(surface_nodes))
+                    load_forces.append([fx, fy, fz])
+            if all_loaded:
+                selections["Loads"] = {"nodes": np.array(sorted(all_loaded), dtype=int)}
+            if not load_forces and not self.has_body_force():
+                self.parent.message_text.append("Warning: No effective loads (torque/forces) mapped for TopOpt.")
+            mesh_processed, _mat_struct, structural_bc = analysis_window.process_data_for_solver(
+                mesh, fixed_nodes, {'load_nodes_groups': load_nodes_groups, 'load_forces': load_forces},
+                self.parent.applied_material['properties'])
 
-        # Safety: ensure at least one non-zero load
-        if not load_forces:
-            self.parent.message_text.append("Warning: No effective loads (torque/forces) mapped for TopOpt.")
-        
-        load_data = {
-            'load_nodes_groups': load_nodes_groups,
-            'load_forces': load_forces
-        }
+        thermal_bc = None
+        if physics in ("thermal", "thermo-structural"):
+            thermal_loads = self.parent.thermal_loads_window.thermal_loads
+            thermal_bc = analysis_window.process_thermal_boundary_conditions(
+                mesh, thermal_loads, boundary_nodes, boundary_points, tolerance)
+            for i, t in enumerate(thermal_loads.get('fixed_temps', [])):
+                selections[f"FixedTemp{i + 1}"] = {"nodes": np.array(to_nodes(t['triangles']), dtype=int)}
+            sources = thermal_loads.get('heat_sources', []) + thermal_loads.get('total_heat_sources', [])
+            for i, t in enumerate(sources):
+                selections[f"HeatSource{i + 1}"] = {"nodes": np.array(to_nodes(t['triangles']), dtype=int)}
 
-        mesh_processed, mat_prop, bc = analysis_window.process_data_for_solver(
-            mesh, fixed_nodes, load_data, self.parent.applied_material['properties']
-        )
+        if (getattr(self.parent, "topopt_options", None) or {}).get("other", {}).get("keep_fixed_faces"):
+            elems = analysis_window.map_triangles_to_elements(
+                list(self.parent.constrained_triangles), boundary_nodes, boundary_points, tolerance)
+            selections["FixedFaces"] = {"elements": np.array(sorted(elems), dtype=int)}
 
+        mat_prop = analysis_window.create_material_properties()      # all properties (thermal too)
         solver = analysis_window.get_solver()
-        fe_solver = hex_structural_fea.HexStructuralFEA(
-            mesh=mesh_processed,
-            mat_prop=mat_prop,
-            bc=bc,
-            solver=solver,
-            rtol=1e-8,
-            elem_body_force=gui_elem_body_force(self.parent, mesh_processed, mat_prop),
-        )
-        return fe_solver
-    
+        body_force = gui_elem_body_force(self.parent, mesh_processed, mat_prop)
+        if physics == "structural":
+            fe_solver = hex_structural_fea.HexStructuralFEA(mesh=mesh_processed, mat_prop=mat_prop, bc=structural_bc,
+                                                            solver=solver, rtol=1e-8, elem_body_force=body_force)
+        elif physics == "thermal":
+            fe_solver = HexThermalFEA(mesh=mesh, mat_prop=mat_prop, bc=thermal_bc, solver=solver, rtol=1e-8)
+        else:
+            fe_solver = ThermoStructuralFEA(mesh=mesh_processed, mat_prop=mat_prop, structural_bc=structural_bc,
+                                            thermal_bc=thermal_bc, solver=solver, rtol=1e-8,
+                                            elem_body_force=body_force,
+                                            thermoElasticReferenceTemperature=self.formulation.reference_temperature)
+        self.physics = physics
+        return fe_solver, physics, selections
+
     def check_prerequisites(self):
         """Check if all prerequisites for optimization are met"""
         if self.parent.hex_mesh is None:
@@ -5350,7 +5428,8 @@ class ProjectsWindow(QtWidgets.QDialog):
             'material_data': getattr(self.parent, 'applied_material', None),
             'structuralBC': structuralBC,
             'thermalBC': thermalBC,
-            'topopt_options': getattr(self.parent, 'topopt_options', None)
+            'topopt_options': getattr(self.parent, 'topopt_options', None),
+            **project_entries(getattr(self.parent, 'optimization_spec', None), getattr(self.parent, 'body_force', None)),
         }
         
         try:
@@ -5494,6 +5573,18 @@ class ProjectsWindow(QtWidgets.QDialog):
         # Restore TopOpt options
         if project_data.get('topopt_options'):
             self.restore_topopt_options(project_data['topopt_options'])
+
+        # Restore the optimization formulation and the body force (older projects: migrated, see restore_from_project)
+        spec, body_force = restore_from_project(project_data)
+        self.parent.optimization_spec = spec
+        if body_force:
+            self.parent.body_force = body_force
+            self.parent.message_text.append(f"Body force restored: {body_force} m/s^2")
+        if spec is not None and not project_data.get('optimization'):
+            self.parent.message_text.append(
+                "Note: this project's TopOpt performance limits (stress safety / max displacement / max temperature) "
+                "were never applied by earlier versions. They are now constraint rows in TopOpt Execute, DISABLED "
+                "until you review and enable them.")
         
         self.parent.message_text.append(f"Project loaded: {os.path.basename(filename)}")
         self.close()
