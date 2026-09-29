@@ -12,3 +12,5 @@
 /PyTOSlides
 /Results
 __pycache__/
+# Working notes: plans, handoff, logs (kept locally, not tracked)
+/notes/

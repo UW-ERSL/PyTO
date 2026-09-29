@@ -110,7 +110,7 @@ def compare(ref, new, category="", method=""):
         # results used the component-major getHMatrix bug (B2): the Reference numbers describe other problems.
         out["verdict"] = "Not comparable"
         out["note"] = ("Problem redefined to match the papers and the thermal-force ordering bug fixed "
-                       "(THERMOELASTIC_PLAN_B_LOG.md B0/B2); compare with Results/Publications/PyTO_comparison instead.")
+                       "(notes/5_THERMOELASTIC_PLAN_B_LOG.md B0/B2); compare with Results/Publications/PyTO_comparison instead.")
         return out
 
     ro, no = num(ref, "objective"), num(new, "objective")
