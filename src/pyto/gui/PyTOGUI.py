@@ -2690,13 +2690,19 @@ class AnalysisWindow(QtWidgets.QDialog):
             # Clear the stored value to avoid unexpected reuse
             delattr(self.parent, 'mesh_elements')
         
-        # Create mesh
-        mesher = HexMesher()
-        mesher.createMeshFromSTLFile(self.parent.stl_geom.file_path, self.elements_spin.value())
+        # Create mesh. Keep the mesh only once it is complete: a half-built mesher left in parent.hex_mesh made
+        # the analysis buttons fail later with "no attribute elemArray".
+        try:
+            mesher = HexMesher()
+            mesher.createMeshFromSTLFile(self.parent.stl_geom.file_path, self.elements_spin.value())
+            mesher.createEdofMatStructural()
+            mesher.createEdofMatThermal()
+        except Exception as e:
+            self.parent.hex_mesh = None
+            self.parent.message_text.append(f"Mesh generation failed: {e}")
+            QtWidgets.QMessageBox.critical(self, "Mesh generation failed", str(e))
+            return
         self.parent.hex_mesh = mesher
-
-        mesher.createEdofMatStructural()
-        mesher.createEdofMatThermal()
 
         # Prepare mesh for FEA
         self.prepare_mesh_for_analysis(mesher, "structural")

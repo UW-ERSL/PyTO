@@ -63,3 +63,18 @@ def test_plot_temperature_accepts_grad_tracked_solution(thermal_fe_solver, tmp_p
     fe.solve(x, MaterialModel.SIMP)
     fe.plot_temperature(save_path=str(tmp_path / "T.png"))
     assert (tmp_path / "T.png").exists()
+
+
+def test_multibody_stl_with_open_edges_meshes_and_empty_mesh_raises(capsys):
+    # SpindleAssembly: 2 bodies, 200 open edges. The multi-body mesher used to print "Model has open edges" and
+    # return with no mesh, and the GUI then failed with "HexMesher has no attribute elemArray".
+    from pyto.core.hex_mesher import HexMesher
+    root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    mesher = HexMesher()
+    mesher.createMeshFromSTLFile(os.path.join(root, "Models", "SpindleAssembly", "SpindleAssembly.STL"), 3000)
+    mesher.createEdofMatStructural()
+    assert mesher.num_elems > 0 and len(set(mesher.elemComponentId)) == 2
+    assert "open edges" in capsys.readouterr().out   # the user is still warned
+    empty = HexMesher()
+    with pytest.raises(ValueError, match="produced no elements"):
+        empty._check_mesh_created("broken.stl")

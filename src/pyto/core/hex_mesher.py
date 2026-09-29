@@ -5,6 +5,7 @@ from typing import Optional
 import numpy as np
 import pyvista as pv # pip install pyvista
 from scipy.sparse import coo_matrix
+import os
 import time
 from pyto.io.stl_reader import STLGeom
 import enum
@@ -369,6 +370,12 @@ class HexMesher:
 		self_check = elemNeighborsArray[:, 13] == np.arange(self.num_elems)
 	
 		return elemNeighborsArray
+	def _check_mesh_created(self, stlFileName):
+		"""Raise instead of leaving a half-built mesher behind (callers would fail later with unrelated errors)."""
+		if getattr(self, "num_elems", 0) == 0:
+			raise ValueError(f"Meshing {os.path.basename(stlFileName)} produced no elements. The STL is probably not "
+							 f"a closed solid (open or self-intersecting surface); repair it and retry.")
+
 	def createMeshFromSTLFile(self, stlFileName: str,nElemsDesired: int):
 		#print("Creating mesh from STL file...")
 		startTime = time.time()
@@ -384,6 +391,7 @@ class HexMesher:
 		self.num_components = num_components
 		if (num_components == 1):
 			self.createMeshFromSTLFileSingleComponent(stlFileName, nElemsDesired)
+			self._check_mesh_created(stlFileName)
 			return 
 		# Define voxel spacing (adjust as needed)
 		bounds = self.stlMesh.bounds
@@ -407,10 +415,13 @@ class HexMesher:
 		#print(f"Mesher: Element size: {self.elem_size[0]:.2e} x {self.elem_size[1]:.2e} x {self.elem_size[2]:.2e}")
 
 
+		# Open edges used to abort here with a print and no mesh, and callers (e.g. the GUI) then failed later
+		# with "no attribute elemArray". Voxelization below does not need a closed surface (check_surface=False,
+		# the same as the single-body path, which never had this check), so warn and continue.
 		n_open_edges = self.stlMesh.n_open_edges
 		if n_open_edges > 0:
-			print("Model has open edges. Please fix and retry.")
-			return
+			print(f"Warning: the STL has {n_open_edges} open edges (surface not closed); meshing anyway. "
+				  f"Check the mesh, and repair the STL if parts are missing.")
 		# Create a single voxelized mesh for the entire assembly
 	
 		voxel_mesh = pv.voxelize(self.stlMesh, density=self.elem_size, check_surface=False)
@@ -459,6 +470,7 @@ class HexMesher:
 		self.voxels = voxel_mesh_components
 		self.num_elems = self.voxels.n_cells
 		self.num_nodes = self.voxels.n_points 
+		self._check_mesh_created(stlFileName)
 	
 
 		self.origin = [self.voxels.bounds[0], self.voxels.bounds[2], self.voxels.bounds[4]]
