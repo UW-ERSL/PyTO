@@ -293,13 +293,15 @@ def topopt_levelset(feaMode,
     #fe_solver.plot_mesh(title="Initial Design", save_path=None) 
     objectiveType = to_params.Objective[0]
     if objectiveType != TO_QOI.COMPLIANCE:
-        raise ValueError(f"Unsupported objective type: {objectiveType}")
+        raise ValueError(f"Unsupported objective type: {objectiveType}"
+                         " (a user-defined GFUNCTION objective/constraint, or any non-compliance objective, needs the MMA driver)")
     # Extract volume constraint
     constraintType = to_params.Constraints[0][0]
     if constraintType == TO_QOI.VOLUME_FRACTION:
         volFractionConstraint = to_params.Constraints[0][2]
     else:
-        raise ValueError(f"Unsupported constraint type: {constraintType}")
+        raise ValueError(f"Unsupported constraint type: {constraintType}"
+                         " (a user-defined GFUNCTION objective/constraint, or any non-compliance objective, needs the MMA driver)")
     
     # Create filters
     [H, Hs] = createFilters(fe_solver, to_params)

@@ -16,12 +16,15 @@ from pyto.autodiff.qoi.volume_fraction import compute_volume_constraint_torch
 from pyto.autodiff.qoi.mass import compute_mass_torch
 from pyto.autodiff.qoi.gvector import compute_gvector_torch
 from pyto.autodiff.qoi.stress import compute_pnorm_stress_autograd
+from pyto.autodiff.qoi.user_function import evaluate_user_function, user_function_constraint
 
 __all__ = [
     "compute_compliance_torch",
     "compute_volume_constraint_torch",
     "compute_mass_torch",
     "compute_gvector_torch",
+    "evaluate_user_function",
+    "user_function_constraint",
     "compute_pnorm_stress_autograd",
     "compute_objective_and_gradient",
     "compute_constraint_and_gradient",
@@ -57,6 +60,8 @@ def compute_objective_and_gradient(to_params, sol: torch.Tensor, x: torch.Tensor
     elif objectiveType == TO_QOI.GVECTOR:
         g = optionalParam
         return compute_gvector_torch(sol, g)
+    elif objectiveType == TO_QOI.GFUNCTION:  # user-defined torch function, see autodiff/qoi/user_function.py
+        return evaluate_user_function(optionalParam, sol, x, fe_solver, role="objective")
     else:
         raise NotImplementedError(f"Objective {objectiveType} is not implemented yet.")
 
@@ -140,6 +145,8 @@ def compute_constraint_and_gradient(to_params, sol: torch.Tensor, x: torch.Tenso
             normalized_pnorm = to_params.stress_scaling * pnorm_stress
             c[m, 0] = normalized_pnorm / allowed_stress - 1.0
             to_params.stress_scaling = 0.25 * (max_von_mises / pnorm_stress).item() + 0.75 * to_params.stress_scaling
+        elif constraintType == TO_QOI.GFUNCTION:  # user-defined torch function, see autodiff/qoi/user_function.py
+            c[m, 0] = user_function_constraint(optionalParam, constraintLimit, sol, x, fe_solver)
         else:
             raise NotImplementedError(f"Constraint {constraintType} is not implemented yet.")
     return c, dc

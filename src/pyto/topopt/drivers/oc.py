@@ -135,13 +135,15 @@ def topopt_optimality_criteria(
 	"""
 	objectiveType = to_params.Objective[0]
 	if objectiveType != TO_QOI.COMPLIANCE:
-		raise ValueError(f"Unsupported objective type: {objectiveType}")
+		raise ValueError(f"Unsupported objective type: {objectiveType}"
+		                 " (a user-defined GFUNCTION objective/constraint, or any non-compliance objective, needs the MMA driver)")
     # Extract volume constraint
 	constraintType = to_params.Constraints[0][0]
 	if constraintType == TO_QOI.VOLUME_FRACTION:
 		volFractionConstraint = to_params.Constraints[0][2]
 	else:
-		raise ValueError(f"Unsupported constraint type: {constraintType}")
+		raise ValueError(f"Unsupported constraint type: {constraintType}"
+		                 " (a user-defined GFUNCTION objective/constraint, or any non-compliance objective, needs the MMA driver)")
 
 	def log_message(msg): # This is a helper function to log messages in GUI or console
 		if progress_callback:
