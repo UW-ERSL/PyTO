@@ -12,7 +12,6 @@ PyTO is a Python library and desktop GUI for **finite element analysis (FEA)** a
 | Structural (linear elastic) | displacement, strain, von Mises stress; point, face, torque and body (gravity/acceleration) loads; fixed faces or nodes in x/y/z |
 | Thermal (steady conduction) | temperature from fixed temperatures and heat sources |
 | Thermo-structural (coupled) | thermal solve, then thermal-expansion load, then structural solve; stresses from the elastic strain |
-| Also available | transient thermal, modal, tetrahedral elements, large deformation (library level) |
 
 Meshing is automatic from an STL (single or multi-body). Linear solvers: PARDISO (default), SciPy direct, and iterative solvers (PCG, deflated PCG, AMG) for large models.
 
