@@ -361,20 +361,24 @@ def topopt_mma(fe_solver, #hex_structural_fea.HexStructuralFEA or hex_thermal_fe
             objective_name = getattr(
                 to_params.Objective[0], "name", str(to_params.Objective[0])
             )
-            print(f"Min. Objective ({objective_name}): {sign * obj * obj0:.3g}")
-            constraint_names = [
-                getattr(cn[0], "name", str(cn[0])) for cn in to_params.Constraints
-            ]
+            labels = getattr(to_params, "ConstraintLabels", None)
+            if getattr(to_params, "ObjectiveLabel", None) is not None:   # formulation from the GUI / a spec
+                expr, sense = to_params.ObjectiveLabel
+                value = sign * obj * obj0 * (-1.0 if sense == "maximize" else 1.0)   # the driver minimizes -f
+                print(f"{'Max.' if sense == 'maximize' else 'Min.'} Objective ({expr}): {value:.3g}")
+            else:
+                print(f"Min. Objective ({objective_name}): {sign * obj * obj0:.3g}")
             for idx, val in enumerate(c.flatten()):
-                # Every branch in compute_constraint_and_gradient computes
-                # c <= 0 (including STRESS_FAILURE_FACTOR, fixed to follow
-                # the same value/limit - 1.0 convention as every other
-                # constraint), so the displayed inequality is always "<=".
-                inequality = "<="
-                rhs = to_params.Constraints[idx][2]
-                print(
-                    f"Constraint {idx+1} ({constraint_names[idx]}): {(val+1)*rhs:.3g} {inequality} {rhs:.3g}?"
-                )
+                if labels is not None:
+                    # undo compile_spec's normalization: <= b>0: f/b - 1; <= b<=0: f - b; >= b: 1 - f/b
+                    expr, op, rhs = labels[idx]
+                    value = (1.0 - val) * rhs if op == ">=" else (val + 1.0) * rhs if rhs > 0 else val + rhs
+                    status = "ok" if (value >= rhs if op == ">=" else value <= rhs) else "violated"
+                    print(f"Constraint {idx+1} ({expr}): {value:.3g} {op} {rhs:.3g}  {status}")
+                else:
+                    # benchmark problems: every constraint is value/limit - 1 <= 0
+                    rhs = to_params.Constraints[idx][2]
+                    print(f"Constraint {idx+1} ({constraint_names[idx]}): {(val+1)*rhs:.3g} <= {rhs:.3g}?")
 
         mmaIterations += 1
         nFEAs += 1

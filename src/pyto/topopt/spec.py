@@ -267,6 +267,8 @@ def compile_spec(spec: OptimizationSpec, selections: dict = None, base: TOParams
     constraints = []
     for c in spec.active_constraints:
         k = _key(c.expression)
+        if c.op == ">=" and c.bound <= 0:        # 1 - f/b <= 0 would flip the inequality
+            raise ValueError(f"{c.expression} >= {c.bound}: a >= bound must be > 0.")
         if c.op == "<=" and k in _NATIVE_CONSTRAINTS_LE and c.bound > 0:
             constraints.append((_NATIVE_CONSTRAINTS_LE[k], None, float(c.bound)))
         elif c.op == ">=" and k in _NATIVE_CONSTRAINTS_GE:
@@ -282,6 +284,8 @@ def compile_spec(spec: OptimizationSpec, selections: dict = None, base: TOParams
             else:
                 constraints.append((TO_QOI.GFUNCTION, _ge_normalized(fn, c.bound), None))  # 1 - f/b <= 0
     to_params.Constraints = constraints
+    to_params.ObjectiveLabel = (spec.objective.expression, spec.objective.sense)
+    to_params.ConstraintLabels = [(c.expression, c.op, float(c.bound)) for c in spec.active_constraints]
 
     to_params.MaxIterations = int(spec.method.max_iterations)
     to_params.Gradient = spec.method.gradient

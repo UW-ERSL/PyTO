@@ -140,3 +140,16 @@ def test_maximize_tip_deflection_equals_compliance_run():
     # such round-off differences to ~1e-4 over a few iterations, hence the 1e-3 tolerance.
     assert np.allclose(vf_u, vf_c, rtol=1e-3)
     assert np.allclose(J_u * F, J_c, rtol=1e-3)           # history holds the minimized value -mean(u_y) = C / F
+
+
+def test_progress_labels_and_ge_negative_bound():
+    """compile_spec records what the user wrote (for the iteration print) and refuses '>= negative bound'."""
+    spec = OptimizationSpec(objective=ObjectiveSpec("Compliance()", "minimize"),
+                            constraints=[ConstraintSpec("VolumeFraction()", ">=", 0.2),
+                                         ConstraintSpec("VolumeFraction()", "<=", 0.5)])
+    p = compile_spec(spec)
+    assert p.ObjectiveLabel == ("Compliance()", "minimize")
+    assert p.ConstraintLabels == [("VolumeFraction()", ">=", 0.2), ("VolumeFraction()", "<=", 0.5)]
+    spec.constraints = [ConstraintSpec("VolumeFraction()", ">=", -0.1)]
+    with pytest.raises(ValueError, match="must be > 0"):
+        compile_spec(spec)
