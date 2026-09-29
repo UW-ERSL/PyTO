@@ -41,6 +41,19 @@ from pyto.io.topopt_stl_recovery import extract_isosurface_cnn, subtract_voids_f
 """
 DEFAULT_FONT_SIZE = 32
 #---------------------------------------------------------------------------
+def density_snapshot(mesh, threshold=0.01):
+    """pyvista mesh of the current design (elements with density > threshold, cell data 'density'), for the
+    per-iteration topology view. Built in the worker thread; drawn on the main thread."""
+    density = np.asarray(mesh.elemPseudoDensity).copy()
+    n = mesh.elemArray.shape[0]
+    cells = np.column_stack((np.full(n, 8), mesh.elemArray[:, :8])).flatten()
+    grid = pv.UnstructuredGrid(cells, np.full(n, pv.CellType.HEXAHEDRON, dtype=np.uint8), mesh.node_xyz)
+    mask = density > threshold
+    grid = grid.extract_cells(mask)
+    grid.cell_data['density'] = density[mask]
+    return grid
+
+
 def topopt_load_problems(physics, has_supports, has_forces, has_body_force, has_thermal):
     """What is missing before a topology optimization can run, by physics (empty list = ready). Supports count in
     any form (faces, nodes, boxes)."""
@@ -4446,7 +4459,18 @@ class StructuralTopOptWindow(QtWidgets.QDialog):
         from matplotlib.figure import Figure
         self.history_figure = Figure(figsize=(4, 2.4), tight_layout=True)
         self.history_canvas = FigureCanvasQTAgg(self.history_figure)
+        self.history_canvas.setMinimumHeight(200)       # otherwise the layout squeezes it to a thin strip
         layout.addWidget(self.history_canvas)
+
+        # Draw the design every iteration (off by default: redrawing costs time on large meshes). Read by the worker
+        # thread through a plain bool, so it can be toggled during a run.
+        self.show_each_iteration = False
+        self.live_topology_check = QtWidgets.QCheckBox("Show topology every iteration")
+        self.live_topology_check.setChecked(False)
+        self.live_topology_check.setToolTip("Redraw the density in the 3D view after each iteration "
+                                            "(MMA, OC and Pareto; LevelSet shows the result at the end).")
+        self.live_topology_check.toggled.connect(lambda on: setattr(self, "show_each_iteration", bool(on)))
+        layout.addWidget(self.live_topology_check)
 
         # Fields of the optimized design (enabled once a run has finished)
         self.field_buttons = add_topopt_field_buttons(self, layout)
@@ -4634,6 +4658,11 @@ class StructuralTopOptWindow(QtWidgets.QDialog):
 
         def iteration_callback(h):
             self.history_update.emit({k: list(v) for k, v in h.items() if k != "change"})
+            if self.show_each_iteration:
+                try:
+                    self.optimization_update.emit(density_snapshot(fe_solver.mesh), len(h.get("objective", [])) - 1)
+                except Exception as e:
+                    print(f"[live topology] {e}")
 
         def progress_callback(*args):
             """
@@ -4652,34 +4681,14 @@ class StructuralTopOptWindow(QtWidgets.QDialog):
                 # If no args or not a string, skip
                 return
             
-            # If we get here, we have an "Iteration:" message - update visualization
+            # "Iteration:" message: draw the design if enabled. MMA and OC draw from iteration_callback instead
+            # (MMA prints its iteration lines to the terminal, so this path never fired for it).
+            if not self.show_each_iteration or method in ("MMA", "OC"):
+                return
             try:
-                import pyvista as pv
                 import re
-                
-                # Extract iteration number from message
-                iteration = 0
                 match = re.search(r'Iteration:\s*(\d+)', msg)
-                if match:
-                    iteration = int(match.group(1))
-                
-                # Create mesh
-                density = fe_solver.mesh.elemPseudoDensity.copy()
-                
-                cells = fe_solver.mesh.elemArray.shape[0]
-                cell_type = np.full(cells, pv.CellType.HEXAHEDRON, dtype=np.uint8)
-                cells_pv = np.column_stack((np.full(cells, 8), 
-                                        fe_solver.mesh.elemArray)).flatten()
-                pv_mesh = pv.UnstructuredGrid(cells_pv, cell_type, 
-                                            fe_solver.mesh.node_xyz)
-                
-                mask = density > 0.01
-                pv_mesh = pv_mesh.extract_cells(mask)
-                pv_mesh.cell_data['density'] = density[mask]
-                
-                # Emit visualization update
-                self.optimization_update.emit(pv_mesh, iteration)
-                
+                self.optimization_update.emit(density_snapshot(fe_solver.mesh), int(match.group(1)) if match else 0)
             except Exception as e:
                 print(f"[CALLBACK] Error creating visualization: {e}")
         try:

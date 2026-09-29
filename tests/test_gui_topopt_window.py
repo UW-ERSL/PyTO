@@ -236,3 +236,53 @@ def test_analysis_window_initial_design_results(window_parent, tmp_path):
     finally:
         parent.plotter.close()
         parent.body_force = None
+
+
+def test_topology_every_iteration_option(window_parent):
+    """'Show topology every iteration' is off by default (no redraws); when on, MMA redraws the design once per
+    iteration in the main view (via iteration_callback), and Pareto via its iteration log lines."""
+    import pyvista as pv
+    import pyto.gui.PyTOGUI as G
+    from pyto.topopt.spec import MethodSpec, OptimizationSpec
+
+    class ViewStub(pv.Plotter):
+        def show(self, *a, **k):
+            self.render()
+
+    app, parent = window_parent
+    parent.plotter = ViewStub(off_screen=True)
+    try:
+        counts = {}
+
+        def run(spec, live):
+            import pyto.gui.PyTOGUI as GG
+            original = GG.StructuralTopOptWindow.run_optimization
+
+            def spy(self, plan, fe, sp):
+                self.optimization_update.connect(lambda mesh, it: counts.setdefault(sp.method.name, []).append(
+                    (mesh.n_cells, it)))
+                self.live_topology_check.setChecked(live)
+                return original(self, plan, fe, sp)
+            GG.StructuralTopOptWindow.run_optimization = spy
+            try:
+                return _run(app, parent, spec)
+            finally:
+                GG.StructuralTopOptWindow.run_optimization = original
+
+        w, fe, physics, sel, done, J = run(OptimizationSpec(method=MethodSpec("MMA", 4)), live=False)
+        assert G.StructuralTopOptWindow(parent).live_topology_check.isChecked() is False   # default: unchecked
+        assert "MMA" not in counts                                     # off: no redraws
+        w, fe, physics, sel, done, J = run(OptimizationSpec(method=MethodSpec("MMA", 4)), live=True)
+        updates = counts["MMA"]
+        assert len(updates) == len(J) - 1 and all(n > 0 for n, _ in updates)   # one per iteration (not the final eval)
+        assert [it for _, it in updates] == list(range(len(updates)))
+        # the main view shows the last drawn design: a mesh with cell data 'density', and the iteration label
+        meshes = [a.GetMapper().GetInput() for a in parent.plotter.actors.values()
+                  if hasattr(a, "GetMapper") and a.GetMapper() is not None and a.GetMapper().GetInput() is not None]
+        assert any(m.GetCellData().HasArray("density") and m.GetNumberOfCells() == updates[-1][0] for m in meshes)
+        assert any(type(a).__name__.endswith(("TextActor", "CornerAnnotation", "Text"))
+                   for a in parent.plotter.actors.values())
+        w, fe, physics, sel, done, J = run(OptimizationSpec(method=MethodSpec("PARETO", 20)), live=True)
+        assert len(counts.get("PARETO", [])) > 0                       # Pareto: from its iteration log lines
+    finally:
+        parent.plotter.close()
