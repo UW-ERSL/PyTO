@@ -384,17 +384,19 @@ class HexThermalFEA:
             colors=None):  # New parameter for custom colors
   
 
+    # Forward the caller's arguments (this wrapper used to pass fixed defaults, so plotter/save_path/title were
+    # silently ignored and a GUI call opened a separate window).
     return self.plotter.plot_elem_field(elem_field,
-            mask_low_pseudodensity = True,
-            title = '',
-            save_path=None,
-            colormap = 'jet',
-            auto_close = True,
-            fontsize=10,
-            cross_section=None,
-            show_geometry=False,
-            plotter = None,
-            annotate_max_min = False)  
+            mask_low_pseudodensity = mask_low_pseudodensity,
+            title = title,
+            save_path=save_path,
+            colormap = colormap,
+            auto_close = auto_close,
+            fontsize=fontsize,
+            cross_section=cross_section,
+            show_geometry=show_geometry,
+            plotter = plotter,
+            annotate_max_min = annotate_max_min)
     
   #################################################################
   def plot_temperature(self,auto_close = True,plotter=None, save_path=None, annotate_max_min = False):

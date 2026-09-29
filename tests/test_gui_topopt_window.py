@@ -85,3 +85,31 @@ def test_thermal_problem_through_the_window(window_parent):
     w, fe, physics, sel, done, J = _run(app, parent, spec, structural=False, thermal=thermal)
     assert physics == "thermal" and type(fe).__name__ == "HexThermalFEA" and set(sel) == {"FixedTemp1", "HeatSource1"}
     assert done["ok"] and J[-1] < J[0]
+
+
+def test_final_design_fields(window_parent, tmp_path):
+    """After an optimization: summary on the solid region, and the TopOpt fields render (structural + thermal)."""
+    from pyto.gui.optimization_setup import final_design_summary
+    from pyto.topopt.spec import MethodSpec, ObjectiveSpec, OptimizationSpec
+    app, parent = window_parent
+    w, fe, physics, sel, done, J = _run(app, parent, OptimizationSpec(method=MethodSpec("MMA", 10)))
+    s = final_design_summary(fe, physics)
+    solid = np.asarray(fe.mesh.elemPseudoDensity) > 0.5
+    assert 0.3 < s["solid_fraction"] < 0.7 and s["max_temperature"] is None
+    assert s["max_von_mises"] == pytest.approx(float(np.max(np.asarray(fe.vonMisesStress)[solid])))
+    all_nodes_max = float(fe.deformation.max())
+    assert 0 < s["max_displacement"] <= all_nodes_max                 # solid region only
+    fe.plot_deformation(save_path=str(tmp_path / "def.png"))
+    fe.plot_vonMisesStress(save_path=str(tmp_path / "vm.png"))
+    assert (tmp_path / "def.png").exists() and (tmp_path / "vm.png").exists()
+
+    x0, x1 = parent.faces
+    thermal = {"fixed_temps": [{"triangles": x0, "temperature": 300.0}],
+               "total_heat_sources": [{"triangles": x1, "total_heat": 50.0}]}
+    w, fe, physics, sel, done, J = _run(app, parent, OptimizationSpec(objective=ObjectiveSpec("ThermalCompliance()"),
+                                                                     method=MethodSpec("MMA", 4)),
+                                        structural=False, thermal=thermal)
+    s = final_design_summary(fe, physics)
+    assert s["max_displacement"] is None and s["max_temperature"] >= 300.0
+    fe.plot_elem_field(s["element_temperature"], title="Temperature", save_path=str(tmp_path / "T.png"))
+    assert (tmp_path / "T.png").exists()                              # the plot_elem_field wrapper forwards save_path

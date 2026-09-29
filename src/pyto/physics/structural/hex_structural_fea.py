@@ -460,7 +460,13 @@ class HexStructuralFEA:
     sol = self.sol.detach().cpu().numpy().copy()
     sol = sol.reshape((-1, 3))
     delta = self.deformation.detach().cpu().numpy()
-    deltaMax = self.max_deformation
+    # Scale and colour range from the nodes of the solid design (density > 0.5). In an optimized design the
+    # near-void region moves far more than the structure; using all nodes made the structure look undeformed.
+    density = np.asarray(self.mesh.elemPseudoDensity)
+    solid = density > 0.5
+    solid_nodes = np.unique(self.mesh.elemArray[solid][:, :8]) if solid.any() else np.arange(self.mesh.num_nodes)
+    deltaMax = float(delta[solid_nodes].max())
+    delta_clim = [float(delta[solid_nodes].min()), deltaMax]
     if deltaMax < 1e-16:
       deltaMax = 1e-16
     scale = float(0.1*self.mesh.bbox.diag_length/deltaMax)
@@ -542,6 +548,7 @@ class HexStructuralFEA:
     plotter.add_mesh(
                     pv_mesh,
                     scalars='values' if delta is not None else 'density',
+                    clim=delta_clim,
                     show_edges=True,
                     cmap='jet',
                     edge_color='black',

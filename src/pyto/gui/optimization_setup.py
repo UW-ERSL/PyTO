@@ -137,6 +137,43 @@ def display_objective(spec: OptimizationSpec, history_values) -> list:
     return [sign * float(np.ravel(v)[0]) for v in history_values]
 
 
+def final_design_summary(fe_solver, physics: str, threshold: float = 0.5) -> dict:
+    """Evaluate the optimized design: stresses/temperatures on the solid region (density > threshold).
+
+    Uses the solver's last solve (the final design), runs postprocess() for the stresses, and returns
+    {'solid_fraction', 'max_displacement', 'max_von_mises', 'yield_ratio', 'max_temperature',
+     'element_temperature', 'lines'} (entries that do not apply to the physics are None)."""
+    import torch
+    mesh = fe_solver.mesh
+    density = np.asarray(mesh.elemPseudoDensity)
+    solid = density > threshold
+    if not solid.any():
+        solid = np.ones_like(density, dtype=bool)
+    solid_nodes = np.unique(mesh.elemArray[solid][:, :8])
+    out = {"solid_fraction": float(solid.mean()), "max_displacement": None, "max_von_mises": None,
+           "yield_ratio": None, "max_temperature": None, "element_temperature": None}
+    lines = [f"Final design: {100 * out['solid_fraction']:.1f} % of the elements are solid (density > {threshold})."]
+    if physics in ("structural", "thermo-structural"):
+        fe_solver.postprocess()
+        disp = fe_solver.deformation.detach().cpu().numpy() if hasattr(fe_solver.deformation, "detach") \
+            else np.asarray(fe_solver.deformation)
+        out["max_displacement"] = float(disp[solid_nodes].max())
+        out["max_von_mises"] = float(np.asarray(fe_solver.vonMisesStress)[solid].max())
+        ys = float(getattr(fe_solver.mat_prop, "yield_strength", 0) or 0)
+        out["yield_ratio"] = out["max_von_mises"] / ys if ys > 0 else None
+        lines.append(f"Max displacement (solid region): {out['max_displacement']:.4g} m")
+        lines.append(f"Max von Mises stress (solid region): {out['max_von_mises']:.4g} Pa"
+                     + (f" = {out['yield_ratio']:.2f} x yield strength" if out["yield_ratio"] is not None else ""))
+    if physics in ("thermal", "thermo-structural"):
+        T = fe_solver.temperature if physics == "thermo-structural" else fe_solver.sol
+        T = T.detach().cpu().numpy() if isinstance(T, torch.Tensor) else np.asarray(T)
+        out["element_temperature"] = T[mesh.elemArray[:, :8]].mean(axis=1)
+        out["max_temperature"] = float(T[solid_nodes].max())
+        lines.append(f"Max temperature (solid region): {out['max_temperature']:.4g}")
+    out["lines"] = lines
+    return out
+
+
 def project_entries(spec, body_force) -> dict:
     """Keys added to a saved project: the formulation (versioned) and the body force (never saved before)."""
     out = {"body_force": dict(body_force) if body_force else None}

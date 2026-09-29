@@ -28,7 +28,7 @@ from pyto.topopt.drivers.oc import topopt_optimality_criteria
 from pyto.physics.thermoelastic.thermostructural_fea import ThermoStructuralFEA
 from pyto.gui.optimization_setup import (FormulationPanel, default_spec, display_objective,
                                         manufacturing_from_topopt_options, migrate_performance_options, prepare_run,
-                                        project_entries, restore_from_project)
+                                        project_entries, restore_from_project, final_design_summary)
 from pyto.topopt.drivers.pareto import topopt_pareto
 from pyto.topopt.drivers.levelset import topopt_levelset
 from pyto.io.topopt_stl_recovery import extract_isosurface_cnn, subtract_voids_from_stl
@@ -4405,6 +4405,19 @@ class StructuralTopOptWindow(QtWidgets.QDialog):
             
             self.visualize_optimized_topology(fe_solver)
 
+            # Evaluate the optimized design (stresses / temperatures on the solid region) for the log and for
+            # Display Options -> Geometry "TopOpt" (Deformation, Von Mises stress, Temperature).
+            try:
+                summary = final_design_summary(fe_solver, self.physics)
+                self.parent.topopt_results['design_summary'] = summary
+                self.parent.topopt_results['physics'] = self.physics
+                for line in summary['lines']:
+                    self.parent.message_text.append(line)
+                self.parent.message_text.append(
+                    "View the optimized design's fields in Display Options: Geometry 'TopOpt', then a Field.")
+            except Exception as e:
+                self.parent.message_text.append(f"Could not evaluate the final design: {e}")
+
             stl_path = self.parent.stl_geom.file_path
             vtu_path = os.path.splitext(stl_path)[0] + ".vtu"
             mesh = self.parent.hex_mesh
@@ -4871,6 +4884,7 @@ class DisplayOptionsWindow(QtWidgets.QDialog):
         layout.addLayout(button_layout)
 
     def connect_signals(self):
+        self.geometry_combo.currentTextChanged.connect(self.update_field_options)   # fields depend on the geometry
         self.geometry_combo.currentTextChanged.connect(self.update_display)
         self.field_combo.currentTextChanged.connect(self.update_display)
         self.display_combo.currentTextChanged.connect(self.update_display)
@@ -4954,19 +4968,28 @@ class DisplayOptionsWindow(QtWidgets.QDialog):
                 plotter=self.parent.plotter
             )
         elif geometry_choice == "TopOpt" and hasattr(self.parent, "topopt_results") and self.parent.topopt_results:
-            fe_solver = self.parent.topopt_results.get("fe_solver")
+            # Fields of the OPTIMIZED design (its own final solve), shown on the solid region (density > 0.5)
+            results = self.parent.topopt_results
+            fe_solver = results.get("fe_solver")
+            physics = results.get("physics", "structural")
+            summary = results.get("design_summary") or {}
             if fe_solver:
-                if field_choice == "Deformation":
+                if field_choice == "Deformation" and physics != "thermal":
                     fe_solver.plot_deformation(plotter=self.parent.plotter)
-                elif field_choice == "Von Mises stress":
+                elif field_choice == "Von Mises stress" and physics != "thermal":
+                    if not hasattr(fe_solver, "vonMisesStress"):
+                        fe_solver.postprocess()
                     fe_solver.plot_vonMisesStress(plotter=self.parent.plotter)
-                elif field_choice == "Temperature":
-                    if hasattr(self.parent, "thermal_fe_solver") and self.parent.thermal_fe_solver:
-                        self.parent.thermal_fe_solver.plot_temperature(plotter=self.parent.plotter)
-                    else:
-                        QtWidgets.QMessageBox.warning(self, "Thermal Results Missing", "Please solve for thermal analysis first.")
+                elif field_choice == "Temperature" and physics != "structural":
+                    elem_T = summary.get("element_temperature")
+                    thermal = fe_solver.thermal_fea if physics == "thermo-structural" else fe_solver
+                    if elem_T is not None:
+                        thermal.plot_elem_field(elem_T, title="Temperature", plotter=self.parent.plotter)
                 elif field_choice == "None":
                     fe_solver.plot_mesh(plotter=self.parent.plotter)
+                else:
+                    QtWidgets.QMessageBox.information(self, "Field not available",
+                                                      f"{field_choice} is not available for a {physics} optimization.")
         elif geometry_choice == "Final Design" and hasattr(self.parent, "optimized_topology_stl") and self.parent.optimized_topology_stl is not None:
             orig_actor = self.parent.plotter.actors.get("stl_geometry")
             if orig_actor and hasattr(orig_actor, "GetProperty"):
@@ -5257,7 +5280,13 @@ class DisplayOptionsWindow(QtWidgets.QDialog):
     def update_field_options(self):
         self.field_combo.blockSignals(True)
         self.field_combo.clear()
-        self.field_combo.addItems(["None", "Deformation", "Von Mises stress", "Temperature"])
+        fields = ["None", "Deformation", "Von Mises stress", "Temperature"]
+        results = getattr(self.parent, "topopt_results", None) or {}
+        if self.geometry_combo.currentText() == "TopOpt" and results:
+            physics = results.get("physics", "structural")      # offer only the fields of that optimization
+            fields = ["None"] + (["Deformation", "Von Mises stress"] if physics != "thermal" else []) \
+                + (["Temperature"] if physics != "structural" else [])
+        self.field_combo.addItems(fields)
         if self.geometry_combo.currentText() in ["Initial Design", "TopOpt"]:
             self.field_combo.setCurrentText("None")
         self.field_combo.blockSignals(False)
