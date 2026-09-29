@@ -303,3 +303,18 @@ def test_candidate_dots_and_box_button_only_in_node_mode(gui):
     loads.selection_combo.setCurrentText("Node")
     loads.close()
     assert "candidate_nodes" not in parent.plotter.actors
+
+
+def test_box_button_starts_while_click_picking_is_on(gui):
+    """The GUI always has click picking on; starting the box selection must switch it off first (pyvista allows
+    one picking mode), and finishing it must switch click picking back on."""
+    app, G, parent, x0, tip = gui
+    parent.restore_surface_picking()                    # the GUI's normal state: click picking enabled
+    parent.start_box_node_selection()                   # used to raise PyVistaPickingError
+    selection, _ = _end_box(parent, G)
+    parent.selected_points, parent.selected_regions = [], []
+    parent.on_box_node_selection(selection)             # finishing restores click picking
+    parent.start_box_node_selection()                   # and a second box can be started again
+    parent.on_box_node_selection(selection)
+    assert len(parent.selected_regions) == 2
+    parent.on_right_button_press(None, None)

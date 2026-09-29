@@ -793,6 +793,7 @@ class MainWindow(QtWidgets.QMainWindow):
     def start_box_node_selection(self):
         """Drag a rectangle: the box is kept as a region. Every mesh surface node inside it (through the whole depth)
         is selected when the analysis/optimization runs, so it works before meshing and after remeshing."""
+        self.plotter.disable_picking()   # click picking is always on; pyvista allows one picking mode at a time
         self.plotter.enable_rectangle_picking(callback=self.on_box_node_selection, start=True,
                                               show_message="Drag a box to select nodes")
 
