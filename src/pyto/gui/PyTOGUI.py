@@ -37,6 +37,16 @@ from pyto.io.topopt_stl_recovery import extract_isosurface_cnn, subtract_voids_f
 """
 DEFAULT_FONT_SIZE = 32
 #---------------------------------------------------------------------------
+def gui_elem_body_force(main_window, mesh, mat_prop):
+    """Element body force from the Body force window (accelerations in m/s^2), or None if none is set.
+
+    The Body force window used to store and draw the acceleration without it ever reaching a solver.
+    """
+    bf = getattr(main_window, "body_force", None) or {}
+    return bound_cond.elem_body_force_from_acceleration(
+        mesh, mat_prop.mass_density, [bf.get("X", 0.0), bf.get("Y", 0.0), bf.get("Z", 0.0)])
+
+
 class MainWindow(QtWidgets.QMainWindow):
     WINDOW_SIZE = (1280, 768)
     SIDEBAR_WIDTH = 250
@@ -3142,7 +3152,8 @@ class AnalysisWindow(QtWidgets.QDialog):
             bc=bc,
             solver=self.get_solver(),
             dsolver=getattr(self.parent, 'dsolver', None),
-            rtol=1e-8
+            rtol=1e-8,
+            elem_body_force=gui_elem_body_force(self.parent, mesh, mat_prop),
         )
         
         # Solve
@@ -4429,7 +4440,8 @@ class StructuralTopOptWindow(QtWidgets.QDialog):
             mat_prop=mat_prop,
             bc=bc,
             solver=solver,
-            rtol=1e-8
+            rtol=1e-8,
+            elem_body_force=gui_elem_body_force(self.parent, mesh_processed, mat_prop),
         )
         return fe_solver
     

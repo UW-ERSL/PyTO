@@ -78,3 +78,21 @@ def test_multibody_stl_with_open_edges_meshes_and_empty_mesh_raises(capsys):
     empty = HexMesher()
     with pytest.raises(ValueError, match="produced no elements"):
         empty._check_mesh_created("broken.stl")
+
+
+def test_gui_body_force_reaches_the_solver_input():
+    # The Body force window stores accelerations (m/s^2) in parent.body_force; they used to never reach a solver.
+    # They must become the same element forces the benchmarks use (GravityPlate: rho * g * element volume).
+    import numpy as np
+    from types import SimpleNamespace
+    from pyto.core.bc import elem_body_force_from_acceleration
+    from pyto.examples_benchmarks.hex_structural_examples import StructuralExamples, getStructuralProblem
+    mesh, mat, bc, ref_force = getStructuralProblem(StructuralExamples.GravityPlate, nDOFDesired=2000)
+    force = elem_body_force_from_acceleration(mesh, mat.mass_density, [0.0, -9.81, 0.0])
+    assert np.allclose(force, ref_force)
+    assert elem_body_force_from_acceleration(mesh, mat.mass_density, [0, 0, 0]) is None
+    pytest.importorskip("PyQt5")
+    from pyto.gui.PyTOGUI import gui_elem_body_force
+    window = SimpleNamespace(body_force={"X": 0.0, "Y": -9.81, "Z": 0.0})
+    assert np.allclose(gui_elem_body_force(window, mesh, mat), ref_force)
+    assert gui_elem_body_force(SimpleNamespace(), mesh, mat) is None      # Body force window never opened

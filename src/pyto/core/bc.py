@@ -258,3 +258,17 @@ def apply_dirichlet_bc_torch(K, f, bc: BC):
   K_diag = torch.sparse_coo_tensor(diag_idx, diag_val, Kc.shape, device=device, dtype=dtype)
 
   return (K_mod + K_diag).coalesce(), f_mod
+
+
+def elem_body_force_from_acceleration(mesh, mass_density: float, acceleration) -> np.ndarray | None:
+  """Element body force (3*num_elems,) for a uniform acceleration field (gravity, linear acceleration).
+
+  Same convention as the benchmark problems (e.g. createGravityPlateProblem): each element carries
+  mass_density * acceleration * element volume, and HexStructuralFEA.solve scales it by the element density x.
+  Returns None when the acceleration is zero, so callers can pass it straight to HexStructuralFEA.
+  """
+  a = np.asarray(acceleration, dtype=float).reshape(3)
+  if not np.any(a):
+    return None
+  force_per_elem = mass_density * np.prod(mesh.elem_size) * a
+  return np.tile(force_per_elem, mesh.num_elems)
