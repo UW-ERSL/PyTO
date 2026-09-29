@@ -798,7 +798,13 @@ class MainWindow(QtWidgets.QMainWindow):
                                               show_message="Drag a box to select nodes")
 
     def on_box_node_selection(self, selection):
-        region = frustum_to_region(selection.frustum)
+        """Called by VTK at the end of the rubber-band drag, INSIDE its event handler. Only copy the box here:
+        tearing down the picker / interaction style from within its own event handler crashes VTK (segmentation
+        fault, reproduced). Drawing and restoring click picking run right after VTK returns (QTimer, 0 ms)."""
+        region = frustum_to_region(selection.frustum)          # plain data, independent of the picker
+        QtCore.QTimer.singleShot(0, lambda: self._finish_box_node_selection(region))
+
+    def _finish_box_node_selection(self, region):
         preview = int(points_in_region(candidate_node_coordinates(self), region).sum())
         if preview == 0:
             self.message_text.append("The box contains no part of the model; nothing selected.")

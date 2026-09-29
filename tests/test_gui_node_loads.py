@@ -43,7 +43,7 @@ def gui(tmp_path_factory):
     parent.update_highlights = lambda *a, **k: None
     for name in ("update_point_markers", "on_left_button_press", "on_right_button_press", "select_triangles",
                  "add_selected_points", "show_candidate_nodes", "start_box_node_selection", "on_box_node_selection",
-                 "restore_surface_picking", "node_selection_preview"):
+                 "restore_surface_picking", "node_selection_preview", "_finish_box_node_selection"):
         setattr(parent, name, types.MethodType(getattr(G.MainWindow, name), parent))
     parent.highlight_mode, parent.selected_points, parent.highlight_actor = "coarse", [], None
     parent.selected_regions = []
@@ -244,12 +244,14 @@ def test_box_selection_before_meshing_is_a_region_resolved_on_the_mesh(gui, tmp_
     try:
         parent.selected_points, parent.selected_regions = [], []
         parent.on_box_node_selection(selection)
+        app.processEvents()                                  # the box is finished right after VTK returns
         assert len(parent.selected_regions) == 1
         preview = parent.node_selection_preview()
         assert len(preview) > 10 and np.all(preview[:, 0] >= xcut - 1e-9)       # STL surface points in the box
         empty = vtk.vtkPlanes()
         empty.SetBounds(100, 101, 100, 101, 100, 101)
         parent.on_box_node_selection(types.SimpleNamespace(frustum=empty))
+        app.processEvents()
         assert len(parent.selected_regions) == 1                                 # empty box not added
         loads = G.StructuralLoadsWindow(parent)
         loads.selection_combo.setCurrentText("Node")
@@ -314,7 +316,53 @@ def test_box_button_starts_while_click_picking_is_on(gui):
     selection, _ = _end_box(parent, G)
     parent.selected_points, parent.selected_regions = [], []
     parent.on_box_node_selection(selection)             # finishing restores click picking
+    app.processEvents()
     parent.start_box_node_selection()                   # and a second box can be started again
     parent.on_box_node_selection(selection)
+    app.processEvents()
     assert len(parent.selected_regions) == 2
     parent.on_right_button_press(None, None)
+
+
+REAL_DRAG_SCRIPT = r"""
+import os, sys, types
+os.environ["QT_QPA_PLATFORM"] = "offscreen"
+sys.path.insert(0, sys.argv[1])
+import numpy as np, pyvista as pv
+from PyQt5 import QtWidgets
+app = QtWidgets.QApplication([])
+import pyto.gui.PyTOGUI as G
+parent = QtWidgets.QWidget()
+parent.message_text = QtWidgets.QTextEdit()
+parent.plotter = pv.Plotter(off_screen=True, window_size=(400, 400))
+parent.plotter.add_mesh(pv.Cube())
+parent.plotter.show(auto_close=False, interactive_update=True)          # a real VTK interactor
+parent.stl_geom = types.SimpleNamespace(mesh=types.SimpleNamespace(vectors=np.asarray(
+    pv.Cube().triangulate().points[pv.Cube().triangulate().faces.reshape(-1, 4)[:, 1:]])))
+parent.hex_mesh = None
+parent.selected_points, parent.selected_regions = [], []
+for name in ("add_selected_points", "update_point_markers", "node_selection_preview", "start_box_node_selection",
+             "on_box_node_selection", "_finish_box_node_selection", "restore_surface_picking", "on_left_button_press"):
+    setattr(parent, name, types.MethodType(getattr(G.MainWindow, name), parent))
+parent.restore_surface_picking()
+for n in range(3):                                   # three real rubber-band drags in a row
+    parent.start_box_node_selection()
+    iren = parent.plotter.iren.interactor
+    iren.SetEventInformation(120, 120); iren.InvokeEvent("LeftButtonPressEvent")
+    iren.SetEventInformation(280, 280); iren.InvokeEvent("MouseMoveEvent")
+    iren.InvokeEvent("LeftButtonReleaseEvent")
+    app.processEvents()
+print("REGIONS", len(parent.selected_regions))
+"""
+
+
+def test_real_rubber_band_drags_do_not_crash():
+    """Regression: restoring picking inside VTK's end-of-selection handler segfaulted. Real interactor, three
+    drags, in a subprocess so a crash fails the test instead of killing the run."""
+    import subprocess, sys
+    src = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "src")
+    env = {**os.environ, "PYVISTA_OFF_SCREEN": "true", "QT_QPA_PLATFORM": "offscreen"}
+    r = subprocess.run([sys.executable, "-c", REAL_DRAG_SCRIPT, src], capture_output=True, text=True, timeout=120,
+                       env=env)
+    assert r.returncode == 0, f"crashed (exit {r.returncode}): {r.stderr[-500:]}"
+    assert "REGIONS 3" in r.stdout, r.stdout[-500:]
