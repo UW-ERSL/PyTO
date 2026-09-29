@@ -54,6 +54,24 @@ def nearest_surface_nodes(points, boundary_nodes, boundary_points):
     return np.asarray(boundary_nodes)[idx].astype(int), dist
 
 
+def candidate_node_coordinates(main_window):
+    """Coordinates the Node selection mode can pick: the surface nodes of the mesh once it exists (cached per
+    mesh; get_boundary_nodes loops over all elements), otherwise the STL vertices."""
+    mesh = getattr(main_window, "hex_mesh", None)
+    if mesh is not None and getattr(mesh, "num_elems", 0):
+        cache = getattr(main_window, "_candidate_node_cache", None)
+        if cache is None or cache[0] is not mesh:
+            cache = (mesh, np.asarray(mesh.node_xyz, dtype=float)[mesh.get_boundary_nodes()])
+            main_window._candidate_node_cache = cache
+        return cache[1]
+    return np.unique(np.asarray(main_window.stl_geom.mesh.vectors, dtype=float).reshape(-1, 3), axis=0)
+
+
+def points_in_frustum(points, frustum):
+    """Boolean mask of the points inside a box-selection frustum (vtkPlanes; negative = inside)."""
+    return np.array([frustum.EvaluateFunction(*p) <= 0.0 for p in np.asarray(points, dtype=float)], dtype=bool)
+
+
 def snap_to_triangle_vertex(stl_geom, cell_id, picked_point):
     """The vertex of STL triangle cell_id closest to the clicked point."""
     verts = np.asarray(stl_geom.mesh.vectors[cell_id], dtype=float)
@@ -688,6 +706,14 @@ class MainWindow(QtWidgets.QMainWindow):
         if cell_id < 0:
             self.message_text.append("No triangle selected.")
             return
+
+        if getattr(self, 'highlight_mode', 'coarse') == 'node':
+            # Node mode: snap to the nearest candidate node (mesh surface node, or STL vertex before meshing). Any
+            # surface may be clicked (geometry or mesh view): only the clicked 3D point matters.
+            candidates = candidate_node_coordinates(self)
+            point = candidates[int(np.argmin(np.linalg.norm(candidates - np.asarray(picked_point), axis=1)))]
+            self.add_selected_points([point])
+            return
         
         # Validate we picked the STL geometry actor (not highlight/constraint overlay)
         if picked_actor:
@@ -702,18 +728,6 @@ class MainWindow(QtWidgets.QMainWindow):
                             self.message_text.append("Please click on the geometry surface.")
                             return
         
-        if getattr(self, 'highlight_mode', 'coarse') == 'node':
-            # Node mode: snap to the nearest vertex of the clicked triangle
-            point = snap_to_triangle_vertex(self.stl_geom, cell_id, picked_point)
-            if any(np.linalg.norm(np.asarray(p) - point) < 1e-12 for p in self.selected_points):
-                self.message_text.append("Node already selected.")
-                return
-            self.selected_points.append(point.tolist())
-            self.update_point_markers()
-            self.message_text.append(f"Selected node at ({point[0]:.4g}, {point[1]:.4g}, {point[2]:.4g}); "
-                                     f"{len(self.selected_points)} node(s) selected.")
-            return
-
         if cell_id in self.constrained_triangles:
             self.message_text.append("Cannot select constrained triangle.")
             return
@@ -728,6 +742,45 @@ class MainWindow(QtWidgets.QMainWindow):
         mode = getattr(self, 'highlight_mode', 'coarse')
         depth, angle = (0, 0) if mode == 'triangle' else (500, 15)
         return self.stl_geom.highlight_triangles_recursive(cell_id, depth, angle)
+
+    def add_selected_points(self, points):
+        """Add node-mode picks (coordinates), skipping ones already selected."""
+        added = 0
+        for point in np.asarray(points, dtype=float).reshape(-1, 3):
+            if any(np.linalg.norm(np.asarray(p) - point) < 1e-12 for p in self.selected_points):
+                continue
+            self.selected_points.append(point.tolist())
+            added += 1
+        self.update_point_markers()
+        self.message_text.append(f"Selected {added} node(s); {len(self.selected_points)} selected in total."
+                                 if added else "Node(s) already selected.")
+        return added
+
+    def show_candidate_nodes(self, show):
+        """Grey dots on the nodes the Node selection mode can pick (mesh surface nodes once meshed)."""
+        if 'candidate_nodes' in self.plotter.actors:
+            self.plotter.remove_actor('candidate_nodes', reset_camera=False)
+        if show and self.stl_geom:
+            self.plotter.add_mesh(pv.PolyData(candidate_node_coordinates(self)), color='dimgray', point_size=5,
+                                  render_points_as_spheres=True, pickable=False, name='candidate_nodes')
+        self.plotter.render()
+
+    def start_box_node_selection(self):
+        """Drag a rectangle: every candidate node inside it (through the whole depth) is selected."""
+        self.plotter.enable_rectangle_picking(callback=self.on_box_node_selection, start=True,
+                                              show_message="Drag a box to select nodes")
+
+    def on_box_node_selection(self, selection):
+        inside = points_in_frustum(candidate_node_coordinates(self), selection.frustum)
+        self.add_selected_points(candidate_node_coordinates(self)[inside])
+        self.restore_surface_picking()
+
+    def restore_surface_picking(self):
+        """Back to normal rotation + click picking after a box selection."""
+        self.plotter.disable_picking()
+        self.plotter.enable_trackball_style()
+        self.plotter.enable_point_picking(callback=self.on_left_button_press, use_picker=True, picker='cell',
+                                          show_message=False, left_clicking=True, show_point=False)
 
     def update_point_markers(self):
         """Draw the node-mode selection (orange points)."""
@@ -1484,6 +1537,11 @@ class StructuralLoadsWindow(QtWidgets.QDialog):
         
         parent_layout.addLayout(layout)
 
+    def closeEvent(self, event):
+        if getattr(self.parent, "stl_geom", None) and hasattr(self.parent, "show_candidate_nodes"):
+            self.parent.show_candidate_nodes(False)          # node dots only while this window is open
+        super().closeEvent(event)
+
     def create_selection_control(self, parent_layout):
         """Create selection mode control"""
         layout = QtWidgets.QHBoxLayout()
@@ -1492,6 +1550,14 @@ class StructuralLoadsWindow(QtWidgets.QDialog):
         self.selection_combo = QtWidgets.QComboBox()
         self.selection_combo.addItems(list(self.SELECTION_MODES.keys()))
         layout.addWidget(self.selection_combo)
+
+        # Node mode only: drag a rectangle to select all nodes inside it
+        self.box_select_button = QtWidgets.QPushButton("Box select nodes")
+        self.box_select_button.setToolTip("Then drag a rectangle in the 3D view: every node inside it is selected "
+                                          "(through the whole depth). Click adds single nodes; right-click clears.")
+        self.box_select_button.clicked.connect(lambda: self.parent.start_box_node_selection())
+        self.box_select_button.setVisible(False)
+        layout.addWidget(self.box_select_button)
         
         parent_layout.addLayout(layout)
 
@@ -1565,6 +1631,11 @@ class StructuralLoadsWindow(QtWidgets.QDialog):
         """Handle selection mode changes"""
         mode_text = self.selection_combo.currentText()
         self.parent.highlight_mode = self.SELECTION_MODES[mode_text]
+        node_mode = self.parent.highlight_mode == "node"
+        if hasattr(self, "box_select_button"):
+            self.box_select_button.setVisible(node_mode)
+        if self.parent.stl_geom and hasattr(self.parent, "show_candidate_nodes"):
+            self.parent.show_candidate_nodes(node_mode)
         if self.parent.stl_geom:
             # Turn ON triangle edges in "Triangle" mode, OFF otherwise
             for name, actor in self.parent.plotter.actors.items():

@@ -41,7 +41,9 @@ def gui(tmp_path_factory):
     parent.LivVar = {'structural_loads': {'forces_applied': False, 'fixed_constraints': False, 'applied': False}}
     parent.notify_display_options_update = lambda *a, **k: None
     parent.update_highlights = lambda *a, **k: None
-    for name in ("update_point_markers", "on_left_button_press", "on_right_button_press", "select_triangles"):
+    for name in ("update_point_markers", "on_left_button_press", "on_right_button_press", "select_triangles",
+                 "add_selected_points", "show_candidate_nodes", "start_box_node_selection", "on_box_node_selection",
+                 "restore_surface_picking"):
         setattr(parent, name, types.MethodType(getattr(G.MainWindow, name), parent))
     parent.highlight_mode, parent.selected_points, parent.highlight_actor = "coarse", [], None
     parent.constraint_data, parent.force_data, parent.constrained_triangles = [], [], set()
@@ -86,7 +88,7 @@ def test_node_picking_snaps_dedups_and_clears(gui):
     app, G, parent, x0, tip = gui
     parent.highlight_mode, parent.selected_points = "node", []
     _pick(parent, tip)
-    assert len(parent.selected_points) == 1 and np.allclose(parent.selected_points[0], tip)   # snapped to the vertex
+    assert len(parent.selected_points) == 1 and np.allclose(parent.selected_points[0], tip, atol=1e-6)  # mesh corner node
     _pick(parent, tip)
     assert len(parent.selected_points) == 1                                                      # duplicate refused
     assert "selected_points" in parent.plotter.actors
@@ -183,3 +185,61 @@ def test_single_point_support_reports_under_constrained(gui):
         G.QtWidgets.QMessageBox.critical = real
         parent.constraint_data, parent.force_data = saved
     assert shown and "under-constrained" in shown[0]
+
+
+def test_candidates_are_mesh_surface_nodes_once_meshed(gui):
+    app, G, parent, x0, tip = gui
+    mesh = parent.hex_mesh
+    cand = G.candidate_node_coordinates(parent)
+    assert np.allclose(cand, mesh.node_xyz[mesh.get_boundary_nodes()])
+    assert len(cand) > len(np.unique(parent.stl_geom.mesh.vectors.reshape(-1, 3), axis=0))   # far more than STL corners
+    parent.hex_mesh = None                                               # before meshing: the STL vertices
+    try:
+        assert np.allclose(G.candidate_node_coordinates(parent),
+                           np.unique(parent.stl_geom.mesh.vectors.reshape(-1, 3), axis=0))
+    finally:
+        parent.hex_mesh = mesh
+    # a click between nodes snaps to the nearest mesh surface node, not only to STL corners
+    parent.highlight_mode, parent.selected_points = "node", []
+    target = cand[len(cand) // 2]
+    parent.on_left_button_press(target + 1e-4, _Picker(0))
+    assert np.allclose(parent.selected_points[0], target)
+    parent.on_right_button_press(None, None)
+
+
+def test_points_in_frustum_sign():
+    import vtk
+    from pyto.gui.PyTOGUI import points_in_frustum
+    planes = vtk.vtkPlanes()
+    planes.SetBounds(0, 1, 0, 1, 0, 1)
+    assert list(points_in_frustum([[0.5, 0.5, 0.5], [2, 0.5, 0.5], [0.5, -1, 0.5]], planes)) == [True, False, False]
+
+
+def test_box_selection_selects_all_nodes_inside(gui):
+    import vtk
+    app, G, parent, x0, tip = gui
+    cand = G.candidate_node_coordinates(parent)
+    xmax, h = cand[:, 0].max(), float(max(parent.hex_mesh.elem_size))
+    lo, hi = cand.min(axis=0) - 1e-6, cand.max(axis=0) + 1e-6
+    planes = vtk.vtkPlanes()                             # a 'box' around the free end, one element deep
+    planes.SetBounds(xmax - 0.5 * h, hi[0], lo[1], hi[1], lo[2], hi[2])
+    parent.selected_points = []
+    parent.on_box_node_selection(types.SimpleNamespace(frustum=planes))
+    expected = cand[cand[:, 0] > xmax - 0.5 * h]
+    assert len(parent.selected_points) == len(expected) > 4
+    assert np.allclose(np.sort(np.asarray(parent.selected_points), axis=0), np.sort(expected, axis=0))
+    parent.on_box_node_selection(types.SimpleNamespace(frustum=planes))   # selecting again adds nothing
+    assert len(parent.selected_points) == len(expected)
+    parent.on_right_button_press(None, None)
+
+
+def test_candidate_dots_and_box_button_only_in_node_mode(gui):
+    app, G, parent, x0, tip = gui
+    loads = G.StructuralLoadsWindow(parent)
+    loads.selection_combo.setCurrentText("Node")
+    assert "candidate_nodes" in parent.plotter.actors and not loads.box_select_button.isHidden()
+    loads.selection_combo.setCurrentText("Facet")
+    assert "candidate_nodes" not in parent.plotter.actors and loads.box_select_button.isHidden()
+    loads.selection_combo.setCurrentText("Node")
+    loads.close()
+    assert "candidate_nodes" not in parent.plotter.actors
