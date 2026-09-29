@@ -100,11 +100,11 @@ def show_topopt_field(main_window, field):
 
 def add_topopt_field_buttons(dialog, layout):
     """'Optimized design' buttons (one per field) on a dialog; returns {field: button}."""
-    group = QtWidgets.QGroupBox("Optimized design")
+    group = QtWidgets.QGroupBox("Optimized design: show")
     row = QtWidgets.QGridLayout(group)
     buttons = {}
     for i, field in enumerate(TOPOPT_FIELDS):
-        b = QtWidgets.QPushButton(f"Show {field.lower()}")
+        b = QtWidgets.QPushButton(field)
         b.clicked.connect(lambda _checked=False, f=field: _show_field_or_warn(dialog, f))
         row.addWidget(b, i // 2, i % 2)
         buttons[field] = b
@@ -2690,7 +2690,7 @@ class AnalysisWindow(QtWidgets.QDialog):
     def __init__(self, parent):
         super().__init__(parent)
         self.setWindowTitle("Analysis")
-        self.setFixedSize(280, 400)
+        self.setFixedSize(300, 560)
         self.parent = parent
         
         layout = QtWidgets.QVBoxLayout(self)
@@ -2755,6 +2755,10 @@ class AnalysisWindow(QtWidgets.QDialog):
         self.structural_button = QtWidgets.QPushButton("Structural Analysis")
         self.structural_button.clicked.connect(self.run_structural_analysis)
         layout.addWidget(self.structural_button)
+
+        # Fields of the last topology optimization's design (enabled once a run has finished)
+        self.field_buttons = add_topopt_field_buttons(self, layout)
+        refresh_topopt_field_buttons(self.parent, self.field_buttons)
         
         close_button = QtWidgets.QPushButton("Close")
         close_button.clicked.connect(self.close)
@@ -4517,6 +4521,8 @@ class StructuralTopOptWindow(QtWidgets.QDialog):
             )
             self.parent.message_text.append(f"VTU exported: {vtu_path}")
             refresh_topopt_field_buttons(self.parent, self.field_buttons)
+            for win in self.parent.findChildren(AnalysisWindow):    # an Analysis window left open
+                refresh_topopt_field_buttons(self.parent, win.field_buttons)
             
         else:
             self.parent.message_text.append(f"Structural topology optimization failed: {error_msg}")
@@ -4710,7 +4716,7 @@ class TopOptResultsWindow(QtWidgets.QDialog):
     def __init__(self, parent):
         super().__init__(parent)
         self.setWindowTitle("TopOpt Postprocess")
-        self.setFixedSize(320, 330)
+        self.setFixedSize(320, 220)
         self.parent = parent
 
         # Default values for tet mesh
@@ -4738,9 +4744,6 @@ class TopOptResultsWindow(QtWidgets.QDialog):
         self.tetmesh_btn = QtWidgets.QPushButton("Generate TetMesh")
         self.tetmesh_btn.clicked.connect(self.generate_tetmesh)
         layout.addWidget(self.tetmesh_btn)
-
-        self.field_buttons = add_topopt_field_buttons(self, layout)
-        refresh_topopt_field_buttons(self.parent, self.field_buttons)
 
 
     def apply_recovery(self):

@@ -156,8 +156,9 @@ def test_optimized_design_buttons_after_completion(window_parent, tmp_path):
                     assert msg is None and len(parent.plotter.actors) > 0, field
                 else:
                     assert "not available" in msg
-            post = G.TopOptResultsWindow(parent)                # the same buttons in TopOpt Postprocess
-            assert {f: b.isEnabled() for f, b in post.field_buttons.items()} == {f: f in expected for f in G.TOPOPT_FIELDS}
+            analysis = G.AnalysisWindow(parent)                 # the same buttons in the Analysis window
+            assert {f: b.isEnabled() for f, b in analysis.field_buttons.items()} == {f: f in expected for f in G.TOPOPT_FIELDS}
+            assert not hasattr(G.TopOptResultsWindow(parent), "field_buttons")   # Postprocess: STL recovery only
     finally:
         parent.stl_geom.file_path = real_path
         parent.plotter.close()
