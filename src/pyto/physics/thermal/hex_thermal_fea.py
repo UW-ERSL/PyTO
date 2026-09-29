@@ -398,10 +398,12 @@ class HexThermalFEA:
     
   #################################################################
   def plot_temperature(self,auto_close = True,plotter=None, save_path=None, annotate_max_min = False):
-    # Return if no solution exists yet
-    if not hasattr(self, 'sol'):
+    # Return if no solution exists yet (__init__ sets sol = None, so hasattr alone is always true)
+    if getattr(self, 'sol', None) is None:
       return None
-    return self.plotter.plot_temperature(self.sol, auto_close = auto_close, plotter=plotter,
+    # sol is a torch tensor (grad-tracked after an optimization); pyvista needs a plain NumPy array.
+    sol_np = self.sol.detach().cpu().numpy() if hasattr(self.sol, "detach") else np.asarray(self.sol)
+    return self.plotter.plot_temperature(sol_np, auto_close = auto_close, plotter=plotter,
                                        save_path=save_path, annotate_max_min = annotate_max_min)
 
 #################################################################

@@ -52,3 +52,14 @@ def test_structural_solve_without_design_is_a_solid_analysis(structural_fe_solve
     u_default = fe.solve()
     u_solid = fe.solve(torch.ones(fe.mesh.num_elems, dtype=torch.float64))
     assert torch.allclose(u_default, u_solid)
+
+
+def test_plot_temperature_accepts_grad_tracked_solution(thermal_fe_solver, tmp_path):
+    # After an optimization the thermal solution carries autograd history; plotting must still work.
+    from pyto.autodiff.material_model import MaterialModel
+    fe = thermal_fe_solver
+    assert fe.plot_temperature(save_path=str(tmp_path / "none.png")) is None   # nothing solved yet
+    x = torch.full((fe.mesh.num_elems,), 0.5, dtype=torch.float64, requires_grad=True)
+    fe.solve(x, MaterialModel.SIMP)
+    fe.plot_temperature(save_path=str(tmp_path / "T.png"))
+    assert (tmp_path / "T.png").exists()

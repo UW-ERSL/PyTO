@@ -103,6 +103,48 @@ allBenchmarks = benchmarks_structural_2_5D_problems_1 + \
 				benchmarks_structural_casestudies
 
 
+def build_benchmark(to_problem, solver=None):
+	"""Build the FE solver and TO parameters for one benchmark problem, exactly as the benchmark runner does.
+
+	Shared by runTOMethodOnBenchmarks and main.ipynb, so a notebook run is the same computation as a sweep row.
+	Returns (fe_solver, to_params, feaMode). Thermo-structural problems return one coupled ThermoStructuralFEA
+	(thermal solve -> thermal force -> structural solve). `solver` overrides the automatic choice (PARDISO,
+	or DPCG with deflation above DIRECT_SOLVER_DOF_CUTOFF).
+	"""
+	if to_problem in StructuralTOExamples:
+		mesh, mat_prop, bc, elem_body_force, to_params = getStructuralTOProblem(to_problem)
+		feaMode = FEA_MODE.STRUCTURAL
+	elif to_problem in ThermalTOExamples:
+		mesh, mat_prop, bc, elem_body_force, to_params = getThermalTOProblem(to_problem)
+		feaMode = FEA_MODE.THERMAL
+	elif to_problem in ThermoStructuralTOExamples:
+		mesh, mat_prop, structural_bc, thermal_bc, elem_body_force, to_params = getThermoStructuralTOProblem(to_problem)
+		feaMode = FEA_MODE.THERMO_STRUCTURAL
+	else:
+		raise ValueError(f"Unknown benchmark problem: {to_problem}")
+
+	dsolver = deflation.DeflationSolver()
+	if solver is None:
+		solver = lin_solv.Solvers.PARDISO if to_params.nDOFDesired <= DIRECT_SOLVER_DOF_CUTOFF else lin_solv.Solvers.DPCG
+	if solver == lin_solv.Solvers.DPCG:  # DPCG for large DOF problems
+		nGroups = min(dsolver.maxGroups, max(dsolver.minGroups, round(3 * mesh.num_nodes / dsolver.dofPerGroup)))
+		dsolver.create_deflation_groups(mesh, nGroups)
+		dsolver.create_deflation_matrix(mesh)
+
+	common = dict(mesh=mesh, mat_prop=mat_prop, solver=solver, dsolver=dsolver, rtol=1e-8,
+				  elem_body_force=elem_body_force)
+	if feaMode == FEA_MODE.STRUCTURAL:
+		fe_solver = hex_structural_fea.HexStructuralFEA(bc=bc, **common)
+	elif feaMode == FEA_MODE.THERMAL:
+		fe_solver = hex_thermal_fea.HexThermalFEA(bc=bc, **common)
+	else:
+		fe_solver = ThermoStructuralFEA(structural_bc=structural_bc, thermal_bc=thermal_bc,
+										thermoElasticReferenceTemperature=to_params.ThermalReferenceTemperature,
+										conductivity_penalty=to_params.ConductivityPenalty,
+										conductivity_void_ratio=to_params.ConductivityVoidRatio, **common)
+	return fe_solver, to_params, feaMode
+
+
 def runTOMethodOnBenchmarks(optimizationMethod, problems_override: list = None, date_str: str = None):
 	# Create a list to store results
 
@@ -136,68 +178,10 @@ def runTOMethodOnBenchmarks(optimizationMethod, problems_override: list = None, 
 			subFolder = "Other"
 
 		try:
-			if (to_problem in StructuralTOExamples):
-				mesh, mat_prop, bc,elem_body_force, to_params = getStructuralTOProblem(to_problem)
-				feaMode = FEA_MODE.STRUCTURAL
-			elif (to_problem in ThermalTOExamples):
-				mesh, mat_prop, bc,elem_body_force, to_params = getThermalTOProblem(to_problem)
-				feaMode = FEA_MODE.THERMAL
-			elif (to_problem in ThermoStructuralTOExamples):
-				mesh, mat_prop, structural_bc,thermal_bc, elem_body_force, to_params  = getThermoStructuralTOProblem(to_problem)
-				feaMode = FEA_MODE.THERMO_STRUCTURAL # or FEA_MODE.STRUCTURAL depending on the problem setup
-
-		
 			print_progress = False
-			fe_structural_solver = None
-			fe_thermal_solver = None
+			fe_solver, to_params, feaMode = build_benchmark(to_problem)
+			solver = fe_solver.solver
 
-			dsolver = deflation.DeflationSolver()
-			if (to_params.nDOFDesired <= DIRECT_SOLVER_DOF_CUTOFF):#  # Choose solver. Typically PARDISO, but DPCG for large DOF problems
-				solver = lin_solv.Solvers.PARDISO
-			else:
-				solver = lin_solv.Solvers.DPCG
-				nGroups =  min(dsolver.maxGroups,max(dsolver.minGroups,round(3*mesh.num_nodes/dsolver.dofPerGroup)))
-				dsolver.create_deflation_groups(mesh, nGroups)
-				dsolver.create_deflation_matrix(mesh)
-
-			if (feaMode == FEA_MODE.STRUCTURAL):
-				fe_structural_solver = hex_structural_fea.HexStructuralFEA(mesh = mesh,
-							mat_prop = mat_prop,
-							bc = bc,
-							solver = solver,
-							dsolver = dsolver,
-							rtol = 1e-8,
-							elem_body_force = elem_body_force)
-				fe_solver = fe_structural_solver
-
-			#fe_structural_solver.plot_mesh(title = "Structural Load", plot_bc = True, save_path = None)
-			elif (feaMode == FEA_MODE.THERMAL):
-				fe_thermal_solver = hex_thermal_fea.HexThermalFEA(mesh = mesh,
-							mat_prop = mat_prop,
-							bc = bc,
-							solver = solver,
-							dsolver = dsolver,
-							rtol = 1e-8,
-							elem_body_force = elem_body_force)
-				fe_solver = fe_thermal_solver
-
-			#fe_thermal_solver.plot_mesh(title = "Thermal Load", plot_bc = True, save_path = None)
-			elif (feaMode == FEA_MODE.THERMO_STRUCTURAL):
-				# One coupled solver: thermal solve -> thermal force -> structural solve (autograd through both).
-				fe_structural_solver = ThermoStructuralFEA(mesh = mesh,
-							mat_prop = mat_prop,
-							structural_bc = structural_bc,
-							thermal_bc = thermal_bc,
-							solver = solver,
-							dsolver = dsolver,
-							rtol = 1e-8,
-							elem_body_force = elem_body_force,
-							thermoElasticReferenceTemperature = to_params.ThermalReferenceTemperature,
-							conductivity_penalty = to_params.ConductivityPenalty,
-							conductivity_void_ratio = to_params.ConductivityVoidRatio)
-				fe_thermal_solver = fe_structural_solver.thermal_fea
-				fe_solver = fe_structural_solver  # primary solver is structural
-			
 			# Ensure the output directory exists
 			output_base = f"./Results/Results_{date_str}/{subFolder}/Problems/"
 			os.makedirs(output_base, exist_ok=True)
