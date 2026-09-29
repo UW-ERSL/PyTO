@@ -98,11 +98,22 @@ def test_gui_body_force_reaches_the_solver_input():
     assert gui_elem_body_force(SimpleNamespace(), mesh, mat) is None      # Body force window never opened
 
 
-def test_run_gui_launcher_resolves_without_pythonpath():
-    """run_gui.py (repository root) finds the package by itself and uses PyTOGUI.main."""
-    import runpy
+def test_run_gui_launcher_check():
+    """run_gui.py --check: with the GUI's modules it runs directly; from a Python without them (system python) it
+    restarts itself in the PyToLib conda environment."""
+    import shutil
+    import subprocess
     import sys
     root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    ns = runpy.run_path(os.path.join(root, "run_gui.py"), run_name="not_main")   # does not start the window
-    assert ns["main"].__module__ == "pyto.gui.PyTOGUI"
-    assert os.path.join(root, "src") in sys.path
+    env = {k: v for k, v in os.environ.items() if k not in ("PYTHONPATH", "PYTO_GUI_RELAUNCHED")}
+    r = subprocess.run([sys.executable, os.path.join(root, "run_gui.py"), "--check"], capture_output=True, text=True,
+                       timeout=120, env=env)
+    assert r.returncode == 0 and r.stdout.startswith("OK:"), r.stdout + r.stderr
+    bare = "/usr/bin/python3"
+    has_gui = subprocess.run([bare, "-c", "import PyQt5"], capture_output=True).returncode == 0 \
+        if os.path.isfile(bare) else True
+    if has_gui or not (os.environ.get("CONDA_EXE") or shutil.which("conda")):
+        pytest.skip("needs a Python without the GUI modules and conda")
+    r = subprocess.run([bare, os.path.join(root, "run_gui.py"), "--check"], capture_output=True, text=True,
+                       timeout=180, env=env)
+    assert r.returncode == 0 and "OK:" in r.stdout and "(environment PyToLib)" in r.stdout, r.stdout + r.stderr
