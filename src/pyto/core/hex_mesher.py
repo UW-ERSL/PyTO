@@ -4,6 +4,16 @@ import dataclasses
 from typing import Optional
 import numpy as np
 import pyvista as pv # pip install pyvista
+import warnings
+
+
+def _voxelize(stl, elem_size):
+	"""pv.voxelize (deprecated in pyvista 0.46). Its replacement, DataSetFilters.voxelize, uses another algorithm
+	and gives different meshes, so PyTO keeps this one and only hides the deprecation notice.
+	ponytail: breaks when pyvista removes pv.voxelize; then port to DataSetFilters.voxelize and re-baseline."""
+	with warnings.catch_warnings():
+		warnings.filterwarnings("ignore", message=".*pyvista.voxelize.*deprecated")
+		return pv.voxelize(stl, density=elem_size, check_surface=False)
 from scipy.sparse import coo_matrix
 import os
 import time
@@ -238,7 +248,7 @@ class HexMesher:
 		center = np.array(self.stlMesh.center)
 		self.stlMesh.points = (self.stlMesh.points - center) * scale + center
 		# Now voxelize
-		self.voxels = pv.voxelize(self.stlMesh, density=self.elem_size, check_surface=False)
+		self.voxels = _voxelize(self.stlMesh, self.elem_size)
 		# Unscale the stl back to its original size
 		self.stlMesh.points = (self.stlMesh.points - center) / scale + center
 		# Unscale the voxel points back to original size (same scaling as used for STL mesh)
@@ -424,7 +434,7 @@ class HexMesher:
 				  f"Check the mesh, and repair the STL if parts are missing.")
 		# Create a single voxelized mesh for the entire assembly
 	
-		voxel_mesh = pv.voxelize(self.stlMesh, density=self.elem_size, check_surface=False)
+		voxel_mesh = _voxelize(self.stlMesh, self.elem_size)
 		component_ids = np.zeros(voxel_mesh.n_cells, dtype=np.int32)
 		
 		# Get cell centers of the voxelized mesh
