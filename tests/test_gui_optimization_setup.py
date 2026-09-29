@@ -141,9 +141,15 @@ def test_gradient_choice(qapp):
     manual_item = panel.gradient_combo.model().item(1)
     assert panel.get_spec().method.gradient == "autodiff" and manual_item.isEnabled()
     panel.gradient_combo.setCurrentIndex(1)
-    assert panel.get_spec().method.gradient == "manual" and "Hand-derived" in panel.gradient_label.text()
+    assert panel.get_spec().method.gradient == "manual" and "Manual" in panel.gradient_label.text()
     plan = gs.prepare_run(panel.get_spec(), "structural", {"Load1": {"nodes": [1]}})
-    assert not plan.errors and plan.to_params.Gradient == "manual" and "no adjoint" in plan.cost
+    assert not plan.errors and plan.to_params.Gradient == "manual" and "0 adjoint" in plan.cost
+    # p-norm stress has a manual gradient (one adjoint solve); mass does not
+    spec = panel.get_spec()
+    spec.constraints.append(ConstraintSpec("StressPNorm()", "<=", 1e8))
+    assert "1 adjoint" in gs.prepare_run(spec, "structural", {}).cost and not gs.prepare_run(spec, "structural", {}).errors
+    spec.constraints.append(ConstraintSpec("Mass()", "<=", 1.0))
+    assert gs.prepare_run(spec, "structural", {}).errors
     # a user expression has no hand-derived gradient: Manual greyed out, back to AD
     spec = panel.get_spec()
     spec.objective = ObjectiveSpec("Displacement(Load1, y, mean)", "maximize")

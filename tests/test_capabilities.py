@@ -25,7 +25,7 @@ def test_method_support_matrix():
     assert all(ok for ok, _ in method_support(CLASSICAL, "thermal").values())
     maxi = OptimizationSpec(objective=ObjectiveSpec("Compliance()", "maximize"))
     assert not method_support(maxi, "structural")["OC"][0]
-    assert "autograd" in gradient_source("MMA") and "Hand-derived" in gradient_source("PARETO")
+    assert "autograd" in gradient_source("MMA") and "Manual" in gradient_source("PARETO")
 
 
 def test_cost_estimate_counts_adjoint_solves():

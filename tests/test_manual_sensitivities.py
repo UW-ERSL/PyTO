@@ -1,4 +1,4 @@
-"""Hand-derived ('manual') gradients must equal the autograd gradients of the same objective/constraints."""
+"""Manual gradients must equal the autograd gradients of the same objective/constraints."""
 import contextlib
 import io
 import os
@@ -46,16 +46,17 @@ def _params(objective, *constraints):
 
 def test_structural(structural_fe_solver):
     fe = structural_fe_solver
-    C0 = 1.0
     p = _params((TO_QOI.COMPLIANCE, None), (TO_QOI.VOLUME_FRACTION, None, 0.5), (TO_QOI.VOLUME_FRACTION_MIN, None, 0.1),
-                (TO_QOI.MASS, None, 50.0), (TO_QOI.COMPLIANCE, None, C0))
+                (TO_QOI.COMPLIANCE, None, 1.0), (TO_QOI.PNORM_STRESS, None, 1e8))
     assert manual_support(p, fe) == (True, "")
     _compare(p, fe)
-    _compare(_params((TO_QOI.VOLUME_FRACTION, None), (TO_QOI.COMPLIANCE, None, C0)), fe)
-    _compare(_params((TO_QOI.MASS, None), (TO_QOI.COMPLIANCE, None, C0)), fe)
-    g = np.zeros(fe.bc.num_dofs)
-    g[np.nonzero(fe.bc.force)[0]] = 1.0
-    _compare(_params((TO_QOI.GVECTOR, g), (TO_QOI.VOLUME_FRACTION, None, 0.5)), fe)
+    _compare(_params((TO_QOI.VOLUME_FRACTION, None), (TO_QOI.COMPLIANCE, None, 1.0)), fe)
+
+
+def test_pnorm_stress(structural_fe_solver):
+    """p-norm stress objective and constraint: value and adjoint gradient equal the autograd ones."""
+    _compare(_params((TO_QOI.PNORM_STRESS, None), (TO_QOI.VOLUME_FRACTION, None, 0.5),
+                     (TO_QOI.PNORM_STRESS, None, 1e8)), structural_fe_solver, tol=1e-7)
 
 
 def test_thermal(thermal_fe_solver):
@@ -85,20 +86,21 @@ def test_thermo_structural():
     _compare(_params((TO_QOI.COMPLIANCE, None), (TO_QOI.VOLUME_FRACTION, None, 0.5)), fe, tol=1e-6)
 
 
-def test_unsupported_formulations_say_why(structural_fe_solver):
+def test_unsupported_formulations_say_why(structural_fe_solver, thermal_fe_solver):
     fe = structural_fe_solver
     ok, reason = manual_support(_params((TO_QOI.GFUNCTION, lambda s, x, f: s.sum())), fe)
     assert not ok and "automatic differentiation" in reason
-    ok, reason = manual_support(_params((TO_QOI.COMPLIANCE, None), (TO_QOI.MAX_VONMISES_STRESS, None, 1e8)), fe)
-    assert not ok and "stress" in reason
+    for q in (TO_QOI.MASS, TO_QOI.MAX_VONMISES_STRESS, TO_QOI.STRESS_FAILURE_FACTOR):
+        ok, reason = manual_support(_params((TO_QOI.COMPLIANCE, None), (q, None, 1.0)), fe)
+        assert not ok and q.name in reason
+    ok, reason = manual_support(_params((TO_QOI.PNORM_STRESS, None)), thermal_fe_solver)
+    assert not ok and "structural" in reason
     fe.elem_body_force = np.ones(3 * fe.mesh.num_elems)
     try:
         ok, reason = manual_support(_params((TO_QOI.COMPLIANCE, None)), fe)
         assert not ok and "body force" in reason
     finally:
         fe.elem_body_force = None
-
-
 
 def _history(driver, fe_solver, to_params, gradient, **kw):
     import copy
@@ -119,6 +121,16 @@ def test_mma_manual_matches_autodiff(structural_problem, heaviside):
             for g in ("autodiff", "manual")]
     to_params.HeavisideProjection, to_params.HeavisideBetaInterval = False, 50
     np.testing.assert_allclose(runs[1], runs[0], rtol=1e-8)
+
+
+def test_mma_manual_pnorm_matches_autodiff(structural_problem):
+    from pyto.topopt.drivers.mma import topopt_mma
+    import copy
+    to_params = copy.deepcopy(structural_problem[4])
+    to_params.Objective = (TO_QOI.PNORM_STRESS, None)
+    runs = [_history(topopt_mma, _new_structural(structural_problem), to_params, g, maxMMAIterations=4)
+            for g in ("autodiff", "manual")]
+    np.testing.assert_allclose(runs[1], runs[0], rtol=1e-6)
 
 
 def test_oc_manual_matches_autodiff(structural_problem):

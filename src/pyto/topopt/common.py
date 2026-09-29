@@ -80,8 +80,8 @@ class TOParams: # These are the default parameters
     Eliminate_Hanging_Elements: bool = False # Should the hanging elements be eliminated after optimization?
     MaterialsExcelFile: str = '' # Path to the Excel file containing material properties for MMTO problems
     materialModel: MaterialModel = MaterialModel.SIMP # Material model for density based topology optimization
-    Gradient: str = "autodiff" # MMA/OC gradients: "autodiff" (torch autograd) or "manual" (hand-derived, see
-    # topopt/manual_sensitivities.py; compliance/volume/mass/g.u only)
+    Gradient: str = "autodiff" # MMA/OC gradients: "autodiff" (torch autograd) or "manual" (see
+    # topopt/manual_sensitivities.py; compliance, p-norm stress, volume fraction only)
     # Thermo-mechanical problems only (see physics/thermoelastic/thermostructural_fea.py)
     ThermalReferenceTemperature: float = 23.0 # Stress-free temperature of the structure
     ConductivityPenalty: float = None # SIMP exponent of the conductivity (None = module default)

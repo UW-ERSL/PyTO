@@ -17,14 +17,14 @@ from pyto.topopt.expressions import compile_expression
 GRADIENT_SOURCE = {
     "MMA": "Automatic differentiation: PyTorch autograd through the FE solve (adjoint), any objective/constraint",
     "OC": "Automatic differentiation: PyTorch autograd (compliance with a volume constraint only)",
-    "PARETO": "Hand-derived topological sensitivity (compliance with a volume constraint only)",
-    "LEVELSET": "Hand-derived shape derivative (compliance with a volume constraint only)",
+    "PARETO": "Manual topological sensitivity (compliance with a volume constraint only)",
+    "LEVELSET": "Manual shape derivative (compliance with a volume constraint only)",
 }
 
 
 def gradient_source(method: str, gradient: str = "autodiff") -> str:
     if gradient == "manual" and method not in MANUAL_ONLY:
-        return "Hand-derived (manual) sensitivities: compliance, volume fraction and mass only"
+        return "Manual sensitivities: compliance, p-norm stress and volume fraction only"
     return GRADIENT_SOURCE[method]
 
 
@@ -32,7 +32,7 @@ MANUAL_ONLY = ("PARETO", "LEVELSET")          # no autograd path in these driver
 
 
 def manual_gradient_support(spec: OptimizationSpec, selections: dict = None, body_force: bool = False) -> tuple:
-    """(True, "") if MMA/OC can use hand-derived gradients for this formulation, else (False, reason).
+    """(True, "") if MMA/OC can use manual gradients for this formulation, else (False, reason).
 
     The solver-dependent limits (per-problem conductivity laws, prescribed values together with loads) are checked
     again at run time by manual_sensitivities.manual_support."""
@@ -46,8 +46,8 @@ def manual_gradient_support(spec: OptimizationSpec, selections: dict = None, bod
     except Exception as e:
         return False, f"Fix the formulation first ({e})."
     ok, reason = formulation_support(to_params)
-    if ok and body_force and any(_key(e) == "Compliance()" for e in exprs):
-        return False, "The hand-derived compliance gradient does not include design-dependent body forces."
+    if ok and body_force and any(_key(e) in ("Compliance()", "StressPNorm()") for e in exprs):
+        return False, "The manual gradients do not include design-dependent body forces."
     return ok, reason
 
 
@@ -101,7 +101,10 @@ def cost_estimate(spec: OptimizationSpec, selections: dict = None, forward_s: fl
                   backward_s: float = None) -> str:
     """Per-iteration linear solves (and seconds, if single forward/backward timings are given) for MMA."""
     if spec.method.gradient == "manual" or spec.method.name in MANUAL_ONLY:
-        return "Per iteration: 1 forward FE solve; the hand-derived compliance gradient needs no adjoint solve."
+        k = int(any(_key(e) == "StressPNorm()"
+                    for e in [spec.objective.expression] + [c.expression for c in spec.active_constraints]))
+        return (f"Per iteration: 1 forward FE solve + {k} adjoint solve{'s' if k != 1 else ''} "
+                f"(manual: compliance is self-adjoint, p-norm stress needs one).")
     k = solution_dependent_count(spec, selections)
     text = f"Per iteration: 1 forward FE solve + {k} adjoint solve{'s' if k != 1 else ''}"
     if forward_s is not None and backward_s is not None:
@@ -118,7 +121,7 @@ class GradientCheck:
 
 def check_gradient(to_params, fe_solver, n_elements: int = 5, rel_step: float = 1e-4, tol: float = 1e-3,
                    seed: int = 0) -> list:
-    """Compare the gradients of the objective and every constraint (autograd, or the hand-derived ones when
+    """Compare the gradients of the objective and every constraint (autograd, or the manual ones when
     to_params.Gradient == "manual") with central finite differences.
 
     Evaluated at a random interior design (0.3..0.9) on n_elements random elements, with the same material law the

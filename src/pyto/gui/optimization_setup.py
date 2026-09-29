@@ -27,7 +27,7 @@ RESPONSE_LABELS = {
 }
 EXPRESSION_LABEL = "Expression..."
 PYTHON_LABEL = "Python function..."
-GRADIENT_CHOICES = [("Automatic differentiation", "autodiff"), ("Manual (hand-derived)", "manual")]
+GRADIENT_CHOICES = [("Automatic differentiation", "autodiff"), ("Manual", "manual")]
 AGGREGATE_LABELS = {"mean": "mean", "p-norm (smooth max)": "pnorm", "sum": "sum"}
 UNITS_NOTE = "Bounds are in SI units (m, Pa, K, N, J, kg), independent of the display unit system."
 
@@ -400,7 +400,7 @@ if QtWidgets is not None:
             if method in MANUAL_ONLY:                      # these drivers have no autograd path
                 self.gradient_combo.setCurrentIndex(1)
                 self.gradient_combo.setEnabled(False)
-                self.gradient_combo.setToolTip(f"{method} uses its own hand-derived sensitivity.")
+                self.gradient_combo.setToolTip(f"{method} always uses its own manual sensitivity.")
             else:
                 if not self.gradient_combo.isEnabled():    # leaving Pareto/LevelSet: back to the AD default
                     self.gradient_combo.setCurrentIndex(0)
@@ -409,7 +409,7 @@ if QtWidgets is not None:
                 manual_item.setToolTip(manual_why)
                 if not manual_ok:
                     self.gradient_combo.setCurrentIndex(0)
-                self.gradient_combo.setToolTip(manual_why or "Manual: hand-derived sensitivities, no autograd graph.")
+                self.gradient_combo.setToolTip(manual_why or "Manual: compliance, p-norm stress and volume fraction; no autograd graph.")
             self.gradient_combo.blockSignals(False)
             self.gradient_label.setText(gradient_source(method, self.gradient_combo.currentData()))
             try:

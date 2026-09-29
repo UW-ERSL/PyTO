@@ -1,6 +1,6 @@
 # PyTO: Python Topology Optimization
 
-PyTO is a Python library and desktop GUI for **finite element analysis (FEA)** and **topology optimization (TO)** of 3D parts on voxel (hexahedral) meshes. You bring an STL of the design space, apply supports and loads, and PyTO finds where material should go to minimize (or maximize) an objective under constraints. Gradients come from **automatic differentiation** (PyTorch autograd through the FE solve), so new objectives and constraints need no hand-derived sensitivities.
+PyTO is a Python library and desktop GUI for **finite element analysis (FEA)** and **topology optimization (TO)** of 3D parts on voxel (hexahedral) meshes. You bring an STL of the design space, apply supports and loads, and PyTO finds where material should go to minimize (or maximize) an objective under constraints. Gradients come from **automatic differentiation** (PyTorch autograd through the FE solve), so new objectives and constraints need no manual sensitivities.
 
 ---
 
@@ -18,10 +18,10 @@ Meshing is automatic from an STL (single or multi-body). Linear solvers: PARDISO
 ### Topology optimization
 | Method | Gradient | Handles |
 |---|---|---|
-| **MMA** (default) | autograd through the FE solve, or hand-derived | every objective and constraint below, all physics |
-| **OC** (optimality criteria) | autograd, or hand-derived | minimize compliance with one volume limit |
-| **Pareto** (topological sensitivity) | hand-derived | minimize compliance with one volume limit, incl. body force |
-| **LevelSet** | hand-derived shape derivative | minimize compliance with one volume limit |
+| **MMA** (default) | autograd through the FE solve, or manual | every objective and constraint below, all physics |
+| **OC** (optimality criteria) | autograd, or manual | minimize compliance with one volume limit |
+| **Pareto** (topological sensitivity) | manual (topological sensitivity) | minimize compliance with one volume limit, incl. body force |
+| **LevelSet** | manual (shape derivative) | minimize compliance with one volume limit |
 
 **Objectives and constraints** (minimize or maximize; `<=` or `>=` limits), available per physics: compliance, volume fraction, mass, displacement at a selection (x/y/z/magnitude; mean or smooth maximum), temperature, reaction force, strain energy, von Mises stress (p-norm), stress failure factor (stress/yield), mechanical compliance (load work without the thermal-expansion part), thermal compliance.
 
@@ -29,7 +29,7 @@ Meshing is automatic from an STL (single or multi-body). Linear solvers: PARDISO
 - a formula over the quantities above, for example `Displacement(Load1, y, mean) / 1e-3 + 0.1 * VolumeFraction()`. It is checked against a whitelist, never executed as code.
 - or a Python function `fn(sol, x, fe_solver)` written with torch operations.
 
-**Gradient choice (MMA, OC):** automatic differentiation by default. *Manual* uses hand-derived sensitivities (no autograd graph, no adjoint solve for compliance) and is offered only for compliance, volume fraction and mass; it is not available for stress, user formulas, Python functions or design-dependent body forces. Pareto and LevelSet always use their own hand-derived sensitivities.
+**Gradient choice (MMA, OC):** automatic differentiation by default. *Manual* gradients (no autograd graph) cover only compliance, p-norm stress (structural) and volume fraction; everything else, and design-dependent body forces, needs automatic differentiation. Pareto and LevelSet always use their own manual sensitivities.
 
 **Manufacturing and regularization:** density filter, Heaviside projection, symmetry planes, cyclic symmetry, extrusion, keep-solid regions.
 

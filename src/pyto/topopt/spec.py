@@ -94,7 +94,7 @@ class MethodSpec:
     name: str = "MMA"
     max_iterations: int = 150
     move_limit: float = 0.2
-    gradient: str = "autodiff"                   # "autodiff" or "manual" (hand-derived; MMA/OC only)
+    gradient: str = "autodiff"                   # "autodiff" or "manual" (MMA/OC only)
 
 
 @dataclass

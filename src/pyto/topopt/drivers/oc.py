@@ -224,7 +224,7 @@ def topopt_optimality_criteria(
 			with torch.set_grad_enabled(not manual):
 				sol_t = fe_solver.solve(x_t, material_model)
 				obj_t = compute_objective_and_gradient(to_params, sol_t, x_t, fe_solver, KE, material_model)
-			if manual:  # hand-derived dC/dx, same convention as autograd
+			if manual:  # manual dC/dx, same convention as autograd
 				grad_obj_t = torch.as_tensor(manual_gradients(to_params, sol_t, x_t, fe_solver, material_model)[0])
 			else:
 				(grad_obj_t,) = torch.autograd.grad(obj_t, x_t)

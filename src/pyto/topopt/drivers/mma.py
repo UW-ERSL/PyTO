@@ -257,7 +257,7 @@ def topopt_mma(fe_solver, #hex_structural_fea.HexStructuralFEA or hex_thermal_fe
 
 
     def manual_step(x_raw: torch.Tensor):
-        """obj_cons_function with hand-derived gradients (to_params.Gradient == "manual"): same values, the
+        """obj_cons_function with manual gradients (to_params.Gradient == "manual"): same values, the
         gradient w.r.t. the physical density comes from manual_sensitivities and is chained back through the
         Heaviside projection and the density filter by hand."""
         with torch.no_grad():

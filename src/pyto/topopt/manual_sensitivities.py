@@ -1,15 +1,14 @@
-"""Hand-derived ("manual") gradients for the MMA and OC drivers, as an alternative to automatic differentiation.
+"""Manual gradients for the MMA and OC drivers, as an alternative to automatic differentiation.
 
-to_params.Gradient = "manual" makes MMA/OC use these instead of torch.autograd. They exist only where a hand-derived
+to_params.Gradient = "manual" makes MMA/OC use these instead of torch.autograd. They exist only where a derived
 sensitivity is available and verified against autograd (tests/test_manual_sensitivities.py):
 
-  objective    COMPLIANCE (structural, thermal, thermo-structural), VOLUME_FRACTION, MASS, GVECTOR (structural)
-  constraints  VOLUME_FRACTION (<=), VOLUME_FRACTION_MIN (>=), MASS, COMPLIANCE
+  objective    COMPLIANCE (structural, thermal, thermo-structural), PNORM_STRESS (structural), VOLUME_FRACTION
+  constraints  the same, VOLUME_FRACTION as <= or >= (VOLUME_FRACTION_MIN)
 
-Not available (manual_support() says why): user expressions / Python functions (GFUNCTION), stress objectives and
-constraints (the legacy stress sensitivity does not match the autograd gradient), design-dependent body forces,
-per-problem conductivity laws, and compliance with varying prescribed values together with loads. Values are computed by the same functions as the autograd path, so both
-modes optimize exactly the same problem; only the derivative differs in how it is obtained.
+Everything else (mass, max stress, failure factor, user expressions, Python functions) needs automatic
+differentiation; so do design-dependent body forces and per-problem conductivity laws. manual_support() says why.
+Values are computed by the same functions as the autograd path, so both modes optimize exactly the same problem.
 """
 import contextlib
 import io
@@ -22,8 +21,9 @@ import torch
 from pyto.autodiff.material_model import MaterialModel
 from pyto.topopt.common import TO_QOI
 
-MANUAL_OBJECTIVES = {TO_QOI.COMPLIANCE, TO_QOI.VOLUME_FRACTION, TO_QOI.MASS, TO_QOI.GVECTOR}
-MANUAL_CONSTRAINTS = {TO_QOI.VOLUME_FRACTION, TO_QOI.VOLUME_FRACTION_MIN, TO_QOI.MASS, TO_QOI.COMPLIANCE}
+MANUAL_OBJECTIVES = {TO_QOI.COMPLIANCE, TO_QOI.PNORM_STRESS, TO_QOI.VOLUME_FRACTION}
+MANUAL_CONSTRAINTS = {TO_QOI.COMPLIANCE, TO_QOI.PNORM_STRESS, TO_QOI.VOLUME_FRACTION, TO_QOI.VOLUME_FRACTION_MIN}
+_AD_ONLY_HINT = " (manual gradients cover compliance, p-norm stress and volume fraction; use automatic differentiation)"
 
 
 def _physics(fe_solver):
@@ -32,43 +32,41 @@ def _physics(fe_solver):
 
 
 def formulation_support(to_params) -> tuple:
-    """manual_support() without the solver: only which objective/constraint types have a hand-derived gradient."""
+    """manual_support() without the solver: only which objective/constraint types have a manual gradient."""
     obj = to_params.Objective[0]
     if obj not in MANUAL_OBJECTIVES:
-        return False, (f"No hand-derived gradient for the objective {getattr(obj, 'name', obj)}"
-                       + (" (user expressions and Python functions need automatic differentiation)"
-                          if obj == TO_QOI.GFUNCTION else "") + ".")
+        return False, f"No manual gradient for the objective {getattr(obj, 'name', obj)}{_AD_ONLY_HINT}."
     for c in to_params.Constraints:
         if c[0] not in MANUAL_CONSTRAINTS:
-            return False, (f"No hand-derived gradient for the constraint {getattr(c[0], 'name', c[0])}"
-                           + (" (stress sensitivities are available with automatic differentiation only)"
-                              if c[0] in (TO_QOI.MAX_VONMISES_STRESS, TO_QOI.STRESS_FAILURE_FACTOR,
-                                          TO_QOI.PNORM_STRESS) else "") + ".")
+            return False, f"No manual gradient for the constraint {getattr(c[0], 'name', c[0])}{_AD_ONLY_HINT}."
     return True, ""
 
 
+def _types(to_params):
+    return {to_params.Objective[0]} | {c[0] for c in to_params.Constraints}
+
+
 def manual_support(to_params, fe_solver) -> tuple:
-    """(True, "") if every objective/constraint has a hand-derived gradient for this solver, else (False, reason)."""
+    """(True, "") if every objective/constraint has a manual gradient for this solver, else (False, reason)."""
     ok, reason = formulation_support(to_params)
     if not ok:
         return ok, reason
-    obj = to_params.Objective[0]
-    uses_compliance = obj == TO_QOI.COMPLIANCE or any(c[0] == TO_QOI.COMPLIANCE for c in to_params.Constraints)
+    types = _types(to_params)
     physics = _physics(fe_solver)
-    if uses_compliance and getattr(fe_solver, "elem_body_force", None) is not None:
-        return False, "The hand-derived compliance gradient does not include design-dependent body forces."
-    thermal = fe_solver.thermal_fea if physics == "thermo-structural" else fe_solver if physics == "thermal" else None
-    if uses_compliance and thermal is not None and (getattr(thermal, "conductivity_penalty", None) is not None
-                                                    or getattr(thermal, "conductivity_void_ratio", None) is not None):
-        return False, "The hand-derived compliance gradient assumes the default conductivity law."
-    if uses_compliance:
+    if TO_QOI.PNORM_STRESS in types and physics != "structural":
+        return False, "The manual p-norm stress gradient is for structural problems only."
+    if types & {TO_QOI.COMPLIANCE, TO_QOI.PNORM_STRESS} and getattr(fe_solver, "elem_body_force", None) is not None:
+        return False, "The manual gradients do not include design-dependent body forces."
+    if TO_QOI.COMPLIANCE in types:
+        thermal = fe_solver.thermal_fea if physics == "thermo-structural" else fe_solver if physics == "thermal" else None
+        if thermal is not None and (getattr(thermal, "conductivity_penalty", None) is not None
+                                    or getattr(thermal, "conductivity_void_ratio", None) is not None):
+            return False, "The manual compliance gradient assumes the default conductivity law."
         bcs = [fe_solver.bc] + ([fe_solver.thermal_fea.bc] if physics == "thermo-structural" else [])
         for bc in bcs:
             if _varying_prescribed(bc) and np.any(bc.force):
-                return False, ("The hand-derived compliance gradient covers load-driven or prescribed-value-driven "
+                return False, ("The manual compliance gradient covers load-driven or prescribed-value-driven "
                                "problems, not both at once (varying prescribed values together with loads).")
-    if obj == TO_QOI.GVECTOR and physics != "structural":
-        return False, "The hand-derived g.u gradient is for structural problems only."
     return True, ""
 
 
@@ -111,13 +109,12 @@ def _compliance_gradient(sol, x, fe_solver, material_model):
         mesh.edofMat = saved
 
 
-def _gvector_gradient(sol, x, fe_solver, material_model, g):
-    from pyto.autodiff.reference_adjoint import compute_solution_dotproduct_and_gradient
+def _pnorm_gradient(sol, x, fe_solver, material_model):
+    from pyto.autodiff.reference_adjoint import compute_pnorm_stress_and_sensitivity
     proxy = types.SimpleNamespace(mesh=fe_solver.mesh, bc=fe_solver.bc, solver=fe_solver.solver,
-                                  dsolver=fe_solver.dsolver, kwargs=fe_solver.kwargs,
+                                  dsolver=fe_solver.dsolver, kwargs=fe_solver.kwargs, mat_prop=fe_solver.mat_prop,
                                   stiff_mtrx=_scipy_stiffness(fe_solver))
-    return compute_solution_dotproduct_and_gradient(sol, x, proxy, fe_solver.elem_stiff[0], material_model,
-                                                    np.asarray(g, dtype=float))[1]
+    return compute_pnorm_stress_and_sensitivity(sol, x, proxy, fe_solver.elem_stiff[0], material_model)[1]
 
 
 def manual_gradients(to_params, sol, x, fe_solver, material_model=MaterialModel.SIMP):
@@ -137,19 +134,14 @@ def manual_gradients(to_params, sol, x, fe_solver, material_model=MaterialModel.
             cache["C"] = _compliance_gradient(sol, x, fe_solver, material_model)
         return cache["C"]
 
-    def mass():
-        vol = float(np.prod(fe_solver.mesh.elem_size))
-        return np.full(n, vol * fe_solver.mat_prop.mass_density)
+    def pnorm():
+        if "P" not in cache:
+            cache["P"] = _pnorm_gradient(sol, x, fe_solver, material_model)
+        return cache["P"]
 
     obj = to_params.Objective[0]
-    if obj == TO_QOI.COMPLIANCE:
-        d_obj = compliance()
-    elif obj == TO_QOI.VOLUME_FRACTION:
-        d_obj = np.full(n, 1.0 / n)
-    elif obj == TO_QOI.MASS:
-        d_obj = mass()
-    else:                                                          # GVECTOR
-        d_obj = _gvector_gradient(sol, x, fe_solver, material_model, to_params.Objective[1])
+    d_obj = {TO_QOI.COMPLIANCE: compliance, TO_QOI.PNORM_STRESS: pnorm,
+             TO_QOI.VOLUME_FRACTION: lambda: np.full(n, 1.0 / n)}[obj]()
 
     rows = []
     for ctype, _param, limit in to_params.Constraints:
@@ -157,8 +149,8 @@ def manual_gradients(to_params, sol, x, fe_solver, material_model=MaterialModel.
             rows.append(np.full(n, 1.0 / (n * limit)))
         elif ctype == TO_QOI.VOLUME_FRACTION_MIN:                  # 1 - mean(x)/limit
             rows.append(np.full(n, -1.0 / (n * limit)))
-        elif ctype == TO_QOI.MASS:                                 # mass/limit - 1
-            rows.append(mass() / limit)
+        elif ctype == TO_QOI.PNORM_STRESS:                         # P/limit - 1
+            rows.append(pnorm() / limit)
         else:                                                      # COMPLIANCE: C/limit - 1
             rows.append(compliance() / limit)
     return np.asarray(d_obj, dtype=float), np.array(rows, dtype=float).reshape(len(rows), n)
