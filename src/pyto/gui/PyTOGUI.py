@@ -4081,28 +4081,23 @@ class StructuralTopOptWindow(QtWidgets.QDialog):
         try:
             # Call topopt_mma with correct parameters
             if method == "DENSITY-MMA":
-                u, history, success, errorMsg, nFEAs = topopt_mma(
-                    feaMode=FEA_MODE.STRUCTURAL,
-                    fe_structural_solver=fe_solver,
-                    fe_thermal_solver=None,
-                    to_params=self.to_params,
-                    maxiteration=self.to_params.MaxIterations,
+                # Current single-solver MMA signature (the two-solver feaMode/fe_structural_solver form was
+                # removed in the torch migration). The result is emitted once, after this if/elif block.
+                u, history, success, error_msg, n_feas = topopt_mma(
+                    fe_solver,
+                    to_params=to_params,
+                    maxMMAIterations=to_params.MaxIterations,
                     print_progress=True,
                     plot_progress=False,
                     binarize_topology=False,
                     progress_callback=progress_callback,
                     plotter=None,
                 )
-                
                 if success:
                     self.parent.optimized_x = u
-                    self.optimization_done.emit(success, error_msg, history, u, self.fe_solver)
-                else:
-                    self.optimization_done.emit(False, f"Optimization failed: {errorMsg}", None, None, None)
-                
+
             elif method == "DENSITY-OC":
                 u, history, success, error_msg, n_feas = topopt_optimality_criteria(
-                    feaMode=FEA_MODE.STRUCTURAL,
                     fe_solver=fe_solver,
                     to_params=to_params,
                     maxIterations=250,
@@ -4141,8 +4136,6 @@ class StructuralTopOptWindow(QtWidgets.QDialog):
                     numReinit=10000,
                     print_progress=True,
                     plot_progress=False,
-                    binarize_topology=False,
-                    progress_callback=progress_callback,
                     plotter=None,
                 )
                 

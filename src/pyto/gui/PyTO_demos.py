@@ -110,7 +110,7 @@ while True:
 
         startTime = time.time()
         u = thermal_fe_solver.solve()
-        uMax = np.max(np.abs(u))
+        uMax = float(u.abs().max())  # solve() returns a torch tensor
         print("FEA time: ", time.time() - startTime)
         thermal_fe_solver.plot_temperature()
        
@@ -189,11 +189,9 @@ while True:
         nDOFDesired = 3000
         tensileForce = 100000 # tensile force in Newtons
         T0 = 23 # reference temperature in Celsius
-        deltaTExpected = heat_load*L/(mat_prop.thermal_conductivity*Area)
-
-        
         mesh, mat_prop, bc,elem_body_force = getThermalProblem(thermalProblem, nDOFDesired=nDOFDesired,
                                                                heat_load = heat_load, T0 = T0)
+        deltaTExpected = heat_load*L/(mat_prop.thermal_conductivity*Area)  # needs mat_prop, so after the problem
         solver = Solvers.PARDISO 
 
         thermal_fe_solver = HexThermalFEA(mesh = mesh,
@@ -205,7 +203,7 @@ while True:
         # Solve for temperature field
         thermal_fe_solver.solve()
         
-        deltaT = np.max(thermal_fe_solver.sol) - np.min(thermal_fe_solver.sol)
+        deltaT = float(thermal_fe_solver.sol.max() - thermal_fe_solver.sol.min())  # sol is a torch tensor
         # Get thermal forces
         thermo_elastic_force = thermal_fe_solver.get_thermoelastic_force()
         
@@ -225,7 +223,9 @@ while True:
     
         structural_solver.solve()
         structural_solver.postprocess()
-        expectedDeformation = L*mat_prop.thermal_expansion_coefficient*deltaTExpected + tensileForce*L/(mat_prop.youngs_modulus*Area)
+        # The temperature rises linearly from T0 to T0 + deltaT along the bar, so the free thermal elongation is
+        # alpha * L * deltaT / 2 (the mean temperature rise), not alpha * L * deltaT.
+        expectedDeformation = L*mat_prop.thermal_expansion_coefficient*deltaTExpected/2 + tensileForce*L/(mat_prop.youngs_modulus*Area)
         expectedStress = tensileForce/Area
         print('-----------------------------')
         print("Expected max temperature change: ",deltaTExpected + T0 )
@@ -249,7 +249,7 @@ while True:
    
         title = f'nDOF: {3*fe_solver.mesh.num_nodes}, nElem: {fe_solver.mesh.num_elems}'
         startTime = time.time()
-        u, history,success,errorMsg,nFEAs = topopt_mma(feaMode, fe_solver,None,plot_progress=True,
+        u, history,success,errorMsg,nFEAs = topopt_mma(fe_solver, plot_progress=True,
                                     to_params = to_params)
         timeTaken = time.time() - startTime
 
@@ -366,7 +366,7 @@ while True:
    
         title = f'nDOF: {fe_solver.mesh.num_nodes}, nElem: {fe_solver.mesh.num_elems}'
         startTime = time.time()
-        u, history,success,errorMsg,nFEAs = topopt_mma(feaMode, None, fe_solver,plot_progress=True,
+        u, history,success,errorMsg,nFEAs = topopt_mma(fe_solver, plot_progress=True,
                                     to_params = to_params)
         timeTaken = time.time() - startTime
 

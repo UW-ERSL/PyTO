@@ -143,11 +143,11 @@ class HexStructuralFEA:
 
   #################################################################
 
-  def solve(self, x, material_model: MaterialModel = None, extra_force=None, elem_thermal_strain=None):
+  def solve(self, x=None, material_model: MaterialModel = None, extra_force=None, elem_thermal_strain=None):
       """Solve K(x) u = f.
 
       Args:
-        x: (E,) design densities (torch).
+        x: (E,) design densities (torch). None means fully solid (a plain analysis), as in HexThermalFEA.solve.
         material_model: SIMP/RAMP/... (see pyto.autodiff.material_model).
         extra_force: optional (ndof,) torch tensor added to the load. Differentiable: this is how the
           design-dependent thermal load F_th(x, T) of a coupled thermo-mechanical problem enters
@@ -156,6 +156,8 @@ class HexStructuralFEA:
           stresses are computed from the elastic strain (total - thermal).
       """
 
+      if x is None:
+          x = torch.ones(self.mesh.num_elems, dtype=torch.float64)
       self.x = x
       device, dtype = x.device, x.dtype
       ndof = self.bc.num_dofs
