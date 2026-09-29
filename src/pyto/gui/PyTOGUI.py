@@ -64,12 +64,36 @@ def candidate_node_coordinates(main_window):
             cache = (mesh, np.asarray(mesh.node_xyz, dtype=float)[mesh.get_boundary_nodes()])
             main_window._candidate_node_cache = cache
         return cache[1]
-    return np.unique(np.asarray(main_window.stl_geom.mesh.vectors, dtype=float).reshape(-1, 3), axis=0)
+    # Before meshing: a dense sample of the STL surface (edges <= 1/60 of the model size), so a click or a box can
+    # land anywhere, not only on the few STL corners. Picks are coordinates, mapped to mesh nodes at solve time.
+    stl = main_window.stl_geom
+    cache = getattr(main_window, "_stl_sample_cache", None)
+    if cache is None or cache[0] is not stl:
+        surface = pv.PolyData(np.asarray(stl.mesh.vectors, dtype=float).reshape(-1, 3),
+                              np.hstack([np.full((len(stl.mesh.vectors), 1), 3),
+                                         np.arange(3 * len(stl.mesh.vectors)).reshape(-1, 3)])).clean()
+        sample = surface.subdivide_adaptive(max_edge_len=surface.length / 60.0, max_n_passes=40)
+        cache = (stl, np.asarray(sample.points, dtype=float))
+        main_window._stl_sample_cache = cache
+    return cache[1]
 
 
-def points_in_frustum(points, frustum):
-    """Boolean mask of the points inside a box-selection frustum (vtkPlanes; negative = inside)."""
-    return np.array([frustum.EvaluateFunction(*p) <= 0.0 for p in np.asarray(points, dtype=float)], dtype=bool)
+def frustum_to_region(frustum):
+    """A box selection (vtkPlanes frustum) as plain data {'normals', 'origins'} (6 planes), for project files."""
+    normals = frustum.GetNormals()
+    origins = frustum.GetPoints()
+    n = frustum.GetNumberOfPlanes()
+    return {"normals": [list(normals.GetTuple3(i)) for i in range(n)],
+            "origins": [list(origins.GetPoint(i)) for i in range(n)]}
+
+
+def points_in_region(points, region):
+    """Boolean mask of the points inside a stored box region: on the inner side of every plane (VTK convention:
+    n . (x - o) <= 0 inside), i.e. inside the box through the whole depth."""
+    pts = np.asarray(points, dtype=float).reshape(-1, 3)
+    n = np.asarray(region["normals"], dtype=float)
+    o = np.asarray(region["origins"], dtype=float)
+    return np.all(np.einsum("pk,jk->pj", pts, n) - np.sum(n * o, axis=1)[None, :] <= 1e-12, axis=1)
 
 
 def snap_to_triangle_vertex(stl_geom, cell_id, picked_point):
@@ -293,7 +317,8 @@ class MainWindow(QtWidgets.QMainWindow):
         self.applied_material = None
         self.highlight_actor = None
         self.highlight_mode = 'coarse'
-        self.selected_points = []        # node-mode picks (STL vertex coordinates) for point loads / supports
+        self.selected_points = []        # node-mode picks (coordinates) for point loads / supports
+        self.selected_regions = []       # node-mode box selections: all surface nodes inside, resolved at solve time
         self.stl_geom = None
         self.hex_mesh = None
 
@@ -766,13 +791,22 @@ class MainWindow(QtWidgets.QMainWindow):
         self.plotter.render()
 
     def start_box_node_selection(self):
-        """Drag a rectangle: every candidate node inside it (through the whole depth) is selected."""
+        """Drag a rectangle: the box is kept as a region. Every mesh surface node inside it (through the whole depth)
+        is selected when the analysis/optimization runs, so it works before meshing and after remeshing."""
         self.plotter.enable_rectangle_picking(callback=self.on_box_node_selection, start=True,
                                               show_message="Drag a box to select nodes")
 
     def on_box_node_selection(self, selection):
-        inside = points_in_frustum(candidate_node_coordinates(self), selection.frustum)
-        self.add_selected_points(candidate_node_coordinates(self)[inside])
+        region = frustum_to_region(selection.frustum)
+        preview = int(points_in_region(candidate_node_coordinates(self), region).sum())
+        if preview == 0:
+            self.message_text.append("The box contains no part of the model; nothing selected.")
+        else:
+            self.selected_regions.append(region)
+            self.update_point_markers()
+            self.message_text.append(
+                f"Box selection added ({preview} {'mesh nodes' if getattr(self, 'hex_mesh', None) else 'surface points'} "
+                f"inside now; with a mesh, all its surface nodes inside the box are used).")
         self.restore_surface_picking()
 
     def restore_surface_picking(self):
@@ -782,25 +816,35 @@ class MainWindow(QtWidgets.QMainWindow):
         self.plotter.enable_point_picking(callback=self.on_left_button_press, use_picker=True, picker='cell',
                                           show_message=False, left_clicking=True, show_point=False)
 
+    def node_selection_preview(self, points=None, regions=None):
+        """Coordinates to draw for a node selection: the picked points plus the candidates inside each box."""
+        points = self.selected_points if points is None else points
+        regions = self.selected_regions if regions is None else regions
+        parts = [np.asarray(points, dtype=float).reshape(-1, 3)]
+        if regions:
+            cand = candidate_node_coordinates(self)
+            parts += [cand[points_in_region(cand, r)] for r in regions]
+        return np.vstack(parts) if parts else np.zeros((0, 3))
+
     def update_point_markers(self):
-        """Draw the node-mode selection (orange points)."""
+        """Draw the node-mode selection (orange): picked nodes and the points inside box selections."""
         if 'selected_points' in self.plotter.actors:
             self.plotter.remove_actor('selected_points', reset_camera=False)
-        if self.selected_points:
-            self.plotter.add_mesh(pv.PolyData(np.asarray(self.selected_points, dtype=float)), color='orange',
-                                  point_size=14, render_points_as_spheres=True, pickable=False,
-                                  name='selected_points')
+        preview = self.node_selection_preview()
+        if len(preview):
+            self.plotter.add_mesh(pv.PolyData(preview), color='orange', point_size=12,
+                                  render_points_as_spheres=True, pickable=False, name='selected_points')
         self.plotter.render()
 
     def on_right_button_press(self, obj, event):
         """Handle right click for deselecting all triangles (and all node-mode picks)"""
         if not hasattr(self, 'stl_geom') or not self.stl_geom:
             return
-        if getattr(self, 'selected_points', None):
-            n = len(self.selected_points)
-            self.selected_points = []
+        if getattr(self, 'selected_points', None) or getattr(self, 'selected_regions', None):
+            n, b = len(self.selected_points), len(self.selected_regions)
+            self.selected_points, self.selected_regions = [], []
             self.update_point_markers()
-            self.message_text.append(f"Deselected {n} node(s).")
+            self.message_text.append(f"Deselected {n} node(s) and {b} box selection(s).")
             
         selected_count = sum(1 for h in self.stl_geom.tri_highlight if h)
         if selected_count == 0:
@@ -1728,48 +1772,55 @@ class StructuralLoadsWindow(QtWidgets.QDialog):
         return getattr(self.parent, 'highlight_mode', 'coarse') == 'node'
 
     def _take_selected_points(self):
+        """(points, regions) of the current node selection, or None (with a message) if it is empty."""
         points = list(getattr(self.parent, 'selected_points', []) or [])
-        if not points:
+        regions = list(getattr(self.parent, 'selected_regions', []) or [])
+        if not points and not regions:
             QtWidgets.QMessageBox.warning(self, "No Selection", "No nodes selected. In Node mode, click the "
-                                                                  "geometry to pick nodes (right-click clears).")
+                                                                  "geometry or use Box select (right-click clears).")
             return None
-        return points
+        return points, regions
 
     def _clear_selected_points(self):
-        self.parent.selected_points = []
+        self.parent.selected_points, self.parent.selected_regions = [], []
         self.parent.update_point_markers()
 
     def apply_force_to_points(self):
         """Force on picked nodes: the entered force is the total, split evenly over the nodes (as for faces)."""
-        points = self._take_selected_points()
-        if not points:
+        selection = self._take_selected_points()
+        if not selection:
             return
+        points, regions = selection
         forces = self.get_force_values()
         if not self.validate_forces(forces):
             return
         f = self.convert_forces_to_base_units(forces)
-        entry = {'type': 'force_xyz', 'triangles': [], 'points': points, 'force_x': f['X'], 'force_y': f['Y'],
-                 'force_z': f['Z'], 'load_set': self.load_set_spin.value()}
+        entry = {'type': 'force_xyz', 'triangles': [], 'points': points, 'regions': regions, 'force_x': f['X'],
+                 'force_y': f['Y'], 'force_z': f['Z'], 'load_set': self.load_set_spin.value()}
         self.parent.force_data.append(entry)
         self._rebuild_force_visualization(entry)
         self._clear_selected_points()
         force_unit = self.parent.settings.get_force_unit_string()
         self.parent.message_text.append(
-            f"Applied force ({f['X']:+.4g}, {f['Y']:+.4g}, {f['Z']:+.4g}) {force_unit} (total) to {len(points)} node(s).")
+            f"Applied force ({f['X']:+.4g}, {f['Y']:+.4g}, {f['Z']:+.4g}) {force_unit} (total) to "
+            f"{len(points)} node(s) and {len(regions)} box selection(s).")
         self.parent.update_LivVar('structural_loads.forces_applied', True)
         self.clear_force_inputs()
         self.parent.notify_display_options_update()
 
     def apply_constraint_to_points(self, config):
         """Point support: fix the picked nodes in the constraint's directions."""
-        points = self._take_selected_points()
-        if not points:
+        selection = self._take_selected_points()
+        if not selection:
             return
-        self.parent.constraint_data.append({'type': config["constraint_type"], 'triangles': [], 'points': points})
+        points, regions = selection
+        self.parent.constraint_data.append({'type': config["constraint_type"], 'triangles': [], 'points': points,
+                                            'regions': regions})
         self._clear_selected_points()
         self.visualize_constraints()
         self.parent.update_LivVar('structural_loads.fixed_constraints', True)
-        self.parent.message_text.append(f"Applied {config['constraint_type']} to {len(points)} node(s).")
+        self.parent.message_text.append(f"Applied {config['constraint_type']} to {len(points)} node(s) and "
+                                        f"{len(regions)} box selection(s).")
         self.parent.notify_display_options_update()
 
     def draw_point_force(self, entry):
@@ -1780,7 +1831,10 @@ class StructuralLoadsWindow(QtWidgets.QDialog):
             return
         scale = self.calculate_arrow_scale()
         direction = f / norm
-        for i, p in enumerate(np.asarray(entry['points'], dtype=float)):
+        at = self.parent.node_selection_preview(entry.get('points') or [], entry.get('regions') or [])
+        if len(at) > self.MAX_MARKERS * 10:           # many nodes in a box: draw a subset of the arrows
+            at = at[np.linspace(0, len(at) - 1, self.MAX_MARKERS * 10).astype(int)]
+        for i, p in enumerate(at):
             arrow = pv.Arrow(start=p - direction * scale, direction=direction, scale=scale)
             actor = self.parent.plotter.add_mesh(arrow, color="red", pickable=False,
                                                  name=f"point_force_{id(entry)}_{i}")
@@ -1866,7 +1920,7 @@ class StructuralLoadsWindow(QtWidgets.QDialog):
 
     def _rebuild_force_visualization(self, force_data):
         """Rebuild visualization for a force data entry"""
-        if force_data.get('points'):
+        if force_data.get('points') or force_data.get('regions'):
             return self.draw_point_force(force_data)
         forces = {
             'X': force_data['force_x'],
@@ -2196,7 +2250,8 @@ class StructuralLoadsWindow(QtWidgets.QDialog):
 
     def visualize_constraints(self):
         """Create black visualization for constrained triangles, and black nodes for point supports"""
-        point_supports = [p for c in self.parent.constraint_data for p in (c.get('points') or [])]
+        point_supports = [p for c in self.parent.constraint_data if (c.get('points') or c.get('regions'))
+                          for p in self.parent.node_selection_preview(c.get('points') or [], c.get('regions') or [])]
         if not self.parent.stl_geom or not (self.parent.constrained_triangles or point_supports):
             return
 
@@ -3111,7 +3166,7 @@ class AnalysisWindow(QtWidgets.QDialog):
         nodes = set(self.map_triangles_to_surface_nodes(entry.get('triangles') or [], boundary_nodes,
                                                         boundary_points, tolerance))
         points = entry.get('points') or []
-        if points:
+        if len(points):
             idx, dist = nearest_surface_nodes(points, boundary_nodes, boundary_points)
             far = dist > 2.0 * max(self.parent.hex_mesh.elem_size)
             if np.any(far):
@@ -3119,6 +3174,11 @@ class AnalysisWindow(QtWidgets.QDialog):
                     f"Warning: {int(far.sum())} picked node(s) are more than two elements from the meshed part "
                     f"(max {dist.max():.3g}); they are mapped to the nearest surface node.")
             nodes.update(int(n) for n in idx)
+        for region in entry.get('regions') or []:        # box selections: every surface node inside the box
+            inside = points_in_region(np.asarray(boundary_points), region)
+            if not inside.any():
+                self.parent.message_text.append("Warning: a box selection contains no surface node of this mesh.")
+            nodes.update(int(n) for n in np.asarray(boundary_nodes)[inside])
         return nodes
 
     def build_node_to_elem_map(self, mesh):
@@ -5755,7 +5815,7 @@ class ProjectsWindow(QtWidgets.QDialog):
         fixed_faces_indices = []
         if hasattr(self.parent, 'constraint_data'):
             for constraint in self.parent.constraint_data:
-                if constraint.get('type') == 'Fixed XYZ' and not constraint.get('points'):
+                if constraint.get('type') == 'Fixed XYZ' and not (constraint.get('points') or constraint.get('regions')):
                     fixed_faces_indices.extend(constraint.get('triangles', []))
         
         structuralBC['fixed_faces_indices'] = fixed_faces_indices
@@ -5765,7 +5825,7 @@ class ProjectsWindow(QtWidgets.QDialog):
         load_forces = []
         
         for force_info in self.parent.force_data:
-            if force_info.get('type') == 'force_xyz' and not force_info.get('points'):
+            if force_info.get('type') == 'force_xyz' and not (force_info.get('points') or force_info.get('regions')):
                 load_faces_indices.append(force_info.get('triangles', []))
                 load_forces.append([
                     force_info.get('force_x', 0.0),
@@ -5776,11 +5836,13 @@ class ProjectsWindow(QtWidgets.QDialog):
         structuralBC['load_faces_indices'] = load_faces_indices
         structuralBC['load_forces'] = load_forces
         # Node (point) supports and loads, as coordinates (independent of the mesh)
-        structuralBC['point_supports'] = [{'type': c['type'], 'points': c['points']}
-                                          for c in getattr(self.parent, 'constraint_data', []) if c.get('points')]
-        structuralBC['point_loads'] = [{'points': f['points'], 'force': [f.get('force_x', 0.0), f.get('force_y', 0.0),
-                                                                         f.get('force_z', 0.0)]}
-                                       for f in self.parent.force_data if f.get('points')]
+        node_entry = lambda e: bool(e.get('points') or e.get('regions'))
+        structuralBC['point_supports'] = [{'type': c['type'], 'points': c.get('points') or [],
+                                           'regions': c.get('regions') or []}
+                                          for c in getattr(self.parent, 'constraint_data', []) if node_entry(c)]
+        structuralBC['point_loads'] = [{'points': f.get('points') or [], 'regions': f.get('regions') or [],
+                                        'force': [f.get('force_x', 0.0), f.get('force_y', 0.0), f.get('force_z', 0.0)]}
+                                       for f in self.parent.force_data if node_entry(f)]
         
         # Add counts
         structuralBC['constraint_counts'] = {
@@ -6079,11 +6141,12 @@ class ProjectsWindow(QtWidgets.QDialog):
 
             # Node (point) supports and loads
             for ps in structuralBC.get('point_supports', []):
-                self.parent.constraint_data.append({'type': ps['type'], 'triangles': [], 'points': ps['points']})
+                self.parent.constraint_data.append({'type': ps['type'], 'triangles': [], 'points': ps.get('points', []),
+                                                    'regions': ps.get('regions', [])})
             for pl in structuralBC.get('point_loads', []):
-                self.parent.force_data.append({'type': 'force_xyz', 'triangles': [], 'points': pl['points'],
-                                               'force_x': pl['force'][0], 'force_y': pl['force'][1],
-                                               'force_z': pl['force'][2]})
+                self.parent.force_data.append({'type': 'force_xyz', 'triangles': [], 'points': pl.get('points', []),
+                                               'regions': pl.get('regions', []), 'force_x': pl['force'][0],
+                                               'force_y': pl['force'][1], 'force_z': pl['force'][2]})
         
         # Create structural loads window if needed
         if not getattr(self.parent, 'structural_loads_window', None):
@@ -6096,7 +6159,7 @@ class ProjectsWindow(QtWidgets.QDialog):
         # Recreate force visualizations
         for force_info in self.parent.force_data:
             # Add triangle_data if not already present
-            if force_info.get('points'):
+            if force_info.get('points') or force_info.get('regions'):
                 self.parent.structural_loads_window._rebuild_force_visualization(force_info)
                 continue
             if 'triangle_data' not in force_info:

@@ -43,9 +43,10 @@ def gui(tmp_path_factory):
     parent.update_highlights = lambda *a, **k: None
     for name in ("update_point_markers", "on_left_button_press", "on_right_button_press", "select_triangles",
                  "add_selected_points", "show_candidate_nodes", "start_box_node_selection", "on_box_node_selection",
-                 "restore_surface_picking"):
+                 "restore_surface_picking", "node_selection_preview"):
         setattr(parent, name, types.MethodType(getattr(G.MainWindow, name), parent))
     parent.highlight_mode, parent.selected_points, parent.highlight_actor = "coarse", [], None
+    parent.selected_regions = []
     parent.constraint_data, parent.force_data, parent.constrained_triangles = [], [], set()
     parent.force_actors, parent.constraint_actors, parent.torque_actors = [], [], []
     parent.thermal_loads_window, parent.body_force, parent.topopt_options = None, None, {}
@@ -193,10 +194,12 @@ def test_candidates_are_mesh_surface_nodes_once_meshed(gui):
     cand = G.candidate_node_coordinates(parent)
     assert np.allclose(cand, mesh.node_xyz[mesh.get_boundary_nodes()])
     assert len(cand) > len(np.unique(parent.stl_geom.mesh.vectors.reshape(-1, 3), axis=0))   # far more than STL corners
-    parent.hex_mesh = None                                               # before meshing: the STL vertices
+    parent.hex_mesh = None                     # before meshing: a dense sample of the STL surface (incl. its corners)
     try:
-        assert np.allclose(G.candidate_node_coordinates(parent),
-                           np.unique(parent.stl_geom.mesh.vectors.reshape(-1, 3), axis=0))
+        sample = G.candidate_node_coordinates(parent)
+        corners = np.unique(parent.stl_geom.mesh.vectors.reshape(-1, 3), axis=0)
+        assert len(sample) > 20 * len(corners)
+        assert all(np.min(np.linalg.norm(sample - c, axis=1)) < 1e-9 for c in corners)
     finally:
         parent.hex_mesh = mesh
     # a click between nodes snaps to the nearest mesh surface node, not only to STL corners
@@ -207,30 +210,87 @@ def test_candidates_are_mesh_surface_nodes_once_meshed(gui):
     parent.on_right_button_press(None, None)
 
 
-def test_points_in_frustum_sign():
+def test_regions_from_frustum():
     import vtk
-    from pyto.gui.PyTOGUI import points_in_frustum
+    from pyto.gui.PyTOGUI import frustum_to_region, points_in_region
     planes = vtk.vtkPlanes()
     planes.SetBounds(0, 1, 0, 1, 0, 1)
-    assert list(points_in_frustum([[0.5, 0.5, 0.5], [2, 0.5, 0.5], [0.5, -1, 0.5]], planes)) == [True, False, False]
+    region = frustum_to_region(planes)
+    assert len(region["normals"]) == 6 and len(region["origins"]) == 6
+    assert list(points_in_region([[0.5, 0.5, 0.5], [2, 0.5, 0.5], [0.5, -1, 0.5], [1, 1, 1]], region)) == \
+        [True, False, False, True]
 
 
-def test_box_selection_selects_all_nodes_inside(gui):
+def _end_box(parent, G, depth_elems=0.5):
+    """vtkPlanes box around the free end (x > xmax - depth), like a rectangle dragged around it."""
+    import vtk
+    cand = parent.hex_mesh.node_xyz
+    h = float(max(parent.hex_mesh.elem_size))
+    lo, hi = cand.min(axis=0) - 1e-6, cand.max(axis=0) + 1e-6
+    planes = vtk.vtkPlanes()
+    planes.SetBounds(cand[:, 0].max() - depth_elems * h, hi[0], lo[1], hi[1], lo[2], hi[2])
+    return types.SimpleNamespace(frustum=planes), cand[:, 0].max() - depth_elems * h
+
+
+def test_box_selection_before_meshing_is_a_region_resolved_on_the_mesh(gui, tmp_path):
+    """Box select works without a mesh: the box is stored; at analysis time every mesh surface node inside it is
+    used. It survives remeshing because it is a region, not a list of nodes."""
     import vtk
     app, G, parent, x0, tip = gui
-    cand = G.candidate_node_coordinates(parent)
-    xmax, h = cand[:, 0].max(), float(max(parent.hex_mesh.elem_size))
-    lo, hi = cand.min(axis=0) - 1e-6, cand.max(axis=0) + 1e-6
-    planes = vtk.vtkPlanes()                             # a 'box' around the free end, one element deep
-    planes.SetBounds(xmax - 0.5 * h, hi[0], lo[1], hi[1], lo[2], hi[2])
-    parent.selected_points = []
-    parent.on_box_node_selection(types.SimpleNamespace(frustum=planes))
-    expected = cand[cand[:, 0] > xmax - 0.5 * h]
-    assert len(parent.selected_points) == len(expected) > 4
-    assert np.allclose(np.sort(np.asarray(parent.selected_points), axis=0), np.sort(expected, axis=0))
-    parent.on_box_node_selection(types.SimpleNamespace(frustum=planes))   # selecting again adds nothing
-    assert len(parent.selected_points) == len(expected)
-    parent.on_right_button_press(None, None)
+    mesh = parent.hex_mesh
+    selection, xcut = _end_box(parent, G)
+    saved = (parent.constraint_data, parent.force_data)
+    parent.hex_mesh = None                                           # no mesh yet
+    try:
+        parent.selected_points, parent.selected_regions = [], []
+        parent.on_box_node_selection(selection)
+        assert len(parent.selected_regions) == 1
+        preview = parent.node_selection_preview()
+        assert len(preview) > 10 and np.all(preview[:, 0] >= xcut - 1e-9)       # STL surface points in the box
+        empty = vtk.vtkPlanes()
+        empty.SetBounds(100, 101, 100, 101, 100, 101)
+        parent.on_box_node_selection(types.SimpleNamespace(frustum=empty))
+        assert len(parent.selected_regions) == 1                                 # empty box not added
+        loads = G.StructuralLoadsWindow(parent)
+        loads.selection_combo.setCurrentText("Node")
+        loads.load_type.setCurrentText("Force")
+        loads.force_spinboxes["Y"].setValue(-1000.0)
+        loads.on_apply_clicked()
+        load = parent.force_data[-1]
+        assert load["regions"] and not load["points"] and parent.selected_regions == []
+    finally:
+        parent.hex_mesh = mesh
+    # meshed now: the analysis loads every surface node inside the box, the total split evenly
+    parent.constraint_data = [{"type": "Fixed XYZ", "triangles": [], "points": [p.tolist() for p in x0]}]
+    parent.force_data = [load]
+    try:
+        analysis = G.AnalysisWindow(parent)
+        analysis.solver_combo.setCurrentText("SPSOLVE")
+        with contextlib.redirect_stdout(io.StringIO()):
+            analysis.run_structural_analysis()
+        fe = parent.fe_solver
+        boundary = mesh.get_boundary_nodes()
+        expected = set(boundary[mesh.node_xyz[boundary, 0] >= xcut].tolist())
+        loaded = set((np.nonzero(fe.bc.force)[0] // 3).tolist())
+        assert loaded == expected and len(expected) > 4
+        assert float(np.sum(fe.bc.force)) == pytest.approx(-1000.0)
+        # project file keeps the box
+        projects = G.ProjectsWindow(parent)
+        target = tmp_path / "box.pyto"
+        real = G.QtWidgets.QFileDialog.getSaveFileName
+        G.QtWidgets.QFileDialog.getSaveFileName = lambda *a, **k: (str(target), "")
+        try:
+            projects.save_project()
+        finally:
+            G.QtWidgets.QFileDialog.getSaveFileName = real
+        bc = json.loads(target.read_text())["structuralBC"]
+        assert bc["point_loads"][0]["regions"] == load["regions"]
+        parent.force_data = []
+        parent.structural_loads_window = G.StructuralLoadsWindow(parent)
+        projects.restore_structural_loads(bc)
+        assert parent.force_data[-1]["regions"] == load["regions"]
+    finally:
+        parent.constraint_data, parent.force_data = saved
 
 
 def test_candidate_dots_and_box_button_only_in_node_mode(gui):
