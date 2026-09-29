@@ -1,31 +1,31 @@
-###
-# conda create -n PyTO python=3.11
-# conda activate PyTO
-# python -m pip install ipykernel
-# python -m ipykernel install --user --name PyTO
-# git clone https://github.com/UW-ERSL/PyTO
-# cd PyTO
-# python -m pip install -r requirements.txt
+# PyTO runtime requirements.
+# Tested with Python 3.10 in the conda environment "PyToLib" (the name run_gui.py looks for); needs Python >= 3.10.
+# Setup (see Readme.md):
+#   conda create -n PyToLib python=3.10
+#   conda activate PyToLib
+#   pip install -r requirements.txt
 
-# Requirements for PyTO
 numpy
 scipy
 matplotlib
-scikit-learn
-pypardiso
-absl-py
-pyvista<0.46
-numpy-stl
-tetgen
-pandas
-pyamg
+pillow                                   # images (paper-comparison sheets)
+pandas                                   # benchmark result tables
+torch                                    # automatic differentiation; the CPU build is enough
+pypardiso; sys_platform != "darwin"      # direct sparse solver (Intel MKL); not on macOS, SPSOLVE is used there
+pyamg                                    # algebraic multigrid (iterative solvers)
 numba
-trimesh
-pymeshfix
-mmapy
-pyvistaqt
-manifold3d
-cupy-cuda11x
+mmapy                                    # MMA optimizer
+numpy-stl                                # STL reading
+trimesh                                  # STL recovery (boolean operations)
+manifold3d                               # boolean engine used by trimesh
+tetgen                                   # tetrahedral meshing
+pyvista>=0.45                            # tested with 0.46.3 (an earlier <0.46 pin, commit 95f7006, had no reason given)
 vtk
-PyQt5
-torch
+PyQt5                                    # GUI
+pyvistaqt                                # GUI 3D view
+ipykernel                                # run main.ipynb
+
+# Optional, install only if needed:
+#   cupy-cuda12x (or cupy-cuda11x)       GPU deflation solver, matching your CUDA version
+#   petsc4py                             PETSc iterative solvers (Linux/macOS)
+#   pypiwin32                            SolidWorks interface (Windows only)
