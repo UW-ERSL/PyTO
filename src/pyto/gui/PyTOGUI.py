@@ -491,7 +491,7 @@ class MainWindow(QtWidgets.QMainWindow):
         labels_config = [
             ("PyTO GUI Version 2026.09. ", ""),
             ("GUI Build Date 12.06.2025. ", ""),
-            ("This is an academic license, and should not be used for commercial purposes.", "color: red;")
+            ("Open source under the GNU GPL v3.0 (see LICENSE).", "")
         ]
         
         for text, style in labels_config:

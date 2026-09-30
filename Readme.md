@@ -80,14 +80,16 @@ To explore the benchmark problems, open `main.ipynb`: [Quick start: notebook](do
 | `tests/` | automated tests |
 
 ## Contributing
-Open an issue or a pull request. Please run the test suite before submitting ([Testing](docs/reference/testing.md)); new features come with tests ([Testing your extension](docs/extending/testing-your-extension.md)). By contributing, you agree that your contribution is licensed under the same terms as PyTO (below).
+Open an issue or a pull request. Please run the test suite before submitting ([Testing](docs/reference/testing.md)); new features come with tests ([Testing your extension](docs/extending/testing-your-extension.md)). By contributing, you agree that your contribution is licensed under GPL-3.0, like the rest of PyTO.
 
 ## License
-PyTO is licensed under the **[PolyForm Noncommercial License 1.0.0](LICENSE.md)**:
-- **Free for noncommercial use:** research, teaching, study, personal projects, and use by universities, public research organizations, charities and government institutions. You may use, change and share it for these purposes.
-- **When sharing** PyTO or work based on it, include the licence and the `Required Notice:` line in [LICENSE.md](LICENSE.md).
-- **Commercial use is not permitted** under this licence. For commercial use, contact the copyright holder, UW-ERSL (University of Wisconsin-Madison), about a separate licence.
+Copyright (c) 2025-2026 UW-ERSL (Engineering Representations and Simulation Laboratory), University of Wisconsin-Madison.
 
-This is a source-available licence rather than an OSI-approved open-source licence, because it restricts commercial use.
+PyTO is open-source software, licensed under the **[GNU General Public License v3.0](LICENSE)** (GPL-3.0):
+- **You may** use, study, change and share PyTO for any purpose, including research, teaching and commercial work.
+- **If you distribute** PyTO, or a program built on it, you must release its source code under GPL-3.0 as well, and keep the copyright and licence notices. Nobody can turn PyTO into closed-source software.
+- **No warranty:** PyTO comes as is; see sections 15–16 of the licence.
+
+The GUI uses PyQt5, which is itself GPL-3.0.
 
 If you use PyTO in academic work, please cite the repository.
