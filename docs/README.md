@@ -82,4 +82,6 @@ New here? Start with **[Installation](getting-started/installation.md)**, then t
 
 **Runnable examples** used throughout these pages are in [`examples/`](examples/). Run any of them from the repository root, for example `python docs/examples/quickstart.py`.
 
+**License:** PyTO is free for noncommercial use under the [PolyForm Noncommercial License 1.0.0](../LICENSE.md); commercial use needs a separate licence from UW-ERSL.
+
 **Not available yet:** transient thermal analysis, modal analysis, tetrahedral FE analysis and large-deformation analysis. Some files for these exist in the source tree, but they are unfinished and not supported.

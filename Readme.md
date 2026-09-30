@@ -80,7 +80,14 @@ To explore the benchmark problems, open `main.ipynb`: [Quick start: notebook](do
 | `tests/` | automated tests |
 
 ## Contributing
-Open an issue or a pull request. Please run the test suite before submitting ([Testing](docs/reference/testing.md)); new features come with tests ([Testing your extension](docs/extending/testing-your-extension.md)).
+Open an issue or a pull request. Please run the test suite before submitting ([Testing](docs/reference/testing.md)); new features come with tests ([Testing your extension](docs/extending/testing-your-extension.md)). By contributing, you agree that your contribution is licensed under the same terms as PyTO (below).
 
 ## License
-Licensing information will be provided in a future update.
+PyTO is licensed under the **[PolyForm Noncommercial License 1.0.0](LICENSE.md)**:
+- **Free for noncommercial use:** research, teaching, study, personal projects, and use by universities, public research organizations, charities and government institutions. You may use, change and share it for these purposes.
+- **When sharing** PyTO or work based on it, include the licence and the `Required Notice:` line in [LICENSE.md](LICENSE.md).
+- **Commercial use is not permitted** under this licence. For commercial use, contact the copyright holder, UW-ERSL (University of Wisconsin-Madison), about a separate licence.
+
+This is a source-available licence rather than an OSI-approved open-source licence, because it restricts commercial use.
+
+If you use PyTO in academic work, please cite the repository.
