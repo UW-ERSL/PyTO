@@ -7,7 +7,7 @@ import math
 import time
 import matplotlib.pyplot as plt
 from pyto.topopt.drivers.mmaWrapper import runMMA
-from pyto.topopt.drivers._shared import setup_driver_state, torch_sparse_filter
+from pyto.topopt.drivers._shared import binarization_acceptable, setup_driver_state, torch_sparse_filter
 from pyto.topopt.manual_sensitivities import manual_gradients
 from pyto.examples_benchmarks.topopt_structural_benchmarks import *
 from pyto.examples_benchmarks.topopt_thermal_benchmarks import *
@@ -476,6 +476,22 @@ def topopt_mma(fe_solver, #hex_structural_fea.HexStructuralFEA or hex_thermal_fe
         obj_raw_final, _gobj_filt, c_final, _dg_filt, sol, x_filtered_final = obj_cons_function(x_final_t)
     finally:
         to_params.APPLY_FILTER_TO_DENSITY = filter_setting
+
+    # A 0/1 design that is much worse than the continuous one (thresholding cut its load or heat paths) is not
+    # delivered: keep the continuous design and say so (binarization_acceptable).
+    if binarize_topology and history["objective"] and not binarization_acceptable(
+            obj_raw_final, history["objective"][-1], sign):
+        warning = (f"Warning: the 0/1 (binarized) design was much worse than the continuous one "
+                   f"(objective {float(obj_raw_final):.4g} vs {float(history['objective'][-1]):.4g}; grey fraction "
+                   f"{fraction_grey:.2f}), so the continuous design is returned.")
+        errorMsg = warning if errorMsg == "No errors." else f"{errorMsg} {warning}"
+        x_design = x_phys
+        to_params.APPLY_FILTER_TO_DENSITY = False
+        try:
+            obj_raw_final, _g, c_final, _dg, sol, x_filtered_final = obj_cons_function(
+                torch.tensor(x_design, requires_grad=True))
+        finally:
+            to_params.APPLY_FILTER_TO_DENSITY = filter_setting
 
     # Track the final design in history (store de-normalized to match earlier semantics)
     history["objective"].append(obj_raw_final)

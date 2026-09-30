@@ -121,3 +121,26 @@ def torch_sparse_filter(H, Hs):
     ).coalesce()
     Hs_torch = torch.tensor(np.asarray(Hs).flatten(), dtype=torch.float64)
     return H_torch, Hs_torch
+
+
+BINARIZATION_MAX_LOSS = 1.0   # reject a 0/1 design more than (1 + this) times worse than the continuous one
+
+
+def binarization_acceptable(objective_binary, objective_continuous, sign=1.0, max_loss=BINARIZATION_MAX_LOSS):
+    """Whether the thresholded 0/1 design may replace the continuous one.
+
+    Volume-preserving thresholding keeps the densest elements. For a mostly grey design (e.g. heat conduction with
+    the default conductivity penalty 1) those need not connect loads to supports or heat sources to sinks, and the
+    0/1 design's objective blows up (seen: thermal compliance 1.5e3 -> 1.1e10). The drivers then keep the
+    continuous design.
+
+    `sign` is the direction the driver minimizes (compliance_sign for compliance), m = sign * J. "Worse by more than
+    a factor (1 + max_loss)" means m_binary > (1 + max_loss) * m_continuous when m_continuous >= 0 (minimized
+    positive quantity), and m_binary > m_continuous / (1 + max_loss) when m_continuous < 0 (a maximized positive
+    quantity, or a negated one): the 0/1 value fell below 1/(1 + max_loss) of the continuous value.
+    """
+    mb, mc = sign * float(objective_binary), sign * float(objective_continuous)
+    if not np.isfinite(mb):
+        return False
+    limit = (1.0 + max_loss) * mc if mc >= 0 else mc / (1.0 + max_loss)
+    return mb <= limit

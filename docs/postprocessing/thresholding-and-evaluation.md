@@ -26,13 +26,18 @@ The 0/1 part is stiffer here, but it uses a little more material than the limit.
 **Volume-preserving threshold:** the drivers' `binarize_topology=True` sorts the densities and picks the threshold that keeps the mean density. The last history entry is then the 0/1 design's value. Pareto and LevelSet return 0/1 designs anyway.
 
 ## When thresholding goes wrong
-Thresholding can **cut thin grey members** that carried load or heat. The 0/1 design is then disconnected, and its value is meaningless: for example, 1.1e10 instead of 1540 for a thin thermal conduction path. The symptoms:
-- the last history value is orders of magnitude worse than the one before;
-- `fe.mesh.find_connected_components()` returns more than one component for the solid part.
+Thresholding keeps the densest elements. In a mostly grey design those need not connect the loads to the supports, or the heat source to the sink. The 0/1 design is then broken and its value meaningless; for example, thermal compliance 1.1e10 instead of 1540 for a thin plate whose design was 81 % grey. Heat conduction with the default conductivity penalty of 1 is the typical case: grey material conducts well, so the design stays grey.
 
-What to do:
-- **Evaluate without thresholding** (`binarize_topology=False`), and threshold yourself after checking the picture.
+**Safeguard:** MMA and OC compare the thresholded design with the last continuous one. If the 0/1 value is more than twice as bad (or, for a maximized quantity, less than half), they return the **continuous** design instead. `message` then says so, for example:
+```
+Warning: the 0/1 (binarized) design was much worse than the continuous one (objective 1.142e+10 vs 1539;
+grey fraction 0.81), so the continuous design is returned.
+```
+The rule is `binarization_acceptable` in `topopt/drivers/_shared.py`.
+
+To get a usable 0/1 part in such cases:
 - **Heaviside projection** (`to_params.HeavisideProjection = True`, MMA) pushes the design toward 0/1 during the optimization, so little changes at the end. It needs more iterations, because β is doubled every `HeavisideBetaInterval` iterations (default 50) up to `HeavisideBetaMax` (32).
+- **A higher conductivity penalty** for thermal problems (`HexThermalFEA(conductivity_penalty=3)`, or `to_params.ConductivityPenalty` for thermo-structural benchmarks), so grey material stops paying off. On the thin plate above, penalty 3 lowers the grey fraction from 81 % to 13 %, and the 0/1 design (1450) is then better than the continuous one.
 - **A finer mesh or a larger filter radius**, so members are several elements thick.
 - **`Eliminate_Hanging_Elements`** (`TOParams`, MMA) keeps only the largest connected solid component after binarization, removing floating islands.
 

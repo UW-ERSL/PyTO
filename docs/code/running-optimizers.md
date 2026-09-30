@@ -35,6 +35,7 @@ u, history, success, message, n_fea = topopt_mma(
 ```
 - **Convergence:** it stops when the objective changes by less than `objective_tol` and the constraints hold within `constraint_tol`, when the KKT residual is below `kkt_tol`, or at the iteration or time limit. With Heaviside projection on, the objective test is off, so β can finish its continuation.
 - **Final evaluation:** the returned design is evaluated once more with the filter turned off, because the design is already physical. With `binarize_topology=True` it is first thresholded to 0/1 at the level that keeps the volume. So the **last history entry is the delivered design**; the one before it is the last continuous iterate.
+- **Safeguard:** if the 0/1 design is more than twice as bad as the last continuous iterate (thresholding cut a load or heat path), the continuous design is returned instead and `message` says so (MMA and OC).
 - **Stress constraints:** if the final peak von Mises stress exceeds a stress limit by more than 1 %, `message` says so.
 
 ## OC

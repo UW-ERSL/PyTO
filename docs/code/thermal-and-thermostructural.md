@@ -42,7 +42,7 @@ Things specific to thermal problems:
 - **Conductivity law:** the conductivity of an element with density `x` follows its own SIMP-type law (penalty 1 by default). `HexThermalFEA(conductivity_penalty=..., conductivity_void_ratio=...)` overrides it per problem.
 - **Problems driven only by prescribed temperatures** (no heat input; for example hot and cold faces) are optimized for *maximum* conduction. PyTO flips the sign automatically (`compliance_sign`) and still reports the true value.
 - **Quantities:** `Compliance()` / `ThermalCompliance()`, `Temperature(sel, mean|pnorm)`, `VolumeFraction()`. See [Expressions](expressions.md).
-- **Thin conduction paths and binarization:** thresholding a thermal design to 0/1 can cut thin grey conduction paths and give a meaningless final value (in this example, 1.1e10 instead of 1540). Use `binarize_topology=False` and evaluate the design separately; see [Thresholding and evaluation](../postprocessing/thresholding-and-evaluation.md).
+- **Grey designs and binarization:** with conductivity penalty 1, thermal designs stay mostly grey, and thresholding them to 0/1 can cut the conduction path (in this example, 1.1e10 instead of 1540). MMA and OC detect this and return the continuous design with a warning in `message`; the examples here pass `binarize_topology=False` to skip thresholding altogether. See [Thresholding and evaluation](../postprocessing/thresholding-and-evaluation.md#when-thresholding-goes-wrong).
 
 ## Thermo-structural problems
 `ThermoStructuralFEA` solves the temperature first. It then applies the thermal-expansion load and solves the structure. It **is** a structural solver (it subclasses `HexStructuralFEA`), so everything structural works on it; the temperature is on `fe.temperature`.

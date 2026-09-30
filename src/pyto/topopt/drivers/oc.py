@@ -10,7 +10,7 @@ import time
 from pyto.examples_benchmarks.topopt_structural_benchmarks import *
 from pyto.examples_benchmarks.topopt_thermal_benchmarks import *
 from pyto.examples_benchmarks.topopt_thermostructural_benchmarks import *
-from pyto.topopt.drivers._shared import setup_driver_state
+from pyto.topopt.drivers._shared import binarization_acceptable, setup_driver_state
 
 def run_topopt_ocm(to_problem):
 	"""Run topology optimization using Optimality Criteria method.
@@ -317,6 +317,7 @@ def topopt_optimality_criteria(
 			log_message(errorMsg)
 			success = False
 		totalTime = time.time() - tStart
+		x_continuous = x.copy()
 		if (binarize_topology):
 			# extract binary topology while preserving volume fraction
 			x_sorted = np.sort(x)
@@ -339,6 +340,18 @@ def topopt_optimality_criteria(
 		sol_t = fe_solver.solve(x_t, material_model)
 		obj_t = compute_objective_and_gradient(to_params, sol_t, x_t, fe_solver, KE, material_model)
 		obj = obj_t.item()
+		if binarize_topology and history['objective'] and not binarization_acceptable(
+				obj, history['objective'][-1], compliance_sign(fe_solver)):
+			# thresholding cut the design's load/heat paths: keep the continuous design (see binarization_acceptable)
+			warning = (f"Warning: the 0/1 (binarized) design was much worse than the continuous one (objective "
+			           f"{obj:.4g} vs {history['objective'][-1]:.4g}), so the continuous design is returned.")
+			errorMsg = warning if errorMsg == "No errors." else f"{errorMsg} {warning}"
+			x = x_continuous
+			volfrac = np.mean(x)
+			fe_solver.mesh.setPseudoDensity(torch.tensor(x))
+			x_t = torch.tensor(x, dtype=torch.float64, requires_grad=True)
+			sol_t = fe_solver.solve(x_t, material_model)
+			obj = compute_objective_and_gradient(to_params, sol_t, x_t, fe_solver, KE, material_model).item()
 		sol = sol_t.detach().cpu().numpy()
 
 		history['objective'].append(obj)

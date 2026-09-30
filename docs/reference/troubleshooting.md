@@ -19,7 +19,6 @@ This page lists common problems and error messages, with their cause and fix. Se
 | missing elements or holes after **Generate Mesh** | the STL isn't watertight, or walls are thinner than an element | repair the STL; use more elements |
 | a load or support has no effect | the selected nodes don't lie on the mesh (e.g. a coordinate window narrower than half an element) | widen the window; check `len(nodes)`; draw with `plot_mesh(plot_bc=True)` |
 | thermal temperatures of 1e8 and up | heat input on nodes that became void | put heat sources only where material will stay ([Thermal problems](../code/thermal-and-thermostructural.md#thermal-problems)) |
-| GUI **Heat Flux** gives too much or too little heat | **Heat Flux** is currently applied as a total in W, not per area | enter flux × face area, or use **Total Heat** ([Loads and supports](../gui/loads-and-supports.md#thermal-loads)) |
 
 ## Formulation
 | Message | Cause | Fix |
@@ -37,7 +36,7 @@ This page lists common problems and error messages, with their cause and fix. Se
 ## Results
 | Symptom | Cause | Fix |
 |---|---|---|
-| final objective orders of magnitude worse than the iteration before | the 0/1 thresholding cut thin members | `binarize_topology=False`, Heaviside projection, or a finer mesh ([Thresholding](../postprocessing/thresholding-and-evaluation.md#when-thresholding-goes-wrong)) |
+| message `the 0/1 (binarized) design was much worse than the continuous one ... so the continuous design is returned` | thresholding would have cut load or heat paths (typical for grey designs, e.g. heat conduction) | the returned grey design is fine to use; for a 0/1 part use Heaviside projection or a higher conductivity penalty ([Thresholding](../postprocessing/thresholding-and-evaluation.md#when-thresholding-goes-wrong)) |
 | a constraint is `violated` at the end | the bound is too tight for the material, or too few iterations | loosen it, allow more material, or run more iterations |
 | `Warning: stress limit exceeded by x%` | the final 0/1 design's peak stress is above the limit | a slightly tighter bound, or `StressFailureFactor` with a margin |
 | objective oscillates | move limit too large, or a design-dependent load with OC | lower **Move limit**; use MMA |
