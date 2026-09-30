@@ -98,9 +98,6 @@ Headless runs need `PYTHONPATH=src MPLBACKEND=Agg PYVISTA_OFF_SCREEN=true`:
 # full sweep: every problem x method, each in its own process; output in Results/Results_<date>/ (many hours)
 nohup python -m pyto.examples_benchmarks.topopt_run_benchmarks > benchmark_run.log 2>&1 &
 
-# compare a sweep with the saved reference (writes Results/COMPARISON_<folder>_vs_Reference.md)
-python compare_results_to_reference.py Results_<date>
-
 # paper comparison images for the thermo-structural problems
 python -m pyto.examples_benchmarks.make_publication_comparison Results/Results_<date>/ThermoStructural/DENSITYMMA
 

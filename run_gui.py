@@ -45,7 +45,7 @@ def relaunch_in_env(argv):
     """Replace this process by `conda run -n ENV python run_gui.py ...` (activates the environment)."""
     conda = find_conda()
     prefix = env_prefix(conda, ENV_NAME) if conda else None
-    if prefix is None:
+    if conda is None or prefix is None:              # also tells type checkers both are str below
         sys.exit(f"The GUI needs {', '.join(missing_modules())}, which this Python ({sys.executable}) does not have, "
                  f"and the conda environment '{ENV_NAME}' was not found"
                  f"{'' if conda else ' (conda not found either)'}.\n"
@@ -73,7 +73,7 @@ def main(argv):
     for var in ("PYVISTA_OFF_SCREEN", "MPLBACKEND"):  # headless settings from test/benchmark shells would hide the GUI
         if os.environ.get(var) in ("true", "True", "1", "Agg"):
             os.environ.pop(var)
-    from pyto.gui.PyTOGUI import main as gui_main
+    from pyto.gui.PyTOGUI import main as gui_main # type: ignore
     return gui_main()
 
 
