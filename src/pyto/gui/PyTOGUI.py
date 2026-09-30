@@ -41,6 +41,12 @@ from pyto.io.topopt_stl_recovery import extract_isosurface_cnn, subtract_voids_f
 """
 DEFAULT_FONT_SIZE = 32
 #---------------------------------------------------------------------------
+def heat_flux_total(flux, triangle_areas_m2, length_units_per_m=1.0):
+    """Total heat (W) of a heat flux entered per display area (W/unit^2) over STL triangles whose areas are in m^2
+    (STL files are read as metres). length_units_per_m: display length units per metre (1 for MKS, 1000 for mmKS)."""
+    return float(flux) * length_units_per_m ** 2 * float(np.sum(triangle_areas_m2))
+
+
 def density_snapshot(mesh, threshold=0.01):
     """pyvista mesh of the current design (elements with density > threshold, cell data 'density'), for the
     per-iteration topology view. Built in the worker thread; drawn on the main thread."""
@@ -3757,13 +3763,19 @@ class AnalysisWindow(QtWidgets.QDialog):
             fixed_temp_nodes.extend(affected_nodes)
             fixed_temp_values.extend([temp_load['temperature']] * len(affected_nodes))
         
-        # Process heat flux BCs - SURFACE ONLY
+        # Process heat flux BCs - SURFACE ONLY. The flux is entered per display area (W/unit^2); the total heat is
+        # flux x (area of the picked STL triangles), shared equally by the face's nodes like Total Heat.
+        settings = getattr(self.parent, "settings", None)
+        units_per_m = settings.unit_conversions["length"][settings.unit_system] if settings else 1.0
+        tri_areas = np.asarray(self.parent.stl_geom.tri_areas)
         for heat_load in thermal_loads.get('heat_sources', []):
             affected_nodes = self.map_triangles_to_thermal_nodes(
                 heat_load['triangles'], boundary_nodes, boundary_points, tolerance
             )
             if affected_nodes:
-                heat_per_node = heat_load['heat_flux'] / len(affected_nodes)
+                total_heat = heat_flux_total(heat_load['heat_flux'], tri_areas[np.asarray(heat_load['triangles'])],
+                                             units_per_m)
+                heat_per_node = total_heat / len(affected_nodes)
                 for node_id in affected_nodes:
                     thermal_force[node_id] += heat_per_node
         

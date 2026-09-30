@@ -286,3 +286,38 @@ def test_topology_every_iteration_option(window_parent):
         assert len(counts.get("PARETO", [])) > 0                       # Pareto: from its iteration log lines
     finally:
         parent.plotter.close()
+
+
+def test_heat_flux_is_multiplied_by_the_face_area(window_parent):
+    """GUI 'Heat Flux' (W per display area) must give the heat of 'Total Heat' = flux x face area, in any unit system."""
+    import pyto.gui.PyTOGUI as G
+    app, parent = window_parent
+    x0, x1 = parent.faces
+    area = float(np.sum(np.asarray(parent.stl_geom.tri_areas)[x1]))          # m^2 (STL read as metres)
+    assert G.heat_flux_total(2.0, [0.5, 0.25]) == 1.5
+    assert G.heat_flux_total(2.0, [1e-6], length_units_per_m=1000.0) == pytest.approx(2.0)   # 2 W/mm^2 on 1 mm^2
+
+    def thermal_force(loads, unit_system=None):
+        parent.constraint_data, parent.force_data = [], []
+        parent.thermal_loads_window = types.SimpleNamespace(thermal_loads=dict(
+            fixed_temps=[{"triangles": x0, "temperature": 300.0}], **loads))
+        saved, saved_fe = getattr(parent, "settings", None), parent.fe_solver
+        parent.fe_solver = None                      # else the window clears the (closed) plotter of earlier tests
+        if unit_system:
+            parent.settings = G.Settings()
+            parent.settings.unit_system = unit_system
+        try:
+            with contextlib.redirect_stdout(io.StringIO()):
+                fe, physics, _ = G.StructuralTopOptWindow(parent).build_problem()
+        finally:
+            parent.fe_solver = saved_fe
+            if unit_system:
+                parent.settings = saved
+        return np.asarray(fe.bc.force)
+
+    total = thermal_force({"total_heat_sources": [{"triangles": x1, "total_heat": 50.0}]})
+    flux_si = thermal_force({"heat_sources": [{"triangles": x1, "heat_flux": 50.0 / area}]}, "MKS")
+    flux_mm = thermal_force({"heat_sources": [{"triangles": x1, "heat_flux": 50.0 / area / 1e6}]}, "mmKS")
+    assert total.sum() == pytest.approx(50.0)
+    np.testing.assert_allclose(flux_si, total, rtol=1e-12)
+    np.testing.assert_allclose(flux_mm, total, rtol=1e-9)

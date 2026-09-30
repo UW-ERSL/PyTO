@@ -41,7 +41,7 @@ The **Thermal Loads** window uses **Facet** or **Triangle** selection:
 |---|---|---|
 | **Temperature** | temperature (display unit) | holds the selected surface at that temperature |
 | **Total Heat** | W | heat input, shared equally by the selected surface nodes |
-| **Heat Flux** | labelled W/length² | **currently the same as Total Heat**: the value is shared by the nodes as W, *not* multiplied by the face area. Enter the total heat (flux × area) until this is fixed. |
+| **Heat Flux** | W per display area (e.g. W/m², W/mm²) | heat input of flux × (area of the selected faces), shared equally by their surface nodes |
 
 Place heat inputs on surfaces that will stay material. Heat put on void can't flow away, and the temperatures blow up ([Thermal problems](../code/thermal-and-thermostructural.md#thermal-problems)).
 
