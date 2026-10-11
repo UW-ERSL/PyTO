@@ -11,6 +11,7 @@ Run from the repository root, like the sweep:
     export PYTHONPATH=src MPLBACKEND=Agg PYVISTA_OFF_SCREEN=true
     nohup python -m pyto.examples_benchmarks.gradient_comparison > gradient_comparison.log 2>&1 &   # hours
     python -m pyto.examples_benchmarks.gradient_comparison --problems LBracketTopLoad_Stress_Vol MBBBeam
+Stopped? Start it again with the same --date: runs already recorded are skipped (--rerun repeats them).
 Output:
     Results/Results_<date>_AUTODIFF/ and Results/Results_<date>_ANALYTICAL/   the two sweeps (sweep layout)
     Results/GRADIENT_COMPARISON_<date>.md and .csv                            the two side by side
@@ -74,6 +75,15 @@ def _spawn(target, *args):
     p.start()
     p.join()
     return p.exitcode
+
+
+def _already_done(date_str, method_name, problem):
+    """Whether this run is already recorded in the sweep folder (a restarted comparison continues from there)."""
+    import pandas as pd
+    for f in glob.glob(os.path.join("Results", f"Results_{date_str}", "*", method_name, f"{method_name}_summary.csv")):
+        if problem in set(pd.read_csv(f)["name"]):
+            return True
+    return False
 
 
 def _results(date_str):
@@ -176,7 +186,9 @@ def main(argv=None):
                     help="linear solver for both modes (default: the sweep's choice, PARDISO or DPCG by size)")
     ap.add_argument("--max-iters", type=int, default=None,
                     help="iteration limit for quick trials (default: each problem's, as in the sweep)")
-    ap.add_argument("--date", default=str(datetime.date.today()), help="tag of the output folders")
+    ap.add_argument("--date", default=str(datetime.date.today()),
+                    help="tag of the output folders; rerun with the same --date to continue a stopped comparison")
+    ap.add_argument("--rerun", action="store_true", help="repeat runs already recorded for this --date")
     args = ap.parse_args(argv)
 
     problems = _sweep_problems()
@@ -205,6 +217,9 @@ def main(argv=None):
     for method in args.methods:
         for enum_name, name in eligible:
             for gradient in GRADIENTS:
+                if not args.rerun and _already_done(f"{args.date}_{gradient}", method_names[method], name):
+                    print(f"[{method} {gradient}] {name}: already done for {args.date}, skipped", flush=True)
+                    continue
                 print("-" * 50 + f"\n[{method} {gradient}] {name}", flush=True)
                 code = _spawn(_run, enum_name, name, method_names[method], gradient, f"{args.date}_{gradient}",
                               args.solver, args.max_iters)

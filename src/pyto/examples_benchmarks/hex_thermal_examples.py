@@ -33,7 +33,6 @@ def getThermalProblem(problem: HexThermalExamples, **kwargs):
   tuple
     A tuple containing the mesh, material properties, and boundary conditions for the problem.
   """
-  print("problem", problem)
   if problem == HexThermalExamples.ThermalBar:
     return createThermalBarProblem(**kwargs)
   
