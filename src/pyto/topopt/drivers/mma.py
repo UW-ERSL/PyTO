@@ -510,8 +510,9 @@ def topopt_mma(fe_solver, #hex_structural_fea.HexStructuralFEA or hex_thermal_fe
             errorMsg = (f"Warning: stress limit exceeded by {100 * (max_vm / min(stress_limits) - 1):.1f}% "
                         f"(max von Mises {max_vm:.4g} Pa vs limit {min(stress_limits):.4g} Pa)")
 
-    # Log final line
-    print("-" * 50)
+    # Log final line (the separator only follows the per-iteration log)
+    if print_progress:
+        print("-" * 50)
     log_message(
         f"Final objective: {obj_raw_final:.4g}, vf: {np.mean(x_filtered_final):.3f}, grey: {fraction_grey:.3f}"
     )

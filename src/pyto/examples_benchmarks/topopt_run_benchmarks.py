@@ -213,7 +213,6 @@ def runTOMethodOnBenchmarks(optimizationMethod, problems_override: list = None, 
 				)
 			startTime = time.time()
 
-			print("-" * 50)
 			print(f"Running {to_problem.name} problem using {optimizationMethod.name} method and {solver.name} solver")
 			print("-" * 50)
 			# Create the directory if it does not exist

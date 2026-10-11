@@ -205,11 +205,12 @@ def main(argv=None):
     for method in args.methods:
         for enum_name, name in eligible:
             for gradient in GRADIENTS:
-                print(f"[{method} {gradient}] {name}", flush=True)
+                print("-" * 50 + f"\n[{method} {gradient}] {name}", flush=True)
                 code = _spawn(_run, enum_name, name, method_names[method], gradient, f"{args.date}_{gradient}",
                               args.solver, args.max_iters)
                 if code != 0:
                     print(f"WARNING: {method} {gradient} {name} exited with code {code} (e.g. out of memory)", flush=True)
+                print("-" * 50, flush=True)
 
     from pyto.examples_benchmarks.topopt_run_benchmarks import combine_results, create_summary_tables
     for gradient in GRADIENTS:
