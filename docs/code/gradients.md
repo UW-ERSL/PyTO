@@ -88,17 +88,30 @@ PYTHONPATH=src python tests/test_gradient_cost.py --ndof 25000 --repeat 10 --sol
 Results for this repository are summarized in [Validation](../reference/validation.md).
 
 ## Comparing the two on the benchmarks
-`pyto.examples_benchmarks.gradient_comparison` runs every benchmark problem where analytical sensitivities apply. It runs MMA with AD and then analytical, then OC with AD and then analytical, and skips Pareto and LevelSet:
+`pyto.examples_benchmarks.gradient_comparison` runs the **benchmark sweep twice**, once with each gradient method. It covers every sweep problem where analytical sensitivities apply, for MMA and OC only (no Pareto or LevelSet).
+- **Each run is a complete sweep run:** the same problem, solver, iteration limit and binarization as `topopt_run_benchmarks`, with the same topology images and summary CSVs and tables. Only `to_params.Gradient` differs. So the report shows both the effect on solution time and the effect on the solution itself.
+- **Order:** for each problem, MMA with AD then analytical; after all MMA problems, OC the same way.
+- **Isolation:** every run is its own process, as in the sweep.
+
+Run it from the repository root, like the sweep:
 ```bash
-PYTHONPATH=src python -m pyto.examples_benchmarks.gradient_comparison                     # whole sweep (hours)
-PYTHONPATH=src python -m pyto.examples_benchmarks.gradient_comparison --max-iters 20     # quicker timing
-PYTHONPATH=src python -m pyto.examples_benchmarks.gradient_comparison --problems LBracketTopLoad_Stress_Vol --solver DPCG
+export PYTHONPATH=src MPLBACKEND=Agg PYVISTA_OFF_SCREEN=true
+nohup python -m pyto.examples_benchmarks.gradient_comparison > gradient_comparison.log 2>&1 &     # everything: hours
+python -m pyto.examples_benchmarks.gradient_comparison --problems LBracketTopLoad_Stress_Vol MBBBeam
+python -m pyto.examples_benchmarks.gradient_comparison --solver DPCG        # both modes with DPCG
 ```
-- **Fair runs:** each run is a fresh process, like restarting the kernel. Both runs of a pair use the same solver and settings; the default is the benchmark's choice: PARDISO, or DPCG above 100 000 dofs.
-- **Timing:** only the optimizer call is timed.
-- **Output:** `Results/GradientComparison_<date>/`, with
-  - `results.csv`: one row per run (FE solves, time, s/iteration, objective);
-  - `summary.md`: the pairs side by side, with the AD/analytical speed-up and the relative difference of the final objectives, plus the problems skipped and why.
+Output:
+- `Results/Results_<date>_AUTODIFF/` and `Results/Results_<date>_ANALYTICAL/`: two complete sweeps, in the normal layout.
+- `Results/GRADIENT_COMPARISON_<date>.md` and `.csv`: per method and problem, side by side, with
+  - time and FE solves (AD / analytical);
+  - the speed-up of the whole run, and seconds per FE solve;
+  - final objectives and their relative difference;
+  - volume fractions;
+  - both topology images;
+  - any warnings;
+  - the problems not run, and why.
+
+`--max-iters N` shortens every run for a quick trial; leave it out for full runs.
 
 ---
 Next: [Thermal and thermo-structural problems](thermal-and-thermostructural.md) · [Back to contents](../README.md)

@@ -161,16 +161,18 @@ def test_gradient_method_enum_and_old_names():
         gradient_method("finite-difference")
 
 
-def test_gradient_comparison_benchmark_runs(tmp_path):
-    """The AD-vs-analytical benchmark: pairs for MMA and OC, one fresh process per run, report written."""
+def test_gradient_comparison_benchmark_runs(tmp_path, monkeypatch):
+    """Sweep runs with AD and with analytical sensitivities (MMA then OC, each run its own process), the two sweep
+    folders in the normal layout, and the side-by-side report with both topology images."""
     from pyto.examples_benchmarks.gradient_comparison import main
+    monkeypatch.chdir(tmp_path)                                   # the sweep runner writes ./Results
     with contextlib.redirect_stdout(io.StringIO()):
-        rows = main(["--problems", "HeatPlate", "--max-iters", "2", "--out", str(tmp_path)])
-    assert [(r["method"], r["gradient"]) for r in rows] == [("MMA", "AUTODIFF"), ("MMA", "ANALYTICAL"),
-                                                            ("OC", "AUTODIFF"), ("OC", "ANALYTICAL")]
-    for a, b in ((rows[0], rows[1]), (rows[2], rows[3])):
-        assert "error" not in a and "error" not in b
-        assert b["objective"] == pytest.approx(a["objective"], rel=1e-9)        # same gradient, same iterates
-    text = (tmp_path / "summary.md").read_text()
-    assert "### MMA" in text and "### OC" in text and "Speed-up AD/AN" in text
-    assert (tmp_path / "results.csv").exists()
+        rows = main(["--problems", "HeatPlate", "--max-iters", "2", "--date", "t"])
+    assert [r["method"] for r in rows] == ["DENSITYMMA", "DENSITYOCM"]
+    for r in rows:
+        assert r["objective_ad"] == pytest.approx(r["objective_an"], rel=1e-9)   # same gradient, same iterates
+        assert r["time_ad_s"] > 0 and r["time_an_s"] > 0 and r["feas_ad"] == r["feas_an"]
+    for g in ("AUTODIFF", "ANALYTICAL"):
+        assert (tmp_path / "Results" / f"Results_t_{g}" / "Thermal-Compliance2.5D" / "DENSITYMMA" / "HeatPlate.png").exists()
+    text = (tmp_path / "Results" / "GRADIENT_COMPARISON_t.md").read_text()
+    assert "## DENSITYMMA" in text and "## DENSITYOCM" in text and "Results_t_ANALYTICAL/" in text

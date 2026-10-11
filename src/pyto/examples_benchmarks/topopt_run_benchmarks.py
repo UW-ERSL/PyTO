@@ -145,7 +145,14 @@ def build_benchmark(to_problem, solver=None):
 	return fe_solver, to_params, feaMode
 
 
-def runTOMethodOnBenchmarks(optimizationMethod, problems_override: list = None, date_str: str = None):
+def runTOMethodOnBenchmarks(optimizationMethod, problems_override: list = None, date_str: str = None,
+							gradient=None, solver=None, max_iters=None):
+	"""Run one method on benchmark problems and record images and summaries under Results/Results_<date_str>/.
+
+	gradient: None keeps each problem's setting (automatic differentiation); GRADIENT_METHOD.AUTODIFF /
+	ANALYTICAL (or their names) set to_params.Gradient for MMA/OC. solver: a Solvers member to use instead of
+	build_benchmark's choice. max_iters: overrides to_params.MaxIterations (quick trial runs). All three are used
+	by gradient_comparison; a normal sweep passes none of them."""
 	# Create a list to store results
 
 	# Resolved once per call (not once per output path -- see
@@ -179,7 +186,11 @@ def runTOMethodOnBenchmarks(optimizationMethod, problems_override: list = None, 
 
 		try:
 			print_progress = False
-			fe_solver, to_params, feaMode = build_benchmark(to_problem)
+			fe_solver, to_params, feaMode = build_benchmark(to_problem, solver=solver)
+			if gradient is not None:
+				to_params.Gradient = gradient_method(gradient)
+			if max_iters is not None:
+				to_params.MaxIterations = int(max_iters)
 			solver = fe_solver.solver
 
 			# Ensure the output directory exists
