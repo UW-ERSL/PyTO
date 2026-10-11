@@ -1,6 +1,6 @@
 # Quick start: notebook
 
-This page explains `main.ipynb`, the notebook that runs any benchmark problem with any method and shows everything about the run. It is for users who want to explore the built-in problems, or check a result, without writing code.
+This page explains `main.ipynb`, the notebook that runs any benchmark problem with MMA or OC (automatic differentiation or analytical sensitivities) and shows everything about the run. It is for users who want to explore the built-in problems, or check a result, without writing code.
 
 ## Open it
 1. Open `main.ipynb` in VS Code or Jupyter, with the **PyToLib** kernel.
@@ -9,16 +9,16 @@ This page explains `main.ipynb`, the notebook that runs any benchmark problem wi
 ## The first cell: choose problem and method
 ```python
 PROBLEM = StructuralTOExamples.MBBBeam
-# PROBLEM = StructuralTOExamples.LBracketTopLoad_Stress_Vol       # stress objective (MMA only)
+# PROBLEM = StructuralTOExamples.LBracketTopLoad_Stress_Vol       # p-norm stress objective (MMA only)
 # PROBLEM = ThermalTOExamples.HeatPlate
 # PROBLEM = ThermoStructuralTOExamples.MBBBeamNoHeat              # coupled problems: MMA recommended
-METHOD = TO_METHODS.DENSITYMMA          # DENSITYMMA, DENSITYOCM, PARETO or LEVELSET
+METHOD = TO_METHODS.DENSITYMMA          # DENSITYMMA or DENSITYOCM
 GRADIENT = GRADIENT_METHOD.AUTODIFF     # MMA/OC: GRADIENT_METHOD.AUTODIFF or GRADIENT_METHOD.ANALYTICAL
 MAX_ITERS = None                        # None -> the problem's to_params.MaxIterations (what the sweep uses)
 BINARIZE = True                         # the sweep binarizes MMA/OC results (not with Heaviside projection)
 ```
 - **`PROBLEM`**: any member of `StructuralTOExamples`, `ThermalTOExamples` or `ThermoStructuralTOExamples`. The full list is in [Benchmark problems](../reference/benchmarks.md).
-- **`METHOD`**: the optimizer. MMA handles every formulation. OC, Pareto and LevelSet only handle compliance with one volume constraint; see [Running the optimizers](../code/running-optimizers.md).
+- **`METHOD`**: MMA or OC. MMA handles every formulation; OC only minimum compliance with one volume constraint (the build cell stops otherwise). For Pareto and LevelSet see [Running the optimizers](../code/running-optimizers.md).
 - **`GRADIENT`**: for MMA and OC, automatic differentiation or analytical sensitivities. Both give the same gradient; analytical is faster where available (compliance, p-norm stress, volume fraction), and the build cell stops with the reason elsewhere. See [Gradients](../code/gradients.md).
 - **`MAX_ITERS`**: leave `None` to use the problem's own setting.
 - **`BINARIZE`**: round the final MMA/OC design to 0/1 and evaluate it again, as the benchmark sweep does.
@@ -29,12 +29,11 @@ Then **Run All**.
 | Cell | Shows |
 |---|---|
 | Build | solver, number of unknowns, objective, constraints, supports and loads; a picture of the setup |
-| Optimize | success, message, number of FE solves, time |
+| Optimize | success, message, number of FE solves, time and time per FE solve |
 | Results | objective and volume fraction of the last continuous design and of the final design |
 | Topology | the final design, as in the benchmark result images |
 | Fields | density, deformation and von Mises stress (structural), temperature (thermal and coupled) |
 | Convergence | objective and volume fraction per iteration |
-| User-defined objective | a worked example: minimizing the mean tip deflection with a Python function |
 
 The build step uses `build_benchmark()`, the same function the benchmark sweep uses. So one notebook run is exactly one row of the sweep, and a result can be checked against the saved sweep results.
 
