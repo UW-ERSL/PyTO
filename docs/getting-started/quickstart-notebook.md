@@ -13,11 +13,13 @@ PROBLEM = StructuralTOExamples.MBBBeam
 # PROBLEM = ThermalTOExamples.HeatPlate
 # PROBLEM = ThermoStructuralTOExamples.MBBBeamNoHeat              # coupled problems: MMA recommended
 METHOD = TO_METHODS.DENSITYMMA          # DENSITYMMA, DENSITYOCM, PARETO or LEVELSET
+GRADIENT = GRADIENT_METHOD.AUTODIFF     # MMA/OC: GRADIENT_METHOD.AUTODIFF or GRADIENT_METHOD.ANALYTICAL
 MAX_ITERS = None                        # None -> the problem's to_params.MaxIterations (what the sweep uses)
 BINARIZE = True                         # the sweep binarizes MMA/OC results (not with Heaviside projection)
 ```
 - **`PROBLEM`**: any member of `StructuralTOExamples`, `ThermalTOExamples` or `ThermoStructuralTOExamples`. The full list is in [Benchmark problems](../reference/benchmarks.md).
 - **`METHOD`**: the optimizer. MMA handles every formulation. OC, Pareto and LevelSet only handle compliance with one volume constraint; see [Running the optimizers](../code/running-optimizers.md).
+- **`GRADIENT`**: for MMA and OC, automatic differentiation or analytical sensitivities. Both give the same gradient; analytical is faster where available (compliance, p-norm stress, volume fraction), and the build cell stops with the reason elsewhere. See [Gradients](../code/gradients.md).
 - **`MAX_ITERS`**: leave `None` to use the problem's own setting.
 - **`BINARIZE`**: round the final MMA/OC design to 0/1 and evaluate it again, as the benchmark sweep does.
 

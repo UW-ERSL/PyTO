@@ -13,6 +13,7 @@ from dataclasses import dataclass, field
 import numpy as np
 
 from pyto.autodiff.qoi.responses import RESPONSES, available_responses
+from pyto.topopt.common import GRADIENT_METHOD, gradient_method
 from pyto.topopt.capabilities import (MANUAL_ONLY, cost_estimate, gradient_source, manual_gradient_support,
                                       method_support)
 from pyto.topopt.spec import (METHODS, PYTHON_PREFIX, ConstraintSpec, Issue, MethodSpec, ObjectiveSpec,
@@ -27,7 +28,7 @@ RESPONSE_LABELS = {
 }
 EXPRESSION_LABEL = "Expression..."
 PYTHON_LABEL = "Python function..."
-GRADIENT_CHOICES = [("Automatic differentiation", "autodiff"), ("Manual", "manual")]
+GRADIENT_CHOICES = [("Automatic differentiation", GRADIENT_METHOD.AUTODIFF.value), ("Analytical", GRADIENT_METHOD.ANALYTICAL.value)]
 AGGREGATE_LABELS = {"mean": "mean", "p-norm (smooth max)": "pnorm", "sum": "sum"}
 UNITS_NOTE = "Bounds are in SI units (m, Pa, K, N, J, kg), independent of the display unit system."
 
@@ -115,17 +116,17 @@ def prepare_run(spec: OptimizationSpec, physics: str, selections: dict, body_for
                 base=None, allow_code: bool = False, fe_solver=None) -> RunPlan:
     """Validate, check that the chosen method supports the formulation, and compile. No FE solve.
 
-    With fe_solver, a manual gradient is also checked against the solver (conductivity law, boundary values)."""
+    With fe_solver, an analytical gradient is also checked against the solver (conductivity law, boundary values)."""
     plan = RunPlan(issues=validate(spec, physics, selections, allow_code=allow_code),
                    support=method_support(spec, physics, body_force))
     method = spec.method.name
     if method in plan.support and not plan.support[method][0]:
         plan.issues.append(Issue("error", plan.support[method][1]))
-    manual = spec.method.gradient == "manual" and method not in MANUAL_ONLY
+    manual = gradient_method(spec.method.gradient) is GRADIENT_METHOD.ANALYTICAL and method not in MANUAL_ONLY
     if manual:
         ok, why = manual_gradient_support(spec, selections, body_force)
         if not ok:
-            plan.issues.append(Issue("error", f"Manual gradient not available: {why} Use automatic differentiation."))
+            plan.issues.append(Issue("error", f"Analytical gradient not available: {why} Use automatic differentiation."))
     if method in METHODS:
         plan.gradient = gradient_source(method, spec.method.gradient)
     if not plan.errors:
@@ -136,7 +137,7 @@ def prepare_run(spec: OptimizationSpec, physics: str, selections: dict, body_for
                 from pyto.topopt.manual_sensitivities import manual_support
                 ok, why = manual_support(plan.to_params, fe_solver)
                 if not ok:
-                    raise ValueError(f"Manual gradient not available: {why} Use automatic differentiation.")
+                    raise ValueError(f"Analytical gradient not available: {why} Use automatic differentiation.")
         except Exception as e:                           # compile problems not caught by validate
             plan.issues.append(Issue("error", str(e)))
             plan.to_params = None
@@ -408,7 +409,7 @@ if QtWidgets is not None:
             if method in MANUAL_ONLY:                      # these drivers have no autograd path
                 self.gradient_combo.setCurrentIndex(1)
                 self.gradient_combo.setEnabled(False)
-                self.gradient_combo.setToolTip(f"{method} always uses its own manual sensitivity.")
+                self.gradient_combo.setToolTip(f"{method} always uses its own analytical sensitivity.")
             else:
                 if not self.gradient_combo.isEnabled():    # leaving Pareto/LevelSet: back to the AD default
                     self.gradient_combo.setCurrentIndex(0)
@@ -417,7 +418,7 @@ if QtWidgets is not None:
                 manual_item.setToolTip(manual_why)
                 if not manual_ok:
                     self.gradient_combo.setCurrentIndex(0)
-                self.gradient_combo.setToolTip(manual_why or "Manual: compliance, p-norm stress and volume fraction; no autograd graph.")
+                self.gradient_combo.setToolTip(manual_why or "Analytical: compliance, p-norm stress and volume fraction; no autograd graph.")
             self.gradient_combo.blockSignals(False)
             self.gradient_label.setText(gradient_source(method, self.gradient_combo.currentData()))
             try:
@@ -457,7 +458,7 @@ if QtWidgets is not None:
             for c in spec.constraints:
                 self._add_constraint_row(c)
             self.method_combo.setCurrentText(spec.method.name)
-            self.gradient_combo.setCurrentIndex(max(0, self.gradient_combo.findData(spec.method.gradient)))
+            self.gradient_combo.setCurrentIndex(max(0, self.gradient_combo.findData(gradient_method(spec.method.gradient).value)))
             self.iterations_spin.setValue(spec.method.max_iterations)
             self.move_spin.setValue(spec.method.move_limit)
             self.filter_spin.setValue(spec.regularization.filter_radius)

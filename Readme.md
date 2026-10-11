@@ -12,7 +12,7 @@ PyTO is a Python library, with a desktop GUI, for **3D topology optimization** o
 - **Formulations:**
   - compliance, volume, mass, displacement, temperature, reaction force, p-norm stress and failure factor;
   - **your own formulas** (e.g. `Displacement(Tip, y, mean) / 1e-3 + 0.1 * VolumeFraction()`) or **Python functions**, differentiated automatically;
-  - optional **manual gradients** for compliance, p-norm stress and volume fraction.
+  - optional **analytical gradients** for compliance, p-norm stress and volume fraction.
 - **Manufacturing:** density filter, Heaviside projection, symmetry, cyclic symmetry, extrusion, keep-solid regions.
 - **Results:** stress, deformation and temperature views, VTU export, and smooth STL recovery of the optimized part.
 - **Validation:**

@@ -111,7 +111,8 @@ def compute_pnorm_stress_and_sensitivity(sol: np.ndarray, x, fe_solver, KE, mate
 	(eps + (1 - eps) x^0.5) D B u_e, P = (sum vm_e^p)^(1/p)); discrete adjoint as in
 	"An efficient 146-line 3D sensitivity analysis code of stress based topology optimization written
 	in MATLAB", Optim. Eng. (2022) 23:1733-1757. Structural (no thermal strain) only.
-	fe_solver.stiff_mtrx must be the SciPy stiffness of the last solve.
+	The adjoint system is solved with fe_solver.adjoint_solve (the last solve's matrix and factors) when the solver
+	has one; otherwise fe_solver.stiff_mtrx must be the SciPy stiffness of the last solve.
 	"""
 	from pyto.autodiff.material_model import _EVOID_RELATIVE
 	mesh = fe_solver.mesh
@@ -148,8 +149,11 @@ def compute_pnorm_stress_and_sensitivity(sol: np.ndarray, x, fe_solver, KE, mate
 	g_e = (dP_dvm * c / vm)[:, None] * ((s @ M.T) @ (D @ B))
 	g = np.zeros(fe_solver.bc.num_dofs)
 	np.add.at(g, mesh.edofMat, g_e)
-	adjointSol = linear_solvers.solve(fe_solver.stiff_mtrx, g, fe_solver.solver, fe_solver.bc,
-									  dsolver=fe_solver.dsolver, **fe_solver.kwargs)
+	if hasattr(fe_solver, "adjoint_solve"):
+		adjointSol = fe_solver.adjoint_solve(g)
+	else:
+		adjointSol = linear_solvers.solve(fe_solver.stiff_mtrx, g, fe_solver.solver, fe_solver.bc,
+										  dsolver=fe_solver.dsolver, **fe_solver.kwargs)
 	ce = ((adjointSol[mesh.edofMat] @ KE) * ue).sum(1)
 	implicit = -get_structural_material_model_sensitivity(x, material_model) * ce
 	return P, explicit + implicit, vm.max()

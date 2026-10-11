@@ -148,3 +148,29 @@ def _new_structural(problem):
     mesh, mat, bc, ebf, _ = problem
     return hsf.HexStructuralFEA(mesh=mesh, mat_prop=mat, bc=bc, solver=torch_spsolve.Solvers.SPSOLVE,
                                 dsolver=deflation.DeflationSolver(use_gpu=False), elem_body_force=ebf)
+
+
+def test_gradient_method_enum_and_old_names():
+    from pyto.topopt.common import GRADIENT_METHOD, TOParams, gradient_method
+    assert TOParams().Gradient is GRADIENT_METHOD.AUTODIFF
+    for value, expected in [(GRADIENT_METHOD.ANALYTICAL, GRADIENT_METHOD.ANALYTICAL), ("analytical", GRADIENT_METHOD.ANALYTICAL),
+                            ("manual", GRADIENT_METHOD.ANALYTICAL), ("AUTODIFF", GRADIENT_METHOD.AUTODIFF),
+                            ("autodiff", GRADIENT_METHOD.AUTODIFF), (None, GRADIENT_METHOD.AUTODIFF)]:
+        assert gradient_method(value) is expected
+    with pytest.raises(ValueError):
+        gradient_method("finite-difference")
+
+
+def test_gradient_comparison_benchmark_runs(tmp_path):
+    """The AD-vs-analytical benchmark: pairs for MMA and OC, one fresh process per run, report written."""
+    from pyto.examples_benchmarks.gradient_comparison import main
+    with contextlib.redirect_stdout(io.StringIO()):
+        rows = main(["--problems", "HeatPlate", "--max-iters", "2", "--out", str(tmp_path)])
+    assert [(r["method"], r["gradient"]) for r in rows] == [("MMA", "AUTODIFF"), ("MMA", "ANALYTICAL"),
+                                                            ("OC", "AUTODIFF"), ("OC", "ANALYTICAL")]
+    for a, b in ((rows[0], rows[1]), (rows[2], rows[3])):
+        assert "error" not in a and "error" not in b
+        assert b["objective"] == pytest.approx(a["objective"], rel=1e-9)        # same gradient, same iterates
+    text = (tmp_path / "summary.md").read_text()
+    assert "### MMA" in text and "### OC" in text and "Speed-up AD/AN" in text
+    assert (tmp_path / "results.csv").exists()

@@ -40,8 +40,8 @@ The full sweep (all problems × MMA, OC, Pareto, LevelSet) was compared with a r
 |---|---|
 | Linear-solve adjoint (`torch.autograd.gradcheck` on `SparseLinearSolve`) | passes |
 | Every built-in response vs central finite differences (`tests/test_responses.py`, `tests/test_qoi_gradients.py`) | within 1e-4 relative |
-| Manual vs autograd gradients (`tests/test_manual_sensitivities.py`) | compliance 9e-15, p-norm stress 1.7e-14, thermo-structural compliance < 1e-6 |
-| Full MMA and OC runs, manual vs autograd | identical iterates |
+| Analytical vs autograd gradients (`tests/test_manual_sensitivities.py`) | compliance 9e-15, p-norm stress 1.7e-14, thermo-structural compliance < 1e-6 |
+| Full MMA and OC runs, analytical vs autograd | identical iterates |
 | User functions and expressions vs finite differences (`check_gradient`) | typically 1e-7 to 1e-10 |
 
 ## Cost of the gradient

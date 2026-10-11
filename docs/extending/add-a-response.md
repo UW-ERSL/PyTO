@@ -88,4 +88,4 @@ See [Testing your extension](testing-your-extension.md).
 - **Stateful quantities** (values that change between calls at the same design) break finite-difference checks and MMA. Keep responses pure.
 
 ---
-Next: [Add a manual sensitivity](add-a-manual-sensitivity.md) · [Back to contents](../README.md)
+Next: [Add an analytical sensitivity](add-a-manual-sensitivity.md) · [Back to contents](../README.md)

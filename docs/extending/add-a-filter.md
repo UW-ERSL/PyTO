@@ -13,7 +13,7 @@ How each method uses `H`:
 
 | Method | Use of `H` | Gradient through the filter |
 |---|---|---|
-| MMA | **density filter**: `x_phys = H x / Hs` | autograd (or the manual chain rule `Hᵀ(g / Hs)`), automatic |
+| MMA | **density filter**: `x_phys = H x / Hs` | autograd (or the analytical chain rule `Hᵀ(g / Hs)`), automatic |
 | OC | **sensitivity filter** on `x · dC/dx` | inside the OC update |
 | Pareto, LevelSet | smoothing of their sensitivities | inside the method |
 
@@ -76,7 +76,7 @@ The complete script, which plugs the filter in at run time without editing the s
 ## Nonlinear filters and projections
 A projection, like the smooth Heaviside step, can't be a matrix. It is applied after the linear filter:
 1. **Autograd path:** add it in `chain()` inside `obj_cons_function` in `topopt/drivers/mma.py`, after the Heaviside block, using torch operations. Autograd differentiates it.
-2. **Manual path:** add the same forward operation in `manual_step()` (same file), and multiply the gradient by its derivative, as `dproj` does for Heaviside.
+2. **Analytical path:** add the same forward operation in `manual_step()` (same file), and multiply the gradient by its derivative, as `dproj` does for Heaviside.
 3. **Settings:** `TOParams` fields, as in step 2. For a continuation scheme (a parameter increasing over the iterations), read the iteration counter `mmaIterations`, as Heaviside's `beta` does.
 
 ## Testing

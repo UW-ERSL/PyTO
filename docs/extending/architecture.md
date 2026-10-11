@@ -40,7 +40,7 @@ The code for this is `obj_cons_function` / `chain` and `manual_step` in `topopt/
 | I want to ... | Start here | Recipe |
 |---|---|---|
 | optimize a new quantity (usable in formulas and the GUI) | `autodiff/qoi/responses.py` | [Add a response](add-a-response.md) |
-| a faster or reference gradient for a quantity | `topopt/manual_sensitivities.py`, `autodiff/reference_adjoint/` | [Add a manual sensitivity](add-a-manual-sensitivity.md) |
+| a faster or reference gradient for a quantity | `topopt/manual_sensitivities.py`, `autodiff/reference_adjoint/` | [Add an analytical sensitivity](add-a-manual-sensitivity.md) |
 | a new filter, projection or manufacturing constraint | `topopt/filters.py`, `topopt/common.py`, `drivers/mma.py` | [Add a filter](add-a-filter.md) |
 | a new PDE or element type | `physics/` | [Add a physics](add-a-physics.md) |
 | a new optimization algorithm | `topopt/drivers/` | [Add an optimization method](add-an-optimization-method.md) |

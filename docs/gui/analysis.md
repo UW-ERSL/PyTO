@@ -20,7 +20,8 @@ This page covers the **Analysis** window: meshing, solver choice, the three anal
 |---|---|
 | **PARDISO** | default and fastest; not on macOS |
 | **SPSOLVE** | works everywhere; use on macOS |
-| **DPCG**, **PCG**, **PYAMG** | iterative solvers, used in analysis. During optimization they are not available and PyTO falls back to SPSOLVE (with a warning) |
+| **DPCG**, **PCG** | iterative solvers for large models, in analysis and optimization (both gradient methods) |
+| **PYAMG** | analysis only; during optimization PyTO falls back to SPSOLVE (with a warning) |
 
 ## Analyses
 | Button | Solves | Needs |

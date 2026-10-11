@@ -4622,7 +4622,7 @@ class StructuralTopOptWindow(QtWidgets.QDialog):
             return
         from pyto.topopt.capabilities import check_gradient
         results = check_gradient(plan.to_params, fe_solver, n_elements=5)
-        source = "Manual" if getattr(plan.to_params, "Gradient", "autodiff") == "manual" else "Autograd"
+        source = "Analytical" if gradient_method(plan.to_params.Gradient) is GRADIENT_METHOD.ANALYTICAL else "Autograd"
         text = f"{source} vs central finite differences at a random design (5 elements):\n" + "\n".join(
             f"  {r.name}: max relative error {r.max_rel_error:.2e}  {'OK' if r.ok else 'MISMATCH'}" for r in results)
         self.parent.message_text.append(text)

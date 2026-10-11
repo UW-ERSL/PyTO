@@ -123,6 +123,21 @@ class HexStructuralFEA:
     self.plotter = HexFEAPlotter(mesh)
 
 #################################################################
+  def _solver_options(self):
+    """Options for the differentiable solve: the deflation solver and tolerance for DPCG/PCG."""
+    return {"dsolver": getattr(self, "dsolver", None), "rtol": self.kwargs.get("rtol", 1e-8)}
+
+  def adjoint_solve(self, rhs):
+    """Solve K(x) lam = rhs (numpy) with the matrix and solver of the LAST solve: the same factors
+    (PARDISO, SPSOLVE) or the same preconditioner and deflation space (DPCG/PCG), no new factorization.
+    Fixed dofs are Dirichlet (identity rows/columns), so lam is zero there. For analytical sensitivities."""
+    factorization = getattr(self, "_last_solve", {}).get("factorization")
+    if factorization is None:
+      raise RuntimeError("adjoint_solve needs a previous solve() of this solver.")
+    rhs = np.array(rhs, dtype=float, copy=True)
+    rhs[np.asarray(self.bc.fixed_dofs, dtype=int)] = 0.0
+    return np.asarray(factorization.solve_transpose(rhs))
+
   def create_pyvista_plotter(self):
     self.pyVistaPlotter = pv.Plotter(window_size=(500, 400))
     self.pyVistaPlotter.camera_position =self.camera_position
@@ -211,7 +226,9 @@ class HexStructuralFEA:
 
 
       # 6) linear solve
-      u = sparse_spsolve(K_bc, f_bc, solver=self.solver)  # (ndof,)
+      self._last_solve = {}
+      u = sparse_spsolve(K_bc, f_bc, solver=self.solver, solver_options=self._solver_options(),
+                         keep=self._last_solve)  # (ndof,)
 
       # 7) post (deformation magnitudes)
       self.sol = u

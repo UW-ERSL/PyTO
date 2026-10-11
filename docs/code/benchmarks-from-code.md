@@ -71,6 +71,8 @@ Results go to `Results/Results_<date>/<category>/<method>/`:
 
 The runner skips pairs a method doesn't support: OC, Pareto and LevelSet on non-compliance problems, LevelSet on body-force problems, Pareto and LevelSet on thermo-structural ones. Reading and comparing results: [Comparing results](../postprocessing/comparing-results.md).
 
+To time automatic differentiation against analytical sensitivities on the same problems (MMA and OC, each run in its own process), use `python -m pyto.examples_benchmarks.gradient_comparison`; see [Gradients](gradients.md#comparing-the-two-on-the-benchmarks).
+
 ## Adding a benchmark problem
 1. Write a builder in `examples_benchmarks/hex_structural_examples.py` (or the thermal / thermo-structural file). Copy an existing one; each returns `mesh, mat_prop, bc, elem_body_force`.
 2. Add a member to `StructuralTOExamples` (in `topopt_structural_benchmarks.py`), and a branch in `getStructuralTOProblem` that sets its `TOParams`.

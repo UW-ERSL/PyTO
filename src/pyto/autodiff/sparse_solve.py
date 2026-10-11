@@ -124,6 +124,92 @@ class _PardisoFactors:
         return self.solver.solve(self.A, b)     # phase 33: solve with the stored factors
 
 
+class _LUFactors:
+    """SciPy SuperLU factors (SPSOLVE): forward and transposed solves reuse them."""
+
+    def __init__(self, A_csc):
+        self.lu = splu(A_csc)
+
+    def solve(self, b):
+        return self.lu.solve(b)
+
+    def solve_transpose(self, b):
+        return self.lu.solve(b, "T")
+
+
+class _PardisoSolve:
+    """PARDISO factors kept for transposed (adjoint) solves; unsymmetric matrices factorize A^T when asked."""
+
+    def __init__(self, A_csr):
+        self.factors = _PardisoFactors(A_csr)
+
+    def solve(self, b):
+        return self.factors.solve(b)
+
+    def solve_transpose(self, b):
+        if self.factors.symmetric:
+            return self.factors.solve(b)
+        return _direct_solve(self.factors.A.T.tocsc(), b, "pardiso")
+
+
+class _DirectEachTime:
+    """Solvers without reusable factors here (PETSc, or PARDISO missing): each solve is a fresh direct solve."""
+
+    def __init__(self, A_csc, kind, options):
+        self.A, self.kind, self.options = A_csc, kind, options
+
+    def solve(self, b):
+        return _direct_solve(self.A, b, self.kind, self.options)
+
+    def solve_transpose(self, b):
+        return _direct_solve(self.A.T.tocsc(), b, self.kind, self.options)
+
+
+class _IterativeSolve:
+    """Deflated (DPCG) or plain Jacobi-preconditioned CG on the Dirichlet-modified matrix, for large problems.
+
+    The matrix is symmetric positive definite (fixed rows and columns are replaced by the identity), so the adjoint
+    solve is another CG solve with the same matrix and preconditioner. DPCG needs `dsolver` (a DeflationSolver
+    with its deflation matrix built for the mesh, as build_benchmark does above DIRECT_SOLVER_DOF_CUTOFF); without
+    it, or when its deflation space does not match the system (thermal: one dof per node), plain PCG is used.
+    """
+
+    def __init__(self, A_csr, kind, options):
+        self.A = A_csr
+        self.rtol = float(options.get("rtol", 1e-8))
+        diag = A_csr.diagonal()
+        diag[np.abs(diag) < 1e-12] = 1.0
+        self.M = spy_sprs.diags(1.0 / diag)
+        dsolver = options.get("dsolver")
+        W = getattr(dsolver, "W", None)
+        self.dsolver = dsolver if kind == "dpcg" and W is not None and W.shape[0] == A_csr.shape[0] else None
+        self.W = W if self.dsolver is not None else None
+
+    def solve(self, b):
+        if self.dsolver is not None:
+            return self.dsolver.deflatedPCG(self.A, np.asarray(b, dtype=float), W=self.W, M=self.M, rtol=self.rtol)
+        from scipy.sparse.linalg import cg
+        x, info = cg(self.A, b, M=self.M, rtol=self.rtol, maxiter=10 * self.A.shape[0])
+        if info != 0:
+            import warnings
+            warnings.warn(f"PCG did not converge (info={info}); the result may be inaccurate.", stacklevel=3)
+        return x
+
+    def solve_transpose(self, b):
+        return self.solve(b)          # symmetric
+
+
+def _factorize(A_csc, solver_kind, solver_params):
+    """The solver object for A: solve(b) and solve_transpose(b), reusing whatever the solver can reuse."""
+    if solver_kind == "spsolve":
+        return _LUFactors(A_csc)
+    if solver_kind == "pardiso" and pypardiso is not None:
+        return _PardisoSolve(A_csc.tocsr())
+    if solver_kind in ("dpcg", "pcg"):
+        return _IterativeSolve(A_csc.tocsr(), solver_kind, solver_params)
+    return _DirectEachTime(A_csc, solver_kind, solver_params)
+
+
 class SparseLinearSolve(torch.autograd.Function):
     @staticmethod
     def forward(ctx, mtrx, b, solver_kind, solver_params):
@@ -137,34 +223,21 @@ class SparseLinearSolve(torch.autograd.Function):
             (vals, (idx[0], idx[1])), shape=shape
         ).tocsc()
 
-        ctx.solver_kind = solver_kind
-        ctx.solver_params = solver_params
         ctx.mtrx_shape = shape
         ctx.b_dtype = b.dtype
         ctx.b_device = b.device
 
-        ctx.pardiso = None
-        if solver_kind == "spsolve":
-            # Factor once
-            lu = splu(A_csc)    # LU factorization
-            x_np = lu.solve(b_np)
-            ctx.lu = lu
-            ctx.A_T = None
-        elif solver_kind == "pardiso" and pypardiso is not None:
-            # Factor once and keep the factors for the adjoint solve(s)
-            factors = _PardisoFactors(A_csc.tocsr())
-            x_np = factors.solve(b_np)
-            ctx.pardiso = factors if factors.symmetric else None
-            ctx.lu = None
-            ctx.A_T = None
-        else:
-            # fall back to existing _direct_solve for petsc/pardiso
-            x_np = _direct_solve(A_csc, b_np, solver_kind, solver_params)
-            ctx.lu = None
-            ctx.A_T = A_csc.T.tocsc()  # store for re-use in backward if wanted
+        # One solver object per forward solve: the adjoint (backward) and any analytical-sensitivity solves
+        # use the same matrix and the same factors/preconditioner (see FE solvers' adjoint_solve).
+        factorization = _factorize(A_csc, solver_kind, solver_params)
+        x_np = factorization.solve(b_np)
+        ctx.factorization = factorization
+        keep = solver_params.get("keep")
+        if keep is not None:
+            keep["factorization"] = factorization
 
         # Save minimal tensors for backward
-        ctx.save_for_backward(mtrx.indices(), mtrx.values(), torch.from_numpy(x_np))
+        ctx.save_for_backward(mtrx.indices(), mtrx.values(), torch.from_numpy(np.asarray(x_np)))
 
         return torch.tensor(x_np, dtype=b.dtype, device=b.device)
 
@@ -172,25 +245,12 @@ class SparseLinearSolve(torch.autograd.Function):
     def backward(ctx, grad_x):
         mtrx_indices, mtrx_values, x_torch = ctx.saved_tensors
         shape = ctx.mtrx_shape
-        solver_kind = ctx.solver_kind
-        solver_params = ctx.solver_params
 
         grad_A_sparse = None
         grad_b = None
 
-        grad_x_np = grad_x.cpu().numpy()
-
-        if solver_kind == "spsolve" and ctx.lu is not None:
-            # Use same LU factors: solve A^T y = grad_x
-            y_np = ctx.lu.solve(grad_x_np, 'T')
-        elif ctx.pardiso is not None:
-            # Symmetric: A^T = A, reuse the forward PARDISO factors
-            y_np = ctx.pardiso.solve(grad_x_np)
-        else:
-            vals = mtrx_values.detach().cpu().numpy()
-            idxs = (mtrx_indices[0].cpu().numpy(), mtrx_indices[1].cpu().numpy())
-            A_T = spy_sprs.coo_matrix((vals, idxs), shape=shape).transpose().tocsc()
-            y_np = _direct_solve(A_T, grad_x_np, solver_kind, solver_params)
+        # adjoint: A^T y = grad_x, with the forward solve's factors / preconditioner
+        y_np = ctx.factorization.solve_transpose(grad_x.cpu().numpy())
 
         y_t = torch.tensor(y_np, dtype=ctx.b_dtype, device=ctx.b_device)
 
@@ -208,7 +268,7 @@ class SparseLinearSolve(torch.autograd.Function):
 
 
 def solve(
-    mtrx: torch.Tensor, b: torch.Tensor, solver=None, solver_options: dict = None
+    mtrx: torch.Tensor, b: torch.Tensor, solver=None, solver_options: dict = None, keep: dict = None
 ) -> torch.Tensor:
     """
     Wrapper for SparseLinearSolve.apply with a linear-solver choice.
@@ -220,45 +280,34 @@ def solve(
                 PARDISO / SPSOLVE).
         solver_options: Optional dictionary of solver-specific settings,
                         mirroring the JAX implementation's `params`.
-                        E.g.: {"petsc_solver": {"ksp_type": "gmres", "pc_type": "lu"}}
+                        E.g.: {"petsc_solver": {"ksp_type": "gmres", "pc_type": "lu"}};
+                        for DPCG/PCG: {"dsolver": DeflationSolver, "rtol": 1e-8}.
+        keep: Optional dict; receives keep["factorization"], the solver object of this solve (solve /
+              solve_transpose with the same factors), for analytical adjoint solves outside autograd.
 
     Returns:
         x: Solution tensor (ndof,).
     """
     # We don't import linear_solvers here; we just look at .name if present.
     solver_name = getattr(solver, "name", None)
-    if solver_name == "PETSC":
-        solver_kind = "petsc"
-    elif solver_name == "PARDISO":
-        solver_kind = "pardiso"
-    elif solver_name in (None, "SPSOLVE"):
-        solver_kind = "spsolve"
+    kinds = {"PETSC": "petsc", "PARDISO": "pardiso", "SPSOLVE": "spsolve", "SPLU": "spsolve", None: "spsolve",
+             "DPCG": "dpcg", "PCG": "pcg"}
+    if solver_name in kinds:
+        solver_kind = kinds[solver_name]
     else:
-        # Every other named solver in pyto.solve.solvers.Solvers (DPCG, PCG,
-        # PYAMG, SPLU) is implemented for pyto.solve.numpy_backend's
-        # free-DOF-elimination BC formulation, but not for this module's
-        # identity-row BC formulation (apply_dirichlet_bc_torch) -- porting
-        # them, DPCG especially, needs reconciling those two different
-        # boundary-condition strategies, not a one-line dispatch addition.
-        # oc.py/pareto.py/levelset.py all auto-select DPCG above
-        # DIRECT_SOLVER_DOF_CUTOFF DOFs, so this used to silently substitute
-        # a full direct factorization for the requested iterative solver --
-        # still correct, but defeats the whole point of choosing DPCG for
-        # large problems (memory/time), and did so without telling anyone.
-        # Warn instead of silently substituting.
+        # PYAMG is only implemented for pyto.solve.numpy_backend (free-dof elimination); here it falls back.
         import warnings
         warnings.warn(
-            f"Solvers.{solver_name} is not implemented for the torch-autodiff "
-            "sparse solve path (pyto.autodiff.sparse_solve) -- falling back "
-            "to a direct SPSOLVE factorization. This is still correct but "
-            "loses whatever performance benefit the requested solver was "
-            "chosen for on large problems.",
+            f"Solvers.{solver_name} is not implemented for the torch-autodiff sparse solve path "
+            "(pyto.autodiff.sparse_solve) -- falling back to a direct SPSOLVE factorization.",
             stacklevel=2,
         )
         solver_kind = "spsolve"
 
     # Pass an empty dict if None, to be handled gracefully downstream
-    if solver_options is None:
-        solver_options = {}
+    solver_options = dict(solver_options or {})
+    if keep is not None:
+        keep["factorization"] = None          # release the previous solve's factors before factorizing again
+        solver_options["keep"] = keep
 
     return SparseLinearSolve.apply(mtrx, b, solver_kind, solver_options)

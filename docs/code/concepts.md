@@ -35,7 +35,7 @@ For the density methods (MMA, OC), each iteration does:
 4. **Evaluate** the objective and constraints from the solution.
 5. **Differentiate** them with respect to the design:
    - by default with PyTorch autograd, backwards through the steps above, including the linear solve (an adjoint solve);
-   - or with the [manual gradients](gradients.md) where available.
+   - or with the [analytical gradients](gradients.md) where available.
 6. **Update** the design (MMA or OC step), within a move limit.
 
 Because the gradient comes from autograd, any objective you can write with torch operations can be optimized, with no hand-derived sensitivity. See [Expressions](expressions.md) and [User-defined functions](user-defined-functions.md).

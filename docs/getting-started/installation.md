@@ -59,7 +59,10 @@ Every FE solver takes a `solver=` argument from `pyto.solve.solvers.Solvers`.
 | `PARDISO` | Default; fastest direct solver (Intel MKL). Not on macOS. |
 | `SPSOLVE` | SciPy direct solver; works everywhere. Use it on macOS or if PARDISO is missing. |
 | `PETSC` | PETSc solvers, if `petsc4py` is installed. |
-| `DPCG`, `PCG`, `PYAMG`, `SPLU` | Iterative and other solvers of the NumPy backend. During **optimization** they are **not** used: PyTO warns and falls back to `SPSOLVE`. |
+| `DPCG` | Deflated preconditioned conjugate gradients, for large problems (the benchmarks use it above 100 000 dofs). Needs a `DeflationSolver` with its deflation matrix built for the mesh (`build_benchmark` does this); without one it runs as plain Jacobi PCG. |
+| `PCG` | Jacobi-preconditioned conjugate gradients. |
+| `SPLU` | the same as `SPSOLVE` during optimization. |
+| `PYAMG` | analysis only; during **optimization** PyTO warns and falls back to `SPSOLVE`. |
 
 ## Using PyTO without installing it as a package
 PyTO is used straight from the repository: the code lives in `src/pyto`.

@@ -39,6 +39,7 @@ class HexThermalFEA:
     # Per-problem conductivity interpolation (None = the module defaults in autodiff/material_model.py)
     self.conductivity_penalty, self.conductivity_void_ratio = conductivity_penalty, conductivity_void_ratio
     self.solver, self.kwargs = solver, kwargs
+    self.dsolver = dsolver
     self.sol = None
     # Handle single material or list of materials
     if isinstance(mat_prop, list):
@@ -105,6 +106,21 @@ class HexThermalFEA:
       self.elem_stiff = np.expand_dims(
         elem_stiff.hex8_stiffness_matrix_thermal(mat_prop.thermal_conductivity, self.mesh.elem_size), axis=0)   
 #################################################################
+  def _solver_options(self):
+    """Options for the differentiable solve: the deflation solver and tolerance for DPCG/PCG."""
+    return {"dsolver": getattr(self, "dsolver", None), "rtol": self.kwargs.get("rtol", 1e-8)}
+
+  def adjoint_solve(self, rhs):
+    """Solve K(x) lam = rhs (numpy) with the matrix and solver of the LAST solve: the same factors
+    (PARDISO, SPSOLVE) or the same preconditioner and deflation space (DPCG/PCG), no new factorization.
+    Fixed dofs are Dirichlet (identity rows/columns), so lam is zero there. For analytical sensitivities."""
+    factorization = getattr(self, "_last_solve", {}).get("factorization")
+    if factorization is None:
+      raise RuntimeError("adjoint_solve needs a previous solve() of this solver.")
+    rhs = np.array(rhs, dtype=float, copy=True)
+    rhs[np.asarray(self.bc.fixed_dofs, dtype=int)] = 0.0
+    return np.asarray(factorization.solve_transpose(rhs))
+
   def solve(self, x: torch.Tensor = None, material_model: MaterialModel = None, elem_mat_id: np.ndarray = None) -> torch.Tensor:
     """Solve the thermal finite element problem.
 
@@ -145,7 +161,9 @@ class HexThermalFEA:
 
     K_bc, f_bc = apply_dirichlet_bc_torch(self.stiff_mtrx, f, self.bc)
 
-    sol = sparse_spsolve(K_bc, f_bc, solver=self.solver)
+    self._last_solve = {}
+    sol = sparse_spsolve(K_bc, f_bc, solver=self.solver, solver_options=self._solver_options(),
+                         keep=self._last_solve)
 
     self.sol = sol
     return sol

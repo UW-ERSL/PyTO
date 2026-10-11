@@ -9,7 +9,8 @@ This page lists common problems and error messages, with their cause and fix. Se
 | `ModuleNotFoundError: No module named 'pyto'` in your script | `src/` isn't on the import path | `export PYTHONPATH=/path/to/PyTO/src`, or `sys.path.insert(0, ".../src")` |
 | no windows appear, or plots are empty | headless variables are set (`PYVISTA_OFF_SCREEN`, `MPLBACKEND=Agg`) | unset them for interactive use; `run_gui.py` clears them itself |
 | `pypardiso` fails to install (macOS) | not available on macOS | skip it; use `Solvers.SPSOLVE` (GUI: **Solver Type → SPSOLVE**) |
-| warning: `Solvers.DPCG is not implemented for the torch-autodiff sparse solve path ... falling back` | iterative solvers aren't available during optimization | use PARDISO or SPSOLVE; the result is correct anyway |
+| warning: `Solvers.PYAMG is not implemented for the torch-autodiff sparse solve path ... falling back` | PYAMG isn't available during optimization | use PARDISO, SPSOLVE or DPCG; the result is correct anyway |
+| warning: `Maximum iterations reached in DPCG` or `PCG did not converge` | the iterative solve stopped early (very stiff contrasts, or no deflation space) | use PARDISO for problems below ~100 000 dofs; for large ones build the deflation space as `build_benchmark` does |
 
 ## Setting up a problem
 | Symptom / message | Cause | Fix |
@@ -30,7 +31,7 @@ This page lists common problems and error messages, with their cause and fix. Se
 | `WARNING: Minimizing compliance without a volume or mass limit` | the answer is the full block | add `VolumeFraction() <= ...` |
 | `X not available for thermal problems` | the quantity doesn't exist for that physics | see the physics column in [Expressions](../code/expressions.md#quantities) |
 | a method is greyed out, or `OC supports only minimize Compliance() with a single 'VolumeFraction() <= bound' constraint; use MMA.` | the method can't solve this formulation | use MMA |
-| `Manual gradient not available: ... Use automatic differentiation.` | no manual gradient for this quantity or problem | switch **Gradient** to automatic differentiation ([Gradients](../code/gradients.md#manual-gradients)) |
+| `Analytical gradient not available: ... Use automatic differentiation.` | no analytical gradient for this quantity or problem | switch **Gradient** to automatic differentiation ([Gradients](../code/gradients.md#analytical-gradients)) |
 | `GFUNCTION objective '...' has no gradient path to the design` | a Python function used NumPy, `.item()` or `float()` on the solution | use torch operations ([User-defined functions](../code/user-defined-functions.md#rules)) |
 
 ## Results

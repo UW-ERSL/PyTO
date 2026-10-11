@@ -5,8 +5,8 @@ This page describes PyTO's four optimization methods: what each can solve, how t
 ## Which method
 | Method | Function | Solves | Gradient |
 |---|---|---|---|
-| **MMA** (Method of Moving Asymptotes) | `topopt_mma` in `pyto.topopt.drivers.mma` | any objective and any number of constraints, all physics | autograd, or [manual](gradients.md) for compliance, p-norm stress and volume fraction |
-| **OC** (Optimality Criteria) | `topopt_optimality_criteria` in `pyto.topopt.drivers.oc` | minimize compliance with one volume limit | autograd, or manual |
+| **MMA** (Method of Moving Asymptotes) | `topopt_mma` in `pyto.topopt.drivers.mma` | any objective and any number of constraints, all physics | autograd, or [analytical](gradients.md) for compliance, p-norm stress and volume fraction |
+| **OC** (Optimality Criteria) | `topopt_optimality_criteria` in `pyto.topopt.drivers.oc` | minimize compliance with one volume limit | autograd, or analytical |
 | **Pareto** (topological sensitivity) | `topopt_pareto` in `pyto.topopt.drivers.pareto` | minimize compliance with one volume limit, including self-weight | its own derived sensitivity |
 | **LevelSet** | `topopt_levelset` in `pyto.topopt.drivers.levelset` | minimize compliance with one volume limit | its own derived shape derivative |
 
@@ -101,7 +101,7 @@ topopt_mma(fe, to_params, iteration_callback=on_iteration, print_progress=False)
 - **Mesh size** dominates. Start around 5 000–25 000 unknowns (`nDOFDesired`), then refine.
 - **Solver:** PARDISO is several times faster than SPSOLVE. Its factorization is reused for the gradient's adjoint solve.
 - **Solves per iteration:** one FE solve, plus one adjoint solve per objective or constraint that depends on the solution. Volume and mass need none. `pyto.topopt.capabilities.cost_estimate(spec)` states it for a formulation.
-- **Manual gradients** avoid building the autograd graph and are faster where available; see [Gradients](gradients.md).
+- **Analytical gradients** avoid building the autograd graph and are faster where available; see [Gradients](gradients.md).
 
 ---
 Next: [Gradients](gradients.md) · [Back to contents](../README.md)

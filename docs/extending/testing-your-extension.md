@@ -9,7 +9,7 @@ This page lists the checks that show a new response, gradient, filter, physics o
 |---|---|---|
 | a response | value on a case with a known answer; gradient vs finite differences; parses in an expression | `tests/test_responses.py` (`_check_gradient`), `tests/test_expressions.py` |
 | a user function or expression (in your own work) | `check_gradient(to_params, fe)` before the long run | [Gradients](../code/gradients.md#checking-a-gradient) |
-| a manual sensitivity | equals autograd to ~1e-12 at a random design; an MMA run gives identical iterates | `tests/test_manual_sensitivities.py` (`_compare`, `_history`) |
+| an analytical sensitivity | equals autograd to ~1e-12 at a random design; an MMA run gives identical iterates | `tests/test_manual_sensitivities.py` (`_compare`, `_history`) |
 | a filter | rows sum to 1; `H @ x` has the intended property for random `x`; gradient check with it on | `docs/examples/custom_filter.py` |
 | a physics | patch test with an analytic answer; gradient check; a few MMA iterations lower the objective | `tests/test_thermoelastic.py`, `tests/test_qoi_gradients.py` |
 | an optimization method | a few iterations on the structural fixture run, lower the objective and respect the volume | `tests/test_drivers_smoke.py` |

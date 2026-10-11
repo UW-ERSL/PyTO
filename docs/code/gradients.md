@@ -1,6 +1,6 @@
 # Gradients
 
-This page explains how PyTO computes the gradient (sensitivity) of objectives and constraints, how to choose between automatic differentiation and manual gradients, and how to check a gradient. It is for anyone who wants to trust, speed up or extend the optimization.
+This page explains how PyTO computes the gradient (sensitivity) of objectives and constraints, how to choose between automatic differentiation and analytical gradients, and how to check a gradient. It is for anyone who wants to trust, speed up or extend the optimization.
 
 ## Automatic differentiation (default)
 For MMA and OC, PyTO builds each objective and constraint as a PyTorch computation from the design `x`:
@@ -11,10 +11,10 @@ filter → projection → FE solve → quantity.
 - **any** quantity written with torch operations (built-in, [expression](expressions.md) or [Python function](user-defined-functions.md)) gets an exact gradient, with no derivation needed;
 - the cost is about **one extra linear solve per quantity that depends on the solution**. Volume and mass need none, and with PARDISO the factorization is reused.
 
-## Manual gradients
-For the most common quantities, PyTO also has sensitivities derived by hand, in `pyto.topopt.manual_sensitivities`. They give the same values without building the autograd graph.
+## Analytical gradients
+For the most common quantities, PyTO also has analytical (adjoint) sensitivities, derived by hand, in `pyto.topopt.manual_sensitivities`. They give the same values without building the autograd graph.
 
-| Quantity | Manual gradient | Physics |
+| Quantity | Analytical gradient | Physics |
 |---|---|---|
 | `COMPLIANCE` (objective or constraint) | yes, needs no adjoint solve (self-adjoint) | structural, thermal, thermo-structural |
 | `PNORM_STRESS` (objective or constraint) | yes, one adjoint solve | structural |
@@ -23,20 +23,38 @@ For the most common quantities, PyTO also has sensitivities derived by hand, in 
 
 Also not covered: design-dependent body forces (self-weight), per-problem conductivity laws (`ConductivityPenalty`, `ConductivityVoidRatio`), and compliance of problems driven by varying prescribed values together with loads. `manual_support(to_params, fe)` returns `(False, reason)` for these.
 
-Turn it on with:
+Choose it with the `GRADIENT_METHOD` enum:
 ```python
-to_params.Gradient = "manual"                 # default "autodiff"
+from pyto.topopt.common import GRADIENT_METHOD
+
+to_params.Gradient = GRADIENT_METHOD.ANALYTICAL      # default GRADIENT_METHOD.AUTODIFF
 ```
-or `MethodSpec(gradient="manual")` in a spec, or **Method → Gradient → Manual** in the GUI.
+or `MethodSpec(gradient="analytical")` in a spec, or **Method → Gradient → Analytical** in the GUI. The strings `"autodiff"` and `"analytical"` are accepted too, and so is the old name `"manual"` (e.g. in saved projects); `gradient_method(value)` converts any of these to the enum.
 
-It applies to **MMA and OC**. For MMA, the manual gradient is taken with respect to the physical density and chained back through the Heaviside projection and the density filter by hand. **Pareto and LevelSet** always use their own derived sensitivities.
+It applies to **MMA and OC**. For MMA, the analytical gradient is taken with respect to the physical density and chained back through the Heaviside projection and the density filter by hand. **Pareto and LevelSet** always use their own derived sensitivities.
 
-### Why use manual gradients
-- **Speed:** no autograd graph. On a 3 000-dof cantilever, 10 MMA iterations took 1.70 s with manual gradients against 2.31 s with autograd, with identical iterates.
+### Same solver path in both modes
+Both modes run the **same forward FE solve** (same assembly, same linear solver). The analytical adjoint solve then uses that solve's matrix and solver object through `fe.adjoint_solve(rhs)`:
+- **PARDISO / SPSOLVE:** the forward factorization is reused, so there's no second factorization;
+- **DPCG / PCG:** the same preconditioner and deflation space are reused.
+
+It's the same reuse the autograd backward pass gets, so timings compare the gradient methods, not two different solver set-ups.
+
+### Why use analytical gradients
+- **Speed:** no autograd graph, and no autograd pass back through the stiffness assembly. MMA, PARDISO, same iterates in both modes, seconds per iteration:
+
+  | Problem | dofs | AD | Analytical | Speed-up |
+  |---|---|---|---|---|
+  | LBracketTopLoad_Stress_Vol (p-norm stress) | 38 961 | 3.47 | 2.15 | 1.62 |
+  | BiClamp (thermo-structural compliance) | 33 750 | 2.62 | 1.99 | 1.32 |
+  | HeatPlate (thermal compliance) | 9 245 | 1.03 | 0.82 | 1.26 |
+  | MBBBeam (compliance) | 59 220 | 4.76 | 4.12 | 1.16 |
+
+  These are 5-iteration runs, each in a fresh process; a 20-iteration L-bracket run gave 1.60 against 1.36 s/iteration. Rerun them with the [comparison benchmark](#comparing-the-two-on-the-benchmarks).
 - **Reference:** an independent derivation to check autograd against, and a starting point for methods that need derived sensitivities.
 
 ### How they are verified
-`tests/test_manual_sensitivities.py` compares every manual gradient with autograd. Agreement is at the 1e-14 level: 9e-15 for compliance, 1.7e-14 for p-norm stress, and below 1e-6 for thermo-structural compliance. The tests also run full MMA and OC optimizations both ways and require the same iterates. To add a manual gradient of your own: [Add a manual sensitivity](../extending/add-a-manual-sensitivity.md).
+`tests/test_manual_sensitivities.py` compares every analytical gradient with autograd. Agreement is at the 1e-14 level: 9e-15 for compliance, 1.7e-14 for p-norm stress, and below 1e-6 for thermo-structural compliance. The tests also run full MMA and OC optimizations both ways and require the same iterates. To add an analytical gradient of your own: [Add an analytical sensitivity](../extending/add-a-manual-sensitivity.md).
 
 ## Checking a gradient
 ```python
@@ -45,7 +63,7 @@ from pyto.topopt.capabilities import check_gradient
 for r in check_gradient(to_params, fe, n_elements=5, rel_step=1e-4, tol=1e-3):
     print(r.name, f"{r.max_rel_error:.1e}", "OK" if r.ok else "MISMATCH")
 ```
-- It compares the gradient in use (autograd, or manual if `to_params.Gradient == "manual"`) with central finite differences on `n_elements` random elements.
+- It compares the gradient in use (autograd, or analytical if `to_params.Gradient` is `GRADIENT_METHOD.ANALYTICAL`) with central finite differences on `n_elements` random elements.
 - The comparison is made at a random interior design (densities 0.3–0.9).
 - The GUI's **Check gradient** button runs the same function.
 
@@ -60,7 +78,7 @@ from pyto.topopt.capabilities import cost_estimate
 print(cost_estimate(spec, selections))
 # "Per iteration: 1 forward FE solve + 2 adjoint solves."
 ```
-It counts the linear solves one MMA iteration needs. With manual gradients it counts only what the manual path needs (0 for compliance, 1 for p-norm stress).
+It counts the linear solves one MMA iteration needs. With analytical gradients it counts only what the analytical path needs (0 for compliance, 1 for p-norm stress).
 
 ## Measured cost
 `tests/test_gradient_cost.py` times forward, forward+backward and backward separately for a given problem size:
@@ -68,6 +86,19 @@ It counts the linear solves one MMA iteration needs. With manual gradients it co
 PYTHONPATH=src python tests/test_gradient_cost.py --ndof 25000 --repeat 10 --solver PARDISO
 ```
 Results for this repository are summarized in [Validation](../reference/validation.md).
+
+## Comparing the two on the benchmarks
+`pyto.examples_benchmarks.gradient_comparison` runs every benchmark problem where analytical sensitivities apply. It runs MMA with AD and then analytical, then OC with AD and then analytical, and skips Pareto and LevelSet:
+```bash
+PYTHONPATH=src python -m pyto.examples_benchmarks.gradient_comparison                     # whole sweep (hours)
+PYTHONPATH=src python -m pyto.examples_benchmarks.gradient_comparison --max-iters 20     # quicker timing
+PYTHONPATH=src python -m pyto.examples_benchmarks.gradient_comparison --problems LBracketTopLoad_Stress_Vol --solver DPCG
+```
+- **Fair runs:** each run is a fresh process, like restarting the kernel. Both runs of a pair use the same solver and settings; the default is the benchmark's choice: PARDISO, or DPCG above 100 000 dofs.
+- **Timing:** only the optimizer call is timed.
+- **Output:** `Results/GradientComparison_<date>/`, with
+  - `results.csv`: one row per run (FE solves, time, s/iteration, objective);
+  - `summary.md`: the pairs side by side, with the AD/analytical speed-up and the relative difference of the final objectives, plus the problems skipped and why.
 
 ---
 Next: [Thermal and thermo-structural problems](thermal-and-thermostructural.md) · [Back to contents](../README.md)

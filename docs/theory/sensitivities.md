@@ -28,12 +28,12 @@ MMA's variables are the raw densities $\mathbf{x}$. With $\bar{\mathbf{x}} = \ma
 
 $$\frac{df}{dx_i} = \sum_e \frac{H_{ei}}{H_{s,e}}\; P'(\bar{x}_e)\; \frac{df}{d\tilde{x}_e}$$
 
-Autograd applies this automatically. The manual gradient path (`manual_step` in `drivers/mma.py`) applies it by hand: multiply by $P'$, divide by $H_s$, multiply by $\mathbf{H}^T$.
+Autograd applies this automatically. The analytical gradient path (`manual_step` in `drivers/mma.py`) applies it by hand: multiply by $P'$, divide by $H_s$, multiply by $\mathbf{H}^T$.
 
 ## Cost
 Per MMA iteration:
 - one forward solve;
-- one adjoint solve for each objective or constraint that depends on the solution. Volume and mass need none, and compliance needs none with manual gradients.
+- one adjoint solve for each objective or constraint that depends on the solution. Volume and mass need none, and compliance needs none with analytical gradients.
 
 The measured backward/forward time ratio is 0.4–0.8 with PARDISO on 10k–40k-dof problems ([Validation](../reference/validation.md)).
 

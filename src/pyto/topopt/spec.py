@@ -17,7 +17,7 @@ from dataclasses import asdict, dataclass, field
 
 import numpy as np
 
-from pyto.topopt.common import TOParams, TO_QOI
+from pyto.topopt.common import GRADIENT_METHOD, TOParams, TO_QOI, gradient_method
 from pyto.autodiff.qoi.responses import RESPONSES
 from pyto.topopt.expressions import ExpressionError, compile_expression
 
@@ -94,7 +94,7 @@ class MethodSpec:
     name: str = "MMA"
     max_iterations: int = 150
     move_limit: float = 0.2
-    gradient: str = "autodiff"                   # "autodiff" or "manual" (MMA/OC only)
+    gradient: str = "autodiff"                   # "autodiff" or "analytical" (MMA/OC only; old name "manual")
 
 
 @dataclass
@@ -218,8 +218,10 @@ def validate(spec: OptimizationSpec, physics: str, selections: dict = None, allo
                      f"value - bound <= 0, which MMA may scale poorly.")
     if spec.method.name not in METHODS:
         err(f"Unknown method {spec.method.name!r} (choose from {', '.join(METHODS)}).")
-    if spec.method.gradient not in ("autodiff", "manual"):
-        err(f"Unknown gradient {spec.method.gradient!r} (choose autodiff or manual).")
+    try:
+        gradient_method(spec.method.gradient)
+    except ValueError:
+        err(f"Unknown gradient {spec.method.gradient!r} (choose autodiff or analytical).")
     if spec.method.max_iterations < 1:
         err("Maximum iterations must be at least 1.")
     if not 0 < spec.method.move_limit <= 1:
@@ -288,7 +290,7 @@ def compile_spec(spec: OptimizationSpec, selections: dict = None, base: TOParams
     to_params.ConstraintLabels = [(c.expression, c.op, float(c.bound)) for c in spec.active_constraints]
 
     to_params.MaxIterations = int(spec.method.max_iterations)
-    to_params.Gradient = spec.method.gradient
+    to_params.Gradient = gradient_method(spec.method.gradient)
     to_params.RelativeFilterRadius = float(spec.regularization.filter_radius)
     to_params.HeavisideProjection = bool(spec.regularization.heaviside)
     m = spec.manufacturing
@@ -361,7 +363,7 @@ def spec_from_to_params(to_params: TOParams, method: str = "MMA", num_dofs: int 
         m.keep_selection = "KeepSolid"
     spec = OptimizationSpec(objective=objective, constraints=constraints,
                             method=MethodSpec(method, int(to_params.MaxIterations),
-                                              gradient=getattr(to_params, "Gradient", "autodiff")),
+                                              gradient=gradient_method(to_params.Gradient).value),
                             regularization=RegularizationSpec(float(to_params.RelativeFilterRadius),
                                                               bool(to_params.HeavisideProjection)),
                             manufacturing=m)

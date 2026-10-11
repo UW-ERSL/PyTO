@@ -9,7 +9,7 @@ This recipe adds a new **interpolation law**: how an element's stiffness or cond
 |---|---|---|
 | `get_structural_material_model_scaling_torch(x, model)` | torch, differentiable | the FE solve (autograd path) |
 | `get_structural_material_model_scaling(x, model)` | numpy | derived sensitivities, post-processing |
-| `get_structural_material_model_sensitivity(x, model)` | numpy, the derivative $dE/dx$ | manual gradients, OC, Pareto |
+| `get_structural_material_model_sensitivity(x, model)` | numpy, the derivative $dE/dx$ | analytical gradients, OC, Pareto |
 
 The thermal set (`get_thermal_...`) is the same with the conductivity constants. The torch version also takes the per-problem `penalty` and `void_ratio`.
 

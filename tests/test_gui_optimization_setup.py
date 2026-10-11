@@ -5,7 +5,7 @@ import numpy as np
 import pytest
 
 from pyto.gui import optimization_setup as gs
-from pyto.topopt.common import TO_QOI
+from pyto.topopt.common import GRADIENT_METHOD, TO_QOI
 from pyto.topopt.spec import ConstraintSpec, MethodSpec, ObjectiveSpec, OptimizationSpec
 
 
@@ -141,9 +141,9 @@ def test_gradient_choice(qapp):
     manual_item = panel.gradient_combo.model().item(1)
     assert panel.get_spec().method.gradient == "autodiff" and manual_item.isEnabled()
     panel.gradient_combo.setCurrentIndex(1)
-    assert panel.get_spec().method.gradient == "manual" and "Manual" in panel.gradient_label.text()
+    assert panel.get_spec().method.gradient == "analytical" and "Analytical" in panel.gradient_label.text()
     plan = gs.prepare_run(panel.get_spec(), "structural", {"Load1": {"nodes": [1]}})
-    assert not plan.errors and plan.to_params.Gradient == "manual" and "0 adjoint" in plan.cost
+    assert not plan.errors and plan.to_params.Gradient is GRADIENT_METHOD.ANALYTICAL and "0 adjoint" in plan.cost
     # p-norm stress has a manual gradient (one adjoint solve); mass does not
     spec = panel.get_spec()
     spec.constraints.append(ConstraintSpec("StressPNorm()", "<=", 1e8))
@@ -156,13 +156,13 @@ def test_gradient_choice(qapp):
     panel.set_spec(spec)
     panel.refresh_method_info()
     assert not manual_item.isEnabled() and panel.get_spec().method.gradient == "autodiff"
-    spec.method.gradient = "manual"
-    assert any("Manual gradient not available" in str(i) for i in gs.prepare_run(spec, "structural",
+    spec.method.gradient = "manual"                     # the old name is still accepted
+    assert any("Analytical gradient not available" in str(i) for i in gs.prepare_run(spec, "structural",
                                                                                     {"Load1": {"nodes": [1]}}).errors)
     # Pareto: forced to Manual, combo locked
     panel.set_spec(gs.default_spec())
     panel.method_combo.setCurrentText("PARETO")
-    assert not panel.gradient_combo.isEnabled() and panel.get_spec().method.gradient == "manual"
+    assert not panel.gradient_combo.isEnabled() and panel.get_spec().method.gradient == "analytical"
     panel.method_combo.setCurrentText("MMA")
     assert panel.gradient_combo.isEnabled() and panel.get_spec().method.gradient == "autodiff"
     # old saved specs without the field load as AD

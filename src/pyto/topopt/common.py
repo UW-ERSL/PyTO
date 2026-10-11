@@ -24,6 +24,25 @@ class TO_METHODS(enum.Enum):
 	PARETO = enum.auto()
 	LEVELSET = enum.auto()
 
+class GRADIENT_METHOD(enum.Enum):  # how MMA/OC get the sensitivities (Pareto/LevelSet always use their own)
+	AUTODIFF = "autodiff"      # torch autograd through the FE solve (adjoint); any objective/constraint
+	ANALYTICAL = "analytical"  # derived (adjoint) sensitivities: compliance, p-norm stress, volume fraction
+
+
+def gradient_method(value) -> "GRADIENT_METHOD":
+	"""GRADIENT_METHOD from the enum or its name/value ("autodiff", "analytical"; "manual" is the old name of
+	"analytical" and is still accepted, e.g. in saved specs). None means AUTODIFF."""
+	if value is None or isinstance(value, GRADIENT_METHOD):
+		return value or GRADIENT_METHOD.AUTODIFF
+	key = str(value).strip().lower()
+	if key == "manual":
+		return GRADIENT_METHOD.ANALYTICAL
+	for m in GRADIENT_METHOD:
+		if key in (m.value, m.name.lower()):
+			return m
+	raise ValueError(f"Unknown gradient method {value!r}; use GRADIENT_METHOD.AUTODIFF or GRADIENT_METHOD.ANALYTICAL.")
+
+
 class FEA_MODE(enum.Enum):
 	STRUCTURAL = enum.auto()
 	THERMAL = enum.auto()
@@ -84,8 +103,8 @@ class TOParams: # These are the default parameters
     # ObjectiveLabel = (expression, "minimize"/"maximize"), ConstraintLabels = [(expression, "<="/">=", bound), ...]
     ObjectiveLabel: tuple = None
     ConstraintLabels: list = None
-    Gradient: str = "autodiff" # MMA/OC gradients: "autodiff" (torch autograd) or "manual" (see
-    # topopt/manual_sensitivities.py; compliance, p-norm stress, volume fraction only)
+    Gradient: GRADIENT_METHOD = GRADIENT_METHOD.AUTODIFF # MMA/OC sensitivities: AUTODIFF (autograd) or ANALYTICAL
+    # (topopt/manual_sensitivities.py: compliance, p-norm stress, volume fraction); strings are accepted too
     # Thermo-mechanical problems only (see physics/thermoelastic/thermostructural_fea.py)
     ThermalReferenceTemperature: float = 23.0 # Stress-free temperature of the structure
     ConductivityPenalty: float = None # SIMP exponent of the conductivity (None = module default)

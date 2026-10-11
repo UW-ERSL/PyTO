@@ -31,10 +31,10 @@ Because $P$ overestimates the maximum, a limit on $P$ is conservative. `MaxStres
 
 $$c_{k+1} = 0.25\,\frac{\max_e \sigma^{vm}_e}{P} + 0.75\,c_k$$
 
-The constraint then tracks the real peak stress. Because $c$ changes between iterations, the constraint is **stateful**: it can't have a fixed manual gradient, and finite-difference checks reset $c$ first.
+The constraint then tracks the real peak stress. Because $c$ changes between iterations, the constraint is **stateful**: it can't have a fixed analytical gradient, and finite-difference checks reset $c$ first.
 
 ## Gradient
-The p-norm is differentiated by autograd, or by the manual adjoint formula ([Add a manual sensitivity](../extending/add-a-manual-sensitivity.md#worked-example-the-p-norm-stress-gradient)). The two agree to about 1e-14. One adjoint solve per iteration is needed.
+The p-norm is differentiated by autograd, or by the analytical adjoint formula ([Add an analytical sensitivity](../extending/add-a-manual-sensitivity.md#worked-example-the-p-norm-stress-gradient)). The two agree to about 1e-14. One adjoint solve per iteration is needed.
 
 ## Practical advice
 - Start with a **loose** stress limit, or a compliance objective plus a stress constraint. A tight stress limit from the first iteration can make MMA struggle.

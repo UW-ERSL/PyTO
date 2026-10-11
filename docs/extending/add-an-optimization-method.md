@@ -39,7 +39,7 @@ c, _ = compute_constraint_and_gradient(to_params, sol, x_phys, fe_solver, KE, Ma
 ```
 - `compute_objective_and_gradient` and `compute_constraint_and_gradient` evaluate **every** kind of objective and constraint PyTO knows: built-ins, expressions, user functions. So a new driver gets all formulations for free.
 - For the constraint Jacobian, call `torch.autograd.grad(c[i, 0], x_t, retain_graph=True)` per row, as `mma.py` does.
-- Manual gradients instead of autograd: `manual_gradients(to_params, sol, x_phys, fe_solver, MaterialModel.SIMP)` from `pyto.topopt.manual_sensitivities`, then chain through the filter as `manual_step` in `mma.py` does.
+- Analytical gradients instead of autograd: `manual_gradients(to_params, sol, x_phys, fe_solver, MaterialModel.SIMP)` from `pyto.topopt.manual_sensitivities`, then chain through the filter as `manual_step` in `mma.py` does.
 
 ## Worked example: projected steepest descent
 [`docs/examples/custom_driver.py`](../examples/custom_driver.py) is a complete driver in about 50 lines. Each iteration:

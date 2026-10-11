@@ -36,14 +36,88 @@ def test_sparse_linear_solve_gradcheck():
     assert torch.autograd.gradcheck(f, (values, b), eps=1e-6, atol=1e-5, rtol=1e-4)
 
 
-def test_dpcg_is_not_implemented_and_warns_before_falling_back():
-    # The torch path has no DPCG; it must say so, not silently substitute a direct solve.
+def test_unimplemented_solver_warns_before_falling_back():
+    # PYAMG has no torch-path implementation; it must say so, not silently substitute a direct solve.
     import pytest
     from pyto.autodiff.sparse_solve import solve
     indices, values, shape = _random_spd_sparse(6)
     A = torch.sparse_coo_tensor(indices, values.detach(), shape)
     with pytest.warns(UserWarning, match="not implemented"):
-        solve(A, torch.ones(6, dtype=torch.float64), solver=Solvers.DPCG)
+        solve(A, torch.ones(6, dtype=torch.float64), solver=Solvers.PYAMG)
+
+
+def test_iterative_solve_gradcheck():
+    """PCG/DPCG in the differentiable solve: forward and adjoint (transposed) CG solves pass gradcheck."""
+    indices, values, shape = _random_spd_sparse(8)
+    b = torch.randn(8, dtype=torch.float64, requires_grad=True)
+
+    def f(values, b):
+        A = torch.sparse_coo_tensor(indices, values, shape)
+        return SparseLinearSolve.apply(A, b, "dpcg", {"rtol": 1e-14})     # no dsolver: Jacobi PCG
+
+    assert torch.autograd.gradcheck(f, (values, b), eps=1e-6, atol=1e-5, rtol=1e-4)
+
+
+def _dpcg_solver(mesh):
+    from pyto.solve.deflation import DeflationSolver
+    d = DeflationSolver()
+    d.create_deflation_groups(mesh, min(d.maxGroups, max(d.minGroups, round(3 * mesh.num_nodes / d.dofPerGroup))))
+    d.create_deflation_matrix(mesh)
+    return d
+
+
+def test_dpcg_matches_direct_solve_and_its_gradients(structural_problem):
+    """DPCG (deflation + Jacobi) on the Dirichlet-modified stiffness: same displacement and autograd gradient as
+    SPSOLVE, and the analytical p-norm stress gradient (adjoint via adjoint_solve) equals autograd."""
+    import numpy as np
+    from pyto.autodiff.material_model import MaterialModel
+    from pyto.physics.structural.hex_structural_fea import HexStructuralFEA
+    from pyto.topopt.common import TOParams, TO_QOI
+    from pyto.topopt.manual_sensitivities import manual_gradients
+    from pyto.autodiff.qoi import compute_objective_and_gradient
+    mesh, mat, bc, ebf, _ = structural_problem
+    x0 = torch.tensor(0.3 + 0.6 * np.random.default_rng(1).random(mesh.num_elems), dtype=torch.float64)
+    p = TOParams()
+    p.Objective, p.Constraints = (TO_QOI.PNORM_STRESS, None), [(TO_QOI.VOLUME_FRACTION, None, 0.5)]
+    out = {}
+    for name, solver, dsolver in (("direct", Solvers.SPSOLVE, None), ("dpcg", Solvers.DPCG, _dpcg_solver(mesh))):
+        fe = HexStructuralFEA(mesh=mesh, mat_prop=mat, bc=bc, solver=solver, dsolver=dsolver, rtol=1e-12)
+        x = x0.clone().requires_grad_(True)
+        u = fe.solve(x, MaterialModel.SIMP)
+        J = compute_objective_and_gradient(p, u, x, fe, torch.tensor(fe.elem_stiff[0]), MaterialModel.SIMP)
+        g_ad = torch.autograd.grad(J, x)[0].numpy()
+        g_an = manual_gradients(p, u, x0, fe, MaterialModel.SIMP)[0]
+        out[name] = (u.detach().numpy(), g_ad, g_an)
+        assert type(fe._last_solve["factorization"]).__name__ == ("_IterativeSolve" if name == "dpcg" else "_LUFactors")
+    rel = lambda a, b: np.abs(a - b).max() / np.abs(b).max()
+    assert rel(out["dpcg"][0], out["direct"][0]) < 1e-8
+    assert rel(out["dpcg"][1], out["direct"][1]) < 1e-6
+    for name in out:
+        assert rel(out[name][2], out[name][1]) < 1e-6, name             # analytical == autograd, same solver
+
+
+def test_adjoint_solve_reuses_the_forward_factorization(structural_problem):
+    """The analytical adjoint uses the last solve's solver object: no new factorization (PARDISO and SPSOLVE)."""
+    import numpy as np
+    import pyto.autodiff.sparse_solve as S
+    from pyto.autodiff.material_model import MaterialModel
+    from pyto.physics.structural.hex_structural_fea import HexStructuralFEA
+    mesh, mat, bc, ebf, _ = structural_problem
+    solvers = [Solvers.SPSOLVE] + ([Solvers.PARDISO] if S.pypardiso is not None else [])
+    for solver in solvers:
+        fe = HexStructuralFEA(mesh=mesh, mat_prop=mat, bc=bc, solver=solver)
+        with torch.no_grad():
+            u = fe.solve(torch.full((mesh.num_elems,), 0.5, dtype=torch.float64), MaterialModel.SIMP)
+        made = []
+        original = S._factorize
+        S._factorize = lambda *a: made.append(1) or original(*a)
+        try:
+            lam = fe.adjoint_solve(fe.bc.force)                   # K lam = f (fixed dofs zero) must give u
+        finally:
+            S._factorize = original
+        assert not made, solver
+        free = np.setdiff1d(np.arange(bc.num_dofs), bc.fixed_dofs)
+        assert np.abs(lam[free] - u.numpy()[free]).max() < 1e-9 * np.abs(u.numpy()).max(), solver
 
 
 # ---------------------------------------------------------------- plan S8: PARDISO factor reuse in the adjoint

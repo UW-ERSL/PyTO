@@ -24,7 +24,7 @@ New here? Start with **[Installation](getting-started/installation.md)**, then t
 | [Expressions](code/expressions.md) | Write objectives and constraints as formulas; full list of quantities |
 | [User-defined functions](code/user-defined-functions.md) | Any objective or constraint as a Python (torch) function |
 | [Running the optimizers](code/running-optimizers.md) | MMA, OC, Pareto, LevelSet: arguments, results, callbacks |
-| [Gradients](code/gradients.md) | Automatic differentiation vs manual gradients, gradient checks, cost |
+| [Gradients](code/gradients.md) | Automatic differentiation vs analytical gradients, gradient checks, cost |
 | [Thermal and thermo-structural problems](code/thermal-and-thermostructural.md) | Heat conduction and coupled problems from code |
 | [Benchmarks from code](code/benchmarks-from-code.md) | Use the 46 ready-made problems, run sweeps |
 
@@ -54,7 +54,7 @@ New here? Start with **[Installation](getting-started/installation.md)**, then t
 |---|---|
 | [Architecture](extending/architecture.md) | How the package is organized and how one optimization step flows |
 | [Add a response](extending/add-a-response.md) | A new quantity usable in expressions and the GUI |
-| [Add a manual sensitivity](extending/add-a-manual-sensitivity.md) | A derived gradient, verified against autograd |
+| [Add an analytical sensitivity](extending/add-a-manual-sensitivity.md) | A derived gradient, verified against autograd |
 | [Add a filter](extending/add-a-filter.md) | A new filter, projection or manufacturing constraint |
 | [Add a physics](extending/add-a-physics.md) | A new FE solver that the optimizers can use |
 | [Add an optimization method](extending/add-an-optimization-method.md) | A new driver next to (or instead of) MMA |

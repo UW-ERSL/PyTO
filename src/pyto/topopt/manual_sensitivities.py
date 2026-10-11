@@ -1,6 +1,6 @@
-"""Manual gradients for the MMA and OC drivers, as an alternative to automatic differentiation.
+"""Analytical (derived, "manual") gradients for the MMA and OC drivers, as an alternative to automatic differentiation.
 
-to_params.Gradient = "manual" makes MMA/OC use these instead of torch.autograd. They exist only where a derived
+to_params.Gradient = GRADIENT_METHOD.ANALYTICAL makes MMA/OC use these instead of torch.autograd. They exist only where a derived
 sensitivity is available and verified against autograd (tests/test_manual_sensitivities.py):
 
   objective    COMPLIANCE (structural, thermal, thermo-structural), PNORM_STRESS (structural), VOLUME_FRACTION
@@ -12,10 +12,8 @@ Values are computed by the same functions as the autograd path, so both modes op
 """
 import contextlib
 import io
-import types
 
 import numpy as np
-import scipy.sparse as sps
 import torch
 
 from pyto.autodiff.material_model import MaterialModel
@@ -23,7 +21,7 @@ from pyto.topopt.common import TO_QOI
 
 MANUAL_OBJECTIVES = {TO_QOI.COMPLIANCE, TO_QOI.PNORM_STRESS, TO_QOI.VOLUME_FRACTION}
 MANUAL_CONSTRAINTS = {TO_QOI.COMPLIANCE, TO_QOI.PNORM_STRESS, TO_QOI.VOLUME_FRACTION, TO_QOI.VOLUME_FRACTION_MIN}
-_AD_ONLY_HINT = " (manual gradients cover compliance, p-norm stress and volume fraction; use automatic differentiation)"
+_AD_ONLY_HINT = " (analytical gradients cover compliance, p-norm stress and volume fraction; use automatic differentiation)"
 
 
 def _physics(fe_solver):
@@ -35,10 +33,10 @@ def formulation_support(to_params) -> tuple:
     """manual_support() without the solver: only which objective/constraint types have a manual gradient."""
     obj = to_params.Objective[0]
     if obj not in MANUAL_OBJECTIVES:
-        return False, f"No manual gradient for the objective {getattr(obj, 'name', obj)}{_AD_ONLY_HINT}."
+        return False, f"No analytical gradient for the objective {getattr(obj, 'name', obj)}{_AD_ONLY_HINT}."
     for c in to_params.Constraints:
         if c[0] not in MANUAL_CONSTRAINTS:
-            return False, f"No manual gradient for the constraint {getattr(c[0], 'name', c[0])}{_AD_ONLY_HINT}."
+            return False, f"No analytical gradient for the constraint {getattr(c[0], 'name', c[0])}{_AD_ONLY_HINT}."
     return True, ""
 
 
@@ -54,18 +52,18 @@ def manual_support(to_params, fe_solver) -> tuple:
     types = _types(to_params)
     physics = _physics(fe_solver)
     if TO_QOI.PNORM_STRESS in types and physics != "structural":
-        return False, "The manual p-norm stress gradient is for structural problems only."
+        return False, "The analytical p-norm stress gradient is for structural problems only."
     if types & {TO_QOI.COMPLIANCE, TO_QOI.PNORM_STRESS} and getattr(fe_solver, "elem_body_force", None) is not None:
-        return False, "The manual gradients do not include design-dependent body forces."
+        return False, "The analytical gradients do not include design-dependent body forces."
     if TO_QOI.COMPLIANCE in types:
         thermal = fe_solver.thermal_fea if physics == "thermo-structural" else fe_solver if physics == "thermal" else None
         if thermal is not None and (getattr(thermal, "conductivity_penalty", None) is not None
                                     or getattr(thermal, "conductivity_void_ratio", None) is not None):
-            return False, "The manual compliance gradient assumes the default conductivity law."
+            return False, "The analytical compliance gradient assumes the default conductivity law."
         bcs = [fe_solver.bc] + ([fe_solver.thermal_fea.bc] if physics == "thermo-structural" else [])
         for bc in bcs:
             if _varying_prescribed(bc) and np.any(bc.force):
-                return False, ("The manual compliance gradient covers load-driven or prescribed-value-driven "
+                return False, ("The analytical compliance gradient covers load-driven or prescribed-value-driven "
                                "problems, not both at once (varying prescribed values together with loads).")
     return True, ""
 
@@ -76,13 +74,6 @@ def _varying_prescribed(bc) -> bool:
     (e.g. HeatPlate: heat load + all fixed nodes at 23 C behaves as load-driven)."""
     v = np.asarray(bc.dirichlet_values, dtype=float)
     return v.size > 0 and np.ptp(v) > 1e-12 * max(1.0, np.abs(v).max())
-
-
-def _scipy_stiffness(fe_solver):
-    """The assembled stiffness of the last solve as SciPy CSR (the legacy adjoint solves need SciPy)."""
-    K = fe_solver.stiff_mtrx.coalesce()
-    i = K.indices().cpu().numpy()
-    return sps.csr_matrix((K.values().detach().cpu().numpy(), (i[0], i[1])), shape=tuple(K.shape))
 
 
 def _compliance_gradient(sol, x, fe_solver, material_model):
@@ -111,10 +102,9 @@ def _compliance_gradient(sol, x, fe_solver, material_model):
 
 def _pnorm_gradient(sol, x, fe_solver, material_model):
     from pyto.autodiff.reference_adjoint import compute_pnorm_stress_and_sensitivity
-    proxy = types.SimpleNamespace(mesh=fe_solver.mesh, bc=fe_solver.bc, solver=fe_solver.solver,
-                                  dsolver=fe_solver.dsolver, kwargs=fe_solver.kwargs, mat_prop=fe_solver.mat_prop,
-                                  stiff_mtrx=_scipy_stiffness(fe_solver))
-    return compute_pnorm_stress_and_sensitivity(sol, x, proxy, fe_solver.elem_stiff[0], material_model)[1]
+    # adjoint solve on the forward solve's matrix and factors (fe_solver.adjoint_solve): same solver, no new
+    # factorization, no conversion of the torch stiffness to SciPy
+    return compute_pnorm_stress_and_sensitivity(sol, x, fe_solver, fe_solver.elem_stiff[0], material_model)[1]
 
 
 def manual_gradients(to_params, sol, x, fe_solver, material_model=MaterialModel.SIMP):
@@ -123,7 +113,7 @@ def manual_gradients(to_params, sol, x, fe_solver, material_model=MaterialModel.
     solve. Returns (dobj (n,), dcons (m, n))."""
     ok, reason = manual_support(to_params, fe_solver)
     if not ok:
-        raise ValueError(f"Manual gradient not available: {reason}")
+        raise ValueError(f"Analytical gradient not available: {reason}")
     sol = sol.detach().cpu().numpy() if isinstance(sol, torch.Tensor) else np.asarray(sol)
     x = x.detach().cpu().numpy() if isinstance(x, torch.Tensor) else np.asarray(x)
     n = x.size

@@ -219,7 +219,7 @@ def topopt_optimality_criteria(
 			# HexThermalFEA.solve() require a torch tensor since the
 			# torch-autodiff migration (Phase 0/4), so this raised
 			# a TypeError on the very first iteration (see test_oc_structural_runs).
-			manual = getattr(to_params, "Gradient", "autodiff") == "manual"
+			manual = gradient_method(to_params.Gradient) is GRADIENT_METHOD.ANALYTICAL
 			x_t = torch.tensor(x, dtype=torch.float64, requires_grad=not manual)
 			with torch.set_grad_enabled(not manual):
 				sol_t = fe_solver.solve(x_t, material_model)

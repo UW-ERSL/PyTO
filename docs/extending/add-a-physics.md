@@ -14,7 +14,8 @@ The drivers, responses and gradient code only rely on the following. Anything el
 | `elem_stiff` | numpy `(n_materials, k, k)` | the element matrix of a **solid** element (k = dofs per element) |
 | `mesh.edofMat` | `(num_elems, k)` | element → global dof table for this physics; the responses read it |
 | `solve(x, material_model)` | → torch `(num_dofs,)` | **differentiable** solve for a density; `x=None` means fully solid |
-| `stiff_mtrx` | torch sparse | the assembled matrix of the last solve (manual gradients convert it to SciPy) |
+| `stiff_mtrx` | torch sparse | the assembled matrix of the last solve |
+| `adjoint_solve(rhs)` | → numpy | solves with the matrix and solver object of the last solve (same factors / preconditioner); analytical sensitivities use it. Pass `keep=self._last_solve` to `sparse_solve.solve` and copy the method from `HexThermalFEA` |
 | `postprocess()` | – | derived fields for plots (fluxes, stresses) |
 | `plot_mesh(...)`, `plot_elem_field(...)` | – | pictures; the plotting in `gui/hex_plotter.py` can be reused |
 
@@ -52,7 +53,7 @@ This is a fragment: the assembly indices (`_unique_indices`, `_scatter_inverse`,
    | `compute_element_stiffness` in `topopt/drivers/_shared.py` | return your element matrix; it raises `TypeError` for unknown solvers |
    | `nDOFPerNode = 3 if isinstance(...HexStructuralFEA) else 1` | in `_shared.py`, `mma.py`, `oc.py`, `pareto.py`: correct only for 1 or 3 dofs per node |
    | `method_support()` in `topopt/capabilities.py` | which methods your physics supports (MMA always, if the solve is differentiable) |
-   | `manual_support()` in `topopt/manual_sensitivities.py` | refuse manual gradients until you've [added one](add-a-manual-sensitivity.md) |
+   | `manual_support()` in `topopt/manual_sensitivities.py` | refuse analytical gradients until you've [added one](add-a-manual-sensitivity.md) |
    | `validate()` in `topopt/spec.py` | accepts any physics name the responses know |
 
 6. **GUI (optional):** a loads window and an analysis button in `gui/PyTOGUI.py`, and a branch in `StructuralTopOptWindow.build_problem`. This is the biggest part; do it last.
